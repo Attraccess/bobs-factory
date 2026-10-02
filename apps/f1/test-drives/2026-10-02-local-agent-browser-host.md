@@ -1,6 +1,11 @@
-# Local macOS agent-browser host launcher
+# Local macOS browser investigation: launcher prototype and native rules
 
 Date: 2026-10-02
+
+The launcher described below is a superseded prototype. The final draft uses
+Codex's existing command-rule mechanism and contains no launcher implementation.
+Historical Linear/F1 evidence is retained here; the native-rule checks at the end
+are separate direct Codex smoke tests.
 Base: `f5f18a1`, with the local browser-root changes and the changes from
 `fix/configurable-sandbox-writable-directories` (`ed5f6ce`) consolidated into
 the primary checkout, plus `scripts/local-agent-browser.mjs`.
@@ -89,10 +94,10 @@ implementation, PR, or external website mutation was performed by either agent.
   validated. The companion is optional macOS local tooling, not a cloud-runtime
   dependency. Browser operations run with the local user's host access.
 
-## Draft PR scope
+## Original prototype PR scope (superseded)
 
-This PR includes only the optional companion, setup documentation, and this
-validation record. The validation base above included the separate filesystem
+The original draft included the optional companion, setup documentation, and this
+validation record. The companion has since been removed from the draft. The validation base above included the separate filesystem
 permission implementation. Those runtime/configuration/dependency changes are
 not included here; see [PR #1516](https://github.com/cyrusagents/cyrus/pull/1516)
 for configurable writable directories. The upstream helper uses the project
@@ -101,7 +106,7 @@ label. It also rejects relative CLI paths and existing installation paths,
 including dangling symlinks. These packaging checks do not alter the tested
 browser bootstrap protocol.
 
-## Draft packaging verification
+## Original prototype packaging verification
 
 On upstream base `8533e11`, `pnpm install --frozen-lockfile` succeeded without
 lockfile changes. The updated source helper passed Node syntax and Biome checks.
@@ -115,3 +120,36 @@ The installed local LaunchAgent was left unchanged.
 The packaging changes affect the label and pre-install checks only. The earlier
 F1 and real Linear drives cover the unchanged bootstrap and session protocol;
 this additional smoke check covers the source helper being submitted.
+
+## Native command-rule alternative
+
+The revised draft documents operator-managed Codex rules rather than maintaining
+a client-specific launcher. A temporary user-layer rule allowed only the absolute
+Homebrew CLI path followed by `--session` and the unique smoke-test session name.
+`codex execpolicy check` reported the matching `allow` decision. An initial Brave
+rule check did not match its new session name; that run was terminated before
+browser commands and the rule was corrected before the checks below.
+
+Fresh installed Codex CLI `0.159.2` (`codex exec`) sessions used `--sandbox workspace-write` and
+`approval_policy="never"`, invoking the original CLI at
+`/opt/homebrew/bin/agent-browser`. Chrome passed open/title/relative screenshot/close.
+Brave also passed these operations after its executable was specified consistently
+on every command. Both final titles were `Example Domain`, and the Brave URL
+was `https://example.com/`. All final browser commands exited 0.
+
+The environment defaulted to Chrome through `AGENT_BROWSER_EXECUTABLE_PATH`.
+Specifying Brave only on `open` initially returned an empty title and
+`about:blank` on subsequent commands. Repeating the Brave executable for the
+entire session resolved that separate configuration issue.
+
+An unrelated Python exclusive-create probe outside the workspace printed
+`PermissionError: Operation not permitted`. It was not covered by the command
+rule, confirming that the rest of the session remained sandboxed. Named test
+sessions were closed and the temporary rule was removed in a cleanup handler.
+No permanent operator permissions, installed wrappers, or Cyrus service settings
+were changed. No new Linear/F1 run was performed for the documentation-only
+revision, and their earlier prototype results are not native-rule validation.
+
+The final upstream diff contains documentation and historical investigation
+evidence only. Native command rules remain experimental and subject to the
+operator's existing/managed policy.

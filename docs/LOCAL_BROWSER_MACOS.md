@@ -1,99 +1,102 @@
-# Local Chrome and Brave with sandboxed Cyrus
+# Local browser tools with sandboxed Cyrus
 
-On macOS, Codex's command sandbox can prevent Chromium from registering with
-LaunchServices and connecting to WindowServer, even in headless mode. The
-`agent-browser` CLI reports that Chrome exited without writing
-`DevToolsActivePort`. Brave uses the same Chromium startup path. Allowing
-`~/.agent-browser` writes solves socket/state permission failures, but does not
-solve these macOS service denials. `--no-sandbox` affects Chromium's own
-sandbox, not the outer Codex sandbox.
+On macOS, Codex's command sandbox can prevent Chromium from accessing
+LaunchServices and WindowServer, even in headless mode. A browser tool may report
+that Chrome exited before writing `DevToolsActivePort`. Brave uses the same
+Chromium startup path. Writable state directories address socket/cache errors,
+but do not grant access to these macOS services. Chromium's `--no-sandbox` does
+not disable the outer command sandbox.
 
-The optional local companion starts a dedicated browser daemon from a user
-LaunchAgent. The CLI wrapper asks it to prepare a session, then executes the real
-`agent-browser` command in the caller's environment. The host helper accepts only
-a generated session id, a Chrome/Brave executable from its installed allow-list,
-the caller’s existing directory, and a debug boolean. It does not accept shell
-commands or arbitrary executable paths. Browser daemons run on the host; browser operations therefore have the
-normal access of the local user. Codex's other commands keep their sandbox.
+## Prefer native command exceptions
 
-## Install
+Codex supports operator-managed execution rules for commands that need host
+access. This mechanism applies to any trusted executable; Cyrus does not need a
+CLI-specific wrapper, argument parser, daemon protocol, or LaunchAgent.
 
-With Node, `agent-browser`, and Chrome or Brave already installed:
+For example, to allow the installed browser CLI, add this rule to a `.rules` file
+under `~/.codex/rules/` (or the `rules/` directory under the Codex home used by
+Cyrus). Use the actual absolute path to the trusted executable on your machine:
+
+```python
+prefix_rule(
+    pattern = ["/opt/homebrew/bin/agent-browser"],
+    decision = "allow",
+    justification = "Allow this trusted local browser tool to launch Chromium outside the macOS command sandbox",
+)
+```
+
+`allow` runs matching commands outside the sandbox without an approval prompt.
+Other commands retain the configured sandbox. Treat the whole matching executable
+as trusted: its commands and child processes gain the local user's host access.
+Keep the executable path and its installation controlled by the operator.
+
+Rules match the command's argument prefix, not the resolved binary path. Tell the
+agent to invoke the same absolute path as the rule. A bare `agent-browser` command
+will not match the example above. For a narrower grant, include additional fixed
+arguments such as `--session` and a particular session name in the prefix. Review
+existing rules too: the most restrictive matching decision wins.
+
+Check the rule before starting a fresh Codex process:
 
 ```sh
-node scripts/local-agent-browser.mjs install /opt/homebrew/bin/agent-browser
+codex execpolicy check --pretty \
+  --rules ~/.codex/rules/local-browser.rules \
+  -- /opt/homebrew/bin/agent-browser --session smoke get title
 ```
 
-The installer copies the helper to `~/.cyrus/browser-host`, installs a wrapper at
-`~/.cyrus/bin/agent-browser`, links it from `~/.local/bin/agent-browser`, and loads
-`~/Library/LaunchAgents/com.cyrusagents.browser-host.plist`. It refuses to
-overwrite an existing wrapper. Put `~/.cyrus/bin` first in the Cyrus service's
-PATH and in its persistent service configuration, then restart Cyrus while idle.
-Login shells may rebuild PATH; keep `~/.local/bin` ahead of Homebrew there and
-check `command -v agent-browser` inside the actual agent shell.
-The helper's log is `~/.cyrus/browser-host/host.log`. Its bootstrap Unix socket
-is `~/.agent-browser/cyrus-host-bootstrap.sock`, accessible only to its owner.
+The example assumes the rule was saved as `local-browser.rules`. Rules load at
+Codex startup; existing processes do not automatically gain the exception. If
+Cyrus retains an existing runner process, restart Cyrus while idle. A restrictive
+managed policy may prevent an operator-defined exception. Complex shell scripts,
+variable assignments, or substitutions may not match a command rule; use separate
+plain invocations. See the [official Codex rules documentation](https://learn.chatgpt.com/docs/agent-configuration/rules)
+for configuration layers and shell parsing behavior.
 
-Keep `~/.agent-browser` writable in the runner. This companion does not change
-runner filesystem permissions. With the configurable writable-directory support
-from [PR #1516](https://github.com/cyrusagents/cyrus/pull/1516), add the following
-to `~/.cyrus/config.json` and start a fresh session:
+## Browser example
 
-```json
-{
-  "sandbox": {
-    "additionalWritableDirectories": ["~/.agent-browser"]
-  }
-}
-```
-
-Without that support, the runner must provide an equivalent writable root.
-Network access alone is insufficient. Keep browser support enabled with
-`CYRUS_BROWSER_USE_ENABLED=1` so Cyrus includes its browser-use instructions.
-
-## Use
-
-Use the CLI normally, keeping the same named session and working directory for
-related commands:
+Run the original CLI directly with a unique session name for each agent/worktree:
 
 ```sh
-agent-browser --session smoke open https://example.com
-agent-browser --session smoke get title
-agent-browser --session smoke screenshot ./browser-smoke.png
-agent-browser --session smoke close
+/opt/homebrew/bin/agent-browser --session smoke-chrome open https://example.com
+/opt/homebrew/bin/agent-browser --session smoke-chrome get title
+/opt/homebrew/bin/agent-browser --session smoke-chrome screenshot ./browser-smoke.png
+/opt/homebrew/bin/agent-browser --session smoke-chrome close
 ```
 
-Use `--executable-path` to select Chrome or Brave. The choice is retained for
-later commands, including when the environment defaults to the other browser.
-Sessions are mapped to short host names using a hash of the working directory and logical session name. This
-also isolates agents that omit `--session`. `session list` shows these physical
-names; its metadata commands are passed directly to the underlying CLI.
+The Cyrus process may set `AGENT_BROWSER_EXECUTABLE_PATH` to Chrome. When testing
+Brave in that environment, use its `--executable-path` on every command, or set a
+consistent executable in the runner environment. Changing it only for `open`
+caused subsequent commands to switch to a blank Chrome session during validation.
+There is no Cyrus wrapper to retain tool-specific options automatically.
 
-The helper prepares temporary headless profiles with an empty config. It is
-intended for ordinary local Chrome/Brave verification. Custom profiles, cloud
-providers, and daemon policy options other than `--debug` are not validated by
-this companion. CLI-only commands such as `skills`, `install`, and `doctor`
-bypass preparation; `doctor` can still report the outer sandbox launch denial.
+The native-rule smoke test used `workspace-write` and approval policy `never`.
+Chrome and Brave passed open/title/screenshot/close, while an unrelated Python
+command was denied a write outside the workspace. This verified an unattended
+Codex session, not a new real Linear session using the rule. The earlier Linear
+and F1 records describe the superseded launcher prototype.
 
-The installer is intended for a first installation and refuses to overwrite
-existing wrappers or a LaunchAgent, including dangling symlinks. For an update,
-close sessions and remove the previous installation before installing again.
+## Filesystem settings and broader alternatives
 
-After a Homebrew upgrade that removes the CLI's old Cellar path, update
-`~/.cyrus/browser-host/config.json` to the new real CLI path. Keep Node available
-at the absolute path recorded in the wrapper and LaunchAgent.
+`sandbox.enabled` in Cyrus controls the egress proxy; disabling it does not
+remove Codex's command sandbox. Cyrus currently defaults the Codex runner to
+`workspace-write`. Its internal runner API supports other modes, but Cyrus's
+operator configuration does not yet expose a Codex sandbox-mode option. Changing
+`~/.codex/config.toml` alone is insufficient when Cyrus explicitly supplies the
+thread's mode.
 
-## Remove
+Codex's `danger-full-access` mode removes the sandbox for the entire session.
+It would provide host execution rather than the selected-command exception, and
+would need explicit configuration plumbing in Cyrus. Keep this distinct from the
+egress proxy setting. See [official sandbox documentation](https://learn.chatgpt.com/docs/sandboxing).
 
-Close your named browser sessions first, then:
+Tools that still run inside the sandbox may need writable directories for
+sockets and state. [PR #1516](https://github.com/cyrusagents/cyrus/pull/1516)
+provides a generic `sandbox.additionalWritableDirectories` setting; filesystem
+grants are independent of native host-command exceptions.
 
-```sh
-launchctl bootout "gui/$(id -u)/com.cyrusagents.browser-host"
-rm ~/.cyrus/bin/agent-browser
-rm ~/.local/bin/agent-browser
-rm ~/Library/LaunchAgents/com.cyrusagents.browser-host.plist
-```
-
-The installed helper, settings, and log can be retained for diagnosis or removed
-from `~/.cyrus/browser-host`. Remove the PATH addition from the persistent Cyrus
-service configuration if no other local wrappers use it.
+Another option is an externally launched browser exposing a loopback Chrome
+DevTools Protocol endpoint. CDP-capable tools can attach through their own
+connection options while their commands stay sandboxed. This needs separate
+browser lifecycle/profile management, but can avoid granting host execution to an
+entire CLI. Any future Cyrus integration should use the standard endpoint rather
+than a particular client's command line or private daemon protocol.
