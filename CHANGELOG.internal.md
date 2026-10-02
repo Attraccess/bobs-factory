@@ -4,6 +4,9 @@ This changelog documents internal development changes, refactors, tooling update
 
 ## [Unreleased]
 
+### Added
+- Added an optional macOS host launcher for sandboxed `agent-browser` sessions, with isolated Chrome/Brave daemons, retained browser selection, and installation guidance.
+
 ## [0.2.73] - 2026-09-29
 
 ### Changed
