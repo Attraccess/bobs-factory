@@ -7,7 +7,7 @@ Chromium startup path. Writable state directories address socket/cache errors,
 but do not grant access to these macOS services. Chromium's `--no-sandbox` does
 not disable the outer command sandbox.
 
-## Prefer native command exceptions
+## Native command exceptions as an alternative
 
 Codex supports operator-managed execution rules for commands that need host
 access. This mechanism applies to any trusted executable; Cyrus does not need a
@@ -79,15 +79,24 @@ and F1 records describe the superseded launcher prototype.
 
 `sandbox.enabled` in Cyrus controls the egress proxy; disabling it does not
 remove Codex's command sandbox. Cyrus currently defaults the Codex runner to
-`workspace-write`. Its internal runner API supports other modes, but Cyrus's
-operator configuration does not yet expose a Codex sandbox-mode option. Changing
+`workspace-write`. The operator can select a different mode with `codexSandboxMode`. Changing
 `~/.codex/config.toml` alone is insufficient when Cyrus explicitly supplies the
 thread's mode.
 
-Codex's `danger-full-access` mode removes the sandbox for the entire session.
-It would provide host execution rather than the selected-command exception, and
-would need explicit configuration plumbing in Cyrus. Keep this distinct from the
-egress proxy setting. See [official sandbox documentation](https://learn.chatgpt.com/docs/sandboxing).
+For trusted local execution, Cyrus exposes the generic `codexSandboxMode` setting:
+
+```json
+{
+  "codexSandboxMode": "danger-full-access"
+}
+```
+
+This removes the sandbox for every Codex command in the session. Use
+`workspace-write` or remove the field to retain the default sandbox. The setting
+is independent of the browser CLI and the egress proxy; it also supports native
+`read-only` execution. It affects issue and chat sessions when new runners are
+constructed. See [configuration reference](CONFIG_FILE.md#codexsandboxmode) and
+[official sandbox documentation](https://learn.chatgpt.com/docs/sandboxing).
 
 Tools that still run inside the sandbox may need writable directories for
 sockets and state. [PR #1516](https://github.com/cyrusagents/cyrus/pull/1516)

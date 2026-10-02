@@ -2,8 +2,10 @@
 
 Date: 2026-10-02
 
-The launcher described below is a superseded prototype. The final draft uses
-Codex's existing command-rule mechanism and contains no launcher implementation.
+The launcher described below is a superseded prototype. A later documentation-only revision used
+Codex's existing command-rule mechanism and removed the launcher implementation.
+The current generic sandbox-mode revision is validated separately in
+[the sandbox-mode drive](2026-10-02-codex-sandbox-mode.md).
 Historical Linear/F1 evidence is retained here; the native-rule checks at the end
 are separate direct Codex smoke tests.
 Base: `f5f18a1`, with the local browser-root changes and the changes from
@@ -150,6 +152,6 @@ No permanent operator permissions, installed wrappers, or Cyrus service settings
 were changed. No new Linear/F1 run was performed for the documentation-only
 revision, and their earlier prototype results are not native-rule validation.
 
-The final upstream diff contains documentation and historical investigation
+That documentation-only revision contained documentation and historical investigation
 evidence only. Native command rules remain experimental and subject to the
 operator's existing/managed policy.
