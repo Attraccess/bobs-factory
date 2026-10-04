@@ -98,6 +98,43 @@ describe("ClaudeRunner", () => {
 	});
 
 	describe("start()", () => {
+		it.each([
+			"fast",
+			"standard",
+			undefined,
+		] as const)("forwards %s speed without dropping memory settings", async (serviceTier) => {
+			mockQuery.mockImplementation(async function* () {});
+			const configured = new ClaudeRunner(
+				{ ...defaultConfig, serviceTier, autoMemoryDirectory: "/memory" },
+				false,
+			);
+			await configured.start("Review");
+			const settings = mockQuery.mock.calls.at(-1)?.[0].options?.settings;
+			expect(settings).toEqual({
+				autoMemoryDirectory: "/memory",
+				...(serviceTier ? { fastMode: serviceTier === "fast" } : {}),
+			});
+		});
+		it("does not reuse a pre-warmed query that lacks the explicit speed", async () => {
+			mockQuery.mockImplementation(async function* () {});
+			const warm = { close: vi.fn(), query: vi.fn() };
+			const configured = new ClaudeRunner(
+				{
+					...defaultConfig,
+					serviceTier: "standard",
+					warmSession: warm as unknown as NonNullable<
+						ClaudeRunnerConfig["warmSession"]
+					>,
+				},
+				false,
+			);
+			await configured.start("Review");
+			expect(warm.close).toHaveBeenCalledOnce();
+			expect(warm.query).not.toHaveBeenCalled();
+			expect(mockQuery.mock.calls.at(-1)?.[0].options?.settings).toEqual({
+				fastMode: false,
+			});
+		});
 		it("forwards an explicitly selected reasoning effort to the SDK", async () => {
 			mockQuery.mockImplementation(async function* () {});
 			const configured = new ClaudeRunner(

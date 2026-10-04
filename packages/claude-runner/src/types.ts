@@ -29,6 +29,7 @@ export type OutputFormatConfig = OutputFormat;
 
 export interface ClaudeRunnerConfig {
 	effort?: Options["effort"];
+	serviceTier?: "standard" | "fast";
 	workingDirectory?: string;
 	allowedTools?: string[];
 	disallowedTools?: string[];

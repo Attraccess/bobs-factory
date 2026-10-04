@@ -608,6 +608,9 @@ function reasoningOptions(runner, selected, label) {
 			.join("")
 	);
 }
+function tierOptions(selected, label) {
+	return `<option value="">${label}</option><option value="standard" ${selected === "standard" ? "selected" : ""}>Standard</option><option value="fast" ${selected === "fast" ? "selected" : ""}>Fast</option>`;
+}
 function renderRunReasoning(reset = false) {
 	const runner = $("#start-form [name=runner]").value || config.defaultRunner;
 	const reasoning = $("#run-reasoning");
@@ -623,12 +626,24 @@ function renderRunReasoning(reset = false) {
 	variant.disabled = runner !== "opencode";
 	$("#run-variant-label").hidden = variant.disabled;
 	if (reset) variant.value = "";
+	const tier = $("#run-tier");
+	tier.disabled = !config.serviceTierRunners?.includes(runner);
+	$("#run-tier-label").hidden = tier.disabled;
+	if (reset) tier.value = "";
 	$("#run-reasoning-hint").textContent =
 		runner === "opencode"
 			? "Use a variant supported by this provider/model, or enter a custom variant."
 			: supported
 				? "Available effort levels depend on the selected model. Empty uses its default."
-				: "This runner uses the model’s native reasoning settings.";
+				: runner === "cursor"
+					? "Choose an exact model alias from Cursor’s model list, including its fast variant when available."
+					: "This runner uses the model’s native reasoning settings.";
+	if (!tier.disabled)
+		$("#run-reasoning-hint").textContent +=
+			" Service tier is separate from effort. Default uses native config; Fast depends on model/account support and may cost more." +
+			(runner === "claude"
+				? " Claude Fast requires a compatible Opus model."
+				: "");
 }
 $("#start-form [name=runner]").onchange = () => renderRunReasoning(true);
 document.querySelectorAll("[data-close]").forEach((button) => {
@@ -666,6 +681,7 @@ $("#start-form").onsubmit = async (event) => {
 		if (!values.model) delete values.model;
 		if (!values.reasoningEffort) delete values.reasoningEffort;
 		if (!values.modelVariant) delete values.modelVariant;
+		if (!values.serviceTier) delete values.serviceTier;
 		const run = await api("/api/runs", {
 			method: "POST",
 			body: JSON.stringify(values),
@@ -742,7 +758,10 @@ function renderRoleSettings() {
 							runner === "opencode"
 								? `<label><span class="sr-only">${htmlEscape(step.name)} model variant</span><input data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="modelVariant" value="${htmlEscape(step.modelVariant ?? "")}" placeholder="Default variant" list="variant-suggestions"></label>`
 								: `<label><span class="sr-only">${htmlEscape(step.name)} reasoning effort</span><select data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="reasoningEffort" ${config.reasoningLevels?.[runner] ? "" : "disabled"}>${reasoningOptions(runner, step.reasoningEffort, config.reasoningLevels?.[runner] ? "Run/model effort" : "Native settings")}</select></label>`;
-						return `<div class="role-row"><strong>${htmlEscape(step.name)}</strong><label><span class="sr-only">${htmlEscape(step.name)} agent</span><select data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="runner"><option value="">Run default</option>${["claude", "codex", "gemini", "cursor", "opencode"].map((runner) => `<option value="${runner}" ${step.runner === runner ? "selected" : ""}>${runner}</option>`).join("")}</select></label><label><span class="sr-only">${htmlEscape(step.name)} model</span><input data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="model" value="${htmlEscape(step.model ?? "")}" placeholder="Default model"></label>${advanced}</div>`;
+						const tier = config.serviceTierRunners?.includes(runner)
+							? `<label><span class="sr-only">${htmlEscape(step.name)} service tier</span><select data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="serviceTier" title="Service tier: Fast depends on model/account support and may cost more. Claude Fast requires compatible Opus.">${tierOptions(step.serviceTier, "Run/native tier")}</select></label>`
+							: "";
+						return `<div class="role-row"><strong>${htmlEscape(step.name)}</strong><label><span class="sr-only">${htmlEscape(step.name)} agent</span><select data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="runner"><option value="">Run default</option>${["claude", "codex", "gemini", "cursor", "opencode"].map((runner) => `<option value="${runner}" ${step.runner === runner ? "selected" : ""}>${runner}</option>`).join("")}</select></label><label><span class="sr-only">${htmlEscape(step.name)} model</span><input data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="model" value="${htmlEscape(step.model ?? "")}" placeholder="Default model"></label>${advanced}${tier}</div>`;
 					})
 					.join("")
 			: `<p class="hint">${workflow.id === "simple" ? "Simple uses the run’s agent and model with Cyrus’s existing behavior." : "This workflow has no own agent steps. Select a shared workflow above to configure its roles."}</p>`;
@@ -766,6 +785,7 @@ function renderRoleSettings() {
 				if (input.dataset.field === "runner") {
 					delete step.reasoningEffort;
 					delete step.modelVariant;
+					delete step.serviceTier;
 				}
 				$("#workflow-json").value = JSON.stringify(current, null, 2);
 				if (input.dataset.field === "runner") renderRoleSettings();

@@ -38,6 +38,7 @@ export interface WorkflowStep {
 	model?: string;
 	reasoningEffort?: AgentStep["reasoningEffort"];
 	modelVariant?: string;
+	serviceTier?: AgentStep["serviceTier"];
 	json?: boolean;
 	askQuestions?: boolean;
 	script?: string;
@@ -96,6 +97,7 @@ export function validateWorkflows(value: unknown): Workflow[] {
 					"model",
 					"reasoningEffort",
 					"modelVariant",
+					"serviceTier",
 					"inputs",
 					"constructor",
 					"prototype",

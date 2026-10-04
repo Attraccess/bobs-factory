@@ -61,6 +61,7 @@ export interface FactoryRun {
 	model?: string;
 	reasoningEffort?: AgentSettings["reasoningEffort"];
 	modelVariant?: string;
+	serviceTier?: AgentSettings["serviceTier"];
 	issueId?: string;
 	workspaceId?: string;
 	step?: string;
@@ -204,6 +205,7 @@ export class WorkflowRuntime {
 		model?: string;
 		reasoningEffort?: AgentSettings["reasoningEffort"];
 		modelVariant?: string;
+		serviceTier?: AgentSettings["serviceTier"];
 	}): FactoryRun {
 		const id = options.id ?? randomUUID();
 		if (!/^[\w-]+$/.test(id)) throw new Error("Invalid run ID");

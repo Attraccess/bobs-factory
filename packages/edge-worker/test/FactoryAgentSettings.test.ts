@@ -71,12 +71,51 @@ it("rejects unsupported settings instead of silently running with a different ef
 	).toThrow();
 });
 
+it("keeps service tier independent from effort and provider boundaries", () => {
+	expect(
+		resolveAgentSettings("codex", {
+			serviceTier: "fast",
+			reasoningEffort: "high",
+		}),
+	).toEqual({ serviceTier: "fast", modelReasoningEffort: "high" });
+	expect(
+		resolveAgentSettings("claude", {
+			serviceTier: "standard",
+			reasoningEffort: "low",
+		}),
+	).toEqual({ serviceTier: "standard", effort: "low" });
+	expect(
+		resolveAgentSettings("codex", {}, { runner: "codex", serviceTier: "fast" }),
+	).toEqual({ serviceTier: "fast" });
+	expect(
+		resolveAgentSettings(
+			"codex",
+			{ serviceTier: "standard" },
+			{ runner: "codex", serviceTier: "fast" },
+		),
+	).toEqual({ serviceTier: "standard" });
+	expect(
+		resolveAgentSettings(
+			"claude",
+			{},
+			{ runner: "codex", serviceTier: "fast" },
+		),
+	).toEqual({});
+	for (const runner of ["gemini", "cursor", "opencode"] as const)
+		expect(() => resolveAgentSettings(runner, { serviceTier: "fast" })).toThrow(
+			"Service tier is not supported",
+		);
+	expect(() => AgentSettingsSchema.parse({ serviceTier: "made-up" })).toThrow();
+});
+
 it("retains per-step effort and custom variant in saved definitions", () => {
 	const workflows = structuredClone(defaultWorkflows);
 	workflows.find((item) => item.id === "factory-pipeline")!.steps[0]!.runner =
 		"codex";
 	workflows.find((item) => item.id === "factory-pipeline")!
 		.steps[0]!.reasoningEffort = "high";
+	workflows.find((item) => item.id === "factory-pipeline")!
+		.steps[0]!.serviceTier = "standard";
 	workflows.find((item) => item.id === "factory-pipeline")!.steps[2]!.runner =
 		"opencode";
 	workflows.find((item) => item.id === "factory-pipeline")!
@@ -84,7 +123,11 @@ it("retains per-step effort and custom variant in saved definitions", () => {
 	const saved = validateWorkflows(workflows);
 	expect(
 		saved.find((item) => item.id === "factory-pipeline")!.steps[0]!,
-	).toMatchObject({ runner: "codex", reasoningEffort: "high" });
+	).toMatchObject({
+		runner: "codex",
+		reasoningEffort: "high",
+		serviceTier: "standard",
+	});
 	expect(
 		saved.find((item) => item.id === "factory-pipeline")!.steps[2]!,
 	).toMatchObject({ runner: "opencode", modelVariant: "custom-review" });

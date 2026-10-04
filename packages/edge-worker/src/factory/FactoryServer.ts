@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
-import { reasoningLevels } from "./AgentSettings.js";
+import { reasoningLevels, serviceTierRunners } from "./AgentSettings.js";
 import { CaptureSchema, verifiedScreenshot } from "./FactoryTools.js";
 import {
 	getLaunchFields,
@@ -79,6 +79,7 @@ export class FactoryServer {
 			defaultWorkflow: runtime.getDefaultWorkflow(),
 			defaultRunner: hooks.defaultRunner?.() ?? "claude",
 			reasoningLevels,
+			serviceTierRunners,
 		}));
 		this.app.put("/api/workflows", (request) => {
 			// Retain the original array API for existing local clients.

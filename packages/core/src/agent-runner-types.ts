@@ -510,6 +510,8 @@ export interface AgentRunnerConfig {
 	effort?: "low" | "medium" | "high" | "xhigh" | "max";
 	/** OpenCode provider-specific model variant. */
 	modelVariant?: string;
+	/** Codex/Claude speed selection; omitted preserves native configuration. */
+	serviceTier?: "standard" | "fast";
 	/** Fallback model if primary is unavailable */
 	fallbackModel?: string;
 	/** Maximum number of turns before completing session */

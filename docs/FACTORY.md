@@ -69,6 +69,18 @@ to another provider does not inherit the previous provider's effort/variant.
 Gemini and Cursor currently use their native model settings; their Cyrus
 runners do not expose a separate effort control.
 
+Codex and Claude also offer **Service tier** in run and owned-role settings:
+**Default** leaves native configuration untouched, **Standard** explicitly turns
+off Fast mode, and **Fast** requests faster processing independently of reasoning
+effort. A role inherits a same-provider run tier unless it selects its own tier.
+Codex forwards this through `service_tier`; Claude forwards SDK `settings.fastMode`.
+Fast availability depends on the model and account and may cost more. Claude
+Fast needs a supported Opus model; Claude Code may switch an incompatible model
+to Opus. Cursor fast variants use the exact model alias listed by `agent models`,
+and OpenCode provider variants remain configurable through **Model variant**.
+Gemini CLI does not expose a separate service-tier switch here. Existing runs
+keep their saved settings.
+
 **Workflows** also exposes an agent and model field for each agent role, plus the
 JSON definition for editing prompts, scripts, tools and graph edges. Empty role
 fields inherit the run settings. Changing agent provider without specifying a

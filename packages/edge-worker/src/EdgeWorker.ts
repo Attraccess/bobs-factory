@@ -5949,6 +5949,7 @@ ${taskSection}`;
 				runner: (run.runner as RunnerType | undefined) ?? built.runnerType,
 				reasoningEffort: run.reasoningEffort,
 				modelVariant: run.modelVariant,
+				serviceTier: run.serviceTier,
 			}),
 		);
 		built.config.resumeSessionId = context.resumeAgent?.sessionId;
@@ -6130,6 +6131,7 @@ ${taskSection}`;
 			model: input.model,
 			reasoningEffort: input.reasoningEffort,
 			modelVariant: input.modelVariant,
+			serviceTier: input.serviceTier,
 		});
 		run.launchRequest = structuredClone(input);
 		run.setupComplete = false;

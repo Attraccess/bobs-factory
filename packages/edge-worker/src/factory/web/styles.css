@@ -955,11 +955,14 @@ label textarea {
 
 .role-row {
 	display: grid;
-	grid-template-columns: minmax(150px, 1fr) 120px minmax(120px, 180px) 140px;
+	grid-template-columns: minmax(120px, 1fr) 100px minmax(100px, 150px) 120px 120px;
 	gap: 10px;
 	align-items: center;
 	padding: 10px 0;
 	border-bottom: 1px solid var(--line);
+}
+.form-grid label[hidden] {
+	display: none;
 }
 .role-row strong {
 	font-size: 12px;
@@ -972,7 +975,7 @@ label textarea {
 	margin: 0;
 	font-size: 12px;
 }
-@media (max-width: 600px) {
+@media (max-width: 800px) {
 	.role-row {
 		grid-template-columns: 1fr 1fr;
 	}

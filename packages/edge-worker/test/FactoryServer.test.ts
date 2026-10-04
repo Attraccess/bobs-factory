@@ -103,6 +103,7 @@ it("starts, displays, answers and terminates runs through the local API", async 
 				runner: input.runner,
 				reasoningEffort: input.reasoningEffort,
 				modelVariant: input.modelVariant,
+				serviceTier: input.serviceTier,
 				title: input.title,
 				repositoryId: input.repositoryId,
 				workspace: home,
@@ -175,10 +176,12 @@ it("starts, displays, answers and terminates runs through the local API", async 
 				workflow: "factory",
 				runner: "codex",
 				reasoningEffort: "high",
+				serviceTier: "fast",
 			},
 		});
 		expect(started.statusCode).toBe(202);
 		expect(started.json().reasoningEffort).toBe("high");
+		expect(started.json().serviceTier).toBe("fast");
 		const id = started.json().id;
 		await vi.waitFor(() => expect(runtime.get(id).status).toBe("waiting"));
 		const detail = await server.app.inject({ url: `/api/runs/${id}`, headers });
