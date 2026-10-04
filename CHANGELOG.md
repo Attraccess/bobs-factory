@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Display run activity as a chat conversation with compact expandable tools, human replies and a follow-latest control that pauses while you read older messages. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
 - Factory runs automatically resume saved progress and agent conversations after restarts, while clarification waits still require human answers. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Start, monitor and terminate runs in a local factory dashboard, answer human clarification checkpoints, choose a saved default workflow for tasks without matching labels, and configure agent/model choices, reasoning effort and model variants per run and workflow step. Added configurable agent/script/tool workflows with loops and fanout, the original Cyrus Simple path, and a factory pipeline for planning, draft PR delivery, review, CI, visual evidence and a human review guide. A Takeover workflow continues existing PR/ticket work through the same reusable pipeline and needs only its source, with optional additional instructions. Workflow-specific launch fields adapt the form to each workflow's requirements. Shared role models are configured in their owning workflow, separately from parent roles. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Added the operator-configurable `codexSandboxMode` for issue and chat sessions, retaining `workspace-write` by default and supporting opt-in native read-only or full host access without browser-specific integrations. ([#1521](https://github.com/cyrusagents/cyrus/pull/1521))

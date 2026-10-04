@@ -28,13 +28,19 @@ trusted local operator.
 
 ## Run and configure
 
-The **Activity** view displays conversations and workflow progress in time order,
-using the same runner tool formatters as Linear. Tool calls include their status
-and expandable results; **Raw data** retains the original payload. **Show earlier
-activity** reveals older entries. Markdown and structured agent responses are
-rendered as readable content. Expanded artifact/result panels and their scroll
-positions are preserved across live updates and tab switches, separately for
-each run, until the page is reloaded.
+The **Activity** view displays a chat conversation in time order, using the same
+runner tool formatters as Linear. Human replies appear on the right; agent
+messages remain in the main flow. Consecutive tool calls share a compact summary
+with running/error counts; expand it and a tool row to inspect commands and
+results. Workflow updates and **Raw data** are also expandable. **Show earlier
+activity** reveals older entries without moving the message you are reading.
+Markdown and structured responses are rendered as readable content.
+
+Activity follows the latest message when opened. Scroll away from the bottom to
+pause following; a floating **Scroll to latest** button takes you back and resumes
+it. Scrolling to the bottom manually resumes following too. Your reading position
+and expanded artifact/tool panels survive live updates and tab switches,
+separately for each run, until the page is reloaded.
 
 Select a repository and workflow under **New run**, then fill its launch fields.
 **Simple / Cyrus** retains the existing Cyrus execution path and is the initial

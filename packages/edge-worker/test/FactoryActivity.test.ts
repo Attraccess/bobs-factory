@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 // The dashboard uses these same browser modules; no DOM or renderer mocks.
 // @ts-expect-error Plain browser JavaScript has no generated declarations.
 import {
+	conversationGroups,
 	formatActivities,
 	markdown,
 	renderContent,
@@ -17,6 +18,41 @@ const entry = (type: string, content: string, metadata = {}) => ({
 });
 
 describe("factory conversation history", () => {
+	it("groups consecutive tools within a step without hiding conversational turns", () => {
+		const activities = [
+			{ key: "1", type: "thought", step: "plan" },
+			{ key: "2", type: "action", step: "plan" },
+			{ key: "3", type: "action", step: "plan" },
+			{ key: "4", type: "action", step: "implement" },
+			{ key: "5", type: "user", step: "implement" },
+			{ key: "6", type: "action", step: "implement" },
+		];
+		expect(conversationGroups(activities)).toEqual([
+			{ key: "1", type: "thought", step: "plan", items: [activities[0]] },
+			{ key: "2", type: "tools", step: "plan", items: activities.slice(1, 3) },
+			{ key: "4", type: "tools", step: "implement", items: [activities[3]] },
+			{ key: "5", type: "user", step: "implement", items: [activities[4]] },
+			{ key: "6", type: "tools", step: "implement", items: [activities[5]] },
+		]);
+	});
+
+	it("includes retained clarification replies as human messages", () => {
+		expect(
+			formatActivities({
+				answers: [{ at, answer: "Keep it local.", questions: ["Where?"] }],
+			}),
+		).toEqual([
+			{
+				key: "answer/0",
+				at,
+				step: "Clarification",
+				type: "user",
+				title: "You",
+				body: "Keep it local.",
+			},
+		]);
+	});
+
 	it("pairs interleaved tools by ID, preserving failures and full raw output", () => {
 		const large = "output\n".repeat(4000);
 		const activities = formatActivities({

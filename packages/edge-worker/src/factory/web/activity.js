@@ -327,5 +327,113 @@ export function formatActivities(run) {
 					raw: message,
 				});
 		});
-	return activities.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+	for (const [index, answer] of (run.answers ?? []).entries()) {
+		if (
+			!activities.some(
+				(item) =>
+					item.type === "user" &&
+					item.body === answer.answer &&
+					item.at === answer.at,
+			)
+		)
+			activities.push({
+				key: `answer/${index}`,
+				at: answer.at,
+				step: "Clarification",
+				type: "user",
+				title: "You",
+				body: answer.answer,
+			});
+	}
+	return activities
+		.filter(
+			(item) =>
+				!(
+					item.type === "system" &&
+					(run.answers ?? []).some(
+						(answer) => item.body === `Human answer: ${answer.answer}`,
+					)
+				),
+		)
+		.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+const timeLabel = (at) =>
+	new Date(at).toLocaleTimeString(undefined, {
+		hour: "2-digit",
+		minute: "2-digit",
+	});
+const toolKind = (item) => {
+	const name = item.name?.toLowerCase() ?? "";
+	if (/^(bash|shell|exec_command|command_execution)$/.test(name))
+		return "command";
+	if (/^(edit|write|apply_patch|file_change|multiedit)$/.test(name))
+		return "file";
+	return "tool";
+};
+export function conversationGroups(activities) {
+	const groups = [];
+	for (const item of activities) {
+		const previous = groups.at(-1);
+		if (
+			item.type === "action" &&
+			previous?.type === "tools" &&
+			previous.step === item.step
+		)
+			previous.items.push(item);
+		else
+			groups.push({
+				key: item.key,
+				step: item.step,
+				type: item.type === "action" ? "tools" : item.type,
+				items: [item],
+			});
+	}
+	return groups;
+}
+function toolSummary(items) {
+	const count = (kind) =>
+		items.filter((item) => toolKind(item) === kind).length;
+	const parts = [];
+	for (const [kind, singular, plural, verb] of [
+		["tool", "tool", "tools", "Used"],
+		["command", "command", "commands", "Ran"],
+		["file", "edit", "edits", "Made"],
+	]) {
+		const total = count(kind);
+		if (total)
+			parts.push(`${verb} ${total} ${total === 1 ? singular : plural}`);
+	}
+	const running = items.filter((item) => item.status === "running").length;
+	const errors = items.filter((item) => item.status === "error").length;
+	return `${parts.join(" · ")}${running ? ` · ${running} running` : ""}${errors ? ` · ${errors} failed` : ""}`;
+}
+function rawDetails(item) {
+	return item.raw
+		? `<details class="raw-activity" data-detail-key="raw/${escapeHtml(item.key)}"><summary>Raw data</summary><pre>${escapeHtml(JSON.stringify(item.rawResult ? { call: item.raw, result: item.rawResult } : item.raw, null, 2))}</pre></details>`
+		: "";
+}
+function toolRow(item) {
+	const title = item.name?.startsWith("mcp__")
+		? item.name.slice(5).replaceAll("__", " · ").replaceAll("_", " ")
+		: item.title;
+	const kind = toolKind(item);
+	return `<details class="chat-tool ${item.status === "error" ? "activity-error" : ""}" data-detail-key="tool/${escapeHtml(item.key)}"><summary><span class="tool-icon" aria-hidden="true">${kind === "command" ? "›_" : kind === "file" ? "✎" : "⚒"}</span><span class="tool-label">${escapeHtml(title)}${item.parameter ? `<span class="tool-preview">${escapeHtml(item.parameter.replace(/\s+/g, " "))}</span>` : ""}</span><span class="tool-state ${escapeHtml(item.status)}">${item.status === "error" ? "Failed" : item.status === "running" ? "Running…" : "✓"}</span></summary><div class="tool-content">${item.parameter ? `<pre>${escapeHtml(item.parameter)}</pre>` : ""}${item.result !== undefined ? `<div class="activity-text">${renderContent(item.result)}</div>` : ""}${rawDetails(item)}</div></details>`;
+}
+export function renderConversation(activities) {
+	return conversationGroups(activities)
+		.map((group) => {
+			const item = group.items[0];
+			const meta = `<time datetime="${escapeHtml(item.at)}" title="${escapeHtml(new Date(item.at).toLocaleString())}">${escapeHtml(timeLabel(item.at))}</time>`;
+			const key = escapeHtml(group.key);
+			if (group.type === "tools") {
+				return `<details class="chat-tools" data-chat-key="${key}" data-detail-key="tools/${key}"><summary><span aria-hidden="true">⚒</span><span>${escapeHtml(toolSummary(group.items))}</span>${meta}</summary><div class="tool-list">${group.items.map(toolRow).join("")}</div></details>`;
+			}
+			if (group.type === "system") {
+				const body = String(item.body ?? "");
+				return `<details class="chat-system ${item.status === "error" ? "activity-error" : ""}" data-chat-key="${key}" data-detail-key="system/${key}"><summary><span class="system-preview">${escapeHtml(body.split("\n")[0].slice(0, 160) || "Workflow update")}</span>${meta}</summary><div class="activity-text">${renderContent(body)}</div>${rawDetails(item)}</details>`;
+			}
+			return `<article class="chat-message ${group.type === "user" ? "chat-user" : "chat-assistant"} ${item.status === "error" ? "activity-error" : ""}" data-chat-key="${key}"><div class="chat-meta"><span>${group.type === "user" ? "You" : `Agent · ${escapeHtml(item.stepLabel || item.step || "Cyrus")}`}${item.status === "error" ? " · Error" : ""}</span>${meta}</div><div class="activity-text">${renderContent(item.body)}</div>${rawDetails(item)}</article>`;
+		})
+		.join("");
 }

@@ -1,4 +1,4 @@
-import { formatActivities, renderContent } from "./activity.js";
+import { formatActivities, renderConversation } from "./activity.js";
 
 const $ = (selector) => document.querySelector(selector);
 const htmlEscape = (text) =>
@@ -17,7 +17,9 @@ let config = { repositories: [], workflows: [] },
 	tab = "overview",
 	detailSignature = "";
 const detailStates = new Map(),
-	activityLimits = new Map();
+	activityStarts = new Map(),
+	activityScroll = new Map();
+let activityObserver;
 function rememberDetail() {
 	const detail = $("#detail");
 	if (!detail.dataset.view) return;
@@ -48,23 +50,108 @@ function restoreDetail(run) {
 	}
 }
 function renderActivity(run) {
-	const activities = formatActivities(run),
-		limit = activityLimits.get(run.id) ?? 120;
-	if (!activities.length)
-		return '<p class="muted">Waiting for the first activity…</p>';
-	return `${activities.length > limit ? `<button type="button" class="secondary" id="older-activity">Show earlier activity (${activities.length - limit})</button>` : ""}<p class="muted">${Math.min(limit, activities.length)} of ${activities.length} activities · oldest to newest</p>${activities
-		.slice(-limit)
-		.map((item) => {
-			const key = htmlEscape(item.key);
-			const title = item.name?.startsWith("mcp__")
-				? item.title.replace(
-						item.name,
-						item.name.slice(5).replaceAll("__", " · ").replaceAll("_", " "),
-					)
-				: item.title;
-			return `<article class="event ${htmlEscape(item.type)} ${item.status === "error" ? "activity-error" : ""}"><small>${htmlEscape(date(item.at))} · ${htmlEscape(item.step)}</small><div class="activity-heading"><strong>${htmlEscape(title)}</strong>${item.status ? badge(item.status) : ""}</div>${item.parameter ? `<div class="activity-parameter">${htmlEscape(item.parameter)}</div>` : ""}${item.body ? `<div class="activity-text">${renderContent(item.body)}</div>` : ""}${item.result !== undefined ? `<details data-detail-key="result/${key}"><summary>${item.status === "error" ? "Error details" : "Result"}</summary><div class="activity-text">${renderContent(item.result)}</div></details>` : ""}${item.raw ? `<details class="raw-activity" data-detail-key="raw/${key}"><summary>Raw data</summary><pre>${json(item.rawResult ? { call: item.raw, result: item.rawResult } : item.raw)}</pre></details>` : ""}</article>`;
-		})
-		.join("")}`;
+	const labels = new Map(
+		expandSteps(
+			run.workflow?.steps ?? [],
+			run.workflowDefinitions ?? config.workflows,
+		).map((step) => [step.key, step.name]),
+	);
+	const activities = formatActivities(run).map((item) => ({
+		...item,
+		stepLabel: labels.get(item.step) ?? item.step,
+	}));
+	if (!activityStarts.has(run.id))
+		activityStarts.set(run.id, Math.max(0, activities.length - 120));
+	let start = activityStarts.get(run.id);
+	// Keep a tool group whole so loading older rows retains its stable anchor.
+	while (
+		start > 0 &&
+		activities[start]?.type === "action" &&
+		activities[start - 1]?.type === "action" &&
+		activities[start - 1].step === activities[start].step
+	)
+		start--;
+	activityStarts.set(run.id, start);
+	return `<div class="chat-timeline">${start ? `<button type="button" class="secondary" id="older-activity">Show earlier activity (${start})</button>` : ""}${activities.length ? renderConversation(activities.slice(start)) : '<p class="muted">Waiting for the first message…</p>'}</div>`;
+}
+function rememberActivityScroll() {
+	const body = $(".activity-body");
+	if (!body) return;
+	const id = body.dataset.activityRun;
+	const state = activityScroll.get(id) ?? { following: true };
+	// A poll can land before the browser delivers the final scroll event.
+	state.following = body.scrollHeight - body.clientHeight - body.scrollTop <= 8;
+	state.top = body.scrollTop;
+	const top = body.getBoundingClientRect().top;
+	const anchor = [...body.querySelectorAll("[data-chat-key]")].find(
+		(element) => element.getBoundingClientRect().bottom > top,
+	);
+	state.anchor = anchor?.dataset.chatKey;
+	state.offset = anchor ? anchor.getBoundingClientRect().top - top : 0;
+	activityScroll.set(id, state);
+}
+function bindActivityScroll(run) {
+	activityObserver?.disconnect();
+	const body = $(".activity-body");
+	if (!body) return;
+	const state = activityScroll.get(run.id) ?? { following: true, top: 0 };
+	activityScroll.set(run.id, state);
+	const button = $("#latest-activity");
+	const atEnd = () =>
+		body.scrollHeight - body.clientHeight - body.scrollTop <= 8;
+	const updateButton = () => {
+		button.hidden = atEnd();
+	};
+	if (state.following) body.scrollTop = body.scrollHeight;
+	else {
+		const anchor = [...body.querySelectorAll("[data-chat-key]")].find(
+			(element) => element.dataset.chatKey === state.anchor,
+		);
+		body.scrollTop = anchor
+			? anchor.getBoundingClientRect().top -
+				body.getBoundingClientRect().top -
+				state.offset
+			: state.top;
+	}
+	updateButton();
+	body.addEventListener(
+		"scroll",
+		() => {
+			if (!body.isConnected) return;
+			state.following = atEnd();
+			updateButton();
+		},
+		{ passive: true },
+	);
+	body.addEventListener(
+		"wheel",
+		(event) => {
+			if (event.deltaY < 0 && body.scrollTop > 0) state.following = false;
+		},
+		{ passive: true },
+	);
+	body.addEventListener("keydown", (event) => {
+		if (body.scrollTop > 0 && ["ArrowUp", "PageUp", "Home"].includes(event.key))
+			state.following = false;
+	});
+	body.addEventListener("click", (event) => {
+		// Opening activity details is an intent to read, even before scrolling.
+		if (event.target.closest("summary")) state.following = false;
+	});
+	button.onclick = () => {
+		state.following = true;
+		body.scrollTop = body.scrollHeight;
+		updateButton();
+	};
+	// Fonts, expanded tools and streamed content can change height after render.
+	activityObserver = new ResizeObserver(() => {
+		if (!body.isConnected) return;
+		if (state.following) body.scrollTop = body.scrollHeight;
+		else if (atEnd()) state.following = true;
+		updateButton();
+	});
+	activityObserver.observe(body);
+	activityObserver.observe(body.querySelector(".chat-timeline"));
 }
 async function api(path, options = {}) {
 	const response = await fetch(path, {
@@ -206,6 +293,7 @@ function expandSteps(steps, definitions, prefix = "", ancestors = []) {
 	});
 }
 function renderDetail(run) {
+	rememberActivityScroll();
 	rememberDetail();
 	const scroll = [window.scrollX, window.scrollY];
 	const outputs = run.outputs ?? {},
@@ -254,12 +342,15 @@ function renderDetail(run) {
 			)
 			.join(
 				"",
-			)}</nav><div class="detail-body">${run.status === "waiting" ? `<form id="answer-form" class="callout"><h3>Your input is needed</h3>${run.questions.map((question) => `<p>${htmlEscape(question)}</p>`).join("")}<label for="answer-text">Your answers</label><textarea id="answer-text" name="answer" required rows="4" placeholder="Answer the questions above…"></textarea><div class="form-error" role="alert"></div><button class="primary" type="submit">Send answers & continue →</button></form>` : ""}${content}</div>`;
+			)}</nav><div class="detail-content"><div class="detail-body ${tab === "activity" ? "activity-body" : ""}" data-activity-run="${htmlEscape(run.id)}" ${tab === "activity" ? 'tabindex="0" aria-label="Conversation activity"' : ""}>${tab === "activity" ? content : ""}${run.status === "waiting" ? `<form id="answer-form" class="callout"><h3>Your input is needed</h3>${run.questions.map((question) => `<p>${htmlEscape(question)}</p>`).join("")}<label for="answer-text">Your answers</label><textarea id="answer-text" name="answer" required rows="4" placeholder="Answer the questions above…"></textarea><div class="form-error" role="alert"></div><button class="primary" type="submit">Send answers & continue →</button></form>` : ""}${tab === "activity" ? "" : content}</div>${tab === "activity" ? '<button type="button" id="latest-activity" class="latest-activity" hidden><span aria-hidden="true">↓</span> Scroll to latest</button>' : ""}</div>`;
 	restoreDetail(run);
+	bindActivityScroll(run);
 	window.scrollTo(...scroll);
 	if ($("#older-activity"))
 		$("#older-activity").onclick = () => {
-			activityLimits.set(run.id, (activityLimits.get(run.id) ?? 120) + 120);
+			rememberActivityScroll();
+			activityScroll.get(run.id).following = false;
+			activityStarts.set(run.id, Math.max(0, activityStarts.get(run.id) - 120));
 			detailSignature = "";
 			refreshDetail().catch(fail);
 		};
