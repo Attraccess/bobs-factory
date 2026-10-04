@@ -1,3 +1,4 @@
+import { takeoverLaunchFields } from "./LaunchFields.js";
 import { validateWorkflows } from "./Workflow.js";
 
 const agent = (id: string, name: string, prompt: string, extra = {}) => ({
@@ -128,6 +129,7 @@ export const defaultWorkflows = validateWorkflows([
 	},
 	{
 		id: "takeover",
+		launchFields: takeoverLaunchFields,
 		name: "Take over existing work",
 		description:
 			"Inspect an existing PR or ticket, clarify remaining work, then continue through the shared factory pipeline. Existing PRs stay draft for human review.",

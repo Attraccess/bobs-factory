@@ -41,6 +41,7 @@ export interface FactoryRun {
 	updatedAt: string;
 	workspace: string;
 	input: string;
+	launchInputs?: Record<string, string>;
 	runner?: string;
 	model?: string;
 	reasoningEffort?: AgentSettings["reasoningEffort"];
@@ -169,6 +170,7 @@ export class WorkflowRuntime {
 		workflow: Workflow;
 		workspace: string;
 		input: string;
+		launchInputs?: Record<string, string>;
 		source?: string;
 		issueId?: string;
 		workspaceId?: string;
@@ -277,6 +279,7 @@ export class WorkflowRuntime {
 				? Object.fromEntries(step.inputs.map((name) => [name, outputs[name]]))
 				: {
 						originalInput: run.input,
+						launchInputs: structuredClone(run.launchInputs ?? {}),
 						outputs: structuredClone(outputs),
 						answers: structuredClone(run.answers),
 						history: structuredClone(run.history),

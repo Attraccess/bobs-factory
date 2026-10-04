@@ -2,18 +2,16 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
-import { agentSettings, reasoningLevels } from "./AgentSettings.js";
+import { reasoningLevels } from "./AgentSettings.js";
 import { CaptureSchema, verifiedScreenshot } from "./FactoryTools.js";
+import {
+	getLaunchFields,
+	LaunchRequestSchema,
+	type ResolvedLaunchRequest,
+	resolveLaunchRequest,
+} from "./LaunchFields.js";
 import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 
-const startSchema = z.object({
-	title: z.string().trim().min(1).max(300),
-	source: z.string().trim().min(1).max(1000).optional(),
-	prompt: z.string().trim().min(1).max(100000),
-	repositoryId: z.string().min(1),
-	workflow: z.string().min(1),
-	...agentSettings,
-});
 interface ServerHooks {
 	defaultRunner?(): string;
 	repositories(): { id: string; name: string }[];
@@ -26,7 +24,7 @@ interface ServerHooks {
 		repositoryId?: string;
 	}[];
 	entries(id: string): unknown[];
-	start(input: z.infer<typeof startSchema>): Promise<FactoryRun>;
+	start(input: ResolvedLaunchRequest): Promise<FactoryRun>;
 	stop(id: string): void;
 }
 
@@ -69,7 +67,10 @@ export class FactoryServer {
 		}
 		this.app.get("/api/config", () => ({
 			repositories: hooks.repositories(),
-			workflows: runtime.listWorkflows(),
+			workflows: runtime.listWorkflows().map((workflow) => ({
+				...workflow,
+				launchFields: getLaunchFields(workflow),
+			})),
 			defaultWorkflow: runtime.getDefaultWorkflow(),
 			defaultRunner: hooks.defaultRunner?.() ?? "claude",
 			reasoningLevels,
@@ -122,9 +123,13 @@ export class FactoryServer {
 					.map((session) => ({ ...session, workflow: "simple" })),
 			].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 		});
-		this.app.post("/api/runs", async (request, reply) =>
-			reply.code(202).send(await hooks.start(startSchema.parse(request.body))),
-		);
+		this.app.post("/api/runs", async (request, reply) => {
+			const input = LaunchRequestSchema.parse(request.body);
+			const workflow = runtime.selectWorkflow([], input.workflow);
+			return reply
+				.code(202)
+				.send(await hooks.start(resolveLaunchRequest(workflow, input)));
+		});
 		this.app.get<{ Params: { id: string } }>(
 			"/api/runs/:id",
 			(request, reply) => {

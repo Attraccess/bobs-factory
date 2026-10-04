@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { agentSettings, resolveAgentSettings } from "./AgentSettings.js";
 
+import { LaunchFieldSchema } from "./LaunchFields.js";
+
 const id = z
 	.string()
 	.regex(/^[a-zA-Z0-9_-]+$/)
@@ -71,6 +73,7 @@ export const WorkflowSchema = z.object({
 	labels: z.array(z.string().min(1)).default([]),
 	steps: z.array(StepSchema).max(100),
 	internal: z.boolean().optional(),
+	launchFields: z.array(LaunchFieldSchema).max(20).optional(),
 });
 export type Workflow = z.infer<typeof WorkflowSchema>;
 
@@ -81,6 +84,37 @@ export function validateWorkflows(value: unknown): Workflow[] {
 		if (ids.has(workflow.id))
 			throw new Error(`Duplicate workflow: ${workflow.id}`);
 		ids.add(workflow.id);
+		const fields = workflow.launchFields ?? [];
+		if (new Set(fields.map((field) => field.name)).size !== fields.length)
+			throw new Error("Duplicate launch field names");
+		for (const field of fields) {
+			if (
+				[
+					"repositoryId",
+					"workflow",
+					"runner",
+					"model",
+					"reasoningEffort",
+					"modelVariant",
+					"inputs",
+					"constructor",
+					"prototype",
+				].includes(field.name)
+			)
+				throw new Error(`Reserved launch field name: ${field.name}`);
+			if (
+				field.type === "select" &&
+				new Set(field.options.map((option) => option.value)).size !==
+					field.options.length
+			)
+				throw new Error("Duplicate launch choice values");
+			if (
+				field.defaultValue &&
+				field.type === "select" &&
+				!field.options.some((option) => option.value === field.defaultValue)
+			)
+				throw new Error("Invalid launch field default choice");
+		}
 		if (workflow.id === "simple" && workflow.steps.length)
 			throw new Error(
 				"simple uses Cyrus's existing execution path; clone it under another ID to customize",

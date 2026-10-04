@@ -173,6 +173,7 @@ describe("workflow runtime", () => {
 				agent("review"),
 			]),
 		);
+		run.launchInputs = { target: "customer dashboard" };
 		await runtime.launch(run);
 		expect(inputs[1]).toEqual({
 			step: "implement",
@@ -181,6 +182,7 @@ describe("workflow runtime", () => {
 		expect(inputs[2]).toMatchObject({
 			input: {
 				originalInput: "PRIVATE TICKET INPUT",
+				launchInputs: { target: "customer dashboard" },
 				history: [{ step: "plan" }, { step: "implement" }],
 			},
 		});

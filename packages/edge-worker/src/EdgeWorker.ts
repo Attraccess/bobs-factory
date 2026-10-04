@@ -163,10 +163,7 @@ import { ChatSessionHandler } from "./ChatSessionHandler.js";
 import { ConfigManager, type RepositoryChanges } from "./ConfigManager.js";
 import { DefaultSkillsDeployer } from "./DefaultSkillsDeployer.js";
 import { EgressProxy } from "./EgressProxy.js";
-import {
-	type AgentSettings,
-	resolveAgentSettings,
-} from "./factory/AgentSettings.js";
+import { resolveAgentSettings } from "./factory/AgentSettings.js";
 import { validateFactoryResult } from "./factory/FactoryResults.js";
 import { FactoryServer } from "./factory/FactoryServer.js";
 import {
@@ -177,6 +174,7 @@ import {
 	toolArguments,
 } from "./factory/FactoryTools.js";
 import { issueSnapshot } from "./factory/issueSnapshot.js";
+import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import {
 	inspectPullRequest,
 	type TakeoverPullRequest,
@@ -6048,15 +6046,7 @@ ${taskSection}`;
 	}
 
 	private async startManualFactoryRun(
-		input: AgentSettings & {
-			title: string;
-			prompt: string;
-			source?: string;
-			repositoryId: string;
-			workflow: string;
-			runner?: RunnerType;
-			model?: string;
-		},
+		input: ResolvedLaunchRequest,
 	): Promise<FactoryRun> {
 		const repository = this.repositories.get(input.repositoryId);
 		if (!repository?.isActive) throw new Error("Select an active repository");
@@ -6066,6 +6056,18 @@ ${taskSection}`;
 			throw new Error(
 				"Takeover needs an existing PR URL or ticket identifier/URL",
 			);
+		let prompt =
+			input.prompt ||
+			(workflow.id === "takeover"
+				? "Continue the existing work described by this PR or ticket."
+				: `Execute ${workflow.name}.`);
+		const customInputs = Object.fromEntries(
+			Object.entries(input.inputs).filter(
+				([name]) => !["title", "prompt", "source"].includes(name),
+			),
+		);
+		if (workflow.id === "simple" && Object.keys(customInputs).length)
+			prompt += `\n\nWorkflow launch inputs:\n${JSON.stringify(customInputs, null, 2)}`;
 		const run = runtime.create({
 			id: `manual-${randomUUID()}`,
 			title: input.title,
@@ -6073,7 +6075,8 @@ ${taskSection}`;
 			workflow,
 			source: input.source,
 			workspace: "",
-			input: input.prompt,
+			input: prompt,
+			launchInputs: input.inputs,
 			runner: input.runner,
 			model: input.model,
 			reasoningEffort: input.reasoningEffort,
@@ -6086,7 +6089,7 @@ ${taskSection}`;
 				const created = await tracker.createIssue({
 					teamId: "team-default",
 					title: input.title,
-					description: input.prompt,
+					description: prompt,
 				});
 				let fullIssue: Issue = {
 					...created,
@@ -6138,9 +6141,13 @@ ${taskSection}`;
 						baseBranchOverrides = new Map([
 							[repository.id, fullIssue.branchName ?? repository.baseBranch],
 						]);
-						run.input = `${input.prompt}\n\nComplete existing ticket snapshot:\n${JSON.stringify(run.outputs.ticket, null, 2)}`;
+						run.input = `${prompt}\n\nComplete existing ticket snapshot:\n${JSON.stringify(run.outputs.ticket, null, 2)}`;
 					}
 				}
+				if (!input.titleProvided)
+					run.title =
+						takeoverPr?.title ??
+						(workflow.id === "takeover" ? fullIssue.title : run.title);
 				if (run.status === "stopped") return;
 				const workspace = await this.gitService.createGitWorktree(
 					fullIssue,
@@ -6188,7 +6195,7 @@ ${taskSection}`;
 						fullIssue,
 						repository,
 						repositories: [repository],
-						userComment: input.prompt,
+						userComment: prompt,
 						isNewSession: true,
 						isStreaming: false,
 						labels: [],

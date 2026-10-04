@@ -259,22 +259,40 @@ async function openStart() {
 			)
 			.join("");
 		$("#workflow-select").value = config.defaultWorkflow;
-		$("#workflow-select").onchange = () => {
-			$("#workflow-description").textContent =
-				config.workflows.find((item) => item.id === $("#workflow-select").value)
-					?.description ?? "";
-			const takeover = $("#workflow-select").value === "takeover";
-			$("#takeover-source-label").hidden = !takeover;
-			$("#takeover-hint").hidden = !takeover;
-			$("#takeover-source").disabled = !takeover;
-			$("#takeover-source").required = takeover;
-		};
+		$("#workflow-select").onchange = renderLaunchFields;
 		$("#workflow-select").onchange();
 		renderRunReasoning();
 		$("#start-dialog").showModal();
 	} catch (error) {
 		fail(error);
 	}
+}
+
+function renderLaunchFields() {
+	const workflow = config.workflows.find(
+		(item) => item.id === $("#workflow-select").value,
+	);
+	$("#workflow-description").textContent = workflow?.description ?? "";
+	const previous = Object.fromEntries(
+		[...document.querySelectorAll("[data-launch-field]")].map((input) => [
+			input.name,
+			input.value,
+		]),
+	);
+	$("#launch-fields").innerHTML = (workflow?.launchFields ?? [])
+		.map((field) => {
+			const value = previous[field.name] ?? field.defaultValue ?? "";
+			const attributes = `id="launch-${htmlEscape(field.name)}" name="${htmlEscape(field.name)}" data-launch-field ${field.required ? "required" : ""}`;
+			const placeholder = htmlEscape(field.placeholder ?? "");
+			const control =
+				field.type === "textarea"
+					? `<textarea ${attributes} rows="4" maxlength="100000" placeholder="${placeholder}">${htmlEscape(value)}</textarea>`
+					: field.type === "select"
+						? `<select ${attributes}><option value="">${placeholder || "Choose…"}</option>${field.options.map((option) => `<option value="${htmlEscape(option.value)}" ${option.value === value ? "selected" : ""}>${htmlEscape(option.label)}</option>`).join("")}</select>`
+						: `<input ${attributes} maxlength="${field.name === "title" ? 300 : field.name === "source" ? 1000 : 100000}" placeholder="${placeholder}" value="${htmlEscape(value)}">`;
+			return `<label>${htmlEscape(field.label)}${field.required ? "" : " (optional)"}${control}</label>${field.description ? `<p class="hint">${htmlEscape(field.description)}</p>` : ""}`;
+		})
+		.join("");
 }
 $("#new-run").onclick = openStart;
 $("#empty-start").onclick = openStart;
@@ -338,6 +356,13 @@ $("#start-form").onsubmit = async (event) => {
 	form.querySelector(".form-error").textContent = "";
 	try {
 		const values = Object.fromEntries(new FormData(form));
+		values.inputs = Object.fromEntries(
+			[...form.querySelectorAll("[data-launch-field]")].map((input) => [
+				input.name,
+				input.value,
+			]),
+		);
+		for (const name of Object.keys(values.inputs)) delete values[name];
 		if (!values.runner) delete values.runner;
 		if (!values.model) delete values.model;
 		if (!values.reasoningEffort) delete values.reasoningEffort;

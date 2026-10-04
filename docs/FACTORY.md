@@ -28,7 +28,7 @@ trusted local operator.
 
 ## Run and configure
 
-Select a repository and workflow under **New run**, then enter the task.
+Select a repository and workflow under **New run**, then fill its launch fields.
 **Simple / Cyrus** retains the existing Cyrus execution path and is the initial
 default. **Software factory** adds the pipeline
 below. Apply `workflow:factory` (or `factory`) to a ticket to select it.
@@ -82,8 +82,9 @@ inspired by Rocky's visual recap.
 ## Take over existing work
 
 Select **Take over existing work** in New run and supply an open GitHub PR URL
-or a Linear ticket identifier/URL. Enter what should happen next in the task
-field. For ticket assignment, use `workflow:takeover` or `takeover`; the assigned
+or a Linear ticket identifier/URL. That source is all you need: the run title
+and requirements come from the ticket or PR. **Additional instructions** is
+optional. For ticket assignment, use `workflow:takeover` or `takeover`; the assigned
 ticket is the source. Manual ticket takeover needs that repository's configured
 ticket integration (the standalone launcher only has its local test tracker).
 
@@ -102,6 +103,41 @@ the worktree, terminate that run first. Diverged local/remote work fails visibly
 at push and needs a human decision.
 
 ## Workflow definition
+
+### Launch fields
+
+Edit a workflow's `launchFields` in **Workflows → Workflow JSON** to customize
+the New run form. Only fields belonging to the selected parent workflow appear;
+calling a shared workflow does not add its fields. Repository, workflow and
+agent settings are common controls. For example:
+
+```json
+"launchFields": [
+  {"name":"target","label":"App to deploy","required":true,"placeholder":"Customer portal"},
+  {"name":"environment","label":"Environment","type":"select","required":true,"defaultValue":"staging","options":[{"value":"staging","label":"Staging"},{"value":"production","label":"Production"}]},
+  {"name":"prompt","label":"Additional instructions","type":"textarea","description":"Anything else the agent should know?"}
+]
+```
+
+Supported types are `text` (default), `textarea` and `select`. Fields are optional
+unless `required: true`; labels, placeholders, descriptions and defaults are
+configurable. Names must be unique and start with a letter; runner/repository
+control names are reserved. The API validates required values and choices before
+starting any work. `title`, `prompt` and `source` map to the run title, task
+instructions and Takeover source; other names become custom inputs. Takeover
+always needs a source even if you remove its field. Simple and Factory use the
+title/task form when `launchFields` is omitted; old Takeover definitions receive
+the source/optional-instructions form. Use `[]` for no workflow-specific fields.
+
+Values are saved as `run.launchInputs` and supplied to ordinary agent, script
+and tool steps as `input.launchInputs`, including shared child workflows.
+Scripts read them from `FACTORY_INPUT`; tool templates can use
+`{{input.launchInputs.target}}`. Steps with explicit `inputs` still receive only
+their selected outputs, so the implementer retains its plan-only handoff.
+Custom Simple fields are appended to its task prompt because it uses Cyrus's
+original execution path rather than graph steps.
+
+### Steps and shared sequences
 
 Keep the `simple`, `factory` and `takeover` defaults and add another entry to the JSON array:
 
@@ -148,7 +184,7 @@ Add a reusable sequence with `"internal": true`, then call it using a step:
 ```
 
 Calls execute the child graph, including loops and fanout, then return to the
-parent. They share outputs, original input, human answers and complete history.
+parent. They share outputs, original input, launch inputs, human answers and complete history.
 Use distinct output IDs across sequences when results must coexist; executing
 an ID again replaces its latest output but retains every result in history.
 A call returns `{ "workflow": "checks", "completed": true }`. Internal workflows
@@ -163,7 +199,7 @@ another step. `next: "end"` finishes. A branch such as
 Each step defaults to at most eight visits (`maxVisits`, configurable up to 100).
 Agents return JSON unless `json: false`. `inputs: ["plan"]` restricts supplied
 context to those output keys; otherwise agents receive the original input,
-outputs, answers and full structured history.
+launch inputs, outputs, answers and full structured history.
 
 Scripts run with `/bin/sh` in the worktree and receive `FACTORY_INPUT` JSON and
 `FACTORY_EVIDENCE_DIR`. JSON stdout becomes the step output; other stdout is

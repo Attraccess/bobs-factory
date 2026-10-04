@@ -174,3 +174,44 @@ written back after provider switching; removed-field events are now ignored,
 non-OpenCode variant writes rejected, and saved explicit-provider settings
 validated before execution. Repeated browser save/reload verified Codex/high
 without a stale variant; focused checks passed after the fix.
+
+## Workflow-specific launch fields follow-up
+
+Required applicability: manual source-only Takeover changes request validation,
+ticket lookup/context and the run title. Used a fresh worker home at
+`/tmp/bobs-factory-launch-fields-check`, UI port 3467 and F1 RPC port 3468.
+F1 created `DEF-1` (Continue existing ticket work) and a prior-decision comment.
+The Git fixture retained branch `def-1-continue-existing-ticket-work`, committed
+completed-work.txt and untracked unfinished-work.txt in its existing worktree.
+
+The collaborative browser verified:
+
+- Simple's title/task fields remain required. Takeover shows only a required
+  source and optional Additional instructions, with no title field.
+- A saved custom Deploy workflow renders a required App to deploy text field,
+  an Environment select defaulting to Staging, and optional Release notes textarea.
+- Switching Deploy → Takeover removes custom controls and their required flags.
+  A required field belonging to the shared child workflow never appears in its
+  parent form.
+- Entering only `DEF-1` makes the Takeover form valid. **Start run** creates
+  `manual-1ac5e482-d1a1-4a3d-9c91-c071d915eb50`, which completes with the ticket's
+  actual title, description and prior comment. It reuses
+  `/private/tmp/bobs-factory-existing-work` and retains both files. Its shared
+  receipt returns `{"comments":1,"launchInputs":{"source":"DEF-1","prompt":""},"retained":true}`.
+- Switching back to Deploy removes the source requirement. Starting
+  `manual-d69b5169-9fce-4a8b-98be-0edaf2b631a0` with target Customer portal and
+  optional instructions completes; its script receives all three selected
+  `launchInputs`, including the Staging default.
+
+This focused drive uses script assessment/receipt steps and a local gh fixture
+returning no PR. It exercises the real UI request, EdgeWorker ticket snapshot,
+Git worktree selection and shared runtime context; it does not repeat agent
+clarification or live Linear/GitHub delivery. Browser console showed no errors.
+Regression checks also cover API source-only and legacy payloads, required and
+choice validation before starting work, unknown field rejection, fieldless
+workflows, persisted custom inputs and plan-only context restriction.
+
+The complete edge-worker suite passed: 83 files, 889 tests passing and one
+skipped. Full build/typecheck and staged formatting are enforced by the commit
+hook. The isolated worker was stopped after these checks; fixture state was
+retained for inspection.
