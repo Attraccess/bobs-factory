@@ -18,19 +18,43 @@ let config = { repositories: [], workflows: [] },
 	detailSignature = "";
 const detailStates = new Map(),
 	activityStarts = new Map(),
-	activityScroll = new Map();
-let activityObserver;
+	activityScroll = new Map(),
+	viewScroll = new Map();
+const renderedHtml = new WeakMap();
+function updateHtml(element, content) {
+	if (renderedHtml.get(element) === content) return false;
+	element.innerHTML = content;
+	renderedHtml.set(element, content);
+	return true;
+}
+function prePositions(detail) {
+	return [...detail.querySelectorAll("pre")].map((pre) => {
+		const owner = pre.closest("[data-detail-key], [data-chat-key]") ?? detail;
+		const key = JSON.stringify([
+			owner.dataset.detailKey ?? owner.dataset.chatKey ?? "view",
+			[...owner.querySelectorAll("pre")].indexOf(pre),
+		]);
+		return [key, pre];
+	});
+}
+let activityObserver, activityListeners;
 function rememberDetail() {
 	const detail = $("#detail");
 	if (!detail.dataset.view) return;
+	viewScroll.set(detail.dataset.view, {
+		top: $(".detail-body").scrollTop,
+		left: $(".detail-body").scrollLeft,
+		pre: new Map(
+			prePositions(detail).map(([key, pre]) => [
+				key,
+				[pre.scrollTop, pre.scrollLeft],
+			]),
+		),
+	});
 	const state = detailStates.get(detail.dataset.view) ?? new Map();
 	for (const element of detail.querySelectorAll("[data-detail-key]")) {
 		state.set(element.dataset.detailKey, {
 			open: element.open,
-			scroll: [...element.querySelectorAll("pre")].map((pre) => [
-				pre.scrollTop,
-				pre.scrollLeft,
-			]),
 		});
 	}
 	detailStates.set(detail.dataset.view, state);
@@ -43,10 +67,16 @@ function restoreDetail(run) {
 		const saved = state?.get(element.dataset.detailKey);
 		if (!saved) continue;
 		if (typeof saved.open === "boolean") element.open = saved.open;
-		[...element.querySelectorAll("pre")].forEach((pre, index) => {
-			pre.scrollTop = saved.scroll[index]?.[0] ?? 0;
-			pre.scrollLeft = saved.scroll[index]?.[1] ?? 0;
-		});
+	}
+	const scroll = viewScroll.get(detail.dataset.view);
+	for (const [key, pre] of prePositions(detail)) {
+		const position = scroll?.pre.get(key);
+		pre.scrollTop = position?.[0] ?? 0;
+		pre.scrollLeft = position?.[1] ?? 0;
+	}
+	if (tab !== "activity") {
+		$(".detail-body").scrollTop = scroll?.top ?? 0;
+		$(".detail-body").scrollLeft = scroll?.left ?? 0;
 	}
 }
 function renderActivity(run) {
@@ -92,8 +122,11 @@ function rememberActivityScroll() {
 }
 function bindActivityScroll(run) {
 	activityObserver?.disconnect();
+	activityListeners?.abort();
 	const body = $(".activity-body");
 	if (!body) return;
+	activityListeners = new AbortController();
+	const { signal } = activityListeners;
 	const state = activityScroll.get(run.id) ?? { following: true, top: 0 };
 	activityScroll.set(run.id, state);
 	const button = $("#latest-activity");
@@ -108,7 +141,8 @@ function bindActivityScroll(run) {
 			(element) => element.dataset.chatKey === state.anchor,
 		);
 		body.scrollTop = anchor
-			? anchor.getBoundingClientRect().top -
+			? body.scrollTop +
+				anchor.getBoundingClientRect().top -
 				body.getBoundingClientRect().top -
 				state.offset
 			: state.top;
@@ -121,23 +155,34 @@ function bindActivityScroll(run) {
 			state.following = atEnd();
 			updateButton();
 		},
-		{ passive: true },
+		{ passive: true, signal },
 	);
 	body.addEventListener(
 		"wheel",
 		(event) => {
 			if (event.deltaY < 0 && body.scrollTop > 0) state.following = false;
 		},
-		{ passive: true },
+		{ passive: true, signal },
 	);
-	body.addEventListener("keydown", (event) => {
-		if (body.scrollTop > 0 && ["ArrowUp", "PageUp", "Home"].includes(event.key))
-			state.following = false;
-	});
-	body.addEventListener("click", (event) => {
-		// Opening activity details is an intent to read, even before scrolling.
-		if (event.target.closest("summary")) state.following = false;
-	});
+	body.addEventListener(
+		"keydown",
+		(event) => {
+			if (
+				body.scrollTop > 0 &&
+				["ArrowUp", "PageUp", "Home"].includes(event.key)
+			)
+				state.following = false;
+		},
+		{ signal },
+	);
+	body.addEventListener(
+		"click",
+		(event) => {
+			// Opening activity details is an intent to read, even before scrolling.
+			if (event.target.closest("summary")) state.following = false;
+		},
+		{ signal },
+	);
 	button.onclick = () => {
 		state.following = true;
 		body.scrollTop = body.scrollHeight;
@@ -328,8 +373,22 @@ function renderDetail(run) {
 	} else if (tab === "guide") content = renderGuide(run);
 	else
 		content = `${run.error ? `<div class="callout">${htmlEscape(run.error)}</div>` : ""}<h3>${steps.length ? "Workflow progress" : "Cyrus run"}</h3>${steps.length ? `<ol class="step-list">${steps.map((step, index) => `<li class="${run.step === step.key && active(run.status) ? "current" : visited.has(step.key) ? "done" : ""}"><span class="step-circle">${visited.has(step.key) ? "✓" : index + 1}</span><span>${htmlEscape(step.name)}</span></li>`).join("")}</ol>` : '<p class="muted">The original Cyrus workflow is running. See Activity for agent progress.</p>'}<details data-detail-key="workspace"><summary>Workspace and input</summary><p class="muted">${htmlEscape(run.workspace || "Preparing workspace…")}</p><pre>${htmlEscape(run.input ?? "")}</pre></details>`;
-	$("#detail").innerHTML =
-		`<div class="detail-header"><div>${badge(run.status)}<h2>${htmlEscape(run.title)}</h2><div class="detail-meta">${htmlEscape(repo)} · ${htmlEscape(run.workflow?.name ?? "Simple / Cyrus")}<br>${htmlEscape(date(run.createdAt))} ${safePr}</div></div>${active(run.status) ? '<button class="danger" id="stop-run">Terminate</button>' : ["failed", "interrupted"].includes(run.status) && Array.isArray(run.history) ? '<button class="primary" id="retry-run">Retry failed step</button>' : ""}</div><nav class="tabs" aria-label="Run views">${[
+	const detail = $("#detail");
+	const view = JSON.stringify([run.id, tab]);
+	const changingView = detail.dataset.view !== view;
+	if (detail.dataset.runId !== run.id) {
+		activityObserver?.disconnect();
+		detail.innerHTML =
+			'<div class="detail-header"></div><nav class="tabs" aria-label="Run views"></nav><div class="detail-content"><div class="detail-body"></div></div>';
+		detail.dataset.runId = run.id;
+	}
+	updateHtml(
+		$(".detail-header"),
+		`<div>${badge(run.status)}<h2>${htmlEscape(run.title)}</h2><div class="detail-meta">${htmlEscape(repo)} · ${htmlEscape(run.workflow?.name ?? "Simple / Cyrus")}<br>${htmlEscape(date(run.createdAt))} ${safePr}</div></div>${active(run.status) ? '<button class="danger" id="stop-run">Terminate</button>' : ["failed", "interrupted"].includes(run.status) && Array.isArray(run.history) ? '<button class="primary" id="retry-run">Retry failed step</button>' : ""}`,
+	);
+	// Keep the tab bar itself mounted, including its horizontal scroll on mobile.
+	if (!$(".tabs").children.length)
+		$(".tabs").innerHTML = [
 			["overview", "Overview"],
 			["activity", "Activity"],
 			["decisions", "Decisions"],
@@ -340,11 +399,33 @@ function renderDetail(run) {
 				([id, name]) =>
 					`<button data-tab="${id}" class="${tab === id ? "selected" : ""}">${name}</button>`,
 			)
-			.join(
-				"",
-			)}</nav><div class="detail-content"><div class="detail-body ${tab === "activity" ? "activity-body" : ""}" data-activity-run="${htmlEscape(run.id)}" ${tab === "activity" ? 'tabindex="0" aria-label="Conversation activity"' : ""}>${tab === "activity" ? content : ""}${run.status === "waiting" ? `<form id="answer-form" class="callout"><h3>Your input is needed</h3>${run.questions.map((question) => `<p>${htmlEscape(question)}</p>`).join("")}<label for="answer-text">Your answers</label><textarea id="answer-text" name="answer" required rows="4" placeholder="Answer the questions above…"></textarea><div class="form-error" role="alert"></div><button class="primary" type="submit">Send answers & continue →</button></form>` : ""}${tab === "activity" ? "" : content}</div>${tab === "activity" ? '<button type="button" id="latest-activity" class="latest-activity" hidden><span aria-hidden="true">↓</span> Scroll to latest</button>' : ""}</div>`;
-	restoreDetail(run);
-	bindActivityScroll(run);
+			.join("");
+	for (const button of detail.querySelectorAll("[data-tab]"))
+		button.classList.toggle("selected", button.dataset.tab === tab);
+	const body = $(".detail-body");
+	body.classList.toggle("activity-body", tab === "activity");
+	body.dataset.activityRun = run.id;
+	if (tab === "activity") {
+		body.tabIndex = 0;
+		body.setAttribute("aria-label", "Conversation activity");
+		if (!$("#latest-activity"))
+			body.insertAdjacentHTML(
+				"afterend",
+				'<button type="button" id="latest-activity" class="latest-activity" hidden><span aria-hidden="true">↓</span> Scroll to latest</button>',
+			);
+	} else {
+		body.removeAttribute("tabindex");
+		body.removeAttribute("aria-label");
+		$("#latest-activity")?.remove();
+	}
+	const changed = updateHtml(
+		body,
+		`${tab === "activity" ? content : ""}${run.status === "waiting" ? `<form id="answer-form" class="callout"><h3>Your input is needed</h3>${run.questions.map((question) => `<p>${htmlEscape(question)}</p>`).join("")}<label for="answer-text">Your answers</label><textarea id="answer-text" name="answer" required rows="4" placeholder="Answer the questions above…"></textarea><div class="form-error" role="alert"></div><button class="primary" type="submit">Send answers & continue →</button></form>` : ""}${tab === "activity" ? "" : content}`,
+	);
+	if (changed || changingView) {
+		restoreDetail(run);
+		bindActivityScroll(run);
+	}
 	window.scrollTo(...scroll);
 	if ($("#older-activity"))
 		$("#older-activity").onclick = () => {
