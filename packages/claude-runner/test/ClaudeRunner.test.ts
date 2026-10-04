@@ -98,6 +98,19 @@ describe("ClaudeRunner", () => {
 	});
 
 	describe("start()", () => {
+		it("forwards an explicitly selected reasoning effort to the SDK", async () => {
+			mockQuery.mockImplementation(async function* () {});
+			const configured = new ClaudeRunner(
+				{ ...defaultConfig, effort: "xhigh" },
+				false,
+			);
+			await configured.start("Review");
+			expect(mockQuery).toHaveBeenCalledWith(
+				expect.objectContaining({
+					options: expect.objectContaining({ effort: "xhigh" }),
+				}),
+			);
+		});
 		it("should start Claude session with basic prompt", async () => {
 			// Mock successful query
 			const mockMessages: SDKMessage[] = [

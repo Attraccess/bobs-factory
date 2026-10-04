@@ -333,3 +333,131 @@ describe("workflow runtime", () => {
 		);
 	});
 });
+
+it("calls frozen reusable workflows with shared plan/history and human checkpoints", async () => {
+	const { runtime, home } = create({
+		agent: async (context) => {
+			if (context.step.id === "clarify")
+				return {
+					questions: context.run.answers.length
+						? []
+						: ["Continue existing work?"],
+				};
+			if (context.step.id === "plan")
+				return { plan: "Continue the existing branch", assets: [] };
+			if (context.step.id === "implement") {
+				expect(context.input).toEqual({
+					plan: { plan: "Continue the existing branch", assets: [] },
+				});
+				return { summary: "done" };
+			}
+			return {};
+		},
+	});
+	const shared = {
+		id: "shared",
+		name: "Shared",
+		internal: true,
+		steps: [
+			agent("clarify", { askQuestions: true }),
+			agent("plan"),
+			agent("implement", { inputs: ["plan"] }),
+		],
+	};
+	const definitions = validateWorkflows([
+		...defaultWorkflows,
+		shared,
+		{
+			id: "parent",
+			name: "Parent",
+			steps: [
+				{ id: "call", name: "Call", type: "workflow", workflow: "shared" },
+			],
+		},
+	]);
+	runtime.updateWorkflows(definitions);
+	const run = start(runtime, runtime.selectWorkflow([], "parent"));
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const changed = runtime.listWorkflows();
+	changed.find((item) => item.id === "shared")!.steps = [];
+	// Saved configuration cannot alter the definition captured by an active run.
+	changed.find((item) => item.id === "shared")!.steps = [agent("replacement")];
+	runtime.updateWorkflows(changed);
+	runtime.answer(run.id, "Yes");
+	await execution;
+	expect(run.status).toBe("completed");
+	expect(run.history.map((item) => item.step)).toEqual([
+		"call/clarify",
+		"call/clarify",
+		"call/plan",
+		"call/implement",
+		"call",
+	]);
+	expect(run.outputs.call).toEqual({ workflow: "shared", completed: true });
+	expect(
+		JSON.parse(
+			readFileSync(join(home, "factory", "runs", `${run.id}.json`), "utf8"),
+		).workflowDefinitions.find((item: Workflow) => item.id === "shared")
+			.steps[0].id,
+	).toBe("clarify");
+});
+it("rejects missing/recursive workflow calls and hidden human checkpoints in fanout", () => {
+	const call = (target: string) => ({
+		id: "call",
+		name: "Call",
+		type: "workflow",
+		workflow: target,
+	});
+	expect(() => workflow([call("missing")])).toThrow(
+		"Unknown or uncallable workflow",
+	);
+	expect(() => workflow([call("custom")])).toThrow("Recursive workflow");
+	expect(() =>
+		validateWorkflows([
+			...defaultWorkflows,
+			{ id: "a", name: "A", steps: [call("b")] },
+			{ id: "b", name: "B", steps: [call("a")] },
+		]),
+	).toThrow("Recursive workflow");
+	expect(() =>
+		workflow([
+			{
+				id: "parallel",
+				name: "Parallel",
+				type: "fanout",
+				groups: [[call("factory-pipeline")]],
+			},
+		]),
+	).toThrow("Human checkpoints");
+});
+it("upgrades a saved flat Factory without losing role settings or its selected default", () => {
+	const { runtime, home } = create();
+	const shared = structuredClone(
+		defaultWorkflows.find((item) => item.id === "factory-pipeline")!,
+	);
+	shared.steps[0]!.model = "custom-model";
+	const oldFactory = { ...defaultWorkflows[1]!, steps: shared.steps };
+	writeFileSync(
+		join(home, "factory", "workflows.json"),
+		JSON.stringify({
+			workflows: [defaultWorkflows[0], oldFactory],
+			defaultWorkflow: "factory",
+		}),
+	);
+	const restarted = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	expect(restarted.selectWorkflow([]).id).toBe("factory");
+	expect(
+		restarted.listWorkflows().find((item) => item.id === "factory-pipeline")!
+			.steps[0]!.model,
+	).toBe("custom-model");
+	expect(restarted.selectWorkflow(["workflow:takeover"]).id).toBe("takeover");
+	expect(() => restarted.selectWorkflow([], "factory-pipeline")).toThrow(
+		"Unknown workflow",
+	);
+	expect(runtime.getDefaultWorkflow()).toBe("simple");
+});

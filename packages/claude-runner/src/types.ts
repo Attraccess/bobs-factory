@@ -3,6 +3,7 @@ import type {
 	HookEvent,
 	JsonSchemaOutputFormat,
 	McpServerConfig,
+	Options,
 	OutputFormat,
 	SandboxSettings,
 	SDKAssistantMessage,
@@ -27,6 +28,7 @@ export type { OnAskUserQuestion } from "cyrus-core";
 export type OutputFormatConfig = OutputFormat;
 
 export interface ClaudeRunnerConfig {
+	effort?: Options["effort"];
 	workingDirectory?: string;
 	allowedTools?: string[];
 	disallowedTools?: string[];

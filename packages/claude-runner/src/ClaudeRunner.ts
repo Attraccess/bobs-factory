@@ -654,6 +654,7 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 				prompt: promptForQuery,
 				options: {
 					model: this.config.model || "opus",
+					...(this.config.effort && { effort: this.config.effort }),
 					fallbackModel: this.config.fallbackModel || "sonnet",
 					abortController: this.abortController,
 					// Use Claude Code preset by default to maintain backward compatibility

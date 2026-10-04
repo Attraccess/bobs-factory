@@ -108,3 +108,69 @@ check. Targeted runtime/API/pipeline checks passed (18 tests), including restart
 persistence, legacy array migration, explicit choice precedence, rejected
 missing/deleted defaults without a partial save, and retained run definitions.
 The isolated worker was stopped after the drive.
+
+## Reasoning settings and reusable Takeover follow-up
+
+Tested the follow-up working tree against `b6abac3` on 2026-10-04. Required:
+per-role runner settings, nested lifecycle/human checkpoints and existing-ticket
+routing/continuation changed. The test workers were isolated on UI/RPC ports
+3467/3468 and 3477/3478; the operator's real configuration stayed unchanged.
+
+Browser checks verified Takeover as a third selectable workflow with a required
+PR/ticket source, hidden internal sequences, manual Codex effort and OpenCode
+variant controls, custom OpenCode role variant, and saved/reloaded shared-role
+`high` effort visible under Takeover. Nested progress expanded individual roles.
+The collaborative browser first verified source visibility, then explicitly
+reported its automation host disconnected. Headless Chrome completed the
+remaining checks with no page errors. Captured settings/progress images were
+inspected locally; they are temporary QA artifacts, not agent visual-review
+evidence for a completed factory PR.
+
+F1 ticket `DEF-1` (Continue existing ticket work) was prepared with an existing
+branch/worktree at `/tmp/bobs-factory-existing-work`. Commit `f224048` contained
+completed-work.txt; unfinished-work.txt remained untracked. `workflow:takeover`
+routed session-1 into Takeover, reused that worktree, and preserved both files.
+Real Codex / gpt-6.1-sol / high assessed prior work, then the shared clarifier
+paused at pipeline/clarify. F1 prompt-session supplied HELLO as the prefix; the
+clarifier reran with that human answer and a script returned
+`{"retained":true,"continued":true}`. The test shared pipeline was shortened to
+clarification plus a retention receipt; it did not exercise full delivery.
+GitHub discovery was a local gh fixture returning no PR.
+
+This drive exposed the local Issue.comments stub omitting discussion. Factory
+snapshots now use tracker.fetchComments, and the local adapter honors after
+cursors. A repeat from fresh state under /tmp/bobs-factory-takeover-check-v2
+created a prior comment, then label-triggered session-1 completed with
+`{"comments":1,"retained":true}`. A manual attempt while that worktree was in use
+failed visibly before execution. A subsequent UI-started ticket takeover
+manual-af852b66-a94d-42da-b55b-9d37c45c3ca6 reused the same worktree, included the
+comment snapshot and completed with the same receipt. A regression test captures
+103 comments across pages, in order, and rejects invalid cursors.
+
+UI-started PR takeover manual-f1f63101-7020-4b6c-8d05-b8152c022086 used a real local
+bare Git origin with refs/pull/42/head and a fixture gh API. The PR branch was
+absent locally. Setup restored feature/existing-pr from PR head 02651db, retained
+completed-work.txt, snapshotted both discussion pages for comments/reviews/inline
+comments, converted the fixture PR to draft, and pushed a continuation commit
+6268983 to the same branch. Delivery returned the original fixture PR URL; the
+recorded gh commands contain no pr create. This verifies real Git restoration
+and publication plus PR identity against a fixture; no live GitHub PR was
+changed and live CI/visual completion remains outside this drive.
+
+Full affected suites passed: Core 198, Claude 121, Codex 70, OpenCode 32 and
+edge-worker 887 (one skipped), totaling 1,308 passing tests. Checks include
+native SDK/CLI settings mapping, nested clarification/context/history, frozen
+shared definitions, config upgrades preserving customized roles, rejected
+missing/recursive workflow calls and checkpoints hidden inside fanout, PR
+identity and draft guards. Relevant dependency builds passed; commit hooks
+run full build/typecheck and staged formatting. No repo dependencies changed.
+
+A final manual ticket checkpoint check,
+manual-d5d13351-3201-48de-bdfb-d100574fec8d, waited in shared clarification. A human
+F1 prompt to the original session-1 supplied HELLO; it was routed to this newer
+manual takeover rather than its completed original run. The manual run retained
+the answer and completed. The check exposed a stale model-variant field being
+written back after provider switching; removed-field events are now ignored,
+non-OpenCode variant writes rejected, and saved explicit-provider settings
+validated before execution. Repeated browser save/reload verified Codex/high
+without a stale variant; focused checks passed after the fix.

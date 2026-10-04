@@ -38,9 +38,20 @@ default workflow is used. Agent/model labels still choose the run defaults.
 
 In **Workflows**, choose **Default workflow** and click **Save workflows**.
 This choice is saved across restarts, applies to new runs without matching
-labels, and is preselected under **New run**. You can select any saved workflow;
+labels, and is preselected under **New run**. You can select any saved non-internal workflow;
 choose another default before deleting the current one. Existing runs retain
 their workflow.
+
+Both **New run → Agent settings** and each workflow role include reasoning or
+variant controls. Claude/Codex use **Reasoning effort**; OpenCode uses **Model
+variant**, including custom provider-defined names. The controls forward to
+Claude's SDK `effort`, Codex's `modelReasoningEffort`, and OpenCode's
+[`--variant`](https://dev.opencode.ai/docs/cli/#run), respectively. Available
+levels depend on the selected model; an empty field preserves the native
+default (or inherits a same-provider run setting for a role). Switching a role
+to another provider does not inherit the previous provider's effort/variant.
+Gemini and Cursor currently use their native model settings; their Cyrus
+runners do not expose a separate effort control.
 
 **Workflows** also exposes an agent and model field for each agent role, plus the
 JSON definition for editing prompts, scripts, tools and graph edges. Empty role
@@ -68,9 +79,31 @@ PR. The dashboard displays those images and a guide organized around the goal,
 before/after behavior, requirements, checks, risks and human review instructions,
 inspired by Rocky's visual recap.
 
+## Take over existing work
+
+Select **Take over existing work** in New run and supply an open GitHub PR URL
+or a Linear ticket identifier/URL. Enter what should happen next in the task
+field. For ticket assignment, use `workflow:takeover` or `takeover`; the assigned
+ticket is the source. Manual ticket takeover needs that repository's configured
+ticket integration (the standalone launcher only has its local test tracker).
+
+Takeover preserves an existing local branch/worktree, including unfinished work.
+When the PR branch is absent locally it starts from the PR's current remote head.
+It snapshots the PR body, all comments, reviews and inline review comments,
+then assesses completed work, remaining work and risks. A ticket source captures
+all ticket comments and metadata and finds an open PR for its existing branch.
+The assessment feeds clarification and planning; the implementer receives only
+the resulting continuation plan/assets. Publication updates the original PR.
+Existing ready PRs are converted to draft while the factory processes them.
+
+The MVP supports open PRs in the selected GitHub repository; fork PRs are rejected.
+It never resets an existing branch or force-pushes it. If another factory run owns
+the worktree, terminate that run first. Diverged local/remote work fails visibly
+at push and needs a human decision.
+
 ## Workflow definition
 
-Keep the `simple` and `factory` defaults and add another entry to the JSON array:
+Keep the `simple`, `factory` and `takeover` defaults and add another entry to the JSON array:
 
 ```json
 {
@@ -99,6 +132,28 @@ Keep the `simple` and `factory` defaults and add another entry to the JSON array
   ]
 }
 ```
+
+Factory and Takeover call the same internal `factory-pipeline` workflow.
+Changing its role settings, prompts or steps applies to both parents on new runs.
+The UI expands shared roles under either parent, and shows individual nested
+steps in run progress. Earlier saved flat Factory definitions are upgraded while
+preserving customized role settings.
+
+Add a reusable sequence with `"internal": true`, then call it using a step:
+
+```json
+{"id":"shared-checks","name":"Run shared checks","type":"workflow","workflow":"checks"}
+```
+
+Calls execute the child graph, including loops and fanout, then return to the
+parent. They share outputs, original input, human answers and complete history.
+Use distinct output IDs across sequences when results must coexist; executing
+an ID again replaces its latest output but retains every result in history.
+A call returns `{ "workflow": "checks", "completed": true }`. Internal workflows
+are excluded from manual/default/label selection but remain editable. Missing
+calls, recursion, nesting beyond ten levels and human checkpoints inside fanout
+are rejected. All definitions are frozen in each run, so editing a shared child
+cannot change an active run.
 
 Steps execute in array order unless `next` or a matching `branches` edge names
 another step. `next: "end"` finishes. A branch such as

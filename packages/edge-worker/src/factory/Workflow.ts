@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { agentSettings, resolveAgentSettings } from "./AgentSettings.js";
 
 const id = z
 	.string()
@@ -17,10 +18,7 @@ export const AgentStepSchema = z.object({
 	type: z.literal("agent"),
 	prompt: z.string().min(1),
 	inputs: z.array(z.string()).optional(),
-	runner: z
-		.enum(["claude", "codex", "gemini", "cursor", "opencode"])
-		.optional(),
-	model: z.string().min(1).optional(),
+	...agentSettings,
 	json: z.boolean().default(true),
 	askQuestions: z.boolean().default(false),
 });
@@ -28,7 +26,7 @@ export type AgentStep = z.infer<typeof AgentStepSchema>;
 export interface WorkflowStep {
 	id: string;
 	name: string;
-	type: "agent" | "script" | "tool" | "fanout";
+	type: "agent" | "script" | "tool" | "fanout" | "workflow";
 	next?: string;
 	branches: { when: { path: string; equals?: unknown }; next: string }[];
 	maxVisits: number;
@@ -36,6 +34,8 @@ export interface WorkflowStep {
 	inputs?: string[];
 	runner?: AgentStep["runner"];
 	model?: string;
+	reasoningEffort?: AgentStep["reasoningEffort"];
+	modelVariant?: string;
 	json?: boolean;
 	askQuestions?: boolean;
 	script?: string;
@@ -43,10 +43,12 @@ export interface WorkflowStep {
 	args?: string[];
 	arguments?: Record<string, unknown>;
 	groups?: WorkflowStep[][];
+	workflow?: string;
 }
 export const StepSchema: z.ZodType<WorkflowStep> = z.lazy(() =>
 	z.discriminatedUnion("type", [
 		AgentStepSchema,
+		z.object({ ...base, type: z.literal("workflow"), workflow: id }),
 		z.object({ ...base, type: z.literal("script"), script: z.string().min(1) }),
 		z.object({
 			...base,
@@ -68,6 +70,7 @@ export const WorkflowSchema = z.object({
 	description: z.string().default(""),
 	labels: z.array(z.string().min(1)).default([]),
 	steps: z.array(StepSchema).max(100),
+	internal: z.boolean().optional(),
 });
 export type Workflow = z.infer<typeof WorkflowSchema>;
 
@@ -88,6 +91,8 @@ export function validateWorkflows(value: unknown): Workflow[] {
 			const names = new Set(steps.map((step) => step.id));
 			if (names.size !== steps.length) throw new Error("Duplicate step IDs");
 			for (const step of steps) {
+				if (step.type === "agent" && step.runner)
+					resolveAgentSettings(step.runner, step);
 				for (const target of [
 					step.next,
 					...step.branches.map((branch) => branch.next),
@@ -101,8 +106,33 @@ export function validateWorkflows(value: unknown): Workflow[] {
 		};
 		check(workflow.steps);
 	}
-	if (!ids.has("simple") || !ids.has("factory"))
-		throw new Error("Keep the simple and factory defaults");
+	if (!ids.has("simple") || !ids.has("factory") || !ids.has("takeover"))
+		throw new Error("Keep the simple, factory and takeover defaults");
+	const byId = new Map(workflows.map((workflow) => [workflow.id, workflow]));
+	const checkCalls = (
+		steps: WorkflowStep[],
+		ancestors: string[],
+		parallel = false,
+	): void => {
+		for (const step of steps) {
+			if (parallel && step.askQuestions)
+				throw new Error("Human checkpoints belong outside fanout branches");
+			if (step.type === "workflow") {
+				const target = byId.get(step.workflow!);
+				if (!target || target.id === "simple")
+					throw new Error(`Unknown or uncallable workflow: ${step.workflow}`);
+				if (ancestors.includes(target.id))
+					throw new Error(
+						`Recursive workflow call: ${[...ancestors, target.id].join(" → ")}`,
+					);
+				if (ancestors.length >= 10)
+					throw new Error("Workflow nesting exceeds 10 levels");
+				checkCalls(target.steps, [...ancestors, target.id], parallel);
+			}
+			for (const group of step.groups ?? []) checkCalls(group, ancestors, true);
+		}
+	};
+	for (const workflow of workflows) checkCalls(workflow.steps, [workflow.id]);
 	return workflows;
 }
 

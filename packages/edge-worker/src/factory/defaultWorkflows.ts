@@ -21,7 +21,7 @@ const back = (path: string, next: string) => [
 const review = `Review the current diff against the accepted plan. You receive ALL historical review rounds and fixer responses. Use stable finding IDs; do not reopen resolved findings without fresh evidence. A fixer may reject a complaint with evidence; assess that evidence and either accept or reject the rejection with reasoning. Return {"findings":[{"id":"stable-id","rating":2,"summary":"...","evidence":"file:line and concrete failure","status":"open"}],"summary":"..."}. Ratings: 1 nitpick, 2 should fix, 3 must fix. Include unresolved rating 2/3 findings from earlier rounds. Return no findings only when all consequential complaints are resolved or their rejections accepted. Do not modify code.`;
 const fix = `Fix all open rating 2/3 findings. You receive ALL past findings and fixer dispositions; avoid alternating fixes or reopening settled issues without evidence. You may reject a complaint with concrete evidence. Return {"dispositions":[{"id":"finding-id","status":"fixed or rejected","reason":"..."}],"summary":"..."}. Run relevant checks, commit and push changes to the same draft PR. Do not merge or mark the PR ready.`;
 
-export const defaultWorkflows = validateWorkflows([
+const definitions = [
 	{
 		id: "simple",
 		name: "Simple / Cyrus",
@@ -47,7 +47,7 @@ export const defaultWorkflows = validateWorkflows([
 			agent(
 				"plan",
 				"Write implementation plan",
-				`Write a lean, complete implementation plan from the original input, ALL comments/metadata, clarified requirements/decision records, and any plan-review feedback. Return {"plan":"detailed self-contained Markdown implementation plan with acceptance criteria and validation","assets":[{"path":"absolute downloaded asset path or URL","purpose":"..."}]}. Include everything the implementer needs: it will receive ONLY this result, never the ticket. Include repository scope, base branch and delivery expectations. Do not implement.`,
+				`Write a lean, complete implementation plan from the original input, ALL comments/metadata, clarified requirements/decision records, and any plan-review feedback. When taking over, include the existing-work and assess-existing results and PR review discussion; preserve completed work and plan only the remaining changes. Include the existing PR URL/branch and require continuing it. Return {"plan":"detailed self-contained Markdown implementation plan with acceptance criteria and validation","assets":[{"path":"absolute downloaded asset path or URL","purpose":"..."}]}. Include everything the implementer needs: it will receive ONLY this result, never the ticket. Include repository scope, base branch and delivery expectations. Do not implement.`,
 			),
 			agent(
 				"plan-review",
@@ -110,4 +110,80 @@ export const defaultWorkflows = validateWorkflows([
 			}),
 		],
 	},
+];
+
+const pipeline = definitions[1]!;
+export const defaultWorkflows = validateWorkflows([
+	definitions[0],
+	{
+		...pipeline,
+		steps: [
+			{
+				id: "pipeline",
+				name: "Factory pipeline",
+				type: "workflow",
+				workflow: "factory-pipeline",
+			},
+		],
+	},
+	{
+		id: "takeover",
+		name: "Take over existing work",
+		description:
+			"Inspect an existing PR or ticket, clarify remaining work, then continue through the shared factory pipeline. Existing PRs stay draft for human review.",
+		labels: ["workflow:takeover", "takeover"],
+		steps: [
+			tool(
+				"existing-work",
+				"Inspect existing work and discussion",
+				"inspect-existing",
+			),
+			agent(
+				"assess-existing",
+				"Assess completed and remaining work",
+				`Inspect the existing worktree, diff, ticket/PR discussion and review feedback. Do not discard or rewrite completed work. Return {"completed":["..."],"remaining":["..."],"risks":["..."],"assets":["..."]}. Identify unresolved feedback and questions to carry into clarification/planning. Do not implement or modify code.`,
+			),
+			{
+				id: "pipeline",
+				name: "Continue factory pipeline",
+				type: "workflow",
+				workflow: "factory-pipeline",
+			},
+		],
+	},
+	{
+		...pipeline,
+		id: "factory-pipeline",
+		name: "Shared factory pipeline",
+		internal: true,
+		labels: [],
+	},
 ]);
+
+/** Upgrade the original flat Factory definition without losing customized roles. */
+export function upgradeWorkflows(value: unknown): unknown {
+	if (!Array.isArray(value)) return value;
+	const definitions = structuredClone(value) as Record<string, unknown>[];
+	const factory = definitions.find((item) => item.id === "factory");
+	if (!definitions.some((item) => item.id === "factory-pipeline")) {
+		const shared = structuredClone(
+			defaultWorkflows.find((item) => item.id === "factory-pipeline")!,
+		);
+		if (
+			factory &&
+			Array.isArray(factory.steps) &&
+			!factory.steps.some((step) => step.type === "workflow")
+		) {
+			shared.steps = factory.steps;
+			factory.steps = structuredClone(
+				defaultWorkflows.find((item) => item.id === "factory")!.steps,
+			);
+		}
+		definitions.push(shared);
+	}
+	if (!definitions.some((item) => item.id === "takeover"))
+		definitions.push(
+			structuredClone(defaultWorkflows.find((item) => item.id === "takeover")!),
+		);
+	return definitions;
+}

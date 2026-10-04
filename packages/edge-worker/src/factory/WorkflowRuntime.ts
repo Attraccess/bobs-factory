@@ -8,7 +8,8 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { defaultWorkflows } from "./defaultWorkflows.js";
+import type { AgentSettings } from "./AgentSettings.js";
+import { defaultWorkflows, upgradeWorkflows } from "./defaultWorkflows.js";
 import {
 	readPath,
 	validateWorkflows,
@@ -33,6 +34,8 @@ export interface FactoryRun {
 	title: string;
 	repositoryId: string;
 	workflow: Workflow;
+	workflowDefinitions?: Workflow[];
+	source?: string;
 	status: RunStatus;
 	createdAt: string;
 	updatedAt: string;
@@ -40,6 +43,8 @@ export interface FactoryRun {
 	input: string;
 	runner?: string;
 	model?: string;
+	reasoningEffort?: AgentSettings["reasoningEffort"];
+	modelVariant?: string;
 	issueId?: string;
 	workspaceId?: string;
 	step?: string;
@@ -88,7 +93,7 @@ export class WorkflowRuntime {
 			? JSON.parse(readFileSync(config, "utf8"))
 			: defaultWorkflows;
 		this.workflows = validateWorkflows(
-			Array.isArray(stored) ? stored : stored.workflows,
+			upgradeWorkflows(Array.isArray(stored) ? stored : stored.workflows),
 		);
 		if (!Array.isArray(stored))
 			this.defaultWorkflow = stored.defaultWorkflow ?? "simple";
@@ -118,7 +123,11 @@ export class WorkflowRuntime {
 		workflows: Workflow[],
 		defaultWorkflow: string,
 	): void {
-		if (!workflows.some((workflow) => workflow.id === defaultWorkflow))
+		if (
+			!workflows.some(
+				(workflow) => workflow.id === defaultWorkflow && !workflow.internal,
+			)
+		)
 			throw new Error(`Unknown default workflow: ${defaultWorkflow}`);
 	}
 	updateWorkflows(
@@ -137,9 +146,13 @@ export class WorkflowRuntime {
 	}
 	selectWorkflow(labels: string[], explicit?: string): Workflow {
 		const selected = explicit
-			? this.workflows.find((workflow) => workflow.id === explicit)
-			: this.workflows.find((workflow) =>
-					workflow.labels.some((label) => labels.includes(label)),
+			? this.workflows.find(
+					(workflow) => workflow.id === explicit && !workflow.internal,
+				)
+			: this.workflows.find(
+					(workflow) =>
+						!workflow.internal &&
+						workflow.labels.some((label) => labels.includes(label)),
 				);
 		if (explicit && !selected) throw new Error(`Unknown workflow: ${explicit}`);
 		return structuredClone(
@@ -156,17 +169,21 @@ export class WorkflowRuntime {
 		workflow: Workflow;
 		workspace: string;
 		input: string;
+		source?: string;
 		issueId?: string;
 		workspaceId?: string;
 		runner?: string;
 		model?: string;
+		reasoningEffort?: AgentSettings["reasoningEffort"];
+		modelVariant?: string;
 	}): FactoryRun {
 		const id = options.id ?? randomUUID();
 		if (!/^[\w-]+$/.test(id)) throw new Error("Invalid run ID");
 		if (this.runs.has(id)) throw new Error(`Run already exists: ${id}`);
 		const now = new Date().toISOString();
 		const run: FactoryRun = {
-			...options,
+			...structuredClone(options),
+			workflowDefinitions: this.listWorkflows(),
 			id,
 			status: "running",
 			createdAt: now,
@@ -291,6 +308,14 @@ export class WorkflowRuntime {
 						),
 					),
 				);
+			} else if (step.type === "workflow") {
+				const definition = run.workflowDefinitions?.find(
+					(item) => item.id === step.workflow,
+				);
+				if (!definition)
+					throw new Error(`Workflow unavailable: ${step.workflow}`);
+				await this.graph(run, definition.steps, outputs, signal, `${key}/`);
+				output = { workflow: definition.id, completed: true };
 			} else {
 				output = await this.hooks[step.type](context);
 			}

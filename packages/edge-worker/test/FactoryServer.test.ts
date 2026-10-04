@@ -19,9 +19,14 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		sessions: () => [],
 		entries: () => [],
 		start: async (input) => {
-			const workflow = structuredClone(defaultWorkflows[1]!);
+			const workflow = structuredClone(
+				defaultWorkflows.find((item) => item.id === "factory-pipeline")!,
+			);
 			workflow.steps = [workflow.steps[0]!];
 			const run = runtime.create({
+				runner: input.runner,
+				reasoningEffort: input.reasoningEffort,
+				modelVariant: input.modelVariant,
 				title: input.title,
 				repositoryId: input.repositoryId,
 				workspace: home,
@@ -92,9 +97,12 @@ it("starts, displays, answers and terminates runs through the local API", async 
 				prompt: "Build",
 				repositoryId: "repo",
 				workflow: "factory",
+				runner: "codex",
+				reasoningEffort: "high",
 			},
 		});
 		expect(started.statusCode).toBe(202);
+		expect(started.json().reasoningEffort).toBe("high");
 		const id = started.json().id;
 		await vi.waitFor(() => expect(runtime.get(id).status).toBe("waiting"));
 		const detail = await server.app.inject({ url: `/api/runs/${id}`, headers });

@@ -64,6 +64,7 @@ describe("OpenCodeRunner", () => {
 			cyrusHome: dir,
 			title: "NG-61 OpenCode runner",
 			model: "anthropic/claude-sonnet-4.5",
+			modelVariant: "custom-review",
 			agent: "build",
 			onMessage: (message) => {
 				messages.push(message);
@@ -93,6 +94,8 @@ describe("OpenCodeRunner", () => {
 			"NG-61 OpenCode runner",
 			"--model",
 			"anthropic/claude-sonnet-4.5",
+			"--variant",
+			"custom-review",
 			"--agent",
 			"build",
 		]);

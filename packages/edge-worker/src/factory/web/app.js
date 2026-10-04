@@ -98,9 +98,31 @@ function renderGuide(run) {
   <section class="guide-section"><h3>Checks & risks</h3>${textList(guide.checks)}${textList(guide.risks)}</section>
   <section class="guide-section"><h3>Your review</h3>${textList(guide.reviewInstructions)}</section><p class="muted">Revision: ${htmlEscape(run.outputs.handoff?.headSha ?? run.outputs.ci?.headSha)}</p>`;
 }
+function expandSteps(steps, definitions, prefix = "", ancestors = []) {
+	return steps.flatMap((step) => {
+		const key = prefix + step.id;
+		if (step.type === "workflow") {
+			if (ancestors.includes(step.workflow)) return [];
+			const definition = definitions.find((item) => item.id === step.workflow);
+			return expandSteps(definition?.steps ?? [], definitions, `${key}/`, [
+				...ancestors,
+				step.workflow,
+			]);
+		}
+		return [
+			{ ...step, key },
+			...(step.groups ?? []).flatMap((group, index) =>
+				expandSteps(group, definitions, `${key}/${index}/`, ancestors),
+			),
+		];
+	});
+}
 function renderDetail(run) {
 	const outputs = run.outputs ?? {},
-		steps = run.workflow?.steps ?? [],
+		steps = expandSteps(
+			run.workflow?.steps ?? [],
+			run.workflowDefinitions ?? config.workflows,
+		),
 		visited = new Set((run.history ?? []).map((item) => item.step));
 	const repo =
 		config.repositories.find((item) => item.id === run.repositoryId)?.name ??
@@ -143,7 +165,7 @@ function renderDetail(run) {
 			: '<p class="muted">Step results appear here as the run progresses.</p>';
 	} else if (tab === "guide") content = renderGuide(run);
 	else
-		content = `${run.error ? `<div class="callout">${htmlEscape(run.error)}</div>` : ""}<h3>${steps.length ? "Workflow progress" : "Cyrus run"}</h3>${steps.length ? `<ol class="step-list">${steps.map((step, index) => `<li class="${run.step === step.id && active(run.status) ? "current" : visited.has(step.id) ? "done" : ""}"><span class="step-circle">${visited.has(step.id) ? "✓" : index + 1}</span><span>${htmlEscape(step.name)}</span></li>`).join("")}</ol>` : '<p class="muted">The original Cyrus workflow is running. See Activity for agent progress.</p>'}<details><summary>Workspace and input</summary><p class="muted">${htmlEscape(run.workspace || "Preparing workspace…")}</p><pre>${htmlEscape(run.input ?? "")}</pre></details>`;
+		content = `${run.error ? `<div class="callout">${htmlEscape(run.error)}</div>` : ""}<h3>${steps.length ? "Workflow progress" : "Cyrus run"}</h3>${steps.length ? `<ol class="step-list">${steps.map((step, index) => `<li class="${run.step === step.key && active(run.status) ? "current" : visited.has(step.key) ? "done" : ""}"><span class="step-circle">${visited.has(step.key) ? "✓" : index + 1}</span><span>${htmlEscape(step.name)}</span></li>`).join("")}</ol>` : '<p class="muted">The original Cyrus workflow is running. See Activity for agent progress.</p>'}<details><summary>Workspace and input</summary><p class="muted">${htmlEscape(run.workspace || "Preparing workspace…")}</p><pre>${htmlEscape(run.input ?? "")}</pre></details>`;
 	$("#detail").innerHTML =
 		`<div class="detail-header"><div>${badge(run.status)}<h2>${htmlEscape(run.title)}</h2><div class="detail-meta">${htmlEscape(repo)} · ${htmlEscape(run.workflow?.name ?? "Simple / Cyrus")}<br>${htmlEscape(date(run.createdAt))} ${safePr}</div></div>${active(run.status) ? '<button class="danger" id="stop-run">Terminate</button>' : ""}</div><nav class="tabs" aria-label="Run views">${[
 			["overview", "Overview"],
@@ -230,17 +252,25 @@ async function openStart() {
 					.join("")
 			: '<option value="">No active repositories configured</option>';
 		$("#workflow-select").innerHTML = config.workflows
+			.filter((workflow) => !workflow.internal)
 			.map(
 				(workflow) =>
 					`<option value="${htmlEscape(workflow.id)}">${htmlEscape(workflow.name)}</option>`,
 			)
 			.join("");
 		$("#workflow-select").value = config.defaultWorkflow;
-		$("#workflow-select").onchange = () =>
-			($("#workflow-description").textContent =
+		$("#workflow-select").onchange = () => {
+			$("#workflow-description").textContent =
 				config.workflows.find((item) => item.id === $("#workflow-select").value)
-					?.description ?? "");
+					?.description ?? "";
+			const takeover = $("#workflow-select").value === "takeover";
+			$("#takeover-source-label").hidden = !takeover;
+			$("#takeover-hint").hidden = !takeover;
+			$("#takeover-source").disabled = !takeover;
+			$("#takeover-source").required = takeover;
+		};
 		$("#workflow-select").onchange();
+		renderRunReasoning();
 		$("#start-dialog").showModal();
 	} catch (error) {
 		fail(error);
@@ -248,6 +278,40 @@ async function openStart() {
 }
 $("#new-run").onclick = openStart;
 $("#empty-start").onclick = openStart;
+function reasoningOptions(runner, selected, label) {
+	return (
+		`<option value="">${label}</option>` +
+		(config.reasoningLevels?.[runner] ?? [])
+			.map(
+				(level) =>
+					`<option value="${level}" ${selected === level ? "selected" : ""}>${level}</option>`,
+			)
+			.join("")
+	);
+}
+function renderRunReasoning(reset = false) {
+	const runner = $("#start-form [name=runner]").value || config.defaultRunner;
+	const reasoning = $("#run-reasoning");
+	const variant = $("#run-variant");
+	const supported = Boolean(config.reasoningLevels?.[runner]);
+	reasoning.innerHTML = reasoningOptions(
+		runner,
+		reset ? "" : reasoning.value,
+		"Model default",
+	);
+	reasoning.disabled = !supported;
+	$("#run-reasoning-label").hidden = !supported;
+	variant.disabled = runner !== "opencode";
+	$("#run-variant-label").hidden = variant.disabled;
+	if (reset) variant.value = "";
+	$("#run-reasoning-hint").textContent =
+		runner === "opencode"
+			? "Use a variant supported by this provider/model, or enter a custom variant."
+			: supported
+				? "Available effort levels depend on the selected model. Empty uses its default."
+				: "This runner uses the model’s native reasoning settings.";
+}
+$("#start-form [name=runner]").onchange = () => renderRunReasoning(true);
 document.querySelectorAll("[data-close]").forEach((button) => {
 	button.onclick = () => document.getElementById(button.dataset.close).close();
 });
@@ -276,6 +340,8 @@ $("#start-form").onsubmit = async (event) => {
 		const values = Object.fromEntries(new FormData(form));
 		if (!values.runner) delete values.runner;
 		if (!values.model) delete values.model;
+		if (!values.reasoningEffort) delete values.reasoningEffort;
+		if (!values.modelVariant) delete values.modelVariant;
 		const run = await api("/api/runs", {
 			method: "POST",
 			body: JSON.stringify(values),
@@ -318,6 +384,7 @@ function renderDefaultWorkflowOptions(
 	$("#default-workflow").innerHTML =
 		'<option value="">Choose a default workflow</option>' +
 		definitions
+			.filter((workflow) => !workflow.internal)
 			.map(
 				(workflow) =>
 					`<option value="${htmlEscape(workflow.id)}">${htmlEscape(workflow.name)}</option>`,
@@ -332,36 +399,60 @@ function renderRoleSettings() {
 		const workflow = definitions.find(
 			(item) => item.id === $("#roles-workflow").value,
 		);
-		const collect = (steps, prefix = "steps") =>
+		const collect = (steps, workflowId, prefix = "steps", ancestors = []) =>
 			steps.flatMap((step, index) => {
 				const path = `${prefix}.${index}`;
-				return step.type === "agent"
-					? [{ step, path }]
-					: (step.groups ?? []).flatMap((group, groupIndex) =>
-							collect(group, `${path}.groups.${groupIndex}`),
-						);
+				if (step.type === "agent") return [{ step, path, workflowId }];
+				if (step.type === "workflow") {
+					if (ancestors.includes(step.workflow))
+						throw new Error("Recursive workflow call");
+					const nested = definitions.find((item) => item.id === step.workflow);
+					if (!nested) throw new Error(`Missing workflow: ${step.workflow}`);
+					return collect(nested.steps, nested.id, "steps", [
+						...ancestors,
+						step.workflow,
+					]);
+				}
+				return (step.groups ?? []).flatMap((group, groupIndex) =>
+					collect(group, workflowId, `${path}.groups.${groupIndex}`, ancestors),
+				);
 			});
-		const roles = collect(workflow.steps);
+		const roles = collect(workflow.steps, workflow.id, "steps", [workflow.id]);
 		$("#role-settings").innerHTML = roles.length
 			? roles
-					.map(
-						({ step, path }) =>
-							`<div class="role-row"><strong>${htmlEscape(step.name)}</strong><label><span class="sr-only">${htmlEscape(step.name)} agent</span><select data-role="${path}" data-field="runner"><option value="">Run default</option>${["claude", "codex", "gemini", "cursor", "opencode"].map((runner) => `<option value="${runner}" ${step.runner === runner ? "selected" : ""}>${runner}</option>`).join("")}</select></label><label><span class="sr-only">${htmlEscape(step.name)} model</span><input data-role="${path}" data-field="model" value="${htmlEscape(step.model ?? "")}" placeholder="Default model"></label></div>`,
-					)
+					.map(({ step, path, workflowId }) => {
+						const runner = step.runner || config.defaultRunner;
+						const advanced =
+							runner === "opencode"
+								? `<label><span class="sr-only">${htmlEscape(step.name)} model variant</span><input data-workflow="${htmlEscape(workflowId)}" data-role="${path}" data-field="modelVariant" value="${htmlEscape(step.modelVariant ?? "")}" placeholder="Default variant" list="variant-suggestions"></label>`
+								: `<label><span class="sr-only">${htmlEscape(step.name)} reasoning effort</span><select data-workflow="${htmlEscape(workflowId)}" data-role="${path}" data-field="reasoningEffort" ${config.reasoningLevels?.[runner] ? "" : "disabled"}>${reasoningOptions(runner, step.reasoningEffort, config.reasoningLevels?.[runner] ? "Run/model effort" : "Native settings")}</select></label>`;
+						return `<div class="role-row"><strong>${htmlEscape(step.name)}</strong><label><span class="sr-only">${htmlEscape(step.name)} agent</span><select data-workflow="${htmlEscape(workflowId)}" data-role="${path}" data-field="runner"><option value="">Run default</option>${["claude", "codex", "gemini", "cursor", "opencode"].map((runner) => `<option value="${runner}" ${step.runner === runner ? "selected" : ""}>${runner}</option>`).join("")}</select></label><label><span class="sr-only">${htmlEscape(step.name)} model</span><input data-workflow="${htmlEscape(workflowId)}" data-role="${path}" data-field="model" value="${htmlEscape(step.model ?? "")}" placeholder="Default model"></label>${advanced}</div>`;
+					})
 					.join("")
-			: '<p class="hint">Simple uses the run’s agent and model with Cyrus’s existing behavior.</p>';
+			: `<p class="hint">${workflow.id === "simple" ? "Simple uses the run’s agent and model with Cyrus’s existing behavior." : "This workflow has no agent steps."}</p>`;
 		document.querySelectorAll("[data-role]").forEach((input) => {
 			input.onchange = () => {
+				if (!input.isConnected) return; // Ignore blur/change from fields removed by a provider switch.
 				const current = JSON.parse($("#workflow-json").value);
 				const currentWorkflow = current.find(
-					(item) => item.id === $("#roles-workflow").value,
+					(item) => item.id === input.dataset.workflow,
 				);
 				const step = input.dataset.role
 					.split(".")
 					.reduce((value, key) => value[key], currentWorkflow);
+				if (
+					input.dataset.field === "modelVariant" &&
+					(step.runner || config.defaultRunner) !== "opencode"
+				)
+					return;
 				if (input.value.trim()) step[input.dataset.field] = input.value.trim();
 				else delete step[input.dataset.field];
+				if (input.dataset.field === "runner") {
+					delete step.reasoningEffort;
+					delete step.modelVariant;
+				}
 				$("#workflow-json").value = JSON.stringify(current, null, 2);
+				if (input.dataset.field === "runner") renderRoleSettings();
 			};
 		});
 	} catch (error) {

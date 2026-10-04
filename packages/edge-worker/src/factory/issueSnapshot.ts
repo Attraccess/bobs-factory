@@ -1,17 +1,21 @@
-import type { Issue } from "cyrus-core";
+import type { IIssueTrackerService, Issue } from "cyrus-core";
 
 /** Snapshot every comment page so later roles don't depend on a live ticket read. */
 export async function issueSnapshot(
 	issue: Issue,
 	labels: string[],
+	tracker?: IIssueTrackerService,
 ): Promise<unknown> {
 	const comments: unknown[] = [];
 	let after: string | undefined;
 	do {
-		const page = await issue.comments({
+		const options = {
 			first: 100,
 			...(after ? { after } : {}),
-		});
+		};
+		const page = tracker
+			? await tracker.fetchComments(issue.id, options)
+			: await issue.comments(options);
 		for (const comment of page.nodes) {
 			const user = await comment.user;
 			comments.push({

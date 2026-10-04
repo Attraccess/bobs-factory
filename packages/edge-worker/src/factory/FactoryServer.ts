@@ -2,20 +2,20 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
+import { agentSettings, reasoningLevels } from "./AgentSettings.js";
 import { CaptureSchema, verifiedScreenshot } from "./FactoryTools.js";
 import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 
 const startSchema = z.object({
 	title: z.string().trim().min(1).max(300),
+	source: z.string().trim().min(1).max(1000).optional(),
 	prompt: z.string().trim().min(1).max(100000),
 	repositoryId: z.string().min(1),
 	workflow: z.string().min(1),
-	runner: z
-		.enum(["claude", "codex", "gemini", "cursor", "opencode"])
-		.optional(),
-	model: z.string().trim().min(1).optional(),
+	...agentSettings,
 });
 interface ServerHooks {
+	defaultRunner?(): string;
 	repositories(): { id: string; name: string }[];
 	sessions(): {
 		id: string;
@@ -71,6 +71,8 @@ export class FactoryServer {
 			repositories: hooks.repositories(),
 			workflows: runtime.listWorkflows(),
 			defaultWorkflow: runtime.getDefaultWorkflow(),
+			defaultRunner: hooks.defaultRunner?.() ?? "claude",
+			reasoningLevels,
 		}));
 		this.app.put("/api/workflows", (request) => {
 			// Retain the original array API for existing local clients.

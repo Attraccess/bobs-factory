@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { z } from "zod";
+import { inspectPullRequest } from "./Takeover.js";
 import { readPath } from "./Workflow.js";
 
 export function toolArguments(
@@ -211,6 +212,62 @@ export class FactoryTools {
 				? this.hooks.command(context, exe, args, timeout)
 				: executeCommand(context, exe, args, timeout);
 		switch (context.step.tool) {
+			case "inspect-existing": {
+				const branch = await command("git", ["branch", "--show-current"]);
+				let pr = run.outputs.source as
+					| Awaited<ReturnType<typeof inspectPullRequest>>
+					| undefined;
+				if (!pr?.url) {
+					const candidates: { url: string }[] = JSON.parse(
+						await command("gh", [
+							"pr",
+							"list",
+							"--head",
+							branch,
+							"--state",
+							"open",
+							"--json",
+							"url",
+						]),
+					);
+					if (candidates.length > 1)
+						throw new Error(
+							"Multiple PRs for this branch; start Takeover with an explicit PR URL",
+						);
+					if (candidates[0])
+						pr = await inspectPullRequest(command, candidates[0].url);
+				}
+				if (pr) {
+					if (branch !== pr.headRefName)
+						throw new Error(
+							"Takeover worktree does not match the existing PR branch",
+						);
+					if (!pr.isDraft)
+						await command("gh", ["pr", "ready", pr.url, "--undo"]);
+					run.outputs.source = { ...pr, isDraft: true };
+					run.outputs.repository = {
+						...(run.outputs.repository as Record<string, unknown>),
+						baseBranch: pr.baseRefName,
+					};
+				}
+				return {
+					branch,
+					pr: run.outputs.source,
+					ticket: run.outputs.ticket,
+					status: await command("git", ["status", "--porcelain"]),
+					diff: await command("git", ["diff", "HEAD"]),
+					commits: await command("git", [
+						"log",
+						"--oneline",
+						`${pr?.baseRefName ?? readPath(run.outputs, "repository.baseBranch")}..HEAD`,
+					]),
+					diffSummary: await command("git", [
+						"diff",
+						"--stat",
+						`${pr?.baseRefName ?? readPath(run.outputs, "repository.baseBranch")}...HEAD`,
+					]),
+				};
+			}
 			case "record-decisions": {
 				const decisions = run.outputs.clarify;
 				await this.hooks.postComment(
@@ -222,6 +279,21 @@ export class FactoryTools {
 			case "draft-pr": {
 				const branch = await command("git", ["branch", "--show-current"]);
 				if (!branch) throw new Error("Draft PR requires a branch");
+				if (readPath(run.outputs, "source.url")) {
+					if (readPath(run.outputs, "source.headRefName") !== branch)
+						throw new Error("Takeover must publish to the original PR branch");
+					const pr = JSON.parse(
+						await command("gh", [
+							"pr",
+							"view",
+							String(readPath(run.outputs, "source.url")),
+							"--json",
+							"state,isDraft",
+						]),
+					);
+					if (pr.state !== "OPEN" || !pr.isDraft)
+						throw new Error("Takeover PR must remain open and draft");
+				}
 				if (await command("git", ["status", "--porcelain"])) {
 					await command("git", ["add", "-A"]);
 					await command("git", ["commit", "-m", run.title]);
@@ -239,8 +311,14 @@ export class FactoryTools {
 						"url,isDraft",
 					]),
 				);
-				let url = existing[0]?.url;
-				if (url && !existing[0]?.isDraft)
+				let url =
+					String(readPath(run.outputs, "source.url") ?? "") || existing[0]?.url;
+
+				if (
+					url &&
+					!readPath(run.outputs, "source.url") &&
+					!existing[0]?.isDraft
+				)
 					throw new Error(
 						"Existing PR is not draft; refusing to change its state automatically",
 					);

@@ -163,15 +163,25 @@ import { ChatSessionHandler } from "./ChatSessionHandler.js";
 import { ConfigManager, type RepositoryChanges } from "./ConfigManager.js";
 import { DefaultSkillsDeployer } from "./DefaultSkillsDeployer.js";
 import { EgressProxy } from "./EgressProxy.js";
+import {
+	type AgentSettings,
+	resolveAgentSettings,
+} from "./factory/AgentSettings.js";
 import { validateFactoryResult } from "./factory/FactoryResults.js";
 import { FactoryServer } from "./factory/FactoryServer.js";
 import {
 	captureEvidence,
+	executeCommand,
 	FactoryTools,
 	parseAgentOutput,
 	toolArguments,
 } from "./factory/FactoryTools.js";
 import { issueSnapshot } from "./factory/issueSnapshot.js";
+import {
+	inspectPullRequest,
+	type TakeoverPullRequest,
+	ticketIdentifier,
+} from "./factory/Takeover.js";
 import {
 	type ExecutionContext,
 	type FactoryRun,
@@ -797,6 +807,7 @@ export class EdgeWorker extends EventEmitter {
 			process.env.CYRUS_FACTORY_PORT !== "0"
 		) {
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
+				defaultRunner: () => this.runnerSelectionService.getDefaultRunner(),
 				repositories: () =>
 					Array.from(this.repositories.values())
 						.filter((repo) => repo.isActive)
@@ -4432,6 +4443,16 @@ ${taskSection}`;
 			throw new Error(`Failed to fetch full issue details for ${issue.id}`);
 		}
 
+		const takeover =
+			this.getFactoryRuntime().selectWorkflow(
+				await this.fetchIssueLabels(fullIssue),
+			).id === "takeover";
+		if (takeover && fullIssue.branchName) {
+			baseBranchOverrides = new Map(baseBranchOverrides);
+			for (const repo of repositories)
+				baseBranchOverrides.set(repo.id, fullIssue.branchName);
+		}
+
 		// Move issue to started state automatically, in case it's not already
 		await this.moveIssueToStartedState(fullIssue, linearWorkspaceId);
 
@@ -4463,6 +4484,17 @@ ${taskSection}`;
 						),
 				});
 
+		if (
+			takeover &&
+			[...(this.factoryRuntime?.runs.values() ?? [])].some(
+				(run) =>
+					["running", "waiting"].includes(run.status) &&
+					run.workspace === workspace.path,
+			)
+		)
+			throw new Error(
+				"Another run is using this worktree; terminate it before taking over",
+			);
 		this.logger.debug(`Workspace created at: ${workspace.path}`);
 
 		const issueMinimal = this.convertLinearIssueToCore(fullIssue);
@@ -4945,15 +4977,24 @@ ${taskSection}`;
 					repositoryId: primaryRepo.id,
 					workflow,
 					workspace: session.workspace.path,
-					input: `${assembly.userPrompt}\n\nComplete ticket snapshot:\n${JSON.stringify(await issueSnapshot(fullIssue, labels), null, 2)}`,
+					input: `${assembly.userPrompt}\n\nComplete ticket snapshot:\n${JSON.stringify(await issueSnapshot(fullIssue, labels, this.issueTrackers.get(linearWorkspaceId)), null, 2)}`,
 					issueId: fullIssue.id,
 					workspaceId: linearWorkspaceId,
 				});
 				run.outputs.repository = {
 					baseBranch:
-						session.repositories[0]?.baseBranchName ?? primaryRepo.baseBranch,
+						workflow.id === "takeover"
+							? primaryRepo.baseBranch
+							: (session.repositories[0]?.baseBranchName ??
+								primaryRepo.baseBranch),
 					name: primaryRepo.name,
 				};
+				if (workflow.id === "takeover")
+					run.outputs.ticket = await issueSnapshot(
+						fullIssue,
+						labels,
+						this.issueTrackers.get(linearWorkspaceId),
+					);
 				run.runner = selectedRunner.runnerType;
 				run.model = selectedRunner.config.model;
 				this.emit("session:started", fullIssue.id, fullIssue, primaryRepo.id);
@@ -5491,10 +5532,17 @@ ${taskSection}`;
 		}
 
 		// Branch 1.5: Handle re-prompt for parked (blocked-by) sessions
-		const factoryRun = this.factoryRuntime?.runs.get(agentSessionId);
+		const factoryRun =
+			[...(this.factoryRuntime?.runs.values() ?? [])].find(
+				(run) =>
+					run.id.startsWith("manual-") &&
+					run.issueId === webhook.agentSession.issue?.id &&
+					run.workspaceId === webhook.organizationId &&
+					run.status === "waiting",
+			) ?? this.factoryRuntime?.runs.get(agentSessionId);
 		if (factoryRun) {
 			if (factoryRun.status === "waiting")
-				this.factoryRuntime!.answer(agentSessionId, activityBody);
+				this.factoryRuntime!.answer(factoryRun.id, activityBody);
 			else
 				await this.agentSessionManager.createResponseActivity(
 					agentSessionId,
@@ -5861,11 +5909,12 @@ ${taskSection}`;
 			undefined,
 			run.workspaceId ?? repository.linearWorkspaceId,
 		);
-		const runnerType =
-			step.runner ?? (run.runner as RunnerType | undefined) ?? built.runnerType;
+		const runRunnerType =
+			(run.runner as RunnerType | undefined) ?? built.runnerType;
+		const runnerType = step.runner ?? runRunnerType;
 		built.config.model =
 			step.model ??
-			(step.runner && step.runner !== run.runner
+			(step.runner && step.runner !== runRunnerType
 				? this.getDefaultModelForRunner(runnerType)
 				: run.model) ??
 			(runnerType === built.runnerType
@@ -5873,6 +5922,14 @@ ${taskSection}`;
 				: this.getDefaultModelForRunner(runnerType));
 		built.config.fallbackModel =
 			this.getDefaultFallbackModelForRunner(runnerType);
+		Object.assign(
+			built.config,
+			resolveAgentSettings(runnerType, step, {
+				runner: (run.runner as RunnerType | undefined) ?? built.runnerType,
+				reasoningEffort: run.reasoningEffort,
+				modelVariant: run.modelVariant,
+			}),
+		);
 		built.config.resumeSessionId = undefined; // Each role has a fresh agent conversation.
 		built.config.additionalDirectories = [
 			...(built.config.additionalDirectories ?? []),
@@ -5924,7 +5981,12 @@ ${taskSection}`;
 								.join("\n")
 						: "";
 			let output = step.json === false ? { text } : parseAgentOutput(text);
-			if (run.workflow.id === "factory")
+			if (
+				["factory", "takeover"].includes(run.workflow.id) ||
+				run.workflowDefinitions
+					?.find((item) => item.id === "factory-pipeline")
+					?.steps.includes(step)
+			)
 				output = validateFactoryResult(step.id, output);
 			if (step.id === "capture") output = captureEvidence(context, output);
 			return output;
@@ -5985,26 +6047,37 @@ ${taskSection}`;
 		);
 	}
 
-	private async startManualFactoryRun(input: {
-		title: string;
-		prompt: string;
-		repositoryId: string;
-		workflow: string;
-		runner?: RunnerType;
-		model?: string;
-	}): Promise<FactoryRun> {
+	private async startManualFactoryRun(
+		input: AgentSettings & {
+			title: string;
+			prompt: string;
+			source?: string;
+			repositoryId: string;
+			workflow: string;
+			runner?: RunnerType;
+			model?: string;
+		},
+	): Promise<FactoryRun> {
 		const repository = this.repositories.get(input.repositoryId);
 		if (!repository?.isActive) throw new Error("Select an active repository");
 		const runtime = this.getFactoryRuntime();
+		const workflow = runtime.selectWorkflow([], input.workflow);
+		if (workflow.id === "takeover" && !input.source)
+			throw new Error(
+				"Takeover needs an existing PR URL or ticket identifier/URL",
+			);
 		const run = runtime.create({
 			id: `manual-${randomUUID()}`,
 			title: input.title,
 			repositoryId: repository.id,
-			workflow: runtime.selectWorkflow([], input.workflow),
+			workflow,
+			source: input.source,
 			workspace: "",
 			input: input.prompt,
 			runner: input.runner,
 			model: input.model,
+			reasoningEffort: input.reasoningEffort,
+			modelVariant: input.modelVariant,
 		});
 		void (async () => {
 			try {
@@ -6015,14 +6088,76 @@ ${taskSection}`;
 					title: input.title,
 					description: input.prompt,
 				});
-				const fullIssue: Issue = {
+				let fullIssue: Issue = {
 					...created,
 					identifier: `MANUAL-${run.id.slice(-8)}`,
 					branchName: `factory/${run.id}`,
 				};
-				const workspace = await this.gitService.createGitWorktree(fullIssue, [
-					repository,
-				]);
+				let takeoverPr: TakeoverPullRequest | undefined;
+				let baseBranchOverrides: Map<string, string> | undefined;
+				if (workflow.id === "takeover" && input.source) {
+					if (input.source.startsWith("https://github.com/")) {
+						const setupContext: ExecutionContext = {
+							run: { ...run, workspace: repository.repositoryPath },
+							step: workflow.steps[0]!,
+							input: {},
+							signal: new AbortController().signal,
+							log: (text) => runtime.log(run, "setup", text),
+							evidenceDir: join(runtime.directory, "evidence", run.id),
+						};
+						const command = (exe: string, args: string[]) =>
+							executeCommand(setupContext, exe, args, 60000);
+						takeoverPr = await inspectPullRequest(command, input.source);
+						const ref = `refs/factory/takeover/${takeoverPr.number}`;
+						await command("git", [
+							"fetch",
+							"origin",
+							`+refs/pull/${takeoverPr.number}/head:${ref}`,
+						]);
+						fullIssue = { ...fullIssue, branchName: takeoverPr.headRefName };
+						baseBranchOverrides = new Map([[repository.id, ref]]);
+						run.outputs.source = takeoverPr;
+					} else {
+						const existingTracker = this.issueTrackers.get(
+							repository.linearWorkspaceId ?? "",
+						);
+						if (!existingTracker)
+							throw new Error(
+								"Ticket tracker unavailable; configure the ticket workspace before taking over a ticket",
+							);
+						fullIssue = await existingTracker.fetchIssue(
+							ticketIdentifier(input.source),
+						);
+						run.issueId = fullIssue.id;
+						run.workspaceId = repository.linearWorkspaceId;
+						run.outputs.ticket = await issueSnapshot(
+							fullIssue,
+							await this.fetchIssueLabels(fullIssue),
+							existingTracker,
+						);
+						baseBranchOverrides = new Map([
+							[repository.id, fullIssue.branchName ?? repository.baseBranch],
+						]);
+						run.input = `${input.prompt}\n\nComplete existing ticket snapshot:\n${JSON.stringify(run.outputs.ticket, null, 2)}`;
+					}
+				}
+				if (run.status === "stopped") return;
+				const workspace = await this.gitService.createGitWorktree(
+					fullIssue,
+					[repository],
+					{ baseBranchOverrides },
+				);
+				if (
+					[...runtime.runs.values()].some(
+						(other) =>
+							other.id !== run.id &&
+							["running", "waiting"].includes(other.status) &&
+							other.workspace === workspace.path,
+					)
+				)
+					throw new Error(
+						"Another run is using this worktree; terminate it before taking over",
+					);
 				run.workspace = workspace.path;
 				const session = this.agentSessionManager.createChatSession(
 					run.id,
@@ -6032,7 +6167,7 @@ ${taskSection}`;
 						{
 							repositoryId: repository.id,
 							branchName: fullIssue.branchName,
-							baseBranchName: repository.baseBranch,
+							baseBranchName: takeoverPr?.baseRefName ?? repository.baseBranch,
 						},
 					],
 				);
@@ -6040,10 +6175,13 @@ ${taskSection}`;
 				run.outputs.repository = {
 					name: repository.name,
 					baseBranch:
-						workspace.resolvedBaseBranches?.[repository.id]?.branch ??
+						takeoverPr?.baseRefName ??
+						(workflow.id === "takeover"
+							? repository.baseBranch
+							: workspace.resolvedBaseBranches?.[repository.id]?.branch) ??
 						repository.baseBranch,
 				};
-				if (run.status === "stopped") return;
+				if (runtime.get(run.id).status === "stopped") return;
 				if (run.workflow.id === "simple") {
 					const assembly = await this.assemblePrompt({
 						session,
@@ -6077,6 +6215,7 @@ ${taskSection}`;
 							: this.getDefaultModelForRunner(runnerType));
 					built.config.fallbackModel =
 						this.getDefaultFallbackModelForRunner(runnerType);
+					Object.assign(built.config, resolveAgentSettings(runnerType, input));
 					if (runtime.get(run.id).status === "stopped") return;
 					await runtime.launch(run, async (signal) => {
 						const runner = capRunnerStarts(
