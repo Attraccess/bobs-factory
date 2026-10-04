@@ -28,6 +28,14 @@ trusted local operator.
 
 ## Run and configure
 
+The **Activity** view displays conversations and workflow progress in time order,
+using the same runner tool formatters as Linear. Tool calls include their status
+and expandable results; **Raw data** retains the original payload. **Show earlier
+activity** reveals older entries. Markdown and structured agent responses are
+rendered as readable content. Expanded artifact/result panels and their scroll
+positions are preserved across live updates and tab switches, separately for
+each run, until the page is reloaded.
+
 Select a repository and workflow under **New run**, then fill its launch fields.
 **Simple / Cyrus** retains the existing Cyrus execution path and is the initial
 default. **Software factory** adds the pipeline

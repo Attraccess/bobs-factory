@@ -19,7 +19,7 @@
 	],
 	"scripts": {
 		"build": "tsgo && npm run copy-prompts",
-		"copy-prompts": "cp label-prompt-template.md dist/ && cp -r prompts dist/ && rm -rf dist/cyrus-skills-plugin && cp -rL cyrus-skills-plugin dist/cyrus-skills-plugin && mkdir -p dist/factory && cp -r src/factory/web dist/factory/",
+		"copy-prompts": "cp label-prompt-template.md dist/ && cp -r prompts dist/ && rm -rf dist/cyrus-skills-plugin && cp -rL cyrus-skills-plugin dist/cyrus-skills-plugin && mkdir -p dist/factory && cp -r src/factory/web dist/factory/ && node scripts/build-factory-web.mjs",
 		"dev": "tsgo --watch",
 		"test": "vitest",
 		"test:run": "vitest run",

@@ -1,3 +1,5 @@
+import { formatActivities, renderContent } from "./activity.js";
+
 const $ = (selector) => document.querySelector(selector);
 const htmlEscape = (text) =>
 	String(text ?? "").replace(
@@ -14,6 +16,56 @@ let config = { repositories: [], workflows: [] },
 	filter = "all",
 	tab = "overview",
 	detailSignature = "";
+const detailStates = new Map(),
+	activityLimits = new Map();
+function rememberDetail() {
+	const detail = $("#detail");
+	if (!detail.dataset.view) return;
+	const state = detailStates.get(detail.dataset.view) ?? new Map();
+	for (const element of detail.querySelectorAll("[data-detail-key]")) {
+		state.set(element.dataset.detailKey, {
+			open: element.open,
+			scroll: [...element.querySelectorAll("pre")].map((pre) => [
+				pre.scrollTop,
+				pre.scrollLeft,
+			]),
+		});
+	}
+	detailStates.set(detail.dataset.view, state);
+}
+function restoreDetail(run) {
+	const detail = $("#detail");
+	detail.dataset.view = JSON.stringify([run.id, tab]);
+	const state = detailStates.get(detail.dataset.view);
+	for (const element of detail.querySelectorAll("[data-detail-key]")) {
+		const saved = state?.get(element.dataset.detailKey);
+		if (!saved) continue;
+		if (typeof saved.open === "boolean") element.open = saved.open;
+		[...element.querySelectorAll("pre")].forEach((pre, index) => {
+			pre.scrollTop = saved.scroll[index]?.[0] ?? 0;
+			pre.scrollLeft = saved.scroll[index]?.[1] ?? 0;
+		});
+	}
+}
+function renderActivity(run) {
+	const activities = formatActivities(run),
+		limit = activityLimits.get(run.id) ?? 120;
+	if (!activities.length)
+		return '<p class="muted">Waiting for the first activity…</p>';
+	return `${activities.length > limit ? `<button type="button" class="secondary" id="older-activity">Show earlier activity (${activities.length - limit})</button>` : ""}<p class="muted">${Math.min(limit, activities.length)} of ${activities.length} activities · oldest to newest</p>${activities
+		.slice(-limit)
+		.map((item) => {
+			const key = htmlEscape(item.key);
+			const title = item.name?.startsWith("mcp__")
+				? item.title.replace(
+						item.name,
+						item.name.slice(5).replaceAll("__", " · ").replaceAll("_", " "),
+					)
+				: item.title;
+			return `<article class="event ${htmlEscape(item.type)} ${item.status === "error" ? "activity-error" : ""}"><small>${htmlEscape(date(item.at))} · ${htmlEscape(item.step)}</small><div class="activity-heading"><strong>${htmlEscape(title)}</strong>${item.status ? badge(item.status) : ""}</div>${item.parameter ? `<div class="activity-parameter">${htmlEscape(item.parameter)}</div>` : ""}${item.body ? `<div class="activity-text">${renderContent(item.body)}</div>` : ""}${item.result !== undefined ? `<details data-detail-key="result/${key}"><summary>${item.status === "error" ? "Error details" : "Result"}</summary><div class="activity-text">${renderContent(item.result)}</div></details>` : ""}${item.raw ? `<details class="raw-activity" data-detail-key="raw/${key}"><summary>Raw data</summary><pre>${json(item.rawResult ? { call: item.raw, result: item.rawResult } : item.raw)}</pre></details>` : ""}</article>`;
+		})
+		.join("")}`;
+}
 async function api(path, options = {}) {
 	const response = await fetch(path, {
 		...options,
@@ -118,6 +170,8 @@ function expandSteps(steps, definitions, prefix = "", ancestors = []) {
 	});
 }
 function renderDetail(run) {
+	rememberDetail();
+	const scroll = [window.scrollX, window.scrollY];
 	const outputs = run.outputs ?? {},
 		steps = expandSteps(
 			run.workflow?.steps ?? [],
@@ -135,23 +189,7 @@ function renderDetail(run) {
 			: "";
 	let content;
 	if (tab === "activity") {
-		const events = run.events?.length
-			? run.events
-			: (run.entries ?? []).map((entry) => ({
-					at: entry.timestamp ?? entry.createdAt,
-					step: entry.type,
-					message: entry.content ?? entry.message ?? entry,
-				}));
-		content = events.length
-			? events
-					.slice(-120)
-					.reverse()
-					.map(
-						(event) =>
-							`<div class="event"><small>${htmlEscape(event.at ? date(event.at) : "")} · ${htmlEscape(event.step)}</small><pre>${typeof event.message === "string" ? htmlEscape(event.message) : json(event.message)}</pre></div>`,
-					)
-					.join("")
-			: '<p class="muted">Waiting for the first activity…</p>';
+		content = renderActivity(run);
 	} else if (tab === "decisions") {
 		content = `<h3>Decision records</h3><pre>${json(outputs.decisions ?? outputs.clarify ?? {})}</pre><h3>Questions & answers</h3>${(run.answers ?? []).map((answer) => `<div class="guide-card"><p>${answer.questions.map(htmlEscape).join("<br>")}</p><p><b>Answer:</b> ${htmlEscape(answer.answer)}</p></div>`).join("")}`;
 	} else if (tab === "artifacts") {
@@ -159,13 +197,13 @@ function renderDetail(run) {
 			? Object.entries(outputs)
 					.map(
 						([name, output]) =>
-							`<details><summary>${htmlEscape(name)}</summary><pre>${json(output)}</pre></details>`,
+							`<details data-detail-key="artifact/${htmlEscape(name)}"><summary>${htmlEscape(name)}</summary><pre>${json(output)}</pre></details>`,
 					)
 					.join("")
 			: '<p class="muted">Step results appear here as the run progresses.</p>';
 	} else if (tab === "guide") content = renderGuide(run);
 	else
-		content = `${run.error ? `<div class="callout">${htmlEscape(run.error)}</div>` : ""}<h3>${steps.length ? "Workflow progress" : "Cyrus run"}</h3>${steps.length ? `<ol class="step-list">${steps.map((step, index) => `<li class="${run.step === step.key && active(run.status) ? "current" : visited.has(step.key) ? "done" : ""}"><span class="step-circle">${visited.has(step.key) ? "✓" : index + 1}</span><span>${htmlEscape(step.name)}</span></li>`).join("")}</ol>` : '<p class="muted">The original Cyrus workflow is running. See Activity for agent progress.</p>'}<details><summary>Workspace and input</summary><p class="muted">${htmlEscape(run.workspace || "Preparing workspace…")}</p><pre>${htmlEscape(run.input ?? "")}</pre></details>`;
+		content = `${run.error ? `<div class="callout">${htmlEscape(run.error)}</div>` : ""}<h3>${steps.length ? "Workflow progress" : "Cyrus run"}</h3>${steps.length ? `<ol class="step-list">${steps.map((step, index) => `<li class="${run.step === step.key && active(run.status) ? "current" : visited.has(step.key) ? "done" : ""}"><span class="step-circle">${visited.has(step.key) ? "✓" : index + 1}</span><span>${htmlEscape(step.name)}</span></li>`).join("")}</ol>` : '<p class="muted">The original Cyrus workflow is running. See Activity for agent progress.</p>'}<details data-detail-key="workspace"><summary>Workspace and input</summary><p class="muted">${htmlEscape(run.workspace || "Preparing workspace…")}</p><pre>${htmlEscape(run.input ?? "")}</pre></details>`;
 	$("#detail").innerHTML =
 		`<div class="detail-header"><div>${badge(run.status)}<h2>${htmlEscape(run.title)}</h2><div class="detail-meta">${htmlEscape(repo)} · ${htmlEscape(run.workflow?.name ?? "Simple / Cyrus")}<br>${htmlEscape(date(run.createdAt))} ${safePr}</div></div>${active(run.status) ? '<button class="danger" id="stop-run">Terminate</button>' : ""}</div><nav class="tabs" aria-label="Run views">${[
 			["overview", "Overview"],
@@ -181,6 +219,14 @@ function renderDetail(run) {
 			.join(
 				"",
 			)}</nav><div class="detail-body">${run.status === "waiting" ? `<form id="answer-form" class="callout"><h3>Your input is needed</h3>${run.questions.map((question) => `<p>${htmlEscape(question)}</p>`).join("")}<label for="answer-text">Your answers</label><textarea id="answer-text" name="answer" required rows="4" placeholder="Answer the questions above…"></textarea><div class="form-error" role="alert"></div><button class="primary" type="submit">Send answers & continue →</button></form>` : ""}${content}</div>`;
+	restoreDetail(run);
+	window.scrollTo(...scroll);
+	if ($("#older-activity"))
+		$("#older-activity").onclick = () => {
+			activityLimits.set(run.id, (activityLimits.get(run.id) ?? 120) + 120);
+			detailSignature = "";
+			refreshDetail().catch(fail);
+		};
 	document.querySelectorAll("[data-tab]").forEach((button) => {
 		button.onclick = () => {
 			tab = button.dataset.tab;

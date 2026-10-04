@@ -540,6 +540,33 @@ select:focus {
 .event small {
 	color: var(--muted);
 }
+.activity-heading {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin: 8px 0;
+}
+.activity-parameter {
+	font-family: ui-monospace, SFMono-Regular, monospace;
+	font-size: 12px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	margin-bottom: 12px;
+}
+.activity-text {
+	font-size: 13px;
+	line-height: 1.7;
+	overflow-wrap: anywhere;
+}
+.activity-text p { margin: 6px 0; }
+.activity-text h4 { margin: 14px 0 6px; }
+.activity-text code { font-family: ui-monospace, SFMono-Regular, monospace; }
+.activity-text ul { padding-left: 20px; }
+.activity-record { margin: 8px 0; }
+.activity-record dt { font-weight: 600; text-transform: capitalize; margin-top: 10px; }
+.activity-record dd { margin: 3px 0 8px 16px; }
+.activity-error { border-left-color: #b54d37; }
+.raw-activity summary { color: var(--muted); font-size: 11px; }
 pre {
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;

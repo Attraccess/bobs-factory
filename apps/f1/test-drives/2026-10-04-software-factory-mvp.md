@@ -285,3 +285,49 @@ build/typecheck and staged formatting passed. No dependencies changed.
 
 This drive validates transport, human loops, scoped handoff and termination.
 It does not repeat a full production Takeover implementation/CI/visual delivery.
+
+## Artifact state and readable history follow-up (Taskbot #15)
+
+Validated the browser-only changes on top of `37d1631` on 2026-10-04.
+No production service restart, run stop, or ticket mutation was performed.
+Production launchd PID 22338 retained its 22:42:03 start time while the active
+Takeover run continued through assessment and clarification.
+
+An isolated factory worker ran with `/tmp/bobs-factory-history-drive`, state
+`/tmp/bobs-factory-history-check`, UI port 3471 and F1 RPC port 3472. Created
+DEF-1 using `f1 create-issue`, with label `workflow:history-check`, then started
+`session-1` using `f1 start-session`. The fixture's Codex `gpt-6.1-sol` role read
+context through MCP, executed a Bash `printf` fixture, and returned Markdown.
+A following script held the isolated run open for UI checks.
+
+Assertions passed:
+
+- F1 retained readable thought/action/response activities; `view-session`
+  pagination returned 5 activities at offset 6 out of 11.
+- The dashboard showed 11 chronological items, including paired MCP and Bash
+  calls/results, a single final response, headings, bold text, checklist items
+  and a fenced code example. No UI error appeared.
+- A browser-local response wrapper appended a long fixture artifact and changed
+  `updatedAt` on every poll. It did not mutate server state. After 4 additional
+  polls the artifact DOM node had been replaced, remained open, and retained
+  `scrollTop=120`. Switching Activity → Artifacts retained the same state after
+  40 polls. A tool-result panel likewise stayed open while its node was replaced.
+- Read-only inspection of the live production run showed paired activities and
+  expanded older history from 120 to 240 entries. Its workspace and existing-work
+  artifact were accessible without restarting the service.
+- The fixture alone was terminated through its UI; the production run was left
+  running. The isolated worker was shut down afterward.
+
+Targeted checks: 4 factory test files / 27 tests passed; edge-worker build,
+JavaScript syntax and typecheck passed. Regression cases cover interleaved tool
+IDs, errors and unabridged raw output, retained SDK-event fallback, truncated
+runtime copies recovered from session entries, MCP page decoding, response
+deduplication, and HTML escaping. Repository commit hooks additionally run the
+workspace build and typecheck.
+
+Limitations: Markdown intentionally supports a small safe subset. Existing runner
+formatters may shorten the formatted tool result; its full recorded content
+remains under Raw data. Browser state lasts until the page is reloaded. T3 preview
+DOM inspection and interaction worked; screenshot capture repeatedly timed out,
+so this follow-up has no new screenshot artifact. Historical drive evidence above
+is preserved.
