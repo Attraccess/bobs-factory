@@ -399,37 +399,28 @@ function renderRoleSettings() {
 		const workflow = definitions.find(
 			(item) => item.id === $("#roles-workflow").value,
 		);
-		const collect = (steps, workflowId, prefix = "steps", ancestors = []) =>
+		const collect = (steps, prefix = "steps") =>
 			steps.flatMap((step, index) => {
 				const path = `${prefix}.${index}`;
-				if (step.type === "agent") return [{ step, path, workflowId }];
-				if (step.type === "workflow") {
-					if (ancestors.includes(step.workflow))
-						throw new Error("Recursive workflow call");
-					const nested = definitions.find((item) => item.id === step.workflow);
-					if (!nested) throw new Error(`Missing workflow: ${step.workflow}`);
-					return collect(nested.steps, nested.id, "steps", [
-						...ancestors,
-						step.workflow,
-					]);
-				}
+				if (step.type === "agent") return [{ step, path }];
+				if (step.type === "workflow") return [];
 				return (step.groups ?? []).flatMap((group, groupIndex) =>
-					collect(group, workflowId, `${path}.groups.${groupIndex}`, ancestors),
+					collect(group, `${path}.groups.${groupIndex}`),
 				);
 			});
-		const roles = collect(workflow.steps, workflow.id, "steps", [workflow.id]);
+		const roles = collect(workflow.steps);
 		$("#role-settings").innerHTML = roles.length
 			? roles
-					.map(({ step, path, workflowId }) => {
+					.map(({ step, path }) => {
 						const runner = step.runner || config.defaultRunner;
 						const advanced =
 							runner === "opencode"
-								? `<label><span class="sr-only">${htmlEscape(step.name)} model variant</span><input data-workflow="${htmlEscape(workflowId)}" data-role="${path}" data-field="modelVariant" value="${htmlEscape(step.modelVariant ?? "")}" placeholder="Default variant" list="variant-suggestions"></label>`
-								: `<label><span class="sr-only">${htmlEscape(step.name)} reasoning effort</span><select data-workflow="${htmlEscape(workflowId)}" data-role="${path}" data-field="reasoningEffort" ${config.reasoningLevels?.[runner] ? "" : "disabled"}>${reasoningOptions(runner, step.reasoningEffort, config.reasoningLevels?.[runner] ? "Run/model effort" : "Native settings")}</select></label>`;
-						return `<div class="role-row"><strong>${htmlEscape(step.name)}</strong><label><span class="sr-only">${htmlEscape(step.name)} agent</span><select data-workflow="${htmlEscape(workflowId)}" data-role="${path}" data-field="runner"><option value="">Run default</option>${["claude", "codex", "gemini", "cursor", "opencode"].map((runner) => `<option value="${runner}" ${step.runner === runner ? "selected" : ""}>${runner}</option>`).join("")}</select></label><label><span class="sr-only">${htmlEscape(step.name)} model</span><input data-workflow="${htmlEscape(workflowId)}" data-role="${path}" data-field="model" value="${htmlEscape(step.model ?? "")}" placeholder="Default model"></label>${advanced}</div>`;
+								? `<label><span class="sr-only">${htmlEscape(step.name)} model variant</span><input data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="modelVariant" value="${htmlEscape(step.modelVariant ?? "")}" placeholder="Default variant" list="variant-suggestions"></label>`
+								: `<label><span class="sr-only">${htmlEscape(step.name)} reasoning effort</span><select data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="reasoningEffort" ${config.reasoningLevels?.[runner] ? "" : "disabled"}>${reasoningOptions(runner, step.reasoningEffort, config.reasoningLevels?.[runner] ? "Run/model effort" : "Native settings")}</select></label>`;
+						return `<div class="role-row"><strong>${htmlEscape(step.name)}</strong><label><span class="sr-only">${htmlEscape(step.name)} agent</span><select data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="runner"><option value="">Run default</option>${["claude", "codex", "gemini", "cursor", "opencode"].map((runner) => `<option value="${runner}" ${step.runner === runner ? "selected" : ""}>${runner}</option>`).join("")}</select></label><label><span class="sr-only">${htmlEscape(step.name)} model</span><input data-workflow="${htmlEscape(workflow.id)}" data-role="${path}" data-field="model" value="${htmlEscape(step.model ?? "")}" placeholder="Default model"></label>${advanced}</div>`;
 					})
 					.join("")
-			: `<p class="hint">${workflow.id === "simple" ? "Simple uses the run’s agent and model with Cyrus’s existing behavior." : "This workflow has no agent steps."}</p>`;
+			: `<p class="hint">${workflow.id === "simple" ? "Simple uses the run’s agent and model with Cyrus’s existing behavior." : "This workflow has no own agent steps. Select a shared workflow above to configure its roles."}</p>`;
 		document.querySelectorAll("[data-role]").forEach((input) => {
 			input.onchange = () => {
 				if (!input.isConnected) return; // Ignore blur/change from fields removed by a provider switch.

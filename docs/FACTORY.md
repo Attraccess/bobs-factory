@@ -135,8 +135,10 @@ Keep the `simple`, `factory` and `takeover` defaults and add another entry to th
 
 Factory and Takeover call the same internal `factory-pipeline` workflow.
 Changing its role settings, prompts or steps applies to both parents on new runs.
-The UI expands shared roles under either parent, and shows individual nested
-steps in run progress. Earlier saved flat Factory definitions are upgraded while
+The settings editor shows only agent steps owned by the selected workflow,
+including its own fanout groups. Select **Shared factory pipeline** to configure
+its shared roles; parents show their own roles only. Run progress still shows
+individual nested steps. Earlier saved flat Factory definitions are upgraded while
 preserving customized role settings.
 
 Add a reusable sequence with `"internal": true`, then call it using a step:
