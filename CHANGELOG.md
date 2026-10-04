@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Added the operator-configurable `codexSandboxMode` for issue and chat sessions, retaining `workspace-write` by default and supporting opt-in native read-only or full host access without browser-specific integrations. ([#1521](https://github.com/cyrusagents/cyrus/pull/1521))
+- Configure `sandbox.additionalWritableDirectories` to let CLI tools create sockets, caches, or state outside their session worktree. Applies to issue and chat sessions without requiring the network proxy, with no additional directories allowed by default. ([#1516](https://github.com/cyrusagents/cyrus/pull/1516))
 
 ### Fixed
 - Codex sessions can use `gpt-6.1-sol` with ChatGPT accounts now that the bundled CLI and SDK have been updated to 0.159.2. ([#1512](https://github.com/cyrusagents/cyrus/issues/1512), [#1514](https://github.com/cyrusagents/cyrus/pull/1514))

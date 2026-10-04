@@ -10,6 +10,33 @@ const baseRepository = {
 };
 
 describe("EdgeConfigSchema", () => {
+	it("accepts tool directories independently of the network sandbox", () => {
+		const config = EdgeConfigSchema.parse({
+			repositories: [baseRepository],
+			sandbox: {
+				enabled: false,
+				additionalWritableDirectories: ["~/.tool-state", "/var/cache/tool"],
+			},
+		});
+		expect(config.sandbox?.additionalWritableDirectories).toEqual([
+			"~/.tool-state",
+			"/var/cache/tool",
+		]);
+	});
+
+	it.each([
+		"",
+		"  ",
+		42,
+	])("rejects invalid tool directories: %j", (directory) => {
+		expect(
+			EdgeConfigSchema.safeParse({
+				repositories: [baseRepository],
+				sandbox: { additionalWritableDirectories: [directory] },
+			}).success,
+		).toBe(false);
+	});
+
 	it("validates Codex sandbox modes without opting existing configs into full access", () => {
 		expect(
 			EdgeConfigSchema.parse({ repositories: [] }).codexSandboxMode,
