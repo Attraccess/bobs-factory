@@ -316,7 +316,20 @@ export class FactoryTools {
 				}
 				if (await command("git", ["status", "--porcelain"])) {
 					await command("git", ["add", "-A"]);
-					await command("git", ["commit", "-m", run.title]);
+					// Ticket titles are not commit messages; conventional-commit hooks
+					// require a type and subject. Keep the header short and single-line.
+					const subject = run.title
+						.replace(/\s+/g, " ")
+						.trim()
+						.toLowerCase()
+						.slice(0, 72)
+						.trim()
+						.replace(/\.+$/, "");
+					await command("git", [
+						"commit",
+						"-m",
+						`chore: ${subject || "factory changes"}`,
+					]);
 				}
 				await command("git", ["push", "-u", "origin", "HEAD"]);
 				const existing: { url: string; isDraft: boolean }[] = JSON.parse(

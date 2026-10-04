@@ -215,6 +215,36 @@ function context(): ExecutionContext {
 	};
 }
 
+it("publishes with a conventional commit message instead of a raw ticket title", async () => {
+	const input = context();
+	input.run.title = "Power Consumption Billing\nwith clarification.";
+	input.step.tool = "draft-pr";
+	const command = vi.fn(
+		async (_context: ExecutionContext, exe: string, args: string[]) => {
+			if (exe === "git") {
+				if (args[0] === "branch") return "ticket-branch";
+				if (args[0] === "status") return "M  code.ts";
+				if (args[0] === "rev-parse") return "head";
+				return "";
+			}
+			return JSON.stringify([
+				{ url: "https://github.com/test/repo/pull/1", isDraft: true },
+			]);
+		},
+	);
+	const tools = new FactoryTools({ postComment: vi.fn(), command });
+	await expect(tools.tool(input)).resolves.toMatchObject({
+		branch: "ticket-branch",
+		headSha: "head",
+	});
+	const commits = command.mock.calls.filter(
+		([, exe, args]) => exe === "git" && args[0] === "commit",
+	);
+	expect(commits.map(([, , args]) => args)).toEqual([
+		["commit", "-m", "chore: power consumption billing with clarification"],
+	]);
+});
+
 it("blocks handoff when the reviewed CI revision is stale", async () => {
 	const postComment = vi.fn();
 	const tools = new FactoryTools({

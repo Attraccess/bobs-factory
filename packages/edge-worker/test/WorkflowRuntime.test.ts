@@ -56,6 +56,45 @@ function start(runtime: WorkflowRuntime, definition: Workflow) {
 }
 
 describe("workflow runtime", () => {
+	it.each([
+		false,
+		true,
+	])("retries only the failed step with preserved history (legacy=%s)", async (legacy) => {
+		let fail = true;
+		const execute = vi.fn(async (context: ExecutionContext) => {
+			if (context.step.id === "publish" && fail)
+				throw new Error("Commit hook rejected");
+			return { summary: context.step.id };
+		});
+		const { runtime } = create({ agent: execute });
+		const run = start(
+			runtime,
+			workflow([agent("implement"), agent("publish")]),
+		);
+		await runtime.launch(run);
+		expect(run.status).toBe("failed");
+		expect(run.error).toBe("Commit hook rejected");
+		const history = structuredClone(run.history);
+		if (legacy) delete run.checkpoint;
+		fail = false;
+		runtime.retry(run.id);
+		expect(() => runtime.retry(run.id)).toThrow("Only failed");
+		await vi.waitFor(() => expect(run.status).toBe("completed"));
+		expect(run.error).toBeUndefined();
+		expect(run.history.slice(0, history.length)).toEqual(history);
+		expect(run.history.map((item) => item.step)).toEqual([
+			"implement",
+			"publish",
+		]);
+		expect(execute.mock.calls.map(([context]) => context.step.id)).toEqual([
+			"implement",
+			"publish",
+			"publish",
+		]);
+		expect(() => runtime.retry(run.id)).toThrow("Only failed");
+		run.status = "stopped";
+		expect(() => runtime.retry(run.id)).toThrow("Only failed");
+	});
 	it("uses the persisted default behind explicit choices and matching labels, including legacy config", () => {
 		const { runtime, home } = create();
 		expect(runtime.getDefaultWorkflow()).toBe("simple");

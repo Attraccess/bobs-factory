@@ -480,6 +480,20 @@ export class WorkflowRuntime {
 		this.controllers.get(id)?.abort();
 		this.log(run, "run", "Terminated by user");
 	}
+	retry(id: string): FactoryRun {
+		const run = this.get(id);
+		if (this.shuttingDown) throw new Error("Factory is shutting down");
+		if (
+			this.controllers.has(id) ||
+			!["failed", "interrupted"].includes(run.status)
+		)
+			throw new Error("Only failed or interrupted runs can be retried");
+		run.status = "running";
+		delete run.error;
+		this.log(run, "run", "Retry requested; continuing from saved progress.");
+		void this.launch(run);
+		return run;
+	}
 	isShuttingDown(): boolean {
 		return this.shuttingDown;
 	}

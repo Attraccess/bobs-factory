@@ -8,6 +8,80 @@ import type { ResolvedLaunchRequest } from "../src/factory/LaunchFields.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
 
+it("accepts failed-run retries through the protected API and rejects duplicate retries", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-retry-api-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: (context) =>
+			new Promise((_resolve, reject) => {
+				context.signal.addEventListener(
+					"abort",
+					() => reject(new Error("Stopped")),
+					{ once: true },
+				);
+			}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("Unused");
+		},
+		stop: (id) => runtime.stop(id),
+	});
+	const run = runtime.create({
+		title: "Task",
+		repositoryId: "repo",
+		workspace: home,
+		input: "",
+		workflow: validateWorkflows([
+			...defaultWorkflows,
+			{
+				id: "retry-api",
+				name: "Retry",
+				steps: [{ id: "work", name: "Work", type: "agent", prompt: "Work" }],
+			},
+		]).at(-1)!,
+	});
+	run.status = "failed";
+	run.error = "Commit message rejected";
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	try {
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: `/api/runs/${run.id}/retry`,
+					headers: { host: "localhost" },
+				})
+			).statusCode,
+		).toBe(403);
+		const accepted = await server.app.inject({
+			method: "POST",
+			url: `/api/runs/${run.id}/retry`,
+			headers,
+		});
+		expect(accepted.statusCode).toBe(202);
+		expect(accepted.json()).toMatchObject({ id: run.id, status: "running" });
+		expect(accepted.json().error).toBeUndefined();
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: `/api/runs/${run.id}/retry`,
+					headers,
+				})
+			).statusCode,
+		).toBe(409);
+	} finally {
+		await runtime.shutdown();
+		await server.stop();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
 it("starts, displays, answers and terminates runs through the local API", async () => {
 	const home = mkdtempSync(join(tmpdir(), "factory-api-"));
 	const runtime = new WorkflowRuntime(home, {

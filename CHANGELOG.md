@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Publish factory changes with conventional commit messages so repository hooks accept ticket titles; failed runs can retry from saved progress without repeating completed steps. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Show submission progress and acceptance feedback for clarification answers, run launches and workflow saves; prevent duplicate submissions and preserve answers on errors. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Keep artifact panels and scroll positions stable during live dashboard updates; display agent conversations, paired tool results and Markdown responses using Cyrus’s existing activity formatters. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Factory and Takeover roles now read complete ticket, PR and review context through paged MCP tools, avoiding oversized starting prompts; large script inputs use a file instead of the process environment. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))

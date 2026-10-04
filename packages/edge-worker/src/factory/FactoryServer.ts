@@ -169,6 +169,11 @@ export class FactoryServer {
 			},
 		);
 		this.app.post<{ Params: { id: string } }>(
+			"/api/runs/:id/retry",
+			(request, reply) =>
+				reply.code(202).send(runtime.retry(request.params.id)),
+		);
+		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/answer",
 			(request) => {
 				const { answer } = z

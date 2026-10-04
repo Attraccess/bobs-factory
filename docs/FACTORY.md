@@ -113,6 +113,14 @@ It never resets an existing branch or force-pushes it. If another factory run ow
 the worktree, terminate that run first. Diverged local/remote work fails visibly
 at push and needs a human decision.
 
+After resolving a failed step's cause, select **Retry failed step** in the run
+view. It keeps the same run, worktree, frozen workflow, answers and history,
+and continues from saved progress. Completed steps are skipped; an unfinished
+script/tool step runs again, so check any external effects before retrying.
+Completed or explicitly terminated runs cannot be retried. Publication uses a
+short conventional commit message (`chore: …`) derived from the ticket title,
+with the repository's Git hooks and signing configuration still enabled.
+
 ## Workflow definition
 
 ### Launch fields

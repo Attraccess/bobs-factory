@@ -82,6 +82,7 @@ async function api(path, options = {}) {
 }
 
 const submittingAnswers = new Set();
+const retryingRuns = new Set();
 function feedback(message) {
 	const region = $("#feedback");
 	region.textContent = message;
@@ -240,7 +241,7 @@ function renderDetail(run) {
 	else
 		content = `${run.error ? `<div class="callout">${htmlEscape(run.error)}</div>` : ""}<h3>${steps.length ? "Workflow progress" : "Cyrus run"}</h3>${steps.length ? `<ol class="step-list">${steps.map((step, index) => `<li class="${run.step === step.key && active(run.status) ? "current" : visited.has(step.key) ? "done" : ""}"><span class="step-circle">${visited.has(step.key) ? "✓" : index + 1}</span><span>${htmlEscape(step.name)}</span></li>`).join("")}</ol>` : '<p class="muted">The original Cyrus workflow is running. See Activity for agent progress.</p>'}<details data-detail-key="workspace"><summary>Workspace and input</summary><p class="muted">${htmlEscape(run.workspace || "Preparing workspace…")}</p><pre>${htmlEscape(run.input ?? "")}</pre></details>`;
 	$("#detail").innerHTML =
-		`<div class="detail-header"><div>${badge(run.status)}<h2>${htmlEscape(run.title)}</h2><div class="detail-meta">${htmlEscape(repo)} · ${htmlEscape(run.workflow?.name ?? "Simple / Cyrus")}<br>${htmlEscape(date(run.createdAt))} ${safePr}</div></div>${active(run.status) ? '<button class="danger" id="stop-run">Terminate</button>' : ""}</div><nav class="tabs" aria-label="Run views">${[
+		`<div class="detail-header"><div>${badge(run.status)}<h2>${htmlEscape(run.title)}</h2><div class="detail-meta">${htmlEscape(repo)} · ${htmlEscape(run.workflow?.name ?? "Simple / Cyrus")}<br>${htmlEscape(date(run.createdAt))} ${safePr}</div></div>${active(run.status) ? '<button class="danger" id="stop-run">Terminate</button>' : ["failed", "interrupted"].includes(run.status) && Array.isArray(run.history) ? '<button class="primary" id="retry-run">Retry failed step</button>' : ""}</div><nav class="tabs" aria-label="Run views">${[
 			["overview", "Overview"],
 			["activity", "Activity"],
 			["decisions", "Decisions"],
@@ -281,6 +282,30 @@ function renderDetail(run) {
 			} catch (error) {
 				fail(error);
 			}
+		};
+	if ($("#retry-run"))
+		$("#retry-run").onclick = async (event) => {
+			if (retryingRuns.has(run.id)) return;
+			const button = event.currentTarget;
+			retryingRuns.add(run.id);
+			button.disabled = true;
+			button.innerHTML =
+				'<span class="spinner" aria-hidden="true"></span> Resuming…';
+			try {
+				await api(`/api/runs/${encodeURIComponent(run.id)}/retry`, {
+					method: "POST",
+					body: "{}",
+				});
+				feedback("Retry accepted. Continuing from saved progress.");
+			} catch (error) {
+				fail(error);
+			} finally {
+				retryingRuns.delete(run.id);
+				button.disabled = false;
+				button.textContent = "Retry failed step";
+				detailSignature = "";
+			}
+			await refresh().catch(fail);
 		};
 	if ($("#answer-form"))
 		$("#answer-form").onsubmit = async (event) => {
@@ -328,6 +353,7 @@ async function refreshDetail() {
 	if (
 		signature === detailSignature ||
 		submittingAnswers.has(id) ||
+		retryingRuns.has(id) ||
 		$("#answer-form")?.contains(document.activeElement)
 	)
 		return;
