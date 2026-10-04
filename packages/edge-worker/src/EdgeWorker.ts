@@ -140,6 +140,8 @@ import {
 	createCyrusToolsServer,
 	createFetchFailureModesClient,
 	type FailureModesHttpClient,
+	factoryContextInstructions,
+	prepareFactoryContext,
 	type ResolvedSession,
 } from "cyrus-mcp-tools";
 import { OpenCodeRunner } from "cyrus-opencode-runner";
@@ -4969,13 +4971,18 @@ ${taskSection}`;
 					undefined,
 					linearWorkspaceId,
 				);
+				const ticket = await issueSnapshot(
+					fullIssue,
+					labels,
+					this.issueTrackers.get(linearWorkspaceId),
+				);
 				const run = this.getFactoryRuntime().create({
 					id: sessionId,
 					title: fullIssue.title,
 					repositoryId: primaryRepo.id,
 					workflow,
 					workspace: session.workspace.path,
-					input: `${assembly.userPrompt}\n\nComplete ticket snapshot:\n${JSON.stringify(await issueSnapshot(fullIssue, labels, this.issueTrackers.get(linearWorkspaceId)), null, 2)}`,
+					input: `${assembly.userPrompt}\n\nComplete ticket snapshot:\n${JSON.stringify(ticket, null, 2)}`,
 					issueId: fullIssue.id,
 					workspaceId: linearWorkspaceId,
 				});
@@ -4987,12 +4994,7 @@ ${taskSection}`;
 								primaryRepo.baseBranch),
 					name: primaryRepo.name,
 				};
-				if (workflow.id === "takeover")
-					run.outputs.ticket = await issueSnapshot(
-						fullIssue,
-						labels,
-						this.issueTrackers.get(linearWorkspaceId),
-					);
+				run.outputs.ticket = ticket;
 				run.runner = selectedRunner.runnerType;
 				run.model = selectedRunner.config.model;
 				this.emit("session:started", fullIssue.id, fullIssue, primaryRepo.id);
@@ -5934,6 +5936,11 @@ ${taskSection}`;
 			context.evidenceDir,
 		];
 		built.config.onAskUserQuestion = undefined; // Clarification uses the persisted workflow checkpoint.
+		built.config.allowedTools = [
+			...(built.config.allowedTools ?? []),
+			"mcp__factory-context__list_context",
+			"mcp__factory-context__read_context",
+		];
 		const originalMessage = built.config.onMessage;
 		built.config.onMessage = (message) => {
 			void originalMessage?.(message);
@@ -5944,52 +5951,61 @@ ${taskSection}`;
 			)
 				context.log(JSON.stringify(message));
 		};
-		const runner = capRunnerStarts(
-			runnerType === "claude"
-				? new ClaudeRunner(built.config, false)
-				: this.buildRunnerForType(runnerType, built.config),
-			this.runnerSlots,
-			context.signal,
-		);
-		this.agentSessionManager.addAgentRunner(run.id, runner);
-		const stop = () => runner.stop();
-		context.signal.addEventListener("abort", stop, { once: true });
+		const factoryContext = prepareFactoryContext(context.input);
 		try {
-			context.signal.throwIfAborted();
-			await runner.start(
-				`Step input:\n${JSON.stringify(context.input, null, 2)}\n\nEvidence directory: ${context.evidenceDir}`,
+			built.config.mcpConfig = {
+				...built.config.mcpConfig,
+				"factory-context": factoryContext.config,
+			};
+			const runner = capRunnerStarts(
+				runnerType === "claude"
+					? new ClaudeRunner(built.config, false)
+					: this.buildRunnerForType(runnerType, built.config),
+				this.runnerSlots,
+				context.signal,
 			);
-			context.signal.throwIfAborted();
-			const messages = runner.getMessages();
-			const result = messages
-				.filter((message) => message.type === "result")
-				.at(-1);
-			if (result?.type === "result" && result.is_error)
-				throw new Error(`Agent step failed: ${JSON.stringify(result)}`);
-			const assistant = messages
-				.filter((message) => message.type === "assistant")
-				.at(-1);
-			const text =
-				result?.type === "result" && "result" in result
-					? result.result
-					: assistant?.type === "assistant"
-						? assistant.message.content
-								.filter((block) => block.type === "text")
-								.map((block) => (block.type === "text" ? block.text : ""))
-								.join("\n")
-						: "";
-			let output = step.json === false ? { text } : parseAgentOutput(text);
-			if (
-				["factory", "takeover"].includes(run.workflow.id) ||
-				run.workflowDefinitions
-					?.find((item) => item.id === "factory-pipeline")
-					?.steps.includes(step)
-			)
-				output = validateFactoryResult(step.id, output);
-			if (step.id === "capture") output = captureEvidence(context, output);
-			return output;
+			this.agentSessionManager.addAgentRunner(run.id, runner);
+			const stop = () => runner.stop();
+			context.signal.addEventListener("abort", stop, { once: true });
+			try {
+				context.signal.throwIfAborted();
+				await runner.start(
+					`${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
+				);
+				context.signal.throwIfAborted();
+				const messages = runner.getMessages();
+				const result = messages
+					.filter((message) => message.type === "result")
+					.at(-1);
+				if (result?.type === "result" && result.is_error)
+					throw new Error(`Agent step failed: ${JSON.stringify(result)}`);
+				const assistant = messages
+					.filter((message) => message.type === "assistant")
+					.at(-1);
+				const text =
+					result?.type === "result" && "result" in result
+						? result.result
+						: assistant?.type === "assistant"
+							? assistant.message.content
+									.filter((block) => block.type === "text")
+									.map((block) => (block.type === "text" ? block.text : ""))
+									.join("\n")
+							: "";
+				let output = step.json === false ? { text } : parseAgentOutput(text);
+				if (
+					["factory", "takeover"].includes(run.workflow.id) ||
+					run.workflowDefinitions
+						?.find((item) => item.id === "factory-pipeline")
+						?.steps.includes(step)
+				)
+					output = validateFactoryResult(step.id, output);
+				if (step.id === "capture") output = captureEvidence(context, output);
+				return output;
+			} finally {
+				context.signal.removeEventListener("abort", stop);
+			}
 		} finally {
-			context.signal.removeEventListener("abort", stop);
+			factoryContext.cleanup();
 		}
 	}
 

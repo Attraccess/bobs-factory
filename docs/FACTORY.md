@@ -134,7 +134,8 @@ the source/optional-instructions form. Use `[]` for no workflow-specific fields.
 
 Values are saved as `run.launchInputs` and supplied to ordinary agent, script
 and tool steps as `input.launchInputs`, including shared child workflows.
-Scripts read them from `FACTORY_INPUT`; tool templates can use
+Scripts read them from `FACTORY_INPUT_FILE` (or `FACTORY_INPUT` for small inputs);
+tool templates can use
 `{{input.launchInputs.target}}`. Steps with explicit `inputs` still receive only
 their selected outputs, so the implementer retains its plan-only handoff.
 Custom Simple fields are appended to its task prompt because it uses Cyrus's
@@ -204,9 +205,30 @@ Agents return JSON unless `json: false`. `inputs: ["plan"]` restricts supplied
 context to those output keys; otherwise agents receive the original input,
 launch inputs, outputs, answers and full structured history.
 
-Scripts run with `/bin/sh` in the worktree and receive `FACTORY_INPUT` JSON and
-`FACTORY_EVIDENCE_DIR`. JSON stdout becomes the step output; other stdout is
-wrapped as `{ "stdout": "..." }`. `exec` uses an executable/argument array.
+Factory agent roles receive a short role prompt and a private `factory-context`
+MCP server. `list_context` browses object fields/array entries; `read_context`
+reads values in pages of at most 16,000 characters. Both return `nextOffset`;
+follow it until null to read complete discussions and review/fixer history.
+Paths use JSON Pointer syntax, for example `/outputs/ticket/comments/0/body`.
+Strings use raw text pages; other values use JSON pages. Only the step's scoped
+input is served: `inputs: ["plan"]` exposes `/plan` without ticket/history.
+Each role/loop/fanout invocation has a separate snapshot, deleted when the role
+finishes, fails or is terminated. Persisted run history remains available in the
+UI. This works through stdio for the existing runners and needs no additional
+port or service. Simple retains its original Cyrus prompt path.
+
+Scripts run with `/bin/sh` in the worktree and receive `FACTORY_INPUT_FILE`
+pointing to complete JSON, plus `FACTORY_EVIDENCE_DIR`. The legacy `FACTORY_INPUT`
+variable is also available for inputs up to 16,000 bytes; larger contexts use
+only the file to avoid OS environment limits. Prefer reading the file:
+
+```sh
+node -e 'const fs = require("node:fs"); const input = JSON.parse(fs.readFileSync(process.env.FACTORY_INPUT_FILE, "utf8")); console.log(JSON.stringify({answer: input.answers.at(-1)?.answer}));'
+```
+
+The input file is removed after the command exits. JSON stdout becomes the step
+output; other stdout is wrapped as `{ "stdout": "..." }`. `exec` uses an
+executable/argument array.
 Configured MCP tools can run directly:
 
 ```json

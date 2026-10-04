@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 - Configure `sandbox.additionalWritableDirectories` to let CLI tools create sockets, caches, or state outside their session worktree. Applies to issue and chat sessions without requiring the network proxy, with no additional directories allowed by default. ([#1516](https://github.com/cyrusagents/cyrus/pull/1516))
 
 ### Fixed
-
+- Factory and Takeover roles now read complete ticket, PR and review context through paged MCP tools, avoiding oversized starting prompts; large script inputs use a file instead of the process environment. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Reject invalid Takeover sources in the launch form before creating a run, with guidance distinguishing an existing ticket/PR from task instructions. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Codex sessions can use `gpt-6.1-sol` with ChatGPT accounts now that the bundled CLI and SDK have been updated to 0.159.2. ([#1512](https://github.com/cyrusagents/cyrus/issues/1512), [#1514](https://github.com/cyrusagents/cyrus/pull/1514))
 - Persist a hosted workspace's validated self-host listener port during `cyrus auth`, and advertise support before non-default tunnel configuration. Older hosted responses retain existing behavior. (CYHOST-909)

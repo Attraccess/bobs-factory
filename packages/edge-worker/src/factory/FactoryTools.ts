@@ -1,6 +1,14 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
 import { inspectPullRequest } from "./Takeover.js";
 import { readPath } from "./Workflow.js";
@@ -67,13 +75,24 @@ export function executeCommand(
 	timeoutMs = 20 * 60 * 1000,
 ): Promise<string> {
 	context.signal.throwIfAborted();
+	const input = JSON.stringify(context.input) ?? "null";
+	const directory = mkdtempSync(join(tmpdir(), "cyrus-factory-command-"));
+	const inputPath = join(directory, "input.json");
+	try {
+		writeFileSync(inputPath, input, { mode: 0o600 });
+	} catch (error) {
+		rmSync(directory, { recursive: true, force: true });
+		throw error;
+	}
 	return new Promise((resolve, reject) => {
 		const child = spawn(command, args, {
 			cwd: context.run.workspace,
 			detached: process.platform !== "win32",
 			env: {
 				...process.env,
-				FACTORY_INPUT: JSON.stringify(context.input),
+				// Large contexts cannot fit in the OS process argument/environment limit.
+				FACTORY_INPUT: Buffer.byteLength(input) <= 16000 ? input : undefined,
+				FACTORY_INPUT_FILE: inputPath,
 				FACTORY_EVIDENCE_DIR: context.evidenceDir,
 			},
 			stdio: ["ignore", "pipe", "pipe"],
@@ -114,6 +133,7 @@ export function executeCommand(
 		const cleanup = () => {
 			clearTimeout(timer);
 			context.signal.removeEventListener("abort", terminate);
+			rmSync(directory, { recursive: true, force: true });
 		};
 		child.on("error", (error) => {
 			cleanup();

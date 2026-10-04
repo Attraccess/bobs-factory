@@ -3,6 +3,10 @@ export {
 	type ToolServerConfig,
 } from "./callConfiguredTool.js";
 export {
+	factoryContextInstructions,
+	prepareFactoryContext,
+} from "./factoryContext.js";
+export {
 	createFetchFailureModesClient,
 	type FetchFailureModesClientOptions,
 } from "./tools/cyrus-tools/failure-modes-http-client.js";

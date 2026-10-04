@@ -1,15 +1,45 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
-import { FactoryTools, filterReview } from "../src/factory/FactoryTools.js";
+import {
+	executeCommand,
+	FactoryTools,
+	filterReview,
+} from "../src/factory/FactoryTools.js";
 import {
 	type ExecutionContext,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
 
 const directories: string[] = [];
+it("runs commands with oversized input via a cleaned-up file, retaining small-input compatibility", async () => {
+	const input = context();
+	input.input = { detail: "x".repeat(1200000) };
+	const receipt = JSON.parse(
+		await executeCommand(input, process.execPath, [
+			"-e",
+			`
+const fs = require('node:fs');
+const value = JSON.parse(fs.readFileSync(process.env.FACTORY_INPUT_FILE, 'utf8'));
+console.log(JSON.stringify({characters:value.detail.length, inline:process.env.FACTORY_INPUT, path:process.env.FACTORY_INPUT_FILE}));
+`,
+		]),
+	);
+	expect(receipt.characters).toBe(1200000);
+	expect(receipt.inline).toBeUndefined();
+	expect(existsSync(receipt.path)).toBe(false);
+	input.input = { plan: "Small input" };
+	expect(
+		JSON.parse(
+			await executeCommand(input, process.execPath, [
+				"-e",
+				"console.log(process.env.FACTORY_INPUT)",
+			]),
+		),
+	).toEqual(input.input);
+});
 afterEach(() => {
 	for (const path of directories.splice(0))
 		rmSync(path, { recursive: true, force: true });

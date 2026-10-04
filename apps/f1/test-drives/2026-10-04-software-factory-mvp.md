@@ -235,3 +235,53 @@ script fixtures and gh discovery returned no PR, as in the earlier focused drive
 No real production run or ticket was modified by validation. Four focused test
 files passed (25 tests), including rejecting invalid sources before the start
 hook and continuing to accept bare ticket IDs, Linear URLs and GitHub PR URLs.
+
+
+## Paged factory context MCP follow-up
+
+Tested the working tree against `10b8c17` on 2026-10-04. Required applicability:
+factory agent prompt delivery, role context scope and command execution changed.
+The operator's failed Takeover `manual-2fe623a7-5757-4bb7-a2fc-fc431c300886`
+failed at assess-existing with Codex's 1,048,576-character starting-input limit.
+A real private stdio MCP server successfully browsed that retained PR context
+without launching a new production run or changing the ticket/repository.
+
+Created a fresh F1 repo at `/tmp/bobs-factory-mcp-drive` and home at
+`/tmp/bobs-factory-mcp-check`, UI/RPC ports 3467/3468. The isolated `context-check`
+workflow seeds a 600,000-character irrelevant transport fixture plus the actual
+ticket comments and a reviewer/fixer dispute. Its next role's former starting
+prompt would have been 1,206,250 characters because outputs and history retain
+that snapshot. F1 created DEF-1 (Large context transport) with three ordered
+comments, then started session-1 with workflow:context-check and Codex.
+
+Real Codex roles passed these assertions:
+
+- Browsed/read through factory-context MCP; returned all three actual comments,
+  including the first/last bodies, bug-1 and its rejected fixer disposition.
+- Paused at the human checkpoint with a prefix question; no plan ran first.
+- F1 prompt-session supplied `Use HELLO as the greeting prefix.` The next fresh
+  role reread that answer via MCP, retained the discussion/dispute and continued.
+- The following script received 1,205,921 characters of complete context via
+  FACTORY_INPUT_FILE, with FACTORY_INPUT absent. No environment overflow occurred.
+- The final agent had `inputs: ["plan"]`: list_context returned only `/plan`;
+  reading `/history` failed. Its output retained the accepted plan and answer.
+  session-1 completed successfully. The UI showed completed progress and MCP
+  tool/results appeared in run activities.
+
+A second UI/API-started fixture, manual-d203445a-544c-4fda-af32-824ac74f411b,
+read its MCP input and ran sleep 300. Clicking Terminate stopped the run and
+removed its private snapshot; no downstream result was produced. Codex pools
+connections briefly, so the context server now watches its snapshot lifetime
+and closes when the role deletes it. A direct real-stdio lifecycle check with
+an open client verified snapshot deletion closes the helper within one second.
+The isolated worker was stopped after validation.
+
+MCP tests passed (38), including complete bounded reconstruction of a value
+larger than the runner limit, paging 103 comments without omission, invalid
+paths/limits, scope isolation and private file cleanup. Full edge-worker passed
+890 tests (one skipped, 83 files); Codex passed 70. New command coverage verifies
+1.2MB JSON delivery, deletion after exit and small-input compatibility. Required
+build/typecheck and staged formatting passed. No dependencies changed.
+
+This drive validates transport, human loops, scoped handoff and termination.
+It does not repeat a full production Takeover implementation/CI/visual delivery.
