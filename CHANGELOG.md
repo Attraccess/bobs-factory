@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Screenshot capture agents can delegate independent areas to parallel subagents when supported, sharing application setup and combining complete evidence before visual review. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
 - Display run activity as a chat conversation with compact expandable tools, human replies and a follow-latest control that pauses while you read older messages. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Factory runs automatically resume saved progress and agent conversations after restarts, while clarification waits still require human answers. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
