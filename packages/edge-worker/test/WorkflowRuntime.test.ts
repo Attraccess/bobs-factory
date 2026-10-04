@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -56,6 +56,59 @@ function start(runtime: WorkflowRuntime, definition: Workflow) {
 }
 
 describe("workflow runtime", () => {
+	it("uses the persisted default behind explicit choices and matching labels, including legacy config", () => {
+		const { runtime, home } = create();
+		expect(runtime.getDefaultWorkflow()).toBe("simple");
+		expect(runtime.selectWorkflow([]).id).toBe("simple");
+		writeFileSync(
+			join(home, "factory", "workflows.json"),
+			JSON.stringify(defaultWorkflows),
+		);
+		const hooks = {
+			agent: async () => ({}),
+			script: async () => ({}),
+			tool: async () => ({}),
+		};
+		const legacy = new WorkflowRuntime(home, hooks);
+		expect(legacy.selectWorkflow([]).id).toBe("simple");
+		const custom = workflow([agent("work")]);
+		legacy.updateWorkflows([...defaultWorkflows, custom], "custom");
+		expect(legacy.selectWorkflow([]).id).toBe("custom");
+		expect(legacy.selectWorkflow(["unrelated"]).id).toBe("custom");
+		expect(legacy.selectWorkflow(["workflow:factory"]).id).toBe("factory");
+		expect(legacy.selectWorkflow(["workflow:factory"], "simple").id).toBe(
+			"simple",
+		);
+		expect(() => legacy.selectWorkflow([], "missing")).toThrow(
+			"Unknown workflow",
+		);
+		const restarted = new WorkflowRuntime(home, hooks);
+		expect(restarted.getDefaultWorkflow()).toBe("custom");
+		expect(restarted.selectWorkflow([]).id).toBe("custom");
+		// Legacy API callers updating definitions retain the selected default.
+		restarted.updateWorkflows(restarted.listWorkflows());
+		expect(restarted.getDefaultWorkflow()).toBe("custom");
+	});
+	it("rejects missing or deleted defaults without changing the saved configuration or existing runs", () => {
+		const { runtime, home } = create();
+		const custom = workflow([agent("work")]);
+		runtime.updateWorkflows([...defaultWorkflows, custom], "custom");
+		const run = start(runtime, runtime.selectWorkflow([]));
+		const saved = readFileSync(join(home, "factory", "workflows.json"), "utf8");
+		expect(() => runtime.updateWorkflows(defaultWorkflows, "missing")).toThrow(
+			"Unknown default workflow",
+		);
+		expect(() => runtime.updateWorkflows(defaultWorkflows)).toThrow(
+			"Unknown default workflow",
+		);
+		expect(readFileSync(join(home, "factory", "workflows.json"), "utf8")).toBe(
+			saved,
+		);
+		expect(runtime.selectWorkflow([]).id).toBe("custom");
+		runtime.updateWorkflows(defaultWorkflows, "factory");
+		expect(runtime.selectWorkflow([]).id).toBe("factory");
+		expect(run.workflow.id).toBe("custom");
+	});
 	it("waits for human answers and repeats clarification with retained Q&A", async () => {
 		const execute = vi.fn(async (context: ExecutionContext) =>
 			context.run.answers.length

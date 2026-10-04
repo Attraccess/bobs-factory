@@ -29,14 +29,20 @@ trusted local operator.
 ## Run and configure
 
 Select a repository and workflow under **New run**, then enter the task.
-**Simple / Cyrus** retains the existing Cyrus execution path; tickets without
-a workflow label continue to use it. **Software factory** adds the pipeline
+**Simple / Cyrus** retains the existing Cyrus execution path and is the initial
+default. **Software factory** adds the pipeline
 below. Apply `workflow:factory` (or `factory`) to a ticket to select it.
 Custom workflow labels are configurable; explicit UI selection wins, otherwise
-the first matching configured workflow wins. Agent/model labels still choose
-the run defaults.
+the first matching configured workflow wins. If no label matches, the configured
+default workflow is used. Agent/model labels still choose the run defaults.
 
-**Workflows** exposes an agent and model field for each agent role, plus the
+In **Workflows**, choose **Default workflow** and click **Save workflows**.
+This choice is saved across restarts, applies to new runs without matching
+labels, and is preselected under **New run**. You can select any saved workflow;
+choose another default before deleting the current one. Existing runs retain
+their workflow.
+
+**Workflows** also exposes an agent and model field for each agent role, plus the
 JSON definition for editing prompts, scripts, tools and graph edges. Empty role
 fields inherit the run settings. Changing agent provider without specifying a
 model uses that provider's default model. Saved definitions apply to new runs;

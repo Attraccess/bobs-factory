@@ -88,3 +88,23 @@ The T3 browser supported navigation, DOM inspection, form interactions and
 termination. Its screenshot/snapshot endpoint failed during the repeated drive;
 an earlier UI capture was inspected successfully. No screenshot evidence is
 claimed for those failed calls.
+
+## Default workflow setting follow-up
+
+Tested the follow-up working tree against `8493f8a` on 2026-10-04. Browser on
+port 3467: opened Workflows, changed Default workflow from Simple to Factory,
+saved, reloaded the page, and opened New run. Factory was preselected with its
+correct description. Test configuration/state was isolated under
+`/tmp/bobs-factory-default-check`; the operator's actual default was preserved.
+
+For ticket routing, added two script-only workflows whose output identifies
+which graph ran. Set the default to `default-check`, then created F1 tickets
+through RPC port 3468. Unlabeled `DEF-1` / `session-1` completed with workflow
+`default-check` and receipt `{"chosen":"default-check"}`. `DEF-2` / `session-2`
+with label `workflow:label-check` completed with workflow `label-check` and
+receipt `{"chosen":"label-check"}`. Both traversed normal ticket/session setup
+and created worktrees; no agent or remote delivery was needed for this routing
+check. Targeted runtime/API/pipeline checks passed (18 tests), including restart
+persistence, legacy array migration, explicit choice precedence, rejected
+missing/deleted defaults without a partial save, and retained run definitions.
+The isolated worker was stopped after the drive.

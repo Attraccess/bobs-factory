@@ -70,10 +70,23 @@ export class FactoryServer {
 		this.app.get("/api/config", () => ({
 			repositories: hooks.repositories(),
 			workflows: runtime.listWorkflows(),
+			defaultWorkflow: runtime.getDefaultWorkflow(),
 		}));
-		this.app.put("/api/workflows", (request) =>
-			runtime.updateWorkflows(request.body),
-		);
+		this.app.put("/api/workflows", (request) => {
+			// Retain the original array API for existing local clients.
+			if (Array.isArray(request.body))
+				return runtime.updateWorkflows(request.body);
+			const { workflows, defaultWorkflow } = z
+				.object({
+					workflows: z.array(z.unknown()),
+					defaultWorkflow: z.string().min(1),
+				})
+				.parse(request.body);
+			return {
+				workflows: runtime.updateWorkflows(workflows, defaultWorkflow),
+				defaultWorkflow: runtime.getDefaultWorkflow(),
+			};
+		});
 		this.app.get("/api/runs", () => {
 			const workflowRuns = [...runtime.runs.values()].map(
 				({

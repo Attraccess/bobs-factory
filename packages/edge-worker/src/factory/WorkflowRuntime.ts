@@ -74,6 +74,7 @@ export class WorkflowRuntime {
 		{ resolve: () => void; reject: (error: Error) => void }
 	>();
 	private workflows: Workflow[];
+	private defaultWorkflow = "simple";
 	readonly directory: string;
 
 	constructor(
@@ -83,9 +84,15 @@ export class WorkflowRuntime {
 		this.directory = join(home, "factory");
 		mkdirSync(join(this.directory, "runs"), { recursive: true });
 		const config = join(this.directory, "workflows.json");
-		this.workflows = existsSync(config)
-			? validateWorkflows(JSON.parse(readFileSync(config, "utf8")))
-			: structuredClone(defaultWorkflows);
+		const stored = existsSync(config)
+			? JSON.parse(readFileSync(config, "utf8"))
+			: defaultWorkflows;
+		this.workflows = validateWorkflows(
+			Array.isArray(stored) ? stored : stored.workflows,
+		);
+		if (!Array.isArray(stored))
+			this.defaultWorkflow = stored.defaultWorkflow ?? "simple";
+		this.validateDefault(this.workflows, this.defaultWorkflow);
 		for (const filename of readdirSync(join(this.directory, "runs"))) {
 			if (!filename.endsWith(".json")) continue;
 			const run: FactoryRun = JSON.parse(
@@ -104,10 +111,28 @@ export class WorkflowRuntime {
 	listWorkflows(): Workflow[] {
 		return structuredClone(this.workflows);
 	}
-	updateWorkflows(value: unknown): Workflow[] {
+	getDefaultWorkflow(): string {
+		return this.defaultWorkflow;
+	}
+	private validateDefault(
+		workflows: Workflow[],
+		defaultWorkflow: string,
+	): void {
+		if (!workflows.some((workflow) => workflow.id === defaultWorkflow))
+			throw new Error(`Unknown default workflow: ${defaultWorkflow}`);
+	}
+	updateWorkflows(
+		value: unknown,
+		defaultWorkflow = this.defaultWorkflow,
+	): Workflow[] {
 		const workflows = validateWorkflows(value);
-		this.atomicWrite(join(this.directory, "workflows.json"), workflows);
+		this.validateDefault(workflows, defaultWorkflow);
+		this.atomicWrite(join(this.directory, "workflows.json"), {
+			workflows,
+			defaultWorkflow,
+		});
 		this.workflows = workflows;
+		this.defaultWorkflow = defaultWorkflow;
 		return this.listWorkflows();
 	}
 	selectWorkflow(labels: string[], explicit?: string): Workflow {
@@ -118,7 +143,10 @@ export class WorkflowRuntime {
 				);
 		if (explicit && !selected) throw new Error(`Unknown workflow: ${explicit}`);
 		return structuredClone(
-			selected ?? this.workflows.find((workflow) => workflow.id === "simple")!,
+			selected ??
+				this.workflows.find(
+					(workflow) => workflow.id === this.defaultWorkflow,
+				)!,
 		);
 	}
 	create(options: {

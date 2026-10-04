@@ -235,6 +235,7 @@ async function openStart() {
 					`<option value="${htmlEscape(workflow.id)}">${htmlEscape(workflow.name)}</option>`,
 			)
 			.join("");
+		$("#workflow-select").value = config.defaultWorkflow;
 		$("#workflow-select").onchange = () =>
 			($("#workflow-description").textContent =
 				config.workflows.find((item) => item.id === $("#workflow-select").value)
@@ -295,6 +296,7 @@ $("#workflows-button").onclick = async () => {
 	try {
 		await loadConfig();
 		$("#workflow-json").value = JSON.stringify(config.workflows, null, 2);
+		renderDefaultWorkflowOptions(config.workflows, config.defaultWorkflow);
 		$("#workflows-form .form-error").textContent = "";
 		$("#roles-workflow").innerHTML = config.workflows
 			.map(
@@ -309,9 +311,24 @@ $("#workflows-button").onclick = async () => {
 		fail(error);
 	}
 };
+function renderDefaultWorkflowOptions(
+	definitions,
+	selected = $("#default-workflow").value,
+) {
+	$("#default-workflow").innerHTML =
+		'<option value="">Choose a default workflow</option>' +
+		definitions
+			.map(
+				(workflow) =>
+					`<option value="${htmlEscape(workflow.id)}">${htmlEscape(workflow.name)}</option>`,
+			)
+			.join("");
+	$("#default-workflow").value = selected;
+}
 function renderRoleSettings() {
 	try {
 		const definitions = JSON.parse($("#workflow-json").value);
+		renderDefaultWorkflowOptions(definitions);
 		const workflow = definitions.find(
 			(item) => item.id === $("#roles-workflow").value,
 		);
@@ -356,10 +373,15 @@ $("#workflow-json").onchange = renderRoleSettings;
 $("#workflows-form").onsubmit = async (event) => {
 	event.preventDefault();
 	try {
-		config.workflows = await api("/api/workflows", {
+		const saved = await api("/api/workflows", {
 			method: "PUT",
-			body: JSON.stringify(JSON.parse($("#workflow-json").value)),
+			body: JSON.stringify({
+				workflows: JSON.parse($("#workflow-json").value),
+				defaultWorkflow: $("#default-workflow").value,
+			}),
 		});
+		config.workflows = saved.workflows;
+		config.defaultWorkflow = saved.defaultWorkflow;
 		$("#workflows-dialog").close();
 	} catch (error) {
 		$("#workflows-form .form-error").textContent = error.message;

@@ -35,6 +35,54 @@ it("starts, displays, answers and terminates runs through the local API", async 
 	});
 	const headers = { host: "localhost", "x-factory-request": "1" };
 	try {
+		expect(
+			(await server.app.inject({ url: "/api/config", headers })).json()
+				.defaultWorkflow,
+		).toBe("simple");
+		const settings = await server.app.inject({
+			method: "PUT",
+			url: "/api/workflows",
+			headers,
+			payload: { workflows: defaultWorkflows, defaultWorkflow: "factory" },
+		});
+		expect(settings.statusCode).toBe(200);
+		expect(settings.json().defaultWorkflow).toBe("factory");
+		expect(runtime.selectWorkflow([]).id).toBe("factory");
+		expect(
+			(await server.app.inject({ url: "/api/config", headers })).json()
+				.defaultWorkflow,
+		).toBe("factory");
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/workflows",
+					headers,
+					payload: { workflows: defaultWorkflows, defaultWorkflow: "missing" },
+				})
+			).statusCode,
+		).toBe(409);
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/workflows",
+					headers,
+					payload: { workflows: defaultWorkflows },
+				})
+			).statusCode,
+		).toBe(400);
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/workflows",
+					headers,
+					payload: defaultWorkflows,
+				})
+			).statusCode,
+		).toBe(200);
+		expect(runtime.getDefaultWorkflow()).toBe("factory");
 		const started = await server.app.inject({
 			method: "POST",
 			url: "/api/runs",
