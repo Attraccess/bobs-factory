@@ -6,6 +6,7 @@
 	"packageManager": "pnpm@10.33.1",
 	"type": "module",
 	"scripts": {
+		"factory": "pnpm --filter 'cyrus-edge-worker...' build && bun run scripts/factory.ts",
 		"build": "pnpm -r --filter='!@cyrus/electron' build",
 		"dev": "pnpm -r --parallel dev",
 		"test": "pnpm -r test",

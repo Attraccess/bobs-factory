@@ -1,4 +1,8 @@
 export {
+	callConfiguredTool,
+	type ToolServerConfig,
+} from "./callConfiguredTool.js";
+export {
 	createFetchFailureModesClient,
 	type FetchFailureModesClientOptions,
 } from "./tools/cyrus-tools/failure-modes-http-client.js";

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
@@ -135,6 +136,7 @@ import {
 } from "cyrus-linear-event-transport";
 import {
 	type CyrusToolsOptions,
+	callConfiguredTool,
 	createCyrusToolsServer,
 	createFetchFailureModesClient,
 	type FailureModesHttpClient,
@@ -161,6 +163,20 @@ import { ChatSessionHandler } from "./ChatSessionHandler.js";
 import { ConfigManager, type RepositoryChanges } from "./ConfigManager.js";
 import { DefaultSkillsDeployer } from "./DefaultSkillsDeployer.js";
 import { EgressProxy } from "./EgressProxy.js";
+import { validateFactoryResult } from "./factory/FactoryResults.js";
+import { FactoryServer } from "./factory/FactoryServer.js";
+import {
+	captureEvidence,
+	FactoryTools,
+	parseAgentOutput,
+	toolArguments,
+} from "./factory/FactoryTools.js";
+import { issueSnapshot } from "./factory/issueSnapshot.js";
+import {
+	type ExecutionContext,
+	type FactoryRun,
+	WorkflowRuntime,
+} from "./factory/WorkflowRuntime.js";
 import { GitService } from "./GitService.js";
 import { GlobalSessionRegistry } from "./GlobalSessionRegistry.js";
 import { McpConfigService } from "./McpConfigService.js";
@@ -242,6 +258,8 @@ export class EdgeWorker extends EventEmitter {
 	private persistenceManager: PersistenceManager;
 	private sharedApplicationServer: SharedApplicationServer;
 	private cyrusHome: string;
+	private factoryRuntime?: WorkflowRuntime;
+	private factoryServer?: FactoryServer;
 	/** Per-org GitHub App installation tokens pushed by cyrus-hosted (lazy file-backed reads) */
 	private githubTokenStore: GitHubTokenStore;
 	private globalSessionRegistry: GlobalSessionRegistry; // Centralized session storage across all repositories
@@ -774,19 +792,52 @@ export class EdgeWorker extends EventEmitter {
 	 * Initialize and register components (routes) before server starts
 	 */
 	private async initializeComponents(): Promise<void> {
+		if (
+			process.env.CYRUS_FACTORY_PORT &&
+			process.env.CYRUS_FACTORY_PORT !== "0"
+		) {
+			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
+				repositories: () =>
+					Array.from(this.repositories.values())
+						.filter((repo) => repo.isActive)
+						.map((repo) => ({ id: repo.id, name: repo.name })),
+				sessions: () =>
+					this.agentSessionManager.getAllSessions().map((session) => ({
+						id: session.id,
+						title: session.issue?.title ?? session.id,
+						status: session.agentRunner?.isRunning()
+							? "running"
+							: session.status,
+						createdAt: new Date(session.createdAt).toISOString(),
+						workspace: session.workspace.path,
+						repositoryId: this.sessionRepositories.get(session.id),
+					})),
+				entries: (id) => this.agentSessionManager.getSessionEntries(id),
+				start: (input) => this.startManualFactoryRun(input),
+				stop: (id) => {
+					this.factoryRuntime?.runs.has(id) && this.factoryRuntime.stop(id);
+					this.agentSessionManager.requestSessionStop(id);
+					this.agentSessionManager.getAgentRunner(id)?.stop();
+				},
+			});
+			await this.factoryServer.start(Number(process.env.CYRUS_FACTORY_PORT));
+			this.logger.info(
+				`Software factory UI: http://127.0.0.1:${process.env.CYRUS_FACTORY_PORT}`,
+			);
+		}
 		// 1. Platform-specific initialization
 		if (this.config.platform === "cli") {
 			// CLI mode: ensure a CLIIssueTrackerService exists for each repo workspace.
 			// Repos from config.repositories don't go through linearWorkspaces init,
 			// so we create trackers here if missing.
-			for (const [repoId, repo] of this.repositories) {
+			for (const repo of this.repositories.values()) {
 				const wsId = repo.linearWorkspaceId;
 				if (wsId && !this.issueTrackers.has(wsId)) {
 					const service = new CLIIssueTrackerService();
 					service.seedDefaultData();
 					this.issueTrackers.set(wsId, service);
 					const activitySink = new LinearActivitySink(service, wsId);
-					this.activitySinks.set(repoId, activitySink);
+					this.activitySinks.set(wsId, activitySink);
 				}
 			}
 
@@ -2765,6 +2816,12 @@ ${taskSection}`;
 	 * @returns "idle" if the process can be safely restarted, "busy" if work is in progress
 	 */
 	private computeStatus(): "idle" | "busy" {
+		if (
+			[...(this.factoryRuntime?.runs.values() ?? [])].some(
+				(run) => run.status === "running",
+			)
+		)
+			return "busy";
 		// Busy if any webhooks are currently being processed
 		if (this.activeWebhookCount > 0) {
 			return "busy";
@@ -2860,6 +2917,8 @@ ${taskSection}`;
 	 * Stop the edge worker
 	 */
 	async stop(): Promise<void> {
+		this.factoryRuntime?.shutdown();
+		await this.factoryServer?.stop();
 		// Stop config file watcher
 		await this.configManager.stop();
 
@@ -3663,6 +3722,8 @@ ${taskSection}`;
 			this.logger.info(
 				`Stopping agent runner for ${message.workItemIdentifier} (issue terminal)`,
 			);
+			if (this.factoryRuntime?.runs.has(session.id))
+				this.factoryRuntime.stop(session.id);
 			this.agentSessionManager.requestSessionStop(session.id);
 			session.agentRunner?.stop();
 		}
@@ -3746,6 +3807,8 @@ ${taskSection}`;
 						`Found ${sessions.length} session(s) for unassigned issue ${webhook.notification.issue.identifier} but no repository mapping, stopping sessions without farewell comment`,
 					);
 					for (const session of sessions) {
+						if (this.factoryRuntime?.runs.has(session.id))
+							this.factoryRuntime.stop(session.id);
 						this.agentSessionManager.requestSessionStop(session.id);
 						session.agentRunner?.stop();
 					}
@@ -4856,6 +4919,54 @@ ${taskSection}`;
 			}
 
 			// Create agent runner with system prompt from assembly
+			const workflow = this.getFactoryRuntime().selectWorkflow(labels);
+			if (workflow.id !== "simple") {
+				if (repositories.length !== 1)
+					throw new Error(
+						"Factory MVP runs use one repository; use Simple for multi-repository tasks",
+					);
+				const selectedRunner = await this.buildAgentRunnerConfig(
+					session,
+					primaryRepo,
+					sessionId,
+					undefined,
+					allowedTools,
+					allowedDirectories,
+					disallowedTools,
+					undefined,
+					labels,
+					fullIssue.description ?? undefined,
+					undefined,
+					linearWorkspaceId,
+				);
+				const run = this.getFactoryRuntime().create({
+					id: sessionId,
+					title: fullIssue.title,
+					repositoryId: primaryRepo.id,
+					workflow,
+					workspace: session.workspace.path,
+					input: `${assembly.userPrompt}\n\nComplete ticket snapshot:\n${JSON.stringify(await issueSnapshot(fullIssue, labels), null, 2)}`,
+					issueId: fullIssue.id,
+					workspaceId: linearWorkspaceId,
+				});
+				run.outputs.repository = {
+					baseBranch:
+						session.repositories[0]?.baseBranchName ?? primaryRepo.baseBranch,
+					name: primaryRepo.name,
+				};
+				run.runner = selectedRunner.runnerType;
+				run.model = selectedRunner.config.model;
+				this.emit("session:started", fullIssue.id, fullIssue, primaryRepo.id);
+				this.config.handlers?.onSessionStart?.(
+					fullIssue.id,
+					fullIssue,
+					primaryRepo.id,
+				);
+				void this.getFactoryRuntime().launch(run);
+				return;
+			}
+
+			// Create agent runner with system prompt from assembly
 			// buildAgentRunnerConfig now determines runner type from labels internally
 			const { config: runnerConfig, runnerType } =
 				await this.buildAgentRunnerConfig(
@@ -4941,6 +5052,11 @@ ${taskSection}`;
 		webhook: AgentSessionPromptedWebhook,
 	): Promise<void> {
 		const agentSessionId = webhook.agentSession.id;
+		if (this.factoryRuntime?.runs.has(agentSessionId)) {
+			this.factoryRuntime.stop(agentSessionId);
+			this.agentSessionManager.getAgentRunner(agentSessionId)?.stop();
+			return;
+		}
 		const { issue } = webhook.agentSession;
 		const log = this.logger.withContext({ sessionId: agentSessionId });
 
@@ -5375,6 +5491,17 @@ ${taskSection}`;
 		}
 
 		// Branch 1.5: Handle re-prompt for parked (blocked-by) sessions
+		const factoryRun = this.factoryRuntime?.runs.get(agentSessionId);
+		if (factoryRun) {
+			if (factoryRun.status === "waiting")
+				this.factoryRuntime!.answer(agentSessionId, activityBody);
+			else
+				await this.agentSessionManager.createResponseActivity(
+					agentSessionId,
+					"This workflow is not waiting for clarification. Use the factory UI to inspect or terminate the run.",
+				);
+			return;
+		}
 		// When a user re-prompts and the session is parked, re-check blocking status.
 		// If blockers are resolved, wake the session immediately.
 		const issueIdForParkedCheck = webhook.agentSession?.issue?.id;
@@ -5512,6 +5639,8 @@ ${taskSection}`;
 		// Stop all agent runners for this issue
 		for (const session of sessions) {
 			this.logger.info(`Stopping agent runner for issue ${issue.identifier}`);
+			if (this.factoryRuntime?.runs.has(session.id))
+				this.factoryRuntime.stop(session.id);
 			this.agentSessionManager.requestSessionStop(session.id);
 			session.agentRunner?.stop();
 		}
@@ -5666,6 +5795,322 @@ ${taskSection}`;
 			this.buildRunnerForType(runnerType, config),
 			this.runnerSlots,
 		);
+	}
+
+	private getFactoryRuntime(): WorkflowRuntime {
+		if (!this.factoryRuntime) {
+			const tools = new FactoryTools({
+				postComment: (id, body) =>
+					this.postFactoryComment(this.getFactoryRuntime().get(id), body),
+				mcp: (context, server, tool) =>
+					this.executeFactoryMcpTool(context, server, tool),
+			});
+			this.factoryRuntime = new WorkflowRuntime(this.cyrusHome, {
+				agent: (context) => this.executeFactoryAgent(context),
+				script: (context) => tools.script(context),
+				tool: (context) => tools.tool(context),
+				question: async (run) => {
+					const body = `## Factory clarification\n\n${run.questions.map((question, index) => `${index + 1}. ${question}`).join("\n")}\n\nReply here or answer in the factory UI. The run waits for your answers.`;
+					await this.postFactoryComment(run, body);
+					await this.agentSessionManager.createResponseActivity(run.id, body);
+				},
+			});
+		}
+		return this.factoryRuntime;
+	}
+
+	private async postFactoryComment(
+		run: FactoryRun,
+		body: string,
+	): Promise<void> {
+		if (!run.issueId || !run.workspaceId) return;
+		const tracker = this.issueTrackers.get(run.workspaceId);
+		if (!tracker)
+			throw new Error(
+				"Ticket tracker unavailable; cannot persist decision records",
+			);
+		await tracker.createComment(run.issueId, { body });
+	}
+
+	private async executeFactoryAgent(
+		context: ExecutionContext,
+	): Promise<unknown> {
+		const { run, step } = context;
+		const session = this.agentSessionManager.getSession(run.id);
+		const repository = this.repositories.get(run.repositoryId);
+		if (!session || !repository)
+			throw new Error("Run session/repository unavailable");
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		const built = await this.buildAgentRunnerConfig(
+			session,
+			repository,
+			run.id,
+			instruction,
+			this.buildAllowedTools([repository]),
+			[
+				repository.repositoryPath,
+				context.evidenceDir,
+				...[
+					join(this.cyrusHome, basename(run.workspace), "attachments"),
+				].filter(existsSync),
+			],
+			this.buildDisallowedTools([repository]),
+			undefined,
+			[],
+			undefined,
+			undefined,
+			run.workspaceId ?? repository.linearWorkspaceId,
+		);
+		const runnerType =
+			step.runner ?? (run.runner as RunnerType | undefined) ?? built.runnerType;
+		built.config.model =
+			step.model ??
+			(step.runner && step.runner !== run.runner
+				? this.getDefaultModelForRunner(runnerType)
+				: run.model) ??
+			(runnerType === built.runnerType
+				? built.config.model
+				: this.getDefaultModelForRunner(runnerType));
+		built.config.fallbackModel =
+			this.getDefaultFallbackModelForRunner(runnerType);
+		built.config.resumeSessionId = undefined; // Each role has a fresh agent conversation.
+		built.config.additionalDirectories = [
+			...(built.config.additionalDirectories ?? []),
+			context.evidenceDir,
+		];
+		built.config.onAskUserQuestion = undefined; // Clarification uses the persisted workflow checkpoint.
+		const originalMessage = built.config.onMessage;
+		built.config.onMessage = (message) => {
+			void originalMessage?.(message);
+			if (
+				message.type === "assistant" ||
+				message.type === "user" ||
+				message.type === "result"
+			)
+				context.log(JSON.stringify(message));
+		};
+		const runner = capRunnerStarts(
+			runnerType === "claude"
+				? new ClaudeRunner(built.config, false)
+				: this.buildRunnerForType(runnerType, built.config),
+			this.runnerSlots,
+			context.signal,
+		);
+		this.agentSessionManager.addAgentRunner(run.id, runner);
+		const stop = () => runner.stop();
+		context.signal.addEventListener("abort", stop, { once: true });
+		try {
+			context.signal.throwIfAborted();
+			await runner.start(
+				`Step input:\n${JSON.stringify(context.input, null, 2)}\n\nEvidence directory: ${context.evidenceDir}`,
+			);
+			context.signal.throwIfAborted();
+			const messages = runner.getMessages();
+			const result = messages
+				.filter((message) => message.type === "result")
+				.at(-1);
+			if (result?.type === "result" && result.is_error)
+				throw new Error(`Agent step failed: ${JSON.stringify(result)}`);
+			const assistant = messages
+				.filter((message) => message.type === "assistant")
+				.at(-1);
+			const text =
+				result?.type === "result" && "result" in result
+					? result.result
+					: assistant?.type === "assistant"
+						? assistant.message.content
+								.filter((block) => block.type === "text")
+								.map((block) => (block.type === "text" ? block.text : ""))
+								.join("\n")
+						: "";
+			let output = step.json === false ? { text } : parseAgentOutput(text);
+			if (run.workflow.id === "factory")
+				output = validateFactoryResult(step.id, output);
+			if (step.id === "capture") output = captureEvidence(context, output);
+			return output;
+		} finally {
+			context.signal.removeEventListener("abort", stop);
+		}
+	}
+
+	private async executeFactoryMcpTool(
+		context: ExecutionContext,
+		serverName: string,
+		toolName: string,
+	): Promise<unknown> {
+		const session = this.agentSessionManager.getSession(context.run.id);
+		const repository = this.repositories.get(context.run.repositoryId);
+		if (!session || !repository)
+			throw new Error("Run session/repository unavailable");
+		const built = await this.buildAgentRunnerConfig(
+			session,
+			repository,
+			context.run.id,
+			undefined,
+			this.buildAllowedTools([repository]),
+			[repository.repositoryPath],
+			this.buildDisallowedTools([repository]),
+			undefined,
+			[],
+			undefined,
+			undefined,
+			context.run.workspaceId ?? repository.linearWorkspaceId,
+		);
+		const servers: Record<string, McpServerConfig> = {};
+		const paths = built.config.mcpConfigPath
+			? Array.isArray(built.config.mcpConfigPath)
+				? built.config.mcpConfigPath
+				: [built.config.mcpConfigPath]
+			: [];
+		for (const path of paths)
+			Object.assign(
+				servers,
+				JSON.parse(readFileSync(path, "utf8")).mcpServers ?? {},
+			);
+		Object.assign(servers, built.config.mcpConfig);
+		const server = servers[serverName];
+		if (!server || server.type === "sdk")
+			throw new Error(
+				`MCP server ${serverName} is not configured as a process/HTTP transport`,
+			);
+		return callConfiguredTool(
+			server,
+			toolName,
+			toolArguments(context, context.step.arguments ?? {}) as Record<
+				string,
+				unknown
+			>,
+			context.signal,
+			context.run.workspace,
+		);
+	}
+
+	private async startManualFactoryRun(input: {
+		title: string;
+		prompt: string;
+		repositoryId: string;
+		workflow: string;
+		runner?: RunnerType;
+		model?: string;
+	}): Promise<FactoryRun> {
+		const repository = this.repositories.get(input.repositoryId);
+		if (!repository?.isActive) throw new Error("Select an active repository");
+		const runtime = this.getFactoryRuntime();
+		const run = runtime.create({
+			id: `manual-${randomUUID()}`,
+			title: input.title,
+			repositoryId: repository.id,
+			workflow: runtime.selectWorkflow([], input.workflow),
+			workspace: "",
+			input: input.prompt,
+			runner: input.runner,
+			model: input.model,
+		});
+		void (async () => {
+			try {
+				const tracker = new CLIIssueTrackerService();
+				tracker.seedDefaultData();
+				const created = await tracker.createIssue({
+					teamId: "team-default",
+					title: input.title,
+					description: input.prompt,
+				});
+				const fullIssue: Issue = {
+					...created,
+					identifier: `MANUAL-${run.id.slice(-8)}`,
+					branchName: `factory/${run.id}`,
+				};
+				const workspace = await this.gitService.createGitWorktree(fullIssue, [
+					repository,
+				]);
+				run.workspace = workspace.path;
+				const session = this.agentSessionManager.createChatSession(
+					run.id,
+					workspace,
+					"manual",
+					[
+						{
+							repositoryId: repository.id,
+							branchName: fullIssue.branchName,
+							baseBranchName: repository.baseBranch,
+						},
+					],
+				);
+				this.sessionRepositories.set(run.id, repository.id);
+				run.outputs.repository = {
+					name: repository.name,
+					baseBranch:
+						workspace.resolvedBaseBranches?.[repository.id]?.branch ??
+						repository.baseBranch,
+				};
+				if (run.status === "stopped") return;
+				if (run.workflow.id === "simple") {
+					const assembly = await this.assemblePrompt({
+						session,
+						fullIssue,
+						repository,
+						repositories: [repository],
+						userComment: input.prompt,
+						isNewSession: true,
+						isStreaming: false,
+						labels: [],
+					});
+					const built = await this.buildAgentRunnerConfig(
+						session,
+						repository,
+						run.id,
+						assembly.systemPrompt,
+						this.buildAllowedTools([repository]),
+						[repository.repositoryPath],
+						this.buildDisallowedTools([repository]),
+						undefined,
+						[],
+						undefined,
+						undefined,
+						repository.linearWorkspaceId,
+					);
+					const runnerType = input.runner ?? built.runnerType;
+					built.config.model =
+						input.model ??
+						(runnerType === built.runnerType
+							? built.config.model
+							: this.getDefaultModelForRunner(runnerType));
+					built.config.fallbackModel =
+						this.getDefaultFallbackModelForRunner(runnerType);
+					if (runtime.get(run.id).status === "stopped") return;
+					await runtime.launch(run, async (signal) => {
+						const runner = capRunnerStarts(
+							this.buildRunnerForType(runnerType, built.config),
+							this.runnerSlots,
+							signal,
+						);
+						this.agentSessionManager.addAgentRunner(run.id, runner);
+						const stop = () => runner.stop();
+						signal.addEventListener("abort", stop, { once: true });
+						try {
+							await runner.start(assembly.userPrompt);
+							const result = runner
+								.getMessages()
+								.filter((message) => message.type === "result")
+								.at(-1);
+							if (result?.type === "result" && result.is_error)
+								throw new Error(`Agent failed: ${JSON.stringify(result)}`);
+						} finally {
+							signal.removeEventListener("abort", stop);
+						}
+					});
+				} else {
+					await runtime.launch(run);
+				}
+			} catch (error) {
+				if (run.status !== "stopped") run.status = "failed";
+				run.error = error instanceof Error ? error.message : String(error);
+				runtime.log(run, "setup", run.error);
+			} finally {
+				runtime.save(run);
+			}
+		})();
+		return run;
 	}
 
 	private buildRunnerForType(

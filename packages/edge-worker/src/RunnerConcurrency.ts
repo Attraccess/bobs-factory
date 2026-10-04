@@ -108,10 +108,12 @@ export class SessionSemaphore {
 export function capRunnerStarts(
 	runner: IAgentRunner,
 	semaphore: SessionSemaphore,
+	signal?: AbortSignal,
 ): IAgentRunner {
 	const gate = async <T>(run: () => Promise<T>): Promise<T> => {
 		await semaphore.acquire();
 		try {
+			signal?.throwIfAborted();
 			return await run();
 		} finally {
 			semaphore.release();
