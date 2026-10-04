@@ -91,7 +91,7 @@ Takeover preserves an existing local branch/worktree, including unfinished work.
 When the PR branch is absent locally it starts from the PR's current remote head.
 It snapshots the PR body, all comments, reviews and inline review comments,
 then assesses completed work, remaining work and risks. A ticket source captures
-all ticket comments and metadata and finds an open PR for its existing branch.
+all ticket comments, metadata and attachment links and finds an open PR for its existing branch.
 The assessment feeds clarification and planning; the implementer receives only
 the resulting continuation plan/assets. Publication updates the original PR.
 Existing ready PRs are converted to draft while the factory processes them.

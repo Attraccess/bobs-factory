@@ -39,7 +39,14 @@ export async function issueSnapshot(
 		issue.project,
 		issue.parent,
 	]);
+	const attachments = tracker
+		? await tracker.fetchIssueAttachments(issue.id)
+		: (await issue.attachments()).nodes.map((item) => ({
+				title: item.title,
+				url: item.url,
+			}));
 	return {
+		attachments,
 		id: issue.id,
 		identifier: issue.identifier,
 		title: issue.title,
