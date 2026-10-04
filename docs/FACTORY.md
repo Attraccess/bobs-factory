@@ -255,14 +255,35 @@ in `exec` arguments. MCP servers come from the existing Cyrus runner config
 groups isolate their output dictionaries, but use the same worktree: reserve
 fanout for independent/read-only work to avoid file conflicts.
 
+Submitting answers, starting a run and saving workflows show a spinner and a
+pending status immediately. Repeat submissions are blocked while the request is
+pending. Successful answers show an acceptance message; failed submissions keep
+your input available to retry.
+
 ## Persistence and MVP limits
 
 Workflow definitions, runs and screenshots are under `<home>/factory`. Runs
 retain complete structured step history and up to 1,500 activity events. A
-restart marks active runs **interrupted** and preserves history; start a new
-run to continue. Automatic recovery/resume is outside this MVP. Termination
-cancels active runners and script process groups; retained worktrees and draft
-PRs stay available for inspection.
+restart automatically restores running and waiting runs after the service starts.
+Completed steps are checkpointed, including loop visits, shared workflows and
+individual fanout branches. Unanswered clarification stays waiting for your
+answer; accepted answers survive restarts. An interrupted agent resumes its
+saved provider conversation in the same worktree, with a fresh context MCP
+connection. Manual Simple runs and original Linear/CLI ticket sessions use
+Cyrus's existing conversation continuation. Other standalone Cyrus chat/PR
+comment sessions are outside factory recovery; use Takeover for existing PRs.
+Explicitly terminated, completed and failed runs do not restart. Active runs
+saved by earlier factory versions are upgraded using their retained history.
+Previously interrupted/stopped historical runs remain unchanged.
+
+An unfinished script or direct tool call is retried from the beginning; use
+idempotent commands for steps with external effects. A crash between an external
+side effect and saving its result can require the agent to inspect existing
+work before continuing. Missing worktrees, repositories or provider transcripts
+produce a visible failure instead of silently starting unrelated work. This is
+local checkpoint recovery, not exactly-once execution or cross-machine migration.
+Termination cancels active runners and script process groups; retained worktrees
+and draft PRs stay available for inspection.
 
 Factory delivery currently targets one GitHub repository per run using `gh`.
 The Simple path keeps existing multi-repository and platform support. No-check

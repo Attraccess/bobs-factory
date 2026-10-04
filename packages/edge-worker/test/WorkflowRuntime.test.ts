@@ -265,7 +265,7 @@ describe("workflow runtime", () => {
 		expect(run.status).toBe("failed");
 		expect(siblingStopped).toBe(true);
 	});
-	it("retains history across restart without falsely resuming a run", () => {
+	it("retains active status and history until startup recovery is launched", () => {
 		const { runtime, home } = create();
 		const run = start(runtime, workflow([agent("work")]));
 		runtime.log(run, "work", "working");
@@ -274,7 +274,7 @@ describe("workflow runtime", () => {
 			script: async () => ({}),
 			tool: async () => ({}),
 		});
-		expect(restarted.get(run.id).status).toBe("interrupted");
+		expect(restarted.get(run.id).status).toBe("running");
 		expect(restarted.get(run.id).events[0]?.message).toBe("working");
 	});
 	it("freezes the workflow per run and applies saved changes only to new runs", () => {
@@ -462,4 +462,252 @@ it("upgrades a saved flat Factory without losing role settings or its selected d
 		"Unknown workflow",
 	);
 	expect(runtime.getDefaultWorkflow()).toBe("simple");
+});
+
+function reload(home: string, hooks: Partial<RuntimeHooks> = {}) {
+	return new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+		...hooks,
+	});
+}
+function untilAborted(context: ExecutionContext): Promise<unknown> {
+	return new Promise((resolve) =>
+		context.signal.addEventListener("abort", () => resolve({}), { once: true }),
+	);
+}
+it.each([
+	false,
+	true,
+])("recovers nested review loops without rerunning completed work or resetting limits (legacy=%s)", async (legacy) => {
+	const first = vi.fn(async (context: ExecutionContext) => {
+		if (context.step.id === "review") return { approved: false };
+		context.checkpointAgent?.({
+			runner: "codex",
+			sessionId: "fix-conversation",
+		});
+		context.log(
+			JSON.stringify({ type: "assistant", session_id: "fix-conversation" }),
+		);
+		return untilAborted(context);
+	});
+	const { runtime, home } = create({ agent: first });
+	runtime.updateWorkflows(
+		validateWorkflows([
+			...defaultWorkflows,
+			{
+				id: "shared",
+				name: "Shared",
+				internal: true,
+				steps: [
+					agent("review", {
+						maxVisits: 2,
+						branches: [
+							{ when: { path: "approved", equals: true }, next: "end" },
+						],
+					}),
+					agent("fix", { maxVisits: 1, runner: "codex", next: "review" }),
+				],
+			},
+			{
+				id: "parent",
+				name: "Parent",
+				steps: [
+					{
+						id: "pipeline",
+						name: "Pipeline",
+						type: "workflow",
+						workflow: "shared",
+					},
+				],
+			},
+		]),
+	);
+	const run = start(runtime, runtime.selectWorkflow([], "parent"));
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(first).toHaveBeenCalledTimes(2));
+	await runtime.shutdown();
+	expect(run.status).toBe("running");
+	expect(run.history.map((item) => item.step)).toEqual(["pipeline/review"]);
+	if (legacy) {
+		delete run.checkpoint;
+		runtime.save(run);
+	}
+	const resumed = vi.fn(async (context: ExecutionContext) => {
+		if (context.step.id === "fix") {
+			expect(context.resumeAgent).toEqual({
+				runner: "codex",
+				sessionId: "fix-conversation",
+			});
+			expect(context.run.history.map((item) => item.step)).toEqual([
+				"pipeline/review",
+			]);
+			return { fixed: true };
+		}
+		expect(context.resumeAgent).toBeUndefined();
+		return { approved: true };
+	});
+	const restarted = reload(home, { agent: resumed });
+	restarted.resumeAll();
+	restarted.resumeAll(); // Repeated startup recovery cannot launch a duplicate executor.
+	await vi.waitFor(() =>
+		expect(restarted.get(run.id).status).toBe("completed"),
+	);
+	expect(resumed.mock.calls.map(([context]) => context.step.id)).toEqual([
+		"fix",
+		"review",
+	]);
+	expect(restarted.get(run.id).history.map((item) => item.step)).toEqual([
+		"pipeline/review",
+		"pipeline/fix",
+		"pipeline/review",
+		"pipeline",
+	]);
+	expect(restarted.get(run.id).checkpoint?.active).toBeUndefined();
+});
+it("recovers partial fanout with isolated outputs, skipping the finished branch", async () => {
+	const { runtime, home } = create({
+		agent: async (context) => {
+			if (context.step.id === "fast") return { value: "retained" };
+			context.checkpointAgent?.({
+				runner: "claude",
+				sessionId: "slow-conversation",
+			});
+			return untilAborted(context);
+		},
+	});
+	const run = start(
+		runtime,
+		workflow([
+			{
+				id: "parallel",
+				name: "Parallel",
+				type: "fanout",
+				groups: [[agent("fast")], [agent("slow")]],
+			},
+		]),
+	);
+	void runtime.launch(run);
+	await vi.waitFor(() =>
+		expect(run.history.map((item) => item.step)).toEqual(["parallel/0/fast"]),
+	);
+	await runtime.shutdown();
+	const agentHook = vi.fn(async (context: ExecutionContext) => {
+		expect(context.step.id).toBe("slow");
+		expect(context.resumeAgent).toEqual({
+			runner: "claude",
+			sessionId: "slow-conversation",
+		});
+		expect(context.outputs).not.toHaveProperty("fast");
+		return { value: "resumed" };
+	});
+	const restarted = reload(home, { agent: agentHook });
+	restarted.resumeAll();
+	await vi.waitFor(() =>
+		expect(restarted.get(run.id).status).toBe("completed"),
+	);
+	expect(agentHook).toHaveBeenCalledTimes(1);
+	expect(restarted.get(run.id).outputs.parallel).toEqual([
+		{ fast: { value: "retained" } },
+		{ slow: { value: "resumed" } },
+	]);
+});
+it.each([
+	false,
+	true,
+])("restores unanswered questions without reasking, and waits for a human (legacy=%s)", async (legacy) => {
+	const question = vi.fn(async () => {});
+	const { runtime, home } = create({
+		agent: async () => ({ questions: ["Which provider?"] }),
+		question,
+	});
+	const run = start(
+		runtime,
+		workflow([
+			agent("clarify", { askQuestions: true, maxVisits: 2 }),
+			agent("implement"),
+		]),
+	);
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(question).toHaveBeenCalledTimes(1));
+	await runtime.shutdown();
+	expect(run.status).toBe("waiting");
+	if (legacy) {
+		delete run.checkpoint;
+		runtime.save(run);
+	}
+	const agentHook = vi.fn(async (context: ExecutionContext) => {
+		expect(context.run.answers[0]?.answer).toBe("Codex");
+		return { questions: [] };
+	});
+	const restarted = reload(home, { agent: agentHook, question });
+	restarted.resumeAll();
+	await vi.waitFor(() =>
+		expect(restarted.get(run.id).events.at(-1)?.message).toBe(
+			"Which provider?",
+		),
+	);
+	expect(restarted.get(run.id).status).toBe("waiting");
+	expect(question).toHaveBeenCalledTimes(1);
+	expect(agentHook).not.toHaveBeenCalled();
+	restarted.answer(run.id, "Codex");
+	await vi.waitFor(() =>
+		expect(restarted.get(run.id).status).toBe("completed"),
+	);
+	expect(agentHook.mock.calls.map(([context]) => context.step.id)).toEqual([
+		"clarify",
+		"implement",
+	]);
+	expect(restarted.get(run.id).history).toHaveLength(3);
+});
+it("keeps an accepted answer across a crash before the clarifier continues", async () => {
+	const { runtime, home } = create({
+		agent: async () => ({ questions: ["Proceed?"] }),
+	});
+	const run = start(
+		runtime,
+		workflow([agent("clarify", { askQuestions: true, maxVisits: 2 })]),
+	);
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	runtime.answer(run.id, "Yes");
+	const snapshot = readFileSync(
+		join(home, "factory", "runs", `${run.id}.json`),
+		"utf8",
+	);
+	await runtime.shutdown();
+	writeFileSync(join(home, "factory", "runs", `${run.id}.json`), snapshot);
+	const agentHook = vi.fn(async (context: ExecutionContext) => {
+		expect(context.run.answers).toHaveLength(1);
+		return { questions: [] };
+	});
+	const restarted = reload(home, { agent: agentHook });
+	restarted.resumeAll();
+	await vi.waitFor(() =>
+		expect(restarted.get(run.id).status).toBe("completed"),
+	);
+	expect(agentHook).toHaveBeenCalledTimes(1);
+	expect(restarted.get(run.id).answers).toHaveLength(1);
+});
+it("does not resume completed, failed or explicitly stopped runs", async () => {
+	const { runtime, home } = create({
+		agent: async () => {
+			throw new Error("failure");
+		},
+	});
+	const failed = start(runtime, workflow([agent("work")]));
+	await runtime.launch(failed);
+	const stopped = start(runtime, workflow([agent("work")]));
+	runtime.stop(stopped.id);
+	const completed = start(runtime, workflow([agent("work")]));
+	completed.status = "completed";
+	runtime.save(completed);
+	const agentHook = vi.fn(async () => ({}));
+	const restarted = reload(home, { agent: agentHook });
+	restarted.resumeAll();
+	expect(agentHook).not.toHaveBeenCalled();
+	expect([...restarted.runs.values()].map((run) => run.status)).toEqual(
+		expect.arrayContaining(["failed", "stopped", "completed"]),
+	);
 });

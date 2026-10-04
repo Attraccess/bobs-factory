@@ -5,11 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+
+- Factory runs automatically resume saved progress and agent conversations after restarts, while clarification waits still require human answers. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Start, monitor and terminate runs in a local factory dashboard, answer human clarification checkpoints, choose a saved default workflow for tasks without matching labels, and configure agent/model choices, reasoning effort and model variants per run and workflow step. Added configurable agent/script/tool workflows with loops and fanout, the original Cyrus Simple path, and a factory pipeline for planning, draft PR delivery, review, CI, visual evidence and a human review guide. A Takeover workflow continues existing PR/ticket work through the same reusable pipeline and needs only its source, with optional additional instructions. Workflow-specific launch fields adapt the form to each workflow's requirements. Shared role models are configured in their owning workflow, separately from parent roles. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Added the operator-configurable `codexSandboxMode` for issue and chat sessions, retaining `workspace-write` by default and supporting opt-in native read-only or full host access without browser-specific integrations. ([#1521](https://github.com/cyrusagents/cyrus/pull/1521))
 - Configure `sandbox.additionalWritableDirectories` to let CLI tools create sockets, caches, or state outside their session worktree. Applies to issue and chat sessions without requiring the network proxy, with no additional directories allowed by default. ([#1516](https://github.com/cyrusagents/cyrus/pull/1516))
 
 ### Fixed
+
+- Show submission progress and acceptance feedback for clarification answers, run launches and workflow saves; prevent duplicate submissions and preserve answers on errors. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Keep artifact panels and scroll positions stable during live dashboard updates; display agent conversations, paired tool results and Markdown responses using Cyrus’s existing activity formatters. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Factory and Takeover roles now read complete ticket, PR and review context through paged MCP tools, avoiding oversized starting prompts; large script inputs use a file instead of the process environment. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Reject invalid Takeover sources in the launch form before creating a run, with guidance distinguishing an existing ticket/PR from task instructions. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))

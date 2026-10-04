@@ -29,6 +29,21 @@ export interface RunEvent {
 	step: string;
 	message: string;
 }
+export interface AgentCheckpoint {
+	runner: NonNullable<WorkflowStep["runner"]>;
+	sessionId: string;
+}
+export interface GraphCheckpoint {
+	current: string;
+	visits: Record<string, number>;
+	active?: {
+		phase: "executing" | "result" | "waiting" | "answered";
+		agent?: AgentCheckpoint;
+		children?: GraphCheckpoint[];
+	};
+	// Only fanout branches own separate outputs; nested workflows share their parent's.
+	outputs?: Record<string, unknown>;
+}
 export interface FactoryRun {
 	id: string;
 	title: string;
@@ -49,6 +64,16 @@ export interface FactoryRun {
 	issueId?: string;
 	workspaceId?: string;
 	step?: string;
+	checkpoint?: GraphCheckpoint;
+	simpleExecution?: {
+		userPrompt: string;
+		systemPrompt?: string;
+		runner: NonNullable<WorkflowStep["runner"]>;
+		agent?: AgentCheckpoint;
+	};
+	launchRequest?: import("./LaunchFields.js").ResolvedLaunchRequest;
+	setupComplete?: boolean;
+	sessionSnapshot?: import("cyrus-core").SerializedCyrusAgentSession;
 	outputs: Record<string, unknown>;
 	history: { step: string; output: unknown; at: string }[];
 	answers: { questions: string[]; answer: string; at: string }[];
@@ -64,12 +89,16 @@ export interface ExecutionContext {
 	signal: AbortSignal;
 	log: (message: string) => void;
 	evidenceDir: string;
+	resumeAgent?: AgentCheckpoint;
+	checkpointAgent?: (agent: AgentCheckpoint) => void;
 }
 export interface RuntimeHooks {
 	agent(context: ExecutionContext): Promise<unknown>;
 	script(context: ExecutionContext): Promise<unknown>;
 	tool(context: ExecutionContext): Promise<unknown>;
 	question?(run: FactoryRun): Promise<void>;
+	simple?(run: FactoryRun, signal: AbortSignal): Promise<void>;
+	prepare?(run: FactoryRun, signal: AbortSignal): Promise<void>;
 }
 
 export class WorkflowRuntime {
@@ -80,6 +109,8 @@ export class WorkflowRuntime {
 		{ resolve: () => void; reject: (error: Error) => void }
 	>();
 	private workflows: Workflow[];
+	private executions = new Map<string, Promise<void>>();
+	private shuttingDown = false;
 	private defaultWorkflow = "simple";
 	readonly directory: string;
 
@@ -104,12 +135,7 @@ export class WorkflowRuntime {
 			const run: FactoryRun = JSON.parse(
 				readFileSync(join(this.directory, "runs", filename), "utf8"),
 			);
-			if (run.status === "running" || run.status === "waiting") {
-				run.status = "interrupted";
-				run.error =
-					"Cyrus restarted. History is retained; start a new run to continue safely.";
-				this.save(run);
-			}
+
 			this.runs.set(run.id, run);
 		}
 	}
@@ -219,11 +245,15 @@ export class WorkflowRuntime {
 		run: FactoryRun,
 		task?: (signal: AbortSignal) => Promise<void>,
 	): Promise<void> {
+		if (this.shuttingDown) throw new Error("Factory is shutting down");
 		if (this.controllers.has(run.id))
 			throw new Error("Run is already executing");
 		const controller = new AbortController();
 		this.controllers.set(run.id, controller);
-		return this.execute(run, controller, task);
+		const execution = this.execute(run, controller, task);
+		this.executions.set(run.id, execution);
+		void execution.finally(() => this.executions.delete(run.id));
+		return execution;
 	}
 	private async execute(
 		run: FactoryRun,
@@ -231,19 +261,37 @@ export class WorkflowRuntime {
 		task?: (signal: AbortSignal) => Promise<void>,
 	): Promise<void> {
 		try {
+			await this.hooks.prepare?.(run, controller.signal);
+			controller.signal.throwIfAborted();
 			if (task) await task(controller.signal);
-			else
+			else if (run.workflow.id === "simple") {
+				if (!this.hooks.simple)
+					throw new Error("Simple recovery handler unavailable");
+				await this.hooks.simple(run, controller.signal);
+			} else {
+				run.checkpoint ??= this.recoverCheckpoint(run);
+				this.save(run);
 				await this.graph(
 					run,
 					run.workflow.steps,
 					run.outputs,
 					controller.signal,
 					"",
+					run.checkpoint,
 				);
+			}
 			controller.signal.throwIfAborted();
 			run.status = "completed";
 			this.log(run, "run", "Workflow complete. Ready for human review.");
 		} catch (error) {
+			if (this.shuttingDown && run.status !== "stopped") {
+				this.log(
+					run,
+					"run",
+					"Paused for shutdown; will resume automatically on startup.",
+				);
+				return;
+			}
 			run.status = controller.signal.aborted ? "stopped" : "failed";
 			run.error = error instanceof Error ? error.message : String(error);
 			controller.abort(); // Cancel sibling fanout branches on failure.
@@ -260,15 +308,19 @@ export class WorkflowRuntime {
 		outputs: Record<string, unknown>,
 		signal: AbortSignal,
 		prefix: string,
+		checkpoint: GraphCheckpoint,
 	): Promise<Record<string, unknown>> {
-		let current: string | undefined = steps[0]?.id;
-		const visits = new Map<string, number>();
-		while (current && current !== "end") {
+		while (checkpoint.current !== "end") {
 			signal.throwIfAborted();
-			const step = steps.find((item) => item.id === current)!;
+			const step = steps.find((item) => item.id === checkpoint.current)!;
 			const key = `${prefix}${step.id}`;
-			const count = (visits.get(step.id) ?? 0) + 1;
-			visits.set(step.id, count);
+			if (!checkpoint.active) {
+				checkpoint.visits[step.id] = (checkpoint.visits[step.id] ?? 0) + 1;
+				checkpoint.active = { phase: "executing" };
+				this.save(run);
+			}
+			const state = checkpoint.active;
+			const count = checkpoint.visits[step.id]!;
 			if (count > step.maxVisits)
 				throw new Error(
 					`Iteration limit reached at ${key}. Review history is retained; human intervention is needed.`,
@@ -292,40 +344,65 @@ export class WorkflowRuntime {
 				signal,
 				log: (message) => this.log(run, key, message),
 				evidenceDir: join(this.directory, "evidence", run.id),
+				resumeAgent: state.agent,
+				checkpointAgent: (agent) => {
+					state.agent = agent;
+					this.save(run);
+				},
 			};
 			mkdirSync(context.evidenceDir, { recursive: true });
-			let output: unknown;
-			if (step.type === "fanout") {
-				if (
-					step.groups?.some((group) => group.some((item) => item.askQuestions))
-				)
-					throw new Error("Human checkpoints belong outside fanout branches");
-				output = await Promise.all(
-					(step.groups ?? []).map((group, index) =>
-						this.graph(
-							run,
-							group,
-							structuredClone(outputs),
-							signal,
-							`${key}/${index}/`,
+			let output: unknown = outputs[step.id];
+			if (state.phase === "executing") {
+				if (step.type === "fanout") {
+					if (
+						step.groups?.some((group) =>
+							group.some((item) => item.askQuestions),
+						)
+					)
+						throw new Error("Human checkpoints belong outside fanout branches");
+					state.children ??= (step.groups ?? []).map((group) => ({
+						...this.newCheckpoint(group),
+						outputs: structuredClone(outputs),
+					}));
+					this.save(run);
+					output = await Promise.all(
+						(step.groups ?? []).map((group, index) =>
+							this.graph(
+								run,
+								group,
+								state.children![index]!.outputs!,
+								signal,
+								`${key}/${index}/`,
+								state.children![index]!,
+							),
 						),
-					),
-				);
-			} else if (step.type === "workflow") {
-				const definition = run.workflowDefinitions?.find(
-					(item) => item.id === step.workflow,
-				);
-				if (!definition)
-					throw new Error(`Workflow unavailable: ${step.workflow}`);
-				await this.graph(run, definition.steps, outputs, signal, `${key}/`);
-				output = { workflow: definition.id, completed: true };
-			} else {
-				output = await this.hooks[step.type](context);
+					);
+				} else if (step.type === "workflow") {
+					const definition = run.workflowDefinitions?.find(
+						(item) => item.id === step.workflow,
+					);
+					if (!definition)
+						throw new Error(`Workflow unavailable: ${step.workflow}`);
+					state.children ??= [this.newCheckpoint(definition.steps)];
+					this.save(run);
+					await this.graph(
+						run,
+						definition.steps,
+						outputs,
+						signal,
+						`${key}/`,
+						state.children[0]!,
+					);
+					output = { workflow: definition.id, completed: true };
+				} else {
+					output = await this.hooks[step.type](context);
+				}
+				signal.throwIfAborted();
+				outputs[step.id] = output;
+				run.history.push({ step: key, output, at: new Date().toISOString() });
+				state.phase = "result";
+				this.save(run);
 			}
-			signal.throwIfAborted();
-			outputs[step.id] = output;
-			run.history.push({ step: key, output, at: new Date().toISOString() });
-			this.save(run);
 			if (step.askQuestions) {
 				const questions = readPath(output, "questions");
 				if (
@@ -334,16 +411,15 @@ export class WorkflowRuntime {
 				)
 					throw new Error("Clarifier must return a questions array");
 				if (questions.length) {
-					await this.waitForAnswers(run, questions, signal);
+					if (state.phase !== "answered")
+						await this.waitForAnswers(run, questions, signal, state);
+					checkpoint.active = undefined;
+					this.save(run);
 					continue;
 				}
 			}
-			const branch = step.branches.find(
-				(candidate) =>
-					JSON.stringify(readPath(output, candidate.when.path)) ===
-					JSON.stringify(candidate.when.equals),
-			);
-			current = branch?.next ?? step.next ?? steps[steps.indexOf(step) + 1]?.id;
+			checkpoint.current = this.nextStep(steps, step, output);
+			checkpoint.active = undefined;
 			this.log(run, key, `Finished ${step.name}`);
 		}
 		return outputs;
@@ -352,7 +428,10 @@ export class WorkflowRuntime {
 		run: FactoryRun,
 		questions: string[],
 		signal: AbortSignal,
+		state: NonNullable<GraphCheckpoint["active"]>,
 	): Promise<void> {
+		const restored = state.phase === "waiting";
+		state.phase = "waiting";
 		run.questions = questions;
 		run.status = "waiting";
 		const waiting = new Promise<void>((resolve, reject) =>
@@ -365,7 +444,7 @@ export class WorkflowRuntime {
 		signal.addEventListener("abort", abort, { once: true });
 		this.log(run, run.step ?? "clarify", questions.join("\n"));
 		try {
-			await this.hooks.question?.(run);
+			if (!restored) await this.hooks.question?.(run);
 			signal.throwIfAborted();
 			await waiting;
 		} finally {
@@ -384,6 +463,11 @@ export class WorkflowRuntime {
 			answer,
 			at: new Date().toISOString(),
 		});
+		const markAnswered = (frame?: GraphCheckpoint): void => {
+			if (frame?.active?.phase === "waiting") frame.active.phase = "answered";
+			frame?.active?.children?.forEach(markAnswered);
+		};
+		markAnswered(run.checkpoint);
 		run.questions = [];
 		run.status = "running";
 		this.log(run, run.step ?? "clarify", `Human answer: ${answer}`);
@@ -396,8 +480,144 @@ export class WorkflowRuntime {
 		this.controllers.get(id)?.abort();
 		this.log(run, "run", "Terminated by user");
 	}
-	shutdown(): void {
-		for (const id of this.controllers.keys()) this.stop(id);
+	isShuttingDown(): boolean {
+		return this.shuttingDown;
+	}
+	async shutdown(): Promise<void> {
+		this.shuttingDown = true;
+		for (const controller of this.controllers.values()) controller.abort();
+		await Promise.allSettled(this.executions.values());
+	}
+	resumeAll(): void {
+		for (const run of this.runs.values()) {
+			if (
+				!["running", "waiting"].includes(run.status) ||
+				this.controllers.has(run.id)
+			)
+				continue;
+			delete run.error;
+			this.log(run, "run", "Recovering after restart from saved progress.");
+			void this.launch(run);
+		}
+	}
+	private newCheckpoint(steps: WorkflowStep[]): GraphCheckpoint {
+		return { current: steps[0]?.id ?? "end", visits: {} };
+	}
+	private nextStep(
+		steps: WorkflowStep[],
+		step: WorkflowStep,
+		output: unknown,
+	): string {
+		const branch = step.branches.find(
+			(candidate) =>
+				JSON.stringify(readPath(output, candidate.when.path)) ===
+				JSON.stringify(candidate.when.equals),
+		);
+		return (
+			branch?.next ?? step.next ?? steps[steps.indexOf(step) + 1]?.id ?? "end"
+		);
+	}
+	// Upgrade active runs written before checkpoints existed using their completed receipts.
+	private recoverCheckpoint(run: FactoryRun): GraphCheckpoint {
+		const receipts = run.history.map((item, index) => ({ ...item, index }));
+		const consumed = new Set<number>();
+		const recover = (
+			steps: WorkflowStep[],
+			outputs: Record<string, unknown>,
+			prefix: string,
+		): GraphCheckpoint => {
+			const frame = this.newCheckpoint(steps);
+			while (frame.current !== "end") {
+				const step = steps.find((item) => item.id === frame.current)!;
+				const key = prefix + step.id;
+				const receipt = receipts.find(
+					(item) => !consumed.has(item.index) && item.step === key,
+				);
+				if (!receipt) {
+					frame.visits[step.id] = (frame.visits[step.id] ?? 0) + 1;
+					frame.active = { phase: "executing" };
+					if (step.type === "agent" && run.step === key) {
+						const runner =
+							step.runner ??
+							run.runner ??
+							(run.sessionSnapshot?.codexSessionId
+								? "codex"
+								: run.sessionSnapshot?.geminiSessionId
+									? "gemini"
+									: run.sessionSnapshot?.cursorSessionId
+										? "cursor"
+										: run.sessionSnapshot?.opencodeSessionId
+											? "opencode"
+											: "claude");
+						const event = [...run.events]
+							.reverse()
+							.find(
+								(item) => item.step === key && item.message.startsWith("{"),
+							);
+						let sessionId: string | undefined;
+						try {
+							sessionId = event && JSON.parse(event.message).session_id;
+						} catch {
+							/* Truncated legacy event; use the saved session instead. */
+						}
+						sessionId ??=
+							run.sessionSnapshot?.[
+								`${runner as NonNullable<WorkflowStep["runner"]>}SessionId`
+							];
+						if (sessionId && sessionId !== "pending")
+							frame.active.agent = {
+								runner: runner as NonNullable<WorkflowStep["runner"]>,
+								sessionId,
+							};
+					}
+					if (step.type === "workflow") {
+						const definition = run.workflowDefinitions?.find(
+							(item) => item.id === step.workflow,
+						);
+						if (definition)
+							frame.active.children = [
+								recover(definition.steps, outputs, `${key}/`),
+							];
+					} else if (step.type === "fanout") {
+						frame.active.children = step.groups?.map((group, index) => {
+							const branchOutputs = structuredClone(outputs);
+							return {
+								...recover(group, branchOutputs, `${key}/${index}/`),
+								outputs: branchOutputs,
+							};
+						});
+					}
+					break;
+				}
+				consumed.add(receipt.index);
+				// A completed wrapper also consumed all receipts of that invocation.
+				for (const child of receipts)
+					if (child.index < receipt.index && child.step.startsWith(`${key}/`))
+						consumed.add(child.index);
+				frame.visits[step.id] = (frame.visits[step.id] ?? 0) + 1;
+				outputs[step.id] = receipt.output;
+				if (
+					step.askQuestions &&
+					Array.isArray(readPath(receipt.output, "questions")) &&
+					(readPath(receipt.output, "questions") as unknown[]).length
+				) {
+					const answered = run.answers.some(
+						(answer) =>
+							answer.at >= receipt.at &&
+							JSON.stringify(answer.questions) ===
+								JSON.stringify(readPath(receipt.output, "questions")),
+					);
+					if (!answered) {
+						frame.active = { phase: "waiting" };
+						break;
+					}
+					continue;
+				}
+				frame.current = this.nextStep(steps, step, receipt.output);
+			}
+			return frame;
+		};
+		return recover(run.workflow.steps, run.outputs, "");
 	}
 	save(run: FactoryRun): void {
 		run.updatedAt = new Date().toISOString();

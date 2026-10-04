@@ -57,6 +57,7 @@ import type {
 	WebhookIssue,
 } from "cyrus-core";
 import {
+	AgentSessionStatus,
 	CLIIssueTrackerService,
 	CLIRPCServer,
 	createLogger,
@@ -269,6 +270,9 @@ export class EdgeWorker extends EventEmitter {
 	private sharedApplicationServer: SharedApplicationServer;
 	private cyrusHome: string;
 	private factoryRuntime?: WorkflowRuntime;
+	private stateSaveQueue: Promise<void> = Promise.resolve();
+	private recoveryAbort = new AbortController();
+	private stopping = false;
 	private factoryServer?: FactoryServer;
 	/** Per-org GitHub App installation tokens pushed by cyrus-hosted (lazy file-backed reads) */
 	private githubTokenStore: GitHubTokenStore;
@@ -796,6 +800,7 @@ export class EdgeWorker extends EventEmitter {
 
 		// Start shared application server (this also starts Cloudflare tunnel if CLOUDFLARE_TOKEN is set)
 		await this.sharedApplicationServer.start();
+		this.recoverFactoryRuns();
 	}
 
 	/**
@@ -829,6 +834,7 @@ export class EdgeWorker extends EventEmitter {
 					this.factoryRuntime?.runs.has(id) && this.factoryRuntime.stop(id);
 					this.agentSessionManager.requestSessionStop(id);
 					this.agentSessionManager.getAgentRunner(id)?.stop();
+					void this.savePersistedState();
 				},
 			});
 			await this.factoryServer.start(Number(process.env.CYRUS_FACTORY_PORT));
@@ -2928,7 +2934,9 @@ ${taskSection}`;
 	 * Stop the edge worker
 	 */
 	async stop(): Promise<void> {
-		this.factoryRuntime?.shutdown();
+		this.stopping = true;
+		this.recoveryAbort.abort();
+		await this.factoryRuntime?.shutdown();
 		await this.factoryServer?.stop();
 		// Stop config file watcher
 		await this.configManager.stop();
@@ -5717,7 +5725,18 @@ ${taskSection}`;
 		message: SDKMessage,
 		_repositoryId: string,
 	): Promise<void> {
+		if (this.stopping && message.type === "result") return;
 		await this.agentSessionManager.handleClaudeMessage(sessionId, message);
+		const run = this.factoryRuntime?.runs.get(sessionId);
+		if (run) {
+			this.saveFactorySession(run);
+			this.factoryRuntime!.save(run);
+		}
+		if (
+			message.type === "result" ||
+			(message.type === "system" && message.subtype === "init")
+		)
+			await this.savePersistedState();
 	}
 
 	/**
@@ -5854,6 +5873,8 @@ ${taskSection}`;
 					this.executeFactoryMcpTool(context, server, tool),
 			});
 			this.factoryRuntime = new WorkflowRuntime(this.cyrusHome, {
+				prepare: (run, signal) => this.prepareFactoryRun(run, signal),
+				simple: (run, signal) => this.executeSimpleFactoryRun(run, signal),
 				agent: (context) => this.executeFactoryAgent(context),
 				script: (context) => tools.script(context),
 				tool: (context) => tools.tool(context),
@@ -5930,7 +5951,7 @@ ${taskSection}`;
 				modelVariant: run.modelVariant,
 			}),
 		);
-		built.config.resumeSessionId = undefined; // Each role has a fresh agent conversation.
+		built.config.resumeSessionId = context.resumeAgent?.sessionId;
 		built.config.additionalDirectories = [
 			...(built.config.additionalDirectories ?? []),
 			context.evidenceDir,
@@ -5943,6 +5964,18 @@ ${taskSection}`;
 		];
 		const originalMessage = built.config.onMessage;
 		built.config.onMessage = (message) => {
+			if (
+				message.type === "system" &&
+				message.subtype === "init" &&
+				message.session_id &&
+				message.session_id !== "pending"
+			) {
+				context.checkpointAgent?.({
+					runner: runnerType,
+					sessionId: message.session_id,
+				});
+			}
+			this.saveFactorySession(run);
 			void originalMessage?.(message);
 			if (
 				message.type === "assistant" ||
@@ -5970,7 +6003,7 @@ ${taskSection}`;
 			try {
 				context.signal.throwIfAborted();
 				await runner.start(
-					`${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
+					`${context.resumeAgent ? "This role was interrupted by a process restart. Continue from your existing conversation and worktree. Inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
 				);
 				context.signal.throwIfAborted();
 				const messages = runner.getMessages();
@@ -6098,181 +6131,358 @@ ${taskSection}`;
 			reasoningEffort: input.reasoningEffort,
 			modelVariant: input.modelVariant,
 		});
-		void (async () => {
-			try {
-				const tracker = new CLIIssueTrackerService();
-				tracker.seedDefaultData();
-				const created = await tracker.createIssue({
-					teamId: "team-default",
-					title: input.title,
-					description: prompt,
-				});
-				let fullIssue: Issue = {
-					...created,
-					identifier: `MANUAL-${run.id.slice(-8)}`,
-					branchName: `factory/${run.id}`,
-				};
-				let takeoverPr: TakeoverPullRequest | undefined;
-				let baseBranchOverrides: Map<string, string> | undefined;
-				if (workflow.id === "takeover" && input.source) {
-					if (input.source.startsWith("https://github.com/")) {
-						const setupContext: ExecutionContext = {
-							run: { ...run, workspace: repository.repositoryPath },
-							step: workflow.steps[0]!,
-							input: {},
-							signal: new AbortController().signal,
-							log: (text) => runtime.log(run, "setup", text),
-							evidenceDir: join(runtime.directory, "evidence", run.id),
-						};
-						const command = (exe: string, args: string[]) =>
-							executeCommand(setupContext, exe, args, 60000);
-						takeoverPr = await inspectPullRequest(command, input.source);
-						const ref = `refs/factory/takeover/${takeoverPr.number}`;
-						await command("git", [
-							"fetch",
-							"origin",
-							`+refs/pull/${takeoverPr.number}/head:${ref}`,
-						]);
-						fullIssue = { ...fullIssue, branchName: takeoverPr.headRefName };
-						baseBranchOverrides = new Map([[repository.id, ref]]);
-						run.outputs.source = takeoverPr;
-					} else {
-						const existingTracker = this.issueTrackers.get(
-							repository.linearWorkspaceId ?? "",
-						);
-						if (!existingTracker)
-							throw new Error(
-								"Ticket tracker unavailable; configure the ticket workspace before taking over a ticket",
-							);
-						fullIssue = await existingTracker.fetchIssue(
-							ticketIdentifier(input.source),
-						);
-						run.issueId = fullIssue.id;
-						run.workspaceId = repository.linearWorkspaceId;
-						run.outputs.ticket = await issueSnapshot(
-							fullIssue,
-							await this.fetchIssueLabels(fullIssue),
-							existingTracker,
-						);
-						baseBranchOverrides = new Map([
-							[repository.id, fullIssue.branchName ?? repository.baseBranch],
-						]);
-						run.input = `${prompt}\n\nComplete existing ticket snapshot:\n${JSON.stringify(run.outputs.ticket, null, 2)}`;
-					}
-				}
-				if (!input.titleProvided)
-					run.title =
-						takeoverPr?.title ??
-						(workflow.id === "takeover" ? fullIssue.title : run.title);
-				if (run.status === "stopped") return;
-				const workspace = await this.gitService.createGitWorktree(
-					fullIssue,
-					[repository],
-					{ baseBranchOverrides },
-				);
-				if (
-					[...runtime.runs.values()].some(
-						(other) =>
-							other.id !== run.id &&
-							["running", "waiting"].includes(other.status) &&
-							other.workspace === workspace.path,
-					)
-				)
-					throw new Error(
-						"Another run is using this worktree; terminate it before taking over",
-					);
-				run.workspace = workspace.path;
-				const session = this.agentSessionManager.createChatSession(
-					run.id,
-					workspace,
-					"manual",
-					[
-						{
-							repositoryId: repository.id,
-							branchName: fullIssue.branchName,
-							baseBranchName: takeoverPr?.baseRefName ?? repository.baseBranch,
-						},
-					],
-				);
-				this.sessionRepositories.set(run.id, repository.id);
-				run.outputs.repository = {
-					name: repository.name,
-					baseBranch:
-						takeoverPr?.baseRefName ??
-						(workflow.id === "takeover"
-							? repository.baseBranch
-							: workspace.resolvedBaseBranches?.[repository.id]?.branch) ??
-						repository.baseBranch,
-				};
-				if (runtime.get(run.id).status === "stopped") return;
-				if (run.workflow.id === "simple") {
-					const assembly = await this.assemblePrompt({
-						session,
-						fullIssue,
-						repository,
-						repositories: [repository],
-						userComment: prompt,
-						isNewSession: true,
-						isStreaming: false,
-						labels: [],
-					});
-					const built = await this.buildAgentRunnerConfig(
-						session,
-						repository,
-						run.id,
-						assembly.systemPrompt,
-						this.buildAllowedTools([repository]),
-						[repository.repositoryPath],
-						this.buildDisallowedTools([repository]),
-						undefined,
-						[],
-						undefined,
-						undefined,
-						repository.linearWorkspaceId,
-					);
-					const runnerType = input.runner ?? built.runnerType;
-					built.config.model =
-						input.model ??
-						(runnerType === built.runnerType
-							? built.config.model
-							: this.getDefaultModelForRunner(runnerType));
-					built.config.fallbackModel =
-						this.getDefaultFallbackModelForRunner(runnerType);
-					Object.assign(built.config, resolveAgentSettings(runnerType, input));
-					if (runtime.get(run.id).status === "stopped") return;
-					await runtime.launch(run, async (signal) => {
-						const runner = capRunnerStarts(
-							this.buildRunnerForType(runnerType, built.config),
-							this.runnerSlots,
-							signal,
-						);
-						this.agentSessionManager.addAgentRunner(run.id, runner);
-						const stop = () => runner.stop();
-						signal.addEventListener("abort", stop, { once: true });
-						try {
-							await runner.start(assembly.userPrompt);
-							const result = runner
-								.getMessages()
-								.filter((message) => message.type === "result")
-								.at(-1);
-							if (result?.type === "result" && result.is_error)
-								throw new Error(`Agent failed: ${JSON.stringify(result)}`);
-						} finally {
-							signal.removeEventListener("abort", stop);
-						}
-					});
-				} else {
-					await runtime.launch(run);
-				}
-			} catch (error) {
-				if (run.status !== "stopped") run.status = "failed";
-				run.error = error instanceof Error ? error.message : String(error);
-				runtime.log(run, "setup", run.error);
-			} finally {
-				runtime.save(run);
-			}
-		})();
+		run.launchRequest = structuredClone(input);
+		run.setupComplete = false;
+		runtime.save(run);
+		void runtime.launch(run);
 		return run;
+	}
+
+	private async prepareManualFactoryRun(
+		run: FactoryRun,
+		input: ResolvedLaunchRequest,
+		signal: AbortSignal,
+	): Promise<void> {
+		const runtime = this.getFactoryRuntime();
+		const repository = this.repositories.get(run.repositoryId)!;
+		const workflow = run.workflow;
+		const prompt =
+			workflow.id === "takeover"
+				? input.prompt ||
+					"Continue the existing work described by this PR or ticket."
+				: run.input;
+		{
+			const tracker = new CLIIssueTrackerService();
+			tracker.seedDefaultData();
+			const created = await tracker.createIssue({
+				teamId: "team-default",
+				title: input.title,
+				description: prompt,
+			});
+			let fullIssue: Issue = {
+				...created,
+				identifier: `MANUAL-${run.id.slice(-8)}`,
+				branchName: `factory/${run.id}`,
+			};
+			let takeoverPr: TakeoverPullRequest | undefined;
+			let baseBranchOverrides: Map<string, string> | undefined;
+			if (workflow.id === "takeover" && input.source) {
+				if (input.source.startsWith("https://github.com/")) {
+					const setupContext: ExecutionContext = {
+						run: { ...run, workspace: repository.repositoryPath },
+						step: workflow.steps[0]!,
+						input: {},
+						signal,
+						log: (text) => runtime.log(run, "setup", text),
+						evidenceDir: join(runtime.directory, "evidence", run.id),
+					};
+					const command = (exe: string, args: string[]) =>
+						executeCommand(setupContext, exe, args, 60000);
+					takeoverPr = await inspectPullRequest(command, input.source);
+					const ref = `refs/factory/takeover/${takeoverPr.number}`;
+					await command("git", [
+						"fetch",
+						"origin",
+						`+refs/pull/${takeoverPr.number}/head:${ref}`,
+					]);
+					fullIssue = { ...fullIssue, branchName: takeoverPr.headRefName };
+					baseBranchOverrides = new Map([[repository.id, ref]]);
+					run.outputs.source = takeoverPr;
+				} else {
+					const existingTracker = this.issueTrackers.get(
+						repository.linearWorkspaceId ?? "",
+					);
+					if (!existingTracker)
+						throw new Error(
+							"Ticket tracker unavailable; configure the ticket workspace before taking over a ticket",
+						);
+					fullIssue = await existingTracker.fetchIssue(
+						ticketIdentifier(input.source),
+					);
+					run.issueId = fullIssue.id;
+					run.workspaceId = repository.linearWorkspaceId;
+					run.outputs.ticket = await issueSnapshot(
+						fullIssue,
+						await this.fetchIssueLabels(fullIssue),
+						existingTracker,
+					);
+					baseBranchOverrides = new Map([
+						[repository.id, fullIssue.branchName ?? repository.baseBranch],
+					]);
+					run.input = `${prompt}\n\nComplete existing ticket snapshot:\n${JSON.stringify(run.outputs.ticket, null, 2)}`;
+				}
+			}
+			if (!input.titleProvided)
+				run.title =
+					takeoverPr?.title ??
+					(workflow.id === "takeover" ? fullIssue.title : run.title);
+			if (run.status === "stopped") return;
+			const workspace = await this.gitService.createGitWorktree(
+				fullIssue,
+				[repository],
+				{ baseBranchOverrides },
+			);
+			if (
+				[...runtime.runs.values()].some(
+					(other) =>
+						other.id !== run.id &&
+						["running", "waiting"].includes(other.status) &&
+						other.workspace === workspace.path,
+				)
+			)
+				throw new Error(
+					"Another run is using this worktree; terminate it before taking over",
+				);
+			run.workspace = workspace.path;
+			const session = this.agentSessionManager.createChatSession(
+				run.id,
+				workspace,
+				"manual",
+				[
+					{
+						repositoryId: repository.id,
+						branchName: fullIssue.branchName,
+						baseBranchName: takeoverPr?.baseRefName ?? repository.baseBranch,
+					},
+				],
+			);
+			this.sessionRepositories.set(run.id, repository.id);
+			run.outputs.repository = {
+				name: repository.name,
+				baseBranch:
+					takeoverPr?.baseRefName ??
+					(workflow.id === "takeover"
+						? repository.baseBranch
+						: workspace.resolvedBaseBranches?.[repository.id]?.branch) ??
+					repository.baseBranch,
+			};
+			if (runtime.get(run.id).status === "stopped") return;
+			if (run.workflow.id === "simple") {
+				const assembly = await this.assemblePrompt({
+					session,
+					fullIssue,
+					repository,
+					repositories: [repository],
+					userComment: prompt,
+					isNewSession: true,
+					isStreaming: false,
+					labels: [],
+				});
+				run.simpleExecution = {
+					userPrompt: assembly.userPrompt,
+					systemPrompt: assembly.systemPrompt,
+					runner:
+						input.runner ?? this.runnerSelectionService.getDefaultRunner(),
+				};
+			}
+			signal.throwIfAborted();
+			run.setupComplete = true;
+			this.saveFactorySession(run);
+			runtime.save(run);
+		}
+	}
+
+	private saveFactorySession(run: FactoryRun): void {
+		const session = this.agentSessionManager.getSession(run.id);
+		if (session) {
+			const { agentRunner: _runner, ...snapshot } = session;
+			run.sessionSnapshot = structuredClone(snapshot);
+		}
+	}
+
+	private async prepareFactoryRun(
+		run: FactoryRun,
+		signal: AbortSignal,
+	): Promise<void> {
+		const repository = this.repositories.get(run.repositoryId);
+		if (!repository?.isActive)
+			throw new Error(
+				"Run repository is unavailable; restore its configuration before continuing",
+			);
+		if ((!run.workspace || run.setupComplete === false) && run.launchRequest)
+			await this.prepareManualFactoryRun(run, run.launchRequest, signal);
+		signal.throwIfAborted();
+		if (!run.workspace || !existsSync(run.workspace))
+			throw new Error(
+				"Saved worktree is unavailable; recovery cannot recreate unfinished work",
+			);
+		let session = this.agentSessionManager.getSession(run.id);
+		if (!session) {
+			session = this.agentSessionManager.createChatSession(
+				run.id,
+				{ path: run.workspace, isGitWorktree: true },
+				"manual",
+				[
+					{
+						repositoryId: run.repositoryId,
+						baseBranchName: String(
+							(run.outputs.repository as { baseBranch?: string })?.baseBranch ??
+								repository.baseBranch,
+						),
+					},
+				],
+			);
+		}
+		// The per-run checkpoint may be newer than the global session snapshot.
+		if (run.sessionSnapshot)
+			Object.assign(session, structuredClone(run.sessionSnapshot));
+		this.sessionRepositories.set(run.id, run.repositoryId);
+		const sink = this.getActivitySinkForRepo(run.repositoryId);
+		if (session.externalSessionId && sink)
+			this.agentSessionManager.setActivitySink(run.id, sink);
+		this.saveFactorySession(run);
+		this.getFactoryRuntime().save(run);
+	}
+
+	private recoverFactoryRuns(): void {
+		const runtime = this.getFactoryRuntime();
+		// Original Simple issue sessions retain Cyrus's continuation path and timeline.
+		// Factory/manual Simple runs use their own checkpoint below.
+		for (const session of this.agentSessionManager.getActiveSessions()) {
+			if (
+				runtime.runs.has(session.id) ||
+				!session.issue ||
+				!session.workspace?.path ||
+				(session.issueContext?.trackerId &&
+					!["linear", "cli"].includes(session.issueContext.trackerId))
+			)
+				continue;
+			const repositoryId =
+				this.sessionRepositories.get(session.id) ??
+				session.repositories[0]?.repositoryId;
+			const repository = repositoryId
+				? this.repositories.get(repositoryId)
+				: undefined;
+			if (!repository?.isActive) continue;
+			void this.resumeAgentSession(
+				session,
+				repository,
+				session.id,
+				this.agentSessionManager,
+				"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
+				"",
+				false,
+				[],
+				repository.linearWorkspaceId,
+				undefined,
+				undefined,
+				undefined,
+				this.recoveryAbort.signal,
+			).catch(async (error) => {
+				if (this.stopping) return;
+				session.status = AgentSessionStatus.Error;
+				this.logger.error(`Session recovery failed for ${session.id}:`, error);
+				await this.savePersistedState();
+				await this.agentSessionManager.createResponseActivity(
+					session.id,
+					`Automatic recovery failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			});
+		}
+		// Persist legacy role's conversation on the migrated unfinished leaf before
+		// the runtime upgrades its history to a graph checkpoint.
+		for (const run of runtime.runs.values()) {
+			if (!["running", "waiting"].includes(run.status)) continue;
+			if (!run.sessionSnapshot) this.saveFactorySession(run);
+		}
+		runtime.resumeAll();
+	}
+
+	private async executeSimpleFactoryRun(
+		run: FactoryRun,
+		signal: AbortSignal,
+	): Promise<void> {
+		const session = this.agentSessionManager.getSession(run.id)!;
+		const repository = this.repositories.get(run.repositoryId)!;
+		const execution = run.simpleExecution;
+		if (!execution) {
+			const stop = () =>
+				this.agentSessionManager.getAgentRunner(run.id)?.stop();
+			signal.addEventListener("abort", stop, { once: true });
+			try {
+				await this.resumeAgentSession(
+					session,
+					repository,
+					run.id,
+					this.agentSessionManager,
+					"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
+					"",
+					false,
+					[],
+					run.workspaceId,
+					undefined,
+					undefined,
+					undefined,
+					signal,
+				);
+				signal.throwIfAborted();
+			} finally {
+				signal.removeEventListener("abort", stop);
+			}
+			return;
+		}
+		const built = await this.buildAgentRunnerConfig(
+			session,
+			repository,
+			run.id,
+			execution.systemPrompt,
+			this.buildAllowedTools([repository]),
+			[repository.repositoryPath],
+			this.buildDisallowedTools([repository]),
+			execution.agent?.sessionId,
+			[],
+			undefined,
+			undefined,
+			repository.linearWorkspaceId,
+		);
+		const runnerType = execution.runner;
+		built.config.model =
+			run.model ??
+			(runnerType === built.runnerType
+				? built.config.model
+				: this.getDefaultModelForRunner(runnerType));
+		built.config.fallbackModel =
+			this.getDefaultFallbackModelForRunner(runnerType);
+		Object.assign(built.config, resolveAgentSettings(runnerType, run));
+		const originalMessage = built.config.onMessage;
+		built.config.onMessage = (message) => {
+			if (
+				message.type === "system" &&
+				message.subtype === "init" &&
+				message.session_id &&
+				message.session_id !== "pending"
+			) {
+				execution.agent = { runner: runnerType, sessionId: message.session_id };
+				this.saveFactorySession(run);
+				this.getFactoryRuntime().save(run);
+			}
+			void originalMessage?.(message);
+		};
+		const runner = capRunnerStarts(
+			this.buildRunnerForType(runnerType, built.config),
+			this.runnerSlots,
+			signal,
+		);
+		this.agentSessionManager.addAgentRunner(run.id, runner);
+		const stop = () => runner.stop();
+		signal.addEventListener("abort", stop, { once: true });
+		try {
+			signal.throwIfAborted();
+			await runner.start(
+				execution.agent
+					? "The process restarted. Continue the interrupted task from this conversation and worktree; inspect previous results before repeating actions."
+					: execution.userPrompt,
+			);
+			signal.throwIfAborted();
+			const result = runner
+				.getMessages()
+				.filter((message) => message.type === "result")
+				.at(-1);
+			if (result?.type === "result" && result.is_error)
+				throw new Error(`Agent failed: ${JSON.stringify(result)}`);
+		} finally {
+			signal.removeEventListener("abort", stop);
+		}
 	}
 
 	private buildRunnerForType(
@@ -7895,16 +8105,19 @@ ${input.userComment}
 	/**
 	 * Save current EdgeWorker state for all repositories
 	 */
-	private async savePersistedState(): Promise<void> {
-		try {
-			const state = this.serializeMappings();
-			await this.persistenceManager.saveEdgeWorkerState(state);
-			this.logger.debug(
-				`✅ Saved EdgeWorker state for ${Object.keys(state.agentSessions || {}).length} sessions`,
-			);
-		} catch (error) {
-			this.logger.error(`Failed to save persisted EdgeWorker state:`, error);
-		}
+	private savePersistedState(): Promise<void> {
+		this.stateSaveQueue = this.stateSaveQueue.then(async () => {
+			try {
+				const state = this.serializeMappings();
+				await this.persistenceManager.saveEdgeWorkerState(state);
+				this.logger.debug(
+					`✅ Saved EdgeWorker state for ${Object.keys(state.agentSessions || {}).length} sessions`,
+				);
+			} catch (error) {
+				this.logger.error(`Failed to save persisted EdgeWorker state:`, error);
+			}
+		});
+		return this.stateSaveQueue;
 	}
 
 	/**
@@ -8188,6 +8401,7 @@ ${input.userComment}
 		maxTurns?: number,
 		commentAuthor?: string,
 		commentTimestamp?: string,
+		recoverySignal?: AbortSignal,
 	): Promise<void> {
 		const log = this.logger.withContext({ sessionId });
 		// Check for existing runner
@@ -8330,8 +8544,15 @@ ${input.userComment}
 				this.buildSkillSessionContext(repository, fullIssue, session),
 			);
 
+		recoverySignal?.throwIfAborted();
 		// Create the appropriate runner based on session state
-		const runner = this.createRunnerForType(runnerType, runnerConfig);
+		const runner = recoverySignal
+			? capRunnerStarts(
+					this.buildRunnerForType(runnerType, runnerConfig),
+					this.runnerSlots,
+					recoverySignal,
+				)
+			: this.createRunnerForType(runnerType, runnerConfig);
 
 		// Store runner
 		agentSessionManager.addAgentRunner(sessionId, runner);
@@ -8352,7 +8573,10 @@ ${input.userComment}
 		);
 
 		// Start session - use streaming mode if supported for ability to add messages later
+		const stopOnRestart = () => runner.stop();
+		recoverySignal?.addEventListener("abort", stopOnRestart, { once: true });
 		try {
+			recoverySignal?.throwIfAborted();
 			if (runner.supportsStreamingInput && runner.startStreaming) {
 				await runner.startStreaming(fullPrompt);
 			} else {
@@ -8361,6 +8585,8 @@ ${input.userComment}
 		} catch (error) {
 			log.error(`Failed to start streaming session for ${sessionId}:`, error);
 			throw error;
+		} finally {
+			recoverySignal?.removeEventListener("abort", stopOnRestart);
 		}
 	}
 

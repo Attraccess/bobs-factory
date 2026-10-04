@@ -80,6 +80,41 @@ async function api(path, options = {}) {
 		throw new Error(body.error ?? `Request failed (${response.status})`);
 	return body;
 }
+
+const submittingAnswers = new Set();
+function feedback(message) {
+	const region = $("#feedback");
+	region.textContent = message;
+	region.hidden = false;
+}
+function beginSubmission(form, label) {
+	if (form.dataset.submitting) return false;
+	form.dataset.submitting = "true";
+	form.setAttribute("aria-busy", "true");
+	form.querySelector(".form-error").textContent = "";
+	const button = form.querySelector('[type="submit"]');
+	button.dataset.originalLabel = button.textContent;
+	button.disabled = true;
+	button.innerHTML = `<span class="spinner" aria-hidden="true"></span>${htmlEscape(label)}`;
+	let status = form.querySelector(".submission-status");
+	if (!status) {
+		status = document.createElement("p");
+		status.className = "submission-status";
+		status.setAttribute("role", "status");
+		form.querySelector(".form-error").before(status);
+	}
+	status.textContent = label;
+	return true;
+}
+function endSubmission(form) {
+	delete form.dataset.submitting;
+	form.removeAttribute("aria-busy");
+	const button = form.querySelector('[type="submit"]');
+	button.disabled = false;
+	button.textContent = button.dataset.originalLabel;
+	form.querySelector(".submission-status").textContent = "";
+}
+
 function fail(error) {
 	$("#error").textContent = error.message;
 	$("#error").hidden = false;
@@ -251,15 +286,36 @@ function renderDetail(run) {
 		$("#answer-form").onsubmit = async (event) => {
 			event.preventDefault();
 			const form = event.currentTarget;
+			if (!beginSubmission(form, "Sending answers…")) return;
+			submittingAnswers.add(run.id);
+			const textarea = form.elements.answer;
+			textarea.readOnly = true;
+			let accepted = false;
 			try {
 				await api(`/api/runs/${encodeURIComponent(run.id)}/answer`, {
 					method: "POST",
-					body: JSON.stringify({ answer: form.elements.answer.value }),
+					body: JSON.stringify({ answer: textarea.value }),
 				});
-				detailSignature = "";
-				await refresh();
+				accepted = true;
+				feedback("Answers accepted. The run is continuing.");
+				// Remove the old form immediately: a successful submission must not be
+				// offered again even if the follow-up status fetch fails.
+				form.remove();
 			} catch (error) {
 				form.querySelector(".form-error").textContent = error.message;
+				textarea.focus();
+			} finally {
+				submittingAnswers.delete(run.id);
+				textarea.readOnly = false;
+				endSubmission(form);
+			}
+			if (accepted) {
+				detailSignature = "";
+				try {
+					await refresh();
+				} catch (error) {
+					fail(error);
+				}
 			}
 		};
 }
@@ -271,6 +327,7 @@ async function refreshDetail() {
 	const signature = JSON.stringify(run) + tab;
 	if (
 		signature === detailSignature ||
+		submittingAnswers.has(id) ||
 		$("#answer-form")?.contains(document.activeElement)
 	)
 		return;
@@ -396,10 +453,8 @@ $("#runs-nav").onclick = () => {
 };
 $("#start-form").onsubmit = async (event) => {
 	event.preventDefault();
-	const form = event.currentTarget,
-		button = form.querySelector('[type="submit"]');
-	button.disabled = true;
-	form.querySelector(".form-error").textContent = "";
+	const form = event.currentTarget;
+	if (!beginSubmission(form, "Starting run…")) return;
 	try {
 		const values = Object.fromEntries(new FormData(form));
 		values.inputs = Object.fromEntries(
@@ -417,6 +472,7 @@ $("#start-form").onsubmit = async (event) => {
 			method: "POST",
 			body: JSON.stringify(values),
 		});
+		feedback("Run started.");
 		selected = run.id;
 		tab = "overview";
 		detailSignature = "";
@@ -426,7 +482,7 @@ $("#start-form").onsubmit = async (event) => {
 	} catch (error) {
 		form.querySelector(".form-error").textContent = error.message;
 	} finally {
-		button.disabled = false;
+		endSubmission(form);
 	}
 };
 $("#workflows-button").onclick = async () => {
@@ -525,6 +581,8 @@ $("#roles-workflow").onchange = renderRoleSettings;
 $("#workflow-json").onchange = renderRoleSettings;
 $("#workflows-form").onsubmit = async (event) => {
 	event.preventDefault();
+	const form = event.currentTarget;
+	if (!beginSubmission(form, "Saving workflows…")) return;
 	try {
 		const saved = await api("/api/workflows", {
 			method: "PUT",
@@ -535,9 +593,12 @@ $("#workflows-form").onsubmit = async (event) => {
 		});
 		config.workflows = saved.workflows;
 		config.defaultWorkflow = saved.defaultWorkflow;
+		feedback("Workflows saved.");
 		$("#workflows-dialog").close();
 	} catch (error) {
-		$("#workflows-form .form-error").textContent = error.message;
+		form.querySelector(".form-error").textContent = error.message;
+	} finally {
+		endSubmission(form);
 	}
 };
 let refreshing = false;
