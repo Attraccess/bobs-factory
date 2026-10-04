@@ -15,6 +15,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Keep repeated CI polling tables and command fragments out of chat; show one meaningful PR-check status while retaining check results and failures. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
 - Publish factory changes with conventional commit messages so repository hooks accept ticket titles; failed runs can retry from saved progress without repeating completed steps. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Show submission progress and acceptance feedback for clarification answers, run launches and workflow saves; prevent duplicate submissions and preserve answers on errors. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Keep artifact panels and scroll positions stable during live dashboard updates; display agent conversations, paired tool results and Markdown responses using Cyrus’s existing activity formatters. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))

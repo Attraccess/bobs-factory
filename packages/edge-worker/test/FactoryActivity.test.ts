@@ -18,6 +18,116 @@ const entry = (type: string, content: string, metadata = {}) => ({
 });
 
 describe("factory conversation history", () => {
+	it("replaces shared CI polling chunks with one stable status without hiding agent messages", () => {
+		const run = {
+			status: "running",
+			step: "pipeline/build-checks",
+			createdAt: at,
+			workflow: {
+				steps: [{ id: "pipeline", type: "workflow", workflow: "shared" }],
+			},
+			workflowDefinitions: [
+				{
+					id: "shared",
+					steps: [{ id: "build-checks", type: "tool", tool: "ci" }],
+				},
+			],
+			events: [
+				{
+					at,
+					step: "pipeline/build-checks",
+					message: "Starting Watch CI (pass 1)",
+				},
+				...Array.from({ length: 200 }, (_, i) => ({
+					at,
+					step: "pipeline/build-checks",
+					message:
+						i % 2
+							? "https://github.com/test/repo/actions/runs/1"
+							: "Refreshing checks status every 10 seconds. Press Ctrl+C to quit.",
+				})),
+				{
+					at,
+					step: "ci-fix",
+					message: JSON.stringify({
+						type: "assistant",
+						content: "Investigating the failing check.",
+					}),
+				},
+			],
+		};
+		const result = formatActivities(run);
+		expect(result).toHaveLength(2);
+		expect(
+			result.find((item: { type: string }) => item.type === "system"),
+		).toEqual({
+			key: "ci/pipeline/build-checks",
+			at,
+			step: "pipeline/build-checks",
+			type: "system",
+			title: "PR checks",
+			body: "Waiting for PR checks…",
+			status: undefined,
+			raw: undefined,
+		});
+		expect(
+			result.find((item: { type: string }) => item.type === "thought"),
+		).toMatchObject({ body: "Investigating the failing check." });
+		const history = [
+			{
+				step: run.step,
+				at,
+				output: {
+					approved: true,
+					headSha: "head",
+					checks: [{ name: "Tests", bucket: "pass" }],
+					receipt: "Repeated watch output",
+				},
+			},
+		];
+		expect(
+			formatActivities({ ...run, status: "completed", history }).find(
+				(item: { type: string }) => item.type === "system",
+			),
+		).toMatchObject({
+			key: "ci/pipeline/build-checks",
+			body: "PR checks passed.",
+			raw: {
+				headSha: "head",
+				checks: history[0].output.checks,
+				error: undefined,
+			},
+		});
+		expect(
+			formatActivities({
+				...run,
+				status: "failed",
+				error: "GitHub unavailable",
+			}).find((item: { type: string }) => item.type === "system"),
+		).toMatchObject({
+			body: "PR checks could not finish.",
+			status: "error",
+			raw: { error: "GitHub unavailable" },
+		});
+		expect(
+			formatActivities({
+				...run,
+				step: "ci-fix",
+				history: [
+					{
+						step: run.step,
+						at,
+						output: { approved: false, error: "Tests failed" },
+					},
+				],
+			}).find((item: { type: string }) => item.type === "system"),
+		).toMatchObject({
+			body: "PR checks need attention.",
+			status: "error",
+			raw: { error: "Tests failed" },
+		});
+	});
+
 	it("groups consecutive tools within a step without hiding conversational turns", () => {
 		const activities = [
 			{ key: "1", type: "thought", step: "plan" },

@@ -32,7 +32,9 @@ The **Activity** view displays a chat conversation in time order, using the same
 runner tool formatters as Linear. Human replies appear on the right; agent
 messages remain in the main flow. Consecutive tool calls share a compact summary
 with running/error counts; expand it and a tool row to inspect commands and
-results. Workflow updates and **Raw data** are also expandable. **Show earlier
+results. CI monitoring appears as one status entry instead of repeated polling
+tables; check results and failures remain available. Workflow updates and **Raw
+data** are also expandable. **Show earlier
 activity** reveals older entries without moving the message you are reading.
 Markdown and structured responses are rendered as readable content.
 

@@ -345,7 +345,7 @@ export function formatActivities(run) {
 				body: answer.answer,
 			});
 	}
-	return activities
+	return compactCiActivity(run, activities)
 		.filter(
 			(item) =>
 				!(
@@ -356,6 +356,78 @@ export function formatActivities(run) {
 				),
 		)
 		.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
+// CI command output arrives in arbitrary chunks, including repeated watch tables.
+// Retain it on the run, but represent each configured CI tool as one chat status.
+function compactCiActivity(run, activities) {
+	const ci = new Set();
+	const visit = (steps, prefix = "", ancestors = []) => {
+		for (const step of steps ?? []) {
+			const key = prefix + step.id;
+			if (step.type === "tool" && step.tool === "ci") ci.add(key);
+			if (step.type === "workflow" && !ancestors.includes(step.workflow)) {
+				const definition = run.workflowDefinitions?.find(
+					(item) => item.id === step.workflow,
+				);
+				visit(definition?.steps, `${key}/`, [...ancestors, step.workflow]);
+			}
+			(step.groups ?? []).forEach((group, index) => {
+				visit(group, `${key}/${index}/`, ancestors);
+			});
+		}
+	};
+	visit(run.workflow?.steps);
+	const summaries = new Map();
+	const visible = activities.filter((item) => {
+		if (item.type !== "system" || !ci.has(item.step)) return true;
+		if (!summaries.has(item.step)) summaries.set(item.step, item);
+		return false;
+	});
+	for (const [step, first] of summaries) {
+		const receipt = (run.history ?? [])
+			.filter((item) => item.step === step)
+			.at(-1);
+		const current = run.step === step;
+		const waiting =
+			current && ["running", "active", "waiting"].includes(run.status);
+		const failed = current && ["failed", "error"].includes(run.status);
+		const stopped = current && ["stopped", "interrupted"].includes(run.status);
+		const output = receipt?.output;
+		const body = waiting
+			? "Waiting for PR checks…"
+			: failed
+				? "PR checks could not finish."
+				: stopped
+					? "PR check monitoring stopped."
+					: output?.approved === true
+						? "PR checks passed."
+						: output?.approved === false
+							? "PR checks need attention."
+							: "PR check monitoring finished.";
+		visible.push({
+			key: `ci/${step}`,
+			at: first.at,
+			step,
+			type: "system",
+			title: "PR checks",
+			body,
+			status:
+				failed || (!waiting && output?.approved === false)
+					? "error"
+					: undefined,
+			raw: failed
+				? { error: run.error }
+				: !waiting && output
+					? {
+							headSha: output.headSha,
+							checks: output.checks,
+							error: output.error,
+						}
+					: undefined,
+		});
+	}
+	return visible;
 }
 
 const timeLabel = (at) =>
