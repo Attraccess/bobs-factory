@@ -34,7 +34,12 @@ export class FactoryServer {
 		this.app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
 		this.app.setErrorHandler((error, _request, reply) =>
 			reply.code(error instanceof z.ZodError ? 400 : 409).send({
-				error: error instanceof Error ? error.message : "Request failed",
+				error:
+					error instanceof z.ZodError
+						? error.issues.map((issue) => issue.message).join("\n")
+						: error instanceof Error
+							? error.message
+							: "Request failed",
 			}),
 		);
 		// This separate listener is loopback-only and never registered on Cyrus's webhook tunnel.

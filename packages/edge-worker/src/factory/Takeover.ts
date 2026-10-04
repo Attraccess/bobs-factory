@@ -1,5 +1,21 @@
 import { z } from "zod";
 
+const ticketIdPattern = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
+const ticketUrlPattern =
+	/^https:\/\/linear\.app\/[^/]+\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)(?:\/.*)?$/;
+const pullRequestUrlPattern =
+	/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)\/?$/;
+
+export const TakeoverSourceSchema = z
+	.string()
+	.refine(
+		(source) =>
+			ticketIdPattern.test(source) ||
+			ticketUrlPattern.test(source) ||
+			pullRequestUrlPattern.test(source),
+		"Use an existing Linear ticket ID (e.g. ATT-1127), Linear ticket URL or GitHub PR URL. Put task instructions in Additional instructions, or choose Software factory for a new task.",
+	);
+
 export type TakeoverCommand = (
 	executable: string,
 	args: string[],
@@ -27,9 +43,7 @@ export async function inspectPullRequest(
 	command: TakeoverCommand,
 	source: string,
 ): Promise<TakeoverPullRequest> {
-	const match = source.match(
-		/^https:\/\/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)\/?$/,
-	);
+	const match = source.match(pullRequestUrlPattern);
 	if (!match)
 		throw new Error(
 			"Enter a GitHub PR URL (https://github.com/owner/repo/pull/123)",
@@ -69,10 +83,8 @@ export async function inspectPullRequest(
 	};
 }
 export function ticketIdentifier(source: string): string {
-	if (/^[A-Za-z][A-Za-z0-9_]*-\d+$/.test(source)) return source;
-	const match = source.match(
-		/^https:\/\/linear\.app\/[^/]+\/issue\/([A-Za-z][A-Za-z0-9_]*-\d+)(?:\/.*)?$/,
-	);
+	if (ticketIdPattern.test(source)) return source;
+	const match = source.match(ticketUrlPattern);
 	if (!match)
 		throw new Error("Enter a Linear ticket identifier/URL or a GitHub PR URL");
 	return match[1]!;

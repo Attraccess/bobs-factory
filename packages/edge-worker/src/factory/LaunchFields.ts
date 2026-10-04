@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { agentSettings } from "./AgentSettings.js";
+import { TakeoverSourceSchema } from "./Takeover.js";
 import type { Workflow } from "./Workflow.js";
 
 export const LaunchFieldSchema = z
@@ -121,10 +122,7 @@ export function resolveLaunchRequest(
 		string
 	>;
 	const source = inputs.source || request.source || undefined;
-	if (workflow.id === "takeover" && !source)
-		throw new Error(
-			"Takeover needs an existing PR URL or ticket identifier/URL",
-		);
+	if (workflow.id === "takeover") TakeoverSourceSchema.parse(source);
 	const providedTitle = inputs.title || request.title;
 	return {
 		...request,

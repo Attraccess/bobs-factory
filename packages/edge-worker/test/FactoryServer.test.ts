@@ -262,6 +262,25 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 			});
 		}
 		expect((await launch("takeover")).statusCode).toBe(400);
+		const beforeInvalidSource = start.mock.calls.length;
+		for (const source of [
+			"Add UI to configure projects and Linear",
+			"https://example.com/ATT-1127",
+			"https://github.com/owner/repo/issues/3",
+		]) {
+			const invalid = await launch("takeover", { inputs: { source } });
+			expect(invalid.statusCode).toBe(400);
+			expect(invalid.json().error).toContain("Additional instructions");
+		}
+		expect(start).toHaveBeenCalledTimes(beforeInvalidSource);
+		for (const source of [
+			"https://linear.app/attraccess/issue/ATT-1127/power-consumption-billing",
+			"https://github.com/owner/repo/pull/3",
+		]) {
+			expect(
+				(await launch("takeover", { inputs: { source } })).statusCode,
+			).toBe(202);
+		}
 		expect((await launch("factory", { title: "Build" })).statusCode).toBe(400);
 		expect(
 			(await launch("simple", { title: "Build", prompt: "Implement it" }))

@@ -215,3 +215,23 @@ The complete edge-worker suite passed: 83 files, 889 tests passing and one
 skipped. Full build/typecheck and staged formatting are enforced by the commit
 hook. The isolated worker was stopped after these checks; fixture state was
 retained for inspection.
+
+## Takeover source validation follow-up
+
+The reported production failure supplied a feature description in the source
+field rather than a ticket/PR reference. Launch validation now rejects that
+input before creating a run and gives guidance in the form. Relevant F1 scope
+is the unchanged valid ticket lookup/setup path after tightening its entry gate.
+
+Used fresh home `/tmp/bobs-factory-source-validation-check`, UI 3467 and RPC 3468.
+F1 created DEF-1 and one prior comment. In the collaborative browser, submitting
+`Add UI to configure projects and Linear` kept the dialog open, preserved the
+entered value, displayed source/instructions guidance and left `/api/runs` empty.
+Replacing it with `https://linear.app/test/issue/DEF-1/continue-existing-ticket-work`
+created `manual-028d668e-cdd1-450f-8022-53d1307f5c7b`, which completed with one
+comment, the resolved ticket title, and both existing files retained in
+`/private/tmp/bobs-factory-existing-work`. Assessment/shared receipt steps were
+script fixtures and gh discovery returned no PR, as in the earlier focused drive.
+No real production run or ticket was modified by validation. Four focused test
+files passed (25 tests), including rejecting invalid sources before the start
+hook and continuing to accept bare ticket IDs, Linear URLs and GitHub PR URLs.

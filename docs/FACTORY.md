@@ -87,6 +87,9 @@ and requirements come from the ticket or PR. **Additional instructions** is
 optional. For ticket assignment, use `workflow:takeover` or `takeover`; the assigned
 ticket is the source. Manual ticket takeover needs that repository's configured
 ticket integration (the standalone launcher only has its local test tracker).
+The source field accepts ticket IDs/URLs or GitHub PR URLs, not task descriptions.
+Invalid sources stay in the launch form with an error before a run is created.
+Use Software factory for a new task without an existing ticket/PR.
 
 Takeover preserves an existing local branch/worktree, including unfinished work.
 When the PR branch is absent locally it starts from the PR's current remote head.
