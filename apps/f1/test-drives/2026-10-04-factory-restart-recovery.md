@@ -119,3 +119,17 @@ production input was submitted.
 Only isolated workers were shut down for cleanup. The production process keeps
 its current loaded backend until a later restart; the new static UI is served
 without stopping it.
+
+## Idle production rollout
+
+After all validation and the implementation commit, the user's Takeover ended
+independently at `pipeline/draft-pr`: the repository's Git hook failed. Its
+history/worktree were retained and the failed run was not retried. The process
+reported `/status: idle` with no running or waiting factory runs, so a private
+state backup was saved and the service was restarted to load the new backend.
+No active agent was interrupted by this rollout.
+
+Production PID changed from 22338 to 88119. The new backend served the feedback
+UI and automatically continued the two legacy ticket sessions persisted as
+active. The failed Takeover remained failed at the same step. The runtime source
+pin was updated without changing Git/SSH/signing settings or the webhook tunnel.
