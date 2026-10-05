@@ -367,3 +367,45 @@ it("corrects recovered capture budget violations instead of replaying the same r
 	});
 	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
 });
+
+it("bounds capture semantic corrections across finalization without resetting the rejection count", async () => {
+	const f = await fixture();
+	(f.ctx.run.outputs["visual-scope"] as any).captureBudget = 2;
+	f.ctx.resumeAgent!.result!.output = f.repaired;
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"exhausted after 2",
+	);
+	expect(f.runner.start).toHaveBeenCalledTimes(2);
+	expect(f.ctx.resumeAgent!.rejected).toMatchObject({
+		attempts: 2,
+		exhausted: true,
+	});
+});
+
+it("retries IO failures during correction by revalidating the completed candidate without another native turn", async () => {
+	const f = await fixture();
+	(f.ctx.run.outputs["visual-scope"] as any).captureBudget = 2;
+	f.ctx.resumeAgent!.result!.output = f.repaired;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify({
+				screenshots: f.repaired.screenshots.slice(0, 2),
+			}),
+		},
+	];
+	rmSync(f.repaired.screenshots[0]!.path);
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow("ENOENT");
+	expect(f.ctx.resumeAgent!.rejected?.attempts).toBe(1);
+	expect(f.ctx.resumeAgent!.result?.finalizing).toBe(true);
+	f.ctx.resumeAgent = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
+	writeFileSync(
+		f.repaired.screenshots[0]!.path,
+		Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 4]),
+	);
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject({
+		screenshots: f.repaired.screenshots.slice(0, 2),
+	});
+	expect(f.runner.start).toHaveBeenCalledOnce();
+	expect(f.ctx.resumeAgent!.rejected).toBeUndefined();
+});

@@ -6094,7 +6094,19 @@ ${taskSection}`;
 		try {
 			while (true) {
 				try {
-					return await this.executeFactoryAgentAttempt(context);
+					const output = await this.executeFactoryAgentAttempt(context);
+					if (
+						context.resumeAgent?.rejected ||
+						context.resumeAgent?.result?.finalizing
+					) {
+						const { rejected: _rejected, ...agent } = context.resumeAgent;
+						if (agent.result) {
+							const { finalizing: _finalizing, ...result } = agent.result;
+							agent.result = result;
+						}
+						context.checkpointAgent(agent);
+					}
+					return output;
 				} catch (error) {
 					const capture = error instanceof CaptureReuseError;
 					if (!(error instanceof OutputValidationError) && !capture)
@@ -6121,6 +6133,9 @@ ${taskSection}`;
 					if (!context.resumeAgent) throw error;
 					context.checkpointAgent({
 						...context.resumeAgent,
+						...(context.resumeAgent.result
+							? { result: { ...context.resumeAgent.result, finalizing: false } }
+							: {}),
 						rejected: rejection,
 					});
 					context.log(
@@ -6156,9 +6171,10 @@ ${taskSection}`;
 		if (!session || !repository)
 			throw new Error("Run session/repository unavailable");
 		const outputCorrection = context.resumeAgent?.rejected;
-		const recovered = outputCorrection
-			? undefined
-			: await completedAgentResult(context);
+		const recovered =
+			outputCorrection && !context.resumeAgent?.result?.finalizing
+				? undefined
+				: await completedAgentResult(context);
 		if (recovered)
 			return this.finalizeFactoryAgentOutput(context, recovered.output);
 		const captureCorrection = outputCorrection?.screenshots
@@ -6324,7 +6340,10 @@ ${taskSection}`;
 					context.checkpointAgent?.({
 						runner: agentCheckpoint.runner,
 						sessionId: agentCheckpoint.sessionId,
-						result: { output, revision: completed },
+						...(context.resumeAgent?.rejected
+							? { rejected: context.resumeAgent.rejected }
+							: {}),
+						result: { output, revision: completed, finalizing: true },
 					});
 				return this.finalizeFactoryAgentOutput(context, output);
 			} finally {
