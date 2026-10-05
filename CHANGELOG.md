@@ -29,6 +29,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Upgrade saved stock visual-review instructions correctly and compact legacy screenshot matrices on the next visual-scope pass, preserving role models and existing evidence. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
 - Keep truncated live agent/tool event copies out of workflow chat, using the complete session transcript and preserving message provenance through pagination and restarts. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Save Today-view settling immediately with loading feedback, and load dashboard assets together with the backend so new controls cannot appear before their APIs are available. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))

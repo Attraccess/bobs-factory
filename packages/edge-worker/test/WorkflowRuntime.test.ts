@@ -2,7 +2,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
+import {
+	defaultWorkflows,
+	upgradeWorkflows,
+} from "../src/factory/defaultWorkflows.js";
 import { validateFactoryResult } from "../src/factory/FactoryResults.js";
 import {
 	filterReview,
@@ -56,6 +59,30 @@ function start(runtime: WorkflowRuntime, definition: Workflow) {
 }
 
 describe("workflow runtime", () => {
+	it("upgrades the legacy visual reviewer with a real newline while retaining its model", () => {
+		const saved = structuredClone(defaultWorkflows);
+		const shared = saved.find(
+			(definition) => definition.id === "factory-pipeline",
+		)!;
+		const reviewer = shared.steps.find((step) => step.id === "visual-review")!;
+		reviewer.prompt = `${shared.steps.find((step) => step.id === "code-review")!.prompt}\nThis is a VISUAL review: open and inspect the actual screenshots, checking each requested area/state against the plan. Include areas with missing/unavailable capture evidence as rating 3 findings. Never approve missing screenshots.`;
+		reviewer.model = "custom-review-model";
+		const upgraded = validateWorkflows(upgradeWorkflows(saved))
+			.find((definition) => definition.id === "factory-pipeline")!
+			.steps.find((step) => step.id === "visual-review")!;
+		expect(upgraded.prompt).toBe(
+			defaultWorkflows
+				.find((definition) => definition.id === "factory-pipeline")!
+				.steps.find((step) => step.id === "visual-review")!.prompt,
+		);
+		expect(upgraded.model).toBe("custom-review-model");
+		reviewer.prompt = "My custom visual review instructions";
+		expect(
+			validateWorkflows(upgradeWorkflows(saved))
+				.find((definition) => definition.id === "factory-pipeline")!
+				.steps.find((step) => step.id === "visual-review")!.prompt,
+		).toBe(reviewer.prompt);
+	});
 	it("persists agent provenance before trimming an oversized event tail", () => {
 		const { runtime, home } = create();
 		const run = start(runtime, workflow([agent("review")]));

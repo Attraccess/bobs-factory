@@ -122,3 +122,19 @@ contained 61,199 characters and its 20,000-character event tail retained agent
 provenance. The legacy failure is also covered by the deterministic initial/delta
 regression. Explicit source metadata
 is stored before truncation, and complete session entries own chat rendering.
+
+## Active visual-workflow upgrade (Taskbot #34)
+
+The active Attraccess run's scope/capture prompts were already upgraded, but its
+saved stock visual-review prompt was not: a migration constant had an escaped
+newline rather than the actual newline in the saved prompt. Its prior scope also
+contained combined matrix labels. The migration now matches that exact stock
+prompt, preserving custom prompts and role models. Repeated visual-scope
+instructions explicitly compact a legacy matrix into the representative budget,
+retaining cumulative feature requirements instead of historical combinations.
+
+All 37 workflow/incremental/pipeline tests passed, including the saved reviewer
+migration and preservation of custom model/prompt settings. Applying the compiled
+migration to the actual saved run produced the current stock scope, capture and
+reviewer prompts with unchanged runners/models. The run was still at code review;
+its next visual-scope result had not yet been generated during this check.
