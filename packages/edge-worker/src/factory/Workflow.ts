@@ -146,6 +146,7 @@ export function validateWorkflows(value: unknown): Workflow[] {
 		for (const field of fields) {
 			if (
 				[
+					"title",
 					"repositoryId",
 					"workflow",
 					"runner",

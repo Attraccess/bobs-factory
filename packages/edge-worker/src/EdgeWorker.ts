@@ -59,6 +59,7 @@ import type {
 } from "cyrus-core";
 import {
 	AgentSessionStatus,
+	AgentSessionType,
 	CLIIssueTrackerService,
 	CLIRPCServer,
 	createLogger,
@@ -81,6 +82,7 @@ import {
 	isUnassignMessage,
 	isUserPromptMessage,
 	PersistenceManager,
+	type RunTitleJob,
 	requireLinearWorkspaceId,
 	resolvePath,
 	WebhookIpValidator,
@@ -120,6 +122,7 @@ import {
 	extractMRBranchRef,
 	extractMRIid,
 	extractMRTitle,
+	extractMRUrl,
 	extractNoteAuthor,
 	extractNoteBody,
 	extractNoteId,
@@ -193,6 +196,12 @@ import {
 	OutputValidationError,
 	outputValidationError,
 } from "./factory/OutputValidation.js";
+import {
+	buildTitleContext,
+	RunTitleGenerator,
+	type TitleContext,
+	titleSystemPrompt,
+} from "./factory/RunTitleGenerator.js";
 import {
 	type ChatState,
 	SessionChat,
@@ -294,6 +303,8 @@ export class EdgeWorker extends EventEmitter {
 	private sharedApplicationServer: SharedApplicationServer;
 	private cyrusHome: string;
 	private factoryRuntime?: WorkflowRuntime;
+	private titleGenerator?: RunTitleGenerator;
+	private titleStarted = new Set<string>();
 	private stateSaveQueue: Promise<void> = Promise.resolve();
 	private recoveryAbort = new AbortController();
 	private stopping = false;
@@ -846,9 +857,9 @@ export class EdgeWorker extends EventEmitter {
 						.filter((repo) => repo.isActive)
 						.map((repo) => ({ id: repo.id, name: repo.name })),
 				sessions: () =>
-					this.agentSessionManager.getAllSessions().map((session) => ({
+					this.getAllKnownSessions().map((session) => ({
 						id: session.id,
-						title: session.issue?.title ?? session.id,
+						title: session.displayTitle ?? session.issue?.title ?? session.id,
 						status: session.agentRunner?.isRunning()
 							? "running"
 							: session.status,
@@ -857,11 +868,24 @@ export class EdgeWorker extends EventEmitter {
 						workspace: session.workspace.path,
 						repositoryId: this.sessionRepositories.get(session.id),
 					})),
-				entries: (id) => this.agentSessionManager.getSessionEntries(id),
+				entries: (id) =>
+					this.agentSessionManager.getSession(id)
+						? this.agentSessionManager.getSessionEntries(id)
+						: (this.activeChatSessionHandlers
+								.find((handler) =>
+									handler
+										.getAllChatSessions()
+										.some((session) => session.id === id),
+								)
+								?.getSessionEntries(id) ?? []),
 				subscribe: (notify) => {
 					this.agentSessionManager.on("sessionChanged", notify);
+					const unsubscribeChats = this.activeChatSessionHandlers.map(
+						(handler) => handler.subscribe(notify),
+					);
 					return () => {
 						this.agentSessionManager.off("sessionChanged", notify);
+						for (const unsubscribe of unsubscribeChats) unsubscribe();
 					};
 				},
 				chat: (id) => this.factoryChatState(id),
@@ -889,7 +913,6 @@ export class EdgeWorker extends EventEmitter {
 							inputs: source
 								? { source: String(source), prompt: feedback }
 								: {
-										title: `Follow-up: ${run?.title ?? session?.issue?.title ?? id}`,
 										prompt: feedback,
 									},
 							runner: run?.runner as RunnerType | undefined,
@@ -900,8 +923,9 @@ export class EdgeWorker extends EventEmitter {
 				},
 				stop: (id) => {
 					this.factoryRuntime?.runs.has(id) && this.factoryRuntime.stop(id);
+					this.cancelRunTitle(id);
 					this.agentSessionManager.requestSessionStop(id);
-					this.agentSessionManager.getAgentRunner(id)?.stop();
+					this.titleSession(id)?.agentRunner?.stop();
 					void this.savePersistedState();
 				},
 			});
@@ -1275,6 +1299,17 @@ export class EdgeWorker extends EventEmitter {
 				});
 			},
 			getPlatformMcpConfigOverrides,
+			onNewSession: (session, instructions, platform) => {
+				const repository = chatRepositoryProvider.getDefaultRepository();
+				this.prepareRunTitle(
+					session.id,
+					repository,
+					{ instructions },
+					platform,
+					getPlatformMcpConfigOverrides(),
+				);
+				this.startRunTitle(session.id);
+			},
 			getStrictMcpConfig: () => this.config.strictMcpConfig,
 			getAdditionalWritableDirectories: () =>
 				this.config.sandbox?.additionalWritableDirectories,
@@ -1831,6 +1866,24 @@ export class EdgeWorker extends EventEmitter {
 				);
 				return;
 			}
+
+			this.prepareRunTitle(
+				githubSessionId,
+				repository,
+				{
+					instructions: taskInstructions,
+					ticket: {
+						title: prTitle ?? undefined,
+						identifier: issueMinimal.identifier,
+						body:
+							("pull_request" in event.payload
+								? event.payload.pull_request.body
+								: event.payload.issue.body) ?? undefined,
+					},
+					source: extractCommentUrl(event),
+				},
+				"github",
+			);
 
 			// Initialize session metadata
 			if (!session.metadata) {
@@ -2571,6 +2624,26 @@ ${taskSection}`;
 				session.metadata = {};
 			}
 
+			this.prepareRunTitle(
+				gitlabSessionId,
+				repository,
+				{
+					instructions: taskInstructions,
+					ticket: {
+						title: mrTitle ?? undefined,
+						identifier: issueMinimal.identifier,
+						description:
+							("merge_request" in event.payload
+								? event.payload.merge_request?.description
+								: "description" in event.payload.object_attributes
+									? event.payload.object_attributes.description
+									: undefined) ?? undefined,
+					},
+					source: extractMRUrl(event) ?? extractNoteUrl(event),
+				},
+				"gitlab",
+			);
+
 			// Store GitLab-specific metadata for reply posting
 			// Reuse commentId for note ID (serves the same purpose across platforms)
 			session.metadata.commentId = String(noteId);
@@ -3004,6 +3077,7 @@ ${taskSection}`;
 	async stop(): Promise<void> {
 		this.stopping = true;
 		this.recoveryAbort.abort();
+		await this.titleGenerator?.shutdown();
 		await this.factoryRuntime?.shutdown();
 		await this.factoryServer?.stop();
 		// Stop config file watcher
@@ -3811,6 +3885,7 @@ ${taskSection}`;
 			);
 			if (this.factoryRuntime?.runs.has(session.id))
 				this.factoryRuntime.stop(session.id);
+			this.cancelRunTitle(session.id);
 			this.agentSessionManager.requestSessionStop(session.id);
 			session.agentRunner?.stop();
 		}
@@ -3896,6 +3971,7 @@ ${taskSection}`;
 					for (const session of sessions) {
 						if (this.factoryRuntime?.runs.has(session.id))
 							this.factoryRuntime.stop(session.id);
+						this.cancelRunTitle(session.id);
 						this.agentSessionManager.requestSessionStop(session.id);
 						session.agentRunner?.stop();
 					}
@@ -5052,6 +5128,12 @@ ${taskSection}`;
 			allowedDirectories,
 		} = sessionData;
 
+		this.prepareRunTitle(sessionId, primaryRepo, {
+			instructions: fullIssue.description ?? "",
+			ticket: fullIssue,
+			comment: commentBody ?? undefined,
+		});
+
 		// Fetch labels early (needed for system prompt and runner selection)
 		const labels = await this.fetchIssueLabels(fullIssue);
 
@@ -5175,6 +5257,7 @@ ${taskSection}`;
 								primaryRepo.baseBranch),
 					name: primaryRepo.name,
 				};
+				run.titleGeneration = session.titleGeneration;
 				run.outputs.ticket = ticket;
 				run.runner = selectedRunner.runnerType;
 				run.model = selectedRunner.config.model;
@@ -5311,6 +5394,7 @@ ${taskSection}`;
 		this.lastStopTimeBySession.set(agentSessionId, now);
 
 		const existingRunner = foundSession.agentRunner;
+		this.cancelRunTitle(agentSessionId);
 		const issueTitle = issue?.title || "this issue";
 		const senderName = webhook.agentSession.creator?.name || "user";
 
@@ -5831,6 +5915,7 @@ ${taskSection}`;
 			this.logger.info(`Stopping agent runner for issue ${issue.identifier}`);
 			if (this.factoryRuntime?.runs.has(session.id))
 				this.factoryRuntime.stop(session.id);
+			this.cancelRunTitle(session.id);
 			this.agentSessionManager.requestSessionStop(session.id);
 			session.agentRunner?.stop();
 		}
@@ -6007,19 +6092,203 @@ ${taskSection}`;
 					this.executeFactoryMcpTool(context, server, tool),
 			});
 			this.factoryRuntime = new WorkflowRuntime(this.cyrusHome, {
+				titleDefaults: (
+					runner = this.runnerSelectionService.getDefaultRunner(),
+				) => ({ runner, model: this.getDefaultModelForRunner(runner) }),
+				stopTitle: (id) => this.cancelRunTitle(id),
 				prepare: (run, signal) => this.prepareFactoryRun(run, signal),
 				simple: (run, signal) => this.executeSimpleFactoryRun(run, signal),
 				agent: (context) => this.executeFactoryAgent(context),
-				script: (context) => tools.script(context),
-				tool: (context) => tools.tool(context),
+				script: (context) => {
+					this.startRunTitle(context.run.id);
+					return tools.script(context);
+				},
+				tool: (context) => {
+					this.startRunTitle(context.run.id);
+					return tools.tool(context);
+				},
 				question: async (run) => {
 					const body = `## Factory clarification\n\n${run.questions.map((question, index) => `${index + 1}. ${question}`).join("\n")}\n\nReply here or answer in the factory UI. The run waits for your answers.`;
 					await this.postFactoryComment(run, body);
 					await this.agentSessionManager.createResponseActivity(run.id, body);
 				},
 			});
+			this.factoryRuntime.subscribe(({ id }) => {
+				if (id && this.factoryRuntime?.get(id).status !== "running")
+					this.startRunTitle(id);
+			});
 		}
 		return this.factoryRuntime;
+	}
+
+	private titleSession(id: string): CyrusAgentSession | undefined {
+		return (
+			this.agentSessionManager.getSession(id) ??
+			this.activeChatSessionHandlers
+				.flatMap((handler) => handler.getAllChatSessions())
+				.find((session) => session.id === id)
+		);
+	}
+
+	private prepareRunTitle(
+		id: string,
+		repository: RepositoryConfig | undefined,
+		context: TitleContext,
+		platform = "linear",
+		mcpPaths?: readonly string[],
+	): void {
+		const runtime = this.getFactoryRuntime();
+		const run = runtime.runs.get(id);
+		const session = this.titleSession(id);
+		const existing = run?.titleGeneration ?? session?.titleGeneration;
+		if (existing && (existing.state !== "pending" || existing.prepared)) return;
+		const packet = buildTitleContext(context);
+		const job: RunTitleJob = {
+			...(existing ?? runtime.createTitleJob(packet)),
+			prepared: true,
+			context: packet,
+			repositoryId: repository?.id,
+			platform,
+			platformMcpConfigOverrides: mcpPaths ? [...mcpPaths] : undefined,
+		};
+		if (session) {
+			session.displayTitle = run?.title ?? session.displayTitle ?? id;
+			session.titleGeneration = structuredClone(job);
+		}
+		if (run) runtime.updateTitle(id, job);
+		void this.savePersistedState();
+	}
+	private updateRunTitle(id: string, job: RunTitleJob, title?: string): void {
+		const run = this.factoryRuntime?.runs.get(id);
+		const session = this.titleSession(id);
+		if (session) {
+			session.titleGeneration = structuredClone(job);
+			session.displayTitle = title ?? run?.title ?? session.displayTitle ?? id;
+			this.agentSessionManager.updateDisplayTitle(
+				id,
+				session.displayTitle,
+				session.titleGeneration,
+			);
+			for (const handler of this.activeChatSessionHandlers)
+				handler.updateDisplayTitle(
+					id,
+					session.displayTitle,
+					session.titleGeneration,
+				);
+		}
+		if (run) this.factoryRuntime!.updateTitle(id, job, title);
+		if (job.state === "failed")
+			this.logger.warn(`Run title generation failed for ${id}: ${job.error}`);
+		void this.savePersistedState();
+	}
+	private cancelRunTitle(id: string): void {
+		const job =
+			this.factoryRuntime?.runs.get(id)?.titleGeneration ??
+			this.titleSession(id)?.titleGeneration;
+		if (job?.state === "pending")
+			this.updateRunTitle(id, { ...job, state: "cancelled" });
+		this.titleGenerator?.cancel(id);
+	}
+	private startRunTitle(id: string): void {
+		if (this.stopping) return;
+		const job =
+			this.factoryRuntime?.runs.get(id)?.titleGeneration ??
+			this.titleSession(id)?.titleGeneration;
+		if (job?.state !== "pending" || !job.prepared || this.titleStarted.has(id))
+			return;
+		this.titleStarted.add(id);
+		this.titleGenerator ??= new RunTitleGenerator(
+			this.cyrusHome,
+			this.runnerSlots,
+			{
+				update: (runId, result, title) => {
+					const current =
+						this.factoryRuntime?.runs.get(runId)?.titleGeneration ??
+						this.titleSession(runId)?.titleGeneration;
+					if (current?.state === "pending")
+						this.updateRunTitle(runId, result, title);
+				},
+				buildConfig: async (snapshot, directory, jobId) => {
+					const configuredRepository = this.repositories.get(
+						snapshot.repositoryId ?? "",
+					);
+					if (snapshot.repositoryId && !configuredRepository)
+						throw new Error("Title repository unavailable");
+					const repository: RepositoryConfig = configuredRepository ?? {
+						id: "title-chat",
+						name: "Run titles",
+						repositoryPath: directory,
+						workspaceBaseDir: directory,
+						baseBranch: "main",
+						isActive: true,
+					};
+					if (repository.linearWorkspaceId)
+						await this.ensureLinearTokenFresh(repository.linearWorkspaceId);
+					const source = this.titleSession(jobId);
+					const sourcePaths = [
+						repository.repositoryPath,
+						...(source ? [source.workspace.path] : []),
+					];
+					const platform = snapshot.platform;
+					const synthetic: CyrusAgentSession = {
+						id: `title-${jobId}`,
+						type: AgentSessionType.CommentThread,
+						context: AgentSessionType.CommentThread,
+						status: AgentSessionStatus.Active,
+						createdAt: Date.now(),
+						updatedAt: Date.now(),
+						repositories: [],
+						workspace: { path: directory, isGitWorktree: false },
+					};
+					return this.runnerConfigBuilder.buildTitleConfig(
+						{
+							session: synthetic,
+							repository:
+								platform === "slack" || platform === "zulip"
+									? { ...repository, allowedTools: undefined }
+									: repository,
+							sessionId: synthetic.id,
+							systemPrompt: titleSystemPrompt,
+							allowedTools:
+								platform === "github" || platform === "gitlab"
+									? this.toolPermissionResolver.buildGithubAllowedTools(
+											repository,
+										)
+									: platform === "slack" || platform === "zulip"
+										? this.toolPermissionResolver.buildChatAllowedTools()
+										: this.buildAllowedTools([repository]),
+							disallowedTools: this.buildDisallowedTools([repository]),
+							allowedDirectories: sourcePaths,
+							platformMcpConfigOverrides:
+								snapshot.platformMcpConfigOverrides ??
+								(platform === "github" || platform === "gitlab"
+									? this.config.githubMcpConfigs
+									: this.config.linearMcpConfigs),
+							linearWorkspaceId: repository.linearWorkspaceId ?? "",
+							requireLinearWorkspaceId,
+							cyrusHome: this.cyrusHome,
+							logger: this.logger,
+							onMessage: () => {},
+							onError: () => {},
+							strictMcpConfig: this.config.strictMcpConfig,
+							sandboxSettings: this.sdkSandboxSettings ?? undefined,
+							egressCaCertPath: this.egressCaCertPath ?? undefined,
+							githubToken: repository.githubUrl
+								? this.githubTokenStore.getTokenForRepoUrl(repository.githubUrl)
+								: undefined,
+							opencodeGlobalConfig: this.config.opencode?.config,
+							opencodeGlobalStateScope: this.config.opencode?.stateScope,
+						},
+						snapshot.settings,
+					);
+				},
+				createRunner: (snapshot, config) =>
+					snapshot.settings.runner === "claude"
+						? new ClaudeRunner(config, false)
+						: this.buildRunnerForType(snapshot.settings.runner, config),
+			},
+		);
+		this.titleGenerator.start(id, job);
 	}
 
 	private async postFactoryComment(
@@ -6559,7 +6828,6 @@ ${taskSection}`;
 			},
 			workflowDefinitions,
 			id: `manual-${randomUUID()}`,
-			title: input.title,
 			repositoryId: repository.id,
 			workflow,
 			source: input.source,
@@ -6597,7 +6865,7 @@ ${taskSection}`;
 			tracker.seedDefaultData();
 			const created = await tracker.createIssue({
 				teamId: "team-default",
-				title: input.title,
+				title: run.id,
 				description: prompt,
 			});
 			let fullIssue: Issue = {
@@ -6653,10 +6921,6 @@ ${taskSection}`;
 					run.input = `${prompt}\n\nComplete existing ticket snapshot:\n${JSON.stringify(run.outputs.ticket, null, 2)}`;
 				}
 			}
-			if (!input.titleProvided)
-				run.title =
-					takeoverPr?.title ??
-					(workflow.id === "takeover" ? fullIssue.title : run.title);
 			if (run.status === "stopped") return;
 			const workspace = await this.gitService.createGitWorktree(
 				fullIssue,
@@ -6771,12 +7035,34 @@ ${taskSection}`;
 		const sink = this.getActivitySinkForRepo(run.repositoryId);
 		if (session.externalSessionId && sink)
 			this.agentSessionManager.setActivitySink(run.id, sink);
+		this.prepareRunTitle(run.id, repository, {
+			workflow: run.workflow.name,
+			instructions:
+				run.launchRequest?.prompt ??
+				session.issue?.description ??
+				run.titleGeneration?.context,
+			inputs: run.launchInputs,
+			source: run.source,
+			ticket: (run.outputs.ticket ??
+				run.outputs.source ??
+				session.issue) as TitleContext["ticket"],
+			followup: run.triggerOrigin?.manual?.sourceRunId
+				? {
+						sourceRunId: run.triggerOrigin.manual.sourceRunId,
+						title: this.getFactoryRuntime().runs.get(
+							run.triggerOrigin.manual.sourceRunId,
+						)?.title,
+						feedback: run.launchRequest?.prompt,
+					}
+				: undefined,
+		});
 		this.saveFactorySession(run);
 		this.getFactoryRuntime().save(run);
 	}
 
 	private recoverFactoryRuns(): void {
 		const runtime = this.getFactoryRuntime();
+		const resumingSessions = new Set<string>();
 		// Original Simple issue sessions retain Cyrus's continuation path and timeline.
 		// Factory/manual Simple runs use their own checkpoint below.
 		for (const session of this.agentSessionManager.getActiveSessions()) {
@@ -6795,6 +7081,7 @@ ${taskSection}`;
 				? this.repositories.get(repositoryId)
 				: undefined;
 			if (!repository?.isActive) continue;
+			resumingSessions.add(session.id);
 			void this.resumeAgentSession(
 				session,
 				repository,
@@ -6827,6 +7114,15 @@ ${taskSection}`;
 			if (!run.sessionSnapshot) this.saveFactorySession(run);
 		}
 		runtime.resumeAll();
+		for (const run of runtime.runs.values())
+			if (!["running"].includes(run.status)) this.startRunTitle(run.id);
+		for (const session of this.getAllKnownSessions())
+			if (
+				!runtime.runs.has(session.id) &&
+				!resumingSessions.has(session.id) &&
+				session.titleGeneration?.state === "pending"
+			)
+				this.startRunTitle(session.id);
 	}
 
 	private async executeSimpleFactoryRun(
@@ -8200,9 +8496,13 @@ ${input.userComment}
 			sandboxSettings: this.sdkSandboxSettings ?? undefined,
 			egressCaCertPath: this.egressCaCertPath ?? undefined,
 			onMessage: (message: SDKMessage) => {
+				this.startRunTitle(sessionId);
 				this.handleClaudeMessage(sessionId, message, repository.id);
 			},
-			onError: (error: Error) => this.handleClaudeError(error),
+			onError: (error: Error) => {
+				this.startRunTitle(sessionId);
+				this.handleClaudeError(error);
+			},
 			createAskUserQuestionCallback: (sid, wid) =>
 				this.createAskUserQuestionCallback(sid, wid)!,
 			requireLinearWorkspaceId,
@@ -8577,6 +8877,11 @@ ${input.userComment}
 	public serializeMappings(): SerializableEdgeWorkerState {
 		// Serialize Agent Session state - flat structure from single ASM
 		const serializedState = this.agentSessionManager.serializeState();
+		for (const handler of this.activeChatSessionHandlers) {
+			const chatState = handler.serializeState();
+			Object.assign(serializedState.sessions, chatState.sessions);
+			Object.assign(serializedState.entries, chatState.entries);
+		}
 
 		// Serialize child to parent agent session mapping from GlobalSessionRegistry
 		const registryState = this.globalSessionRegistry.serializeState();

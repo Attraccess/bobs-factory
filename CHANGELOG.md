@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Automatically name new runs in the background with a globally configurable title agent. Show the run ID while naming, update titles live, and preserve them across restarts. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68))
+
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
 - Configure workflow launch methods independently in Recipes, preserve saved permissions even when a configuration refresh fails, filter manual choices, reject disallowed workflow selections with actionable feedback, and retain launch/source and nested caller context across restarts. (Taskbot bobs-factory #35, [#2](https://github.com/Attraccess/bobs-factory/pull/2))
 

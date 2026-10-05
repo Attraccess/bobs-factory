@@ -14,11 +14,13 @@ export function AgentSettings({
 	onChange,
 	config,
 	label = "Run default",
+	modelPlaceholder = "Repository default",
 }: {
 	value: any;
 	onChange: (value: any) => void;
 	config: any;
 	label?: string;
+	modelPlaceholder?: string;
 }) {
 	const runner = value.runner || config.defaultRunner;
 	const set = (key: string, v: string) =>
@@ -54,7 +56,7 @@ export function AgentSettings({
 				Model
 				<input
 					value={value.model ?? ""}
-					placeholder="Repository default"
+					placeholder={modelPlaceholder}
 					onChange={(e) => set("model", e.target.value)}
 				/>
 			</label>
@@ -415,6 +417,55 @@ function ownRoles(
 				: [],
 	);
 }
+function RunTitleSettings({ config }: { config: any }) {
+	const [value, setValue] = useState(config.titleGeneration ?? {});
+	const [dirty, setDirty] = useState(false);
+	const action = useAction(),
+		toast = useToast();
+	useEffect(() => {
+		if (!dirty) setValue(config.titleGeneration ?? {});
+	}, [config.titleGeneration, dirty]);
+	return (
+		<section className="recipe" aria-labelledby="run-title-settings">
+			<h2 id="run-title-settings">Run titles</h2>
+			<p>
+				Choose a fast, inexpensive agent to name all new runs. Runs start with
+				their ID while titles generate in the background. These settings are
+				independent of execution agents.
+			</p>
+			<AgentSettings
+				config={config}
+				value={value}
+				label="Global default"
+				modelPlaceholder="Provider global default"
+				onChange={(next) => {
+					setValue(next);
+					setDirty(true);
+				}}
+			/>
+			<Button
+				disabled={!dirty || action.isPending}
+				onClick={() =>
+					void action
+						.mutateAsync({
+							path: "/api/title-settings",
+							method: "PUT",
+							body: value,
+						})
+						.then(() => {
+							setDirty(false);
+							toast({ text: "Run title settings saved" });
+						})
+						.catch(() => {})
+				}
+			>
+				Save title settings
+			</Button>
+			{action.error && <p role="alert">{action.error.message}</p>}
+		</section>
+	);
+}
+
 export function Recipes() {
 	const configQuery = useConfig(),
 		toast = useToast(),
@@ -451,6 +502,7 @@ export function Recipes() {
 				recipe is used when nothing else matches. Launch methods apply to new
 				runs; existing runs retain their definitions.
 			</p>
+			<RunTitleSettings config={config} />
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (
 					<article className="recipe" key={workflow.id}>

@@ -139,9 +139,14 @@ export class FactoryServer {
 			})),
 			defaultWorkflow: runtime.getDefaultWorkflow(),
 			defaultRunner: hooks.defaultRunner?.() ?? "claude",
+			titleGeneration: runtime.getTitleSettings(),
 			reasoningLevels,
 			serviceTierRunners,
 		}));
+		this.app.put("/api/title-settings", (request) => ({
+			titleGeneration: runtime.updateTitleSettings(request.body),
+		}));
+
 		this.app.put("/api/workflows", (request) => {
 			// Retain the original array API for existing local clients.
 			if (Array.isArray(request.body))

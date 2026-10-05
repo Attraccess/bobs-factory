@@ -169,6 +169,7 @@ export class AgentSessionManager extends EventEmitter {
 
 		const agentSession: CyrusAgentSession = {
 			id: sessionId,
+			displayTitle: sessionId,
 			// Only Linear sessions have a valid external session ID for posting activities
 			externalSessionId: platform === "linear" ? sessionId : undefined,
 			type: AgentSessionType.CommentThread,
@@ -216,6 +217,7 @@ export class AgentSessionManager extends EventEmitter {
 
 		const agentSession: CyrusAgentSession = {
 			id: sessionId,
+			displayTitle: sessionId,
 			type: AgentSessionType.CommentThread,
 			status: AgentSessionStatus.Active,
 			context: AgentSessionType.CommentThread,
@@ -230,6 +232,18 @@ export class AgentSessionManager extends EventEmitter {
 		this.emit("sessionChanged", sessionId);
 
 		return agentSession;
+	}
+
+	updateDisplayTitle(
+		sessionId: string,
+		title: string,
+		job: CyrusAgentSession["titleGeneration"],
+	): void {
+		const session = this.sessions.get(sessionId);
+		if (!session) return;
+		session.displayTitle = title;
+		session.titleGeneration = job;
+		this.emit("sessionChanged", sessionId);
 	}
 
 	/**

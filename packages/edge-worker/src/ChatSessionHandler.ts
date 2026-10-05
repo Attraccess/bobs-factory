@@ -89,6 +89,11 @@ export interface ChatPlatformAdapter<TEvent> {
  * Callbacks for EdgeWorker integration (same pattern as RepositoryRouterDeps).
  */
 export interface ChatSessionHandlerDeps {
+	onNewSession?: (
+		session: CyrusAgentSession,
+		instructions: string,
+		platform: string,
+	) => void;
 	cyrusHome: string;
 	/** Provider for live repository paths, default repo, and workspace ID */
 	chatRepositoryProvider: ChatRepositoryProvider;
@@ -383,6 +388,7 @@ export class ChatSessionHandler<TEvent> {
 				runner.supportsStreamingInput && runner.startStreaming
 					? runner.startStreaming(userPrompt)
 					: runner.start(userPrompt);
+			this.deps.onNewSession?.(session, userPrompt, this.adapter.platformName);
 			startPromise
 				.then((sessionInfo: AgentSessionInfo) => {
 					this.logger.info(
@@ -442,6 +448,27 @@ export class ChatSessionHandler<TEvent> {
 	 */
 	getAllChatSessions(): CyrusAgentSession[] {
 		return this.sessionManager.getAllSessions();
+	}
+
+	subscribe(listener: (id: string) => void): () => void {
+		this.sessionManager.on("sessionChanged", listener);
+		return () => {
+			this.sessionManager.off("sessionChanged", listener);
+		};
+	}
+	serializeState() {
+		return this.sessionManager.serializeState();
+	}
+	getSessionEntries(id: string) {
+		return this.sessionManager.getSessionEntries(id);
+	}
+
+	updateDisplayTitle(
+		id: string,
+		title: string,
+		job: CyrusAgentSession["titleGeneration"],
+	): void {
+		this.sessionManager.updateDisplayTitle(id, title, job);
 	}
 
 	/**
