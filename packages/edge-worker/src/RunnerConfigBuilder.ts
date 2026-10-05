@@ -1,5 +1,4 @@
 import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
 	HookCallbackMatcher,
@@ -22,6 +21,7 @@ import type {
 	RunTitleJob,
 } from "cyrus-core";
 import { resolvePath } from "cyrus-core";
+import { titleMcpConfig } from "./factory/TitleMcpConfig.js";
 import { buildIntentToAddHook } from "./hooks/IntentToAddHook.js";
 import { buildPrMarkerHook } from "./hooks/PrMarkerHook.js";
 import { appendBrowserUseAddendum } from "./prompts/browserUsePromptAddendum.js";
@@ -614,28 +614,16 @@ export class RunnerConfigBuilder {
 		config.appendSystemPrompt = input.systemPrompt;
 		config.hooks = undefined;
 		config.fallbackModel = undefined;
-		// Moving the auxiliary runner out of the worktree must preserve the
-		// project MCP base config. Explicit platform/repository configs still win,
-		// just as they do during native discovery in the execution runner.
+		// Materialize the complete MCP set inline: Cursor consumes only inline
+		// config, and stdio servers must retain the source worktree as their cwd.
 		if (projectWorkingDirectory) {
-			const projectConfig = join(projectWorkingDirectory, ".mcp.json");
-			if (existsSync(projectConfig)) {
-				try {
-					JSON.parse(readFileSync(projectConfig, "utf8"));
-					config.mcpConfigPath = [
-						projectConfig,
-						...(config.mcpConfigPath
-							? Array.isArray(config.mcpConfigPath)
-								? config.mcpConfigPath
-								: [config.mcpConfigPath]
-							: []),
-					];
-				} catch {
-					input.logger.debug(
-						`Skipping invalid project MCP config at ${projectConfig}`,
-					);
-				}
-			}
+			config.mcpConfig = titleMcpConfig(
+				config,
+				settings.runner,
+				projectWorkingDirectory,
+				input.logger,
+			);
+			config.mcpConfigPath = undefined;
 		}
 		const { runner: _runner, ...nativeSettings } = settings;
 		Object.assign(config, nativeSettings);

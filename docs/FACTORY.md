@@ -288,8 +288,10 @@ changes clear incompatible settings; saved choices apply to subsequent jobs.
 Every new root run starts with its exact run ID as its display title. A separate
 agent generates a short title concurrently with execution, using initial task,
 source/ticket context, custom inputs and follow-up feedback. Project `.mcp.json`
-servers remain available in the isolated title job, with explicit platform or
-repository configuration retaining its normal precedence. Configured MCP tools
+servers (or `.cursor/mcp.json` for Cursor) remain available in the isolated title
+job. Stdio servers keep the source worktree as their working directory, so
+relative scripts and data paths work. Explicit platform or repository
+configuration retains its normal precedence. Configured MCP tools
 can retrieve missing context, including tasks supplied only as a ticket URL.
 The dashboard updates lists and details live. Generation respects the session
 limit and primary execution has priority; under a one-session cap naming waits

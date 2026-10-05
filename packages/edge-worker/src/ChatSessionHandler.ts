@@ -105,6 +105,7 @@ export interface ChatSessionHandlerDeps {
 	createRunner: (
 		config: AgentRunnerConfig,
 		runnerType?: RunnerType,
+		signal?: AbortSignal,
 	) => IAgentRunner;
 	/**
 	 * Live read of the workspace-level custom-integration MCP config paths
@@ -179,7 +180,7 @@ export class ChatSessionHandler<TEvent> {
 	// re-dispatched as a fresh turn, so a follow-up is never silently dropped —
 	// honoring the "I'll pick up your new message once I'm done" promise.
 	private pendingFollowups: Map<string, TEvent[]> = new Map();
-	private dashboardContinuations = new Set<string>();
+	private continuationStarts = new Map<string, AbortController>();
 
 	constructor(
 		adapter: ChatPlatformAdapter<TEvent>,
@@ -230,6 +231,18 @@ export class ChatSessionHandler<TEvent> {
 					this.sessionManager.getSession(existingSessionId);
 				const existingRunner =
 					this.sessionManager.getAgentRunner(existingSessionId);
+
+				if (
+					existingSession &&
+					this.continuationStarts.has(existingSessionId) &&
+					!existingRunner?.isRunning()
+				) {
+					// Configuration and thread catch-up can await before isRunning()
+					// becomes true. Both dashboard and platform starts share this guard.
+					this.queuePendingFollowup(threadKey, event);
+					await this.adapter.notifyBusy(event, threadKey);
+					return;
+				}
 
 				if (existingSession && existingRunner?.isRunning()) {
 					// Session is actively running — inject the follow-up via streaming input
@@ -476,7 +489,7 @@ export class ChatSessionHandler<TEvent> {
 			};
 		const runner = session.agentRunner;
 		if (runner?.isRunning()) return steeringState(runner);
-		if (this.dashboardContinuations.has(id))
+		if (this.continuationStarts.has(id))
 			return {
 				enabled: true,
 				available: false,
@@ -506,9 +519,6 @@ export class ChatSessionHandler<TEvent> {
 		}
 		const event = this.lastReplyEvent.get(id);
 		const resume = this.getResumeInfo(session)!;
-		this.dashboardContinuations.add(id);
-		session.status = AgentSessionStatus.Active;
-		this.sessionManager.emit("sessionChanged", id);
 		void this.resumeSession(
 			event,
 			session,
@@ -517,19 +527,13 @@ export class ChatSessionHandler<TEvent> {
 			resume.runnerType,
 			text,
 			() => session.status === AgentSessionStatus.Error,
-		)
-			.catch(async (error: unknown) => {
-				session.status = AgentSessionStatus.Error;
-				await this.sessionManager.createResponseActivity(
-					id,
-					`Chat continuation failed: ${error instanceof Error ? error.message : String(error)}`,
-				);
-			})
-			.finally(() => {
-				this.dashboardContinuations.delete(id);
-				this.sessionManager.emit("sessionChanged", id);
-				void this.deps.onStateChange();
-			});
+		).catch(async (error: unknown) => {
+			session.status = AgentSessionStatus.Error;
+			await this.sessionManager.createResponseActivity(
+				id,
+				`Chat continuation failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		});
 	}
 
 	stopSession(id: string): void {
@@ -537,6 +541,7 @@ export class ChatSessionHandler<TEvent> {
 		if (!session) return;
 		this.sessionManager.requestSessionStop(id);
 		session.status = AgentSessionStatus.Error;
+		this.continuationStarts.get(id)?.abort();
 		const threadKey = this.threadKeyForSession(id);
 		if (threadKey) this.pendingFollowups.delete(threadKey);
 		this.clearPendingReplies(id);
@@ -679,67 +684,94 @@ export class ChatSessionHandler<TEvent> {
 		taskInstructions: string,
 		cancelled?: () => boolean,
 	): Promise<void> {
-		const systemPrompt = event
-			? this.adapter.buildSystemPrompt(event)
-			: existingSession.metadata!.chatSystemPrompt!;
-
-		const runnerConfig = await this.buildRunnerConfig(
-			existingSession.workspace.path,
-			sessionId,
-			systemPrompt,
-			sessionId,
-			resumeSessionId,
-			runnerType,
-		);
-		if (cancelled?.()) return;
-
-		const runner = this.deps.createRunner(runnerConfig, runnerType);
-		this.sessionManager.addAgentRunner(sessionId, runner);
-
-		const resumePrompt = event
-			? await this.withThreadCatchup(existingSession, event, taskInstructions)
-			: taskInstructions;
-		if (cancelled?.()) {
-			runner.stop();
-			return;
-		}
-
-		// Reply posting is driven by `result` messages on the runner's stream
-		// (see handleAgentMessage). We must not await turn completion here —
-		// warm sessions hold the streaming prompt open across turns so the
-		// start() promise only resolves when the whole session ends.
-		if (event) this.enqueueReply(sessionId, event);
-		const startPromise =
-			runner.supportsStreamingInput && runner.startStreaming
-				? runner.startStreaming(resumePrompt)
-				: runner.start(resumePrompt);
-		startPromise
-			.then((sessionInfo: AgentSessionInfo) => {
-				this.logger.info(
-					`${this.adapter.platformName} session resumed: ${sessionInfo.sessionId} (was ${resumeSessionId})`,
-				);
-			})
-			.catch((error: unknown) => {
+		if (this.continuationStarts.has(sessionId))
+			throw new Error("The conversation is resuming.");
+		const isCancelled = () =>
+			cancelled?.() || existingSession.status === AgentSessionStatus.Error;
+		const controller = new AbortController();
+		this.continuationStarts.set(sessionId, controller);
+		existingSession.status = AgentSessionStatus.Active;
+		this.sessionManager.emit("sessionChanged", sessionId);
+		let started = false;
+		const releaseStart = () => {
+			this.continuationStarts.delete(sessionId);
+			this.sessionManager.emit("sessionChanged", sessionId);
+			void this.deps.onStateChange().catch((error: unknown) => {
 				this.logger.error(
-					`${this.adapter.platformName} resume session error for ${sessionId}`,
+					"Failed to persist chat continuation",
 					error instanceof Error ? error : new Error(String(error)),
 				);
-				existingSession.status = AgentSessionStatus.Error;
-				this.sessionManager.emit("sessionChanged", sessionId);
-				void this.deps.onStateChange();
-				this.clearPendingReplies(sessionId);
-			})
-			.finally(() => {
-				// The result arrives before the runner releases its slot. Notify
-				// again after it settles so the dashboard stops showing "running".
-				this.sessionManager.emit("sessionChanged", sessionId);
-				this.deps.onStateChange().catch((error: unknown) => {
+			});
+		};
+		try {
+			const systemPrompt = event
+				? this.adapter.buildSystemPrompt(event)
+				: existingSession.metadata!.chatSystemPrompt!;
+
+			const runnerConfig = await this.buildRunnerConfig(
+				existingSession.workspace.path,
+				sessionId,
+				systemPrompt,
+				sessionId,
+				resumeSessionId,
+				runnerType,
+			);
+			if (isCancelled()) return;
+
+			const runner = this.deps.createRunner(
+				runnerConfig,
+				runnerType,
+				controller.signal,
+			);
+			this.sessionManager.addAgentRunner(sessionId, runner);
+
+			const resumePrompt = event
+				? await this.withThreadCatchup(existingSession, event, taskInstructions)
+				: taskInstructions;
+			if (isCancelled()) {
+				runner.stop();
+				return;
+			}
+
+			// Reply posting is driven by `result` messages on the runner's stream
+			// (see handleAgentMessage). We must not await turn completion here —
+			// warm sessions hold the streaming prompt open across turns so the
+			// start() promise only resolves when the whole session ends.
+			if (event) this.enqueueReply(sessionId, event);
+			const startPromise =
+				runner.supportsStreamingInput && runner.startStreaming
+					? runner.startStreaming(resumePrompt)
+					: runner.start(resumePrompt);
+			started = true;
+			startPromise
+				.then((sessionInfo: AgentSessionInfo) => {
+					this.logger.info(
+						`${this.adapter.platformName} session resumed: ${sessionInfo.sessionId} (was ${resumeSessionId})`,
+					);
+				})
+				.catch((error: unknown) => {
 					this.logger.error(
-						"Failed to persist chat continuation",
+						`${this.adapter.platformName} resume session error for ${sessionId}`,
 						error instanceof Error ? error : new Error(String(error)),
 					);
+					existingSession.status = AgentSessionStatus.Error;
+					this.sessionManager.emit("sessionChanged", sessionId);
+					void this.deps.onStateChange();
+					this.clearPendingReplies(sessionId);
+				})
+				.finally(() => {
+					releaseStart();
+					if (existingSession.status !== AgentSessionStatus.Error)
+						this.drainPendingFollowups(sessionId);
 				});
-			});
+		} catch (error) {
+			existingSession.status = AgentSessionStatus.Error;
+			throw error;
+		} finally {
+			// start() can await concurrency admission before isRunning() is true.
+			// Its completion releases the guard; setup errors/cancellation release here.
+			if (!started) releaseStart();
+		}
 	}
 
 	private getResumeInfo(
@@ -848,6 +880,11 @@ export class ChatSessionHandler<TEvent> {
 		// Defer so the just-finished runner has fully transitioned to not-running
 		// before the follow-up is re-evaluated (otherwise it would re-queue).
 		setImmediate(() => {
+			if (
+				this.sessionManager.getSession(sessionId)?.status ===
+				AgentSessionStatus.Error
+			)
+				return;
 			for (const event of queue) {
 				this.handleEvent(event).catch((error: unknown) => {
 					this.logger.error(

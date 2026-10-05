@@ -1266,14 +1266,18 @@ export class EdgeWorker extends EventEmitter {
 			chatRepositoryProvider,
 			onSessionChange: (id) => this.emit("chatSessionChanged", id),
 			runnerConfigBuilder: this.runnerConfigBuilder,
-			createRunner: (config, chatRunnerType) => {
+			createRunner: (config, chatRunnerType, signal) => {
 				const runnerType =
 					chatRunnerType ?? this.runnerSelectionService.getDefaultRunner();
-				return this.createRunnerForType(runnerType, {
-					...config,
-					model: this.getDefaultModelForRunner(runnerType),
-					fallbackModel: this.getDefaultFallbackModelForRunner(runnerType),
-				});
+				return this.createRunnerForType(
+					runnerType,
+					{
+						...config,
+						model: this.getDefaultModelForRunner(runnerType),
+						fallbackModel: this.getDefaultFallbackModelForRunner(runnerType),
+					},
+					signal,
+				);
 			},
 			getPlatformMcpConfigOverrides,
 			onNewSession: (session, instructions, platform) => {
@@ -6053,10 +6057,12 @@ ${taskSection}`;
 	private createRunnerForType(
 		runnerType: RunnerType,
 		config: AgentRunnerConfig,
+		signal?: AbortSignal,
 	): IAgentRunner {
 		return capRunnerStarts(
 			this.buildRunnerForType(runnerType, config),
 			this.runnerSlots,
+			signal,
 		);
 	}
 

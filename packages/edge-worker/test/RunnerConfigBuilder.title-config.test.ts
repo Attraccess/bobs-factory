@@ -1,4 +1,12 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -26,14 +34,45 @@ it.each([
 ] as const)("selects %s before building native auxiliary config and preserves authenticated context tools", (runner: RunnerType) => {
 	const project = mkdtempSync(join(tmpdir(), "title-project-mcp-"));
 	projects.push(project);
+	const auxiliary = join(project, "title-job");
+	mkdirSync(auxiliary);
+	mkdirSync(join(project, ".cursor"));
+	const projectConfig = join(
+		project,
+		runner === "cursor" ? ".cursor/mcp.json" : ".mcp.json",
+	);
+	const override = join(project, "override.json");
 	writeFileSync(
-		join(project, ".mcp.json"),
+		override,
 		JSON.stringify({
 			mcpServers: {
-				ticket: { type: "http", url: "https://tickets.example/mcp" },
+				ticket: { type: "http", url: "https://override.example/mcp" },
+				context: {
+					type: "http",
+					url: "https://overridden-by-inline.example/mcp",
+				},
 			},
 		}),
 	);
+	writeFileSync(
+		join(project, "ticket.cjs"),
+		`process.stdout.write(JSON.stringify({cwd:process.cwd(), data:require("node:fs").readFileSync(process.argv[2],"utf8"), token:process.env.TICKET_TOKEN}));`,
+	);
+	writeFileSync(join(project, "ticket-data.txt"), "Inventory resets");
+	writeFileSync(
+		projectConfig,
+		JSON.stringify({
+			mcpServers: {
+				ticket: { type: "http", url: "https://tickets.example/mcp" },
+				local: {
+					command: process.execPath,
+					args: ["ticket.cjs", "ticket-data.txt"],
+					env: { TICKET_TOKEN: "fixture" },
+				},
+			},
+		}),
+	);
+	const originalProjectConfig = readFileSync(projectConfig, "utf8");
 	const selectors = {
 		getDefaultRunner: () => "claude" as const,
 		getDefaultModelForRunner: (provider: RunnerType) => `${provider}-default`,
@@ -79,7 +118,7 @@ it.each([
 				updatedAt: 1,
 				repositories: [],
 				workspace: {
-					path: "/home/factory/title-jobs/root",
+					path: auxiliary,
 					isGitWorktree: false,
 				},
 			},
@@ -89,10 +128,10 @@ it.each([
 			allowedTools: ["mcp__context__lookup_ticket"],
 			disallowedTools: ["Write(**)"],
 			allowedDirectories: ["/repo", "/worktree"],
-			platformMcpConfigOverrides: ["/platform/context.json"],
+			platformMcpConfigOverrides: [override],
 			linearWorkspaceId: "ws",
 			requireLinearWorkspaceId: () => "ws",
-			cyrusHome: "/home",
+			cyrusHome: project,
 			logger: {
 				debug: () => {},
 				info: () => {},
@@ -116,13 +155,30 @@ it.each([
 	);
 	expect(selectors.determineRunnerSelection).not.toHaveBeenCalled();
 	expect(config.model).toBe("cheap-title");
-	expect(config.workingDirectory).toBe("/home/factory/title-jobs/root");
+	expect(config.workingDirectory).toBe(auxiliary);
 	expect(config.appendSystemPrompt).toBe(titleSystemPrompt);
-	expect(config.mcpConfig).toEqual(mcp.buildMcpConfig.mock.results[0].value);
-	expect(config.mcpConfigPath).toEqual([
-		join(project, ".mcp.json"),
-		"/platform/context.json",
-	]);
+	expect(config.mcpConfig).toMatchObject({
+		ticket: { type: "http", url: "https://override.example/mcp" },
+		context: mcp.buildMcpConfig.mock.results[0].value.context,
+	});
+	expect(config.mcpConfigPath).toBeUndefined();
+	const local = config.mcpConfig!.local as {
+		command: string;
+		args: string[];
+		env: Record<string, string>;
+	};
+	const result = spawnSync(local.command, local.args, {
+		cwd: auxiliary,
+		env: { ...process.env, ...local.env },
+		encoding: "utf8",
+	});
+	expect(result.status, result.stderr).toBe(0);
+	expect(JSON.parse(result.stdout)).toEqual({
+		cwd: realpathSync(project),
+		data: "Inventory resets",
+		token: "fixture",
+	});
+	expect(readFileSync(projectConfig, "utf8")).toBe(originalProjectConfig);
 	expect(config.allowedTools).toEqual(["mcp__context__lookup_ticket"]);
 	expect(config.additionalEnv?.CYRUS_GH_TOKEN).toBe("fixture-token");
 	expect(config.hooks).toBeUndefined();
@@ -131,8 +187,8 @@ it.each([
 	expect(config.maxTurns).toBe(4);
 	if (runner === "codex")
 		expect(config.sandboxSettings).toEqual({
-			allowWrite: ["/home/factory/title-jobs/root"],
-			allowRead: ["/home/factory/title-jobs/root", "/repo", "/worktree"],
+			allowWrite: [auxiliary],
+			allowRead: [auxiliary, "/repo", "/worktree"],
 		});
 	if (runner === "opencode")
 		expect(config.opencodeRepositoryConfig).toEqual(
