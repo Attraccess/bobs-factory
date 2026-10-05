@@ -9,6 +9,7 @@ import {
 } from "cyrus-zulip-event-transport";
 import type { ChatRepositoryProvider } from "./ChatRepositoryProvider.js";
 import type { ChatPlatformAdapter } from "./ChatSessionHandler.js";
+import { workflowTriggerInstructions } from "./factory/Workflow.js";
 
 /** How many topic messages a single catch-up read carries. */
 const TOPIC_CONTEXT_MESSAGE_LIMIT = 50;
@@ -250,6 +251,7 @@ ${this.repositoryRoutingContext ? `\n\n${this.repositoryRoutingContext}` : ""}
 - Always prefer searching the docs over guessing or relying on your training data for Cyrus-specific questions.
 
 ## Orchestration Notes
+${workflowTriggerInstructions}
 - If the user asks you to make repo code changes immediately, use these steps:
   - First run \`mcp__linear__get_user\` with \`query: "me"\` to get your Linear identity.
   - Create an Issue in the user's tracker for the requested work (for example using \`mcp__linear__save_issue\`), including enough context and acceptance criteria to execute it. Default the issue status/state to "Backlog". **IMPORTANT: Never set the status to "Triage".**
@@ -257,7 +259,7 @@ ${this.repositoryRoutingContext ? `\n\n${this.repositoryRoutingContext}` : ""}
   - To choose a specific execution harness, add \`[agent=claude]\`, \`[agent=gemini]\`, \`[agent=codex]\`, \`[agent=cursor]\`, or \`[agent=opencode]\` to the issue description.
   - To choose both execution harness and model from Linear labels, apply a \`<provider>/<model>\` label such as \`openai/gpt-5.5\`. For OpenCode, use \`opencode/<provider>/<model>\`, such as \`opencode/openai/gpt-5.5\`.
   - Assign that Issue to that same user (your own Linear user).
-  - That assignment is what immediately kicks off work in your own agent session.
+  - That assignment starts work only if the selected workflow permits ticket-assignment. A rejected selection posts actionable feedback.
   - Track execution progress by searching \`mcp__cyrus-tools__linear_get_agent_sessions\` for the active session, then opening it with \`mcp__cyrus-tools__linear_get_agent_session\`.
   - To send mid-flight feedback or corrections to a running child session, use \`mcp__cyrus-tools__linear_agent_give_feedback\` with the session ID returned by \`linear_get_agent_sessions\`. This is the ONLY way to directly prompt a running child agent. \`mcp__linear__save_comment\` does NOT trigger or notify the agent in any way — it just writes a comment on the issue, which the running session will not see. Always prefer \`linear_agent_give_feedback\` when the child agent is actively working.
 

@@ -583,6 +583,7 @@ kbd {
 }
 .workflow-chips {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 6px;
 	min-width: 0;
 	flex: 1;
@@ -2114,6 +2115,7 @@ kbd {
 	}
 	.workflow-chips {
 		flex-basis: 100%;
+		flex-wrap: nowrap;
 		overflow-x: auto;
 		scroll-snap-type: x mandatory;
 		padding-bottom: 2px;
@@ -2728,4 +2730,34 @@ kbd {
 	.guide-progress {
 		font-size: 11px;
 	}
+}
+
+.trigger-permissions {
+	margin: 1rem 0;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	padding: 0.8rem;
+	display: grid;
+	gap: 0.5rem;
+}
+.trigger-permissions label {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.trigger-permissions input[type="checkbox"] {
+	width: 1.1rem;
+	height: 1.1rem;
+	margin: 0;
+}
+.trigger-permissions small {
+	display: block;
+}
+.run-origin {
+	margin: 1rem 0;
+}
+.run-origin pre {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	font-size: 0.8rem;
 }

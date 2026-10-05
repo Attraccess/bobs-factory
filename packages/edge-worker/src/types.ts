@@ -47,6 +47,9 @@ export interface EdgeWorkerEvents {
  * Data returned from createAgentSession
  */
 export interface AgentSessionData {
+	launch: ReturnType<
+		import("./factory/WorkflowRuntime.js").WorkflowRuntime["selectLaunch"]
+	>;
 	session: CyrusAgentSession;
 	fullIssue: Issue;
 	workspace: Workspace;

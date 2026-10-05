@@ -31,7 +31,13 @@ import {
 	useRuns,
 } from "./client";
 import { RunConversation } from "./conversation";
-import { FocusCard, RunMeta, WorkingRow } from "./focus";
+import {
+	FocusCard,
+	originLabel,
+	RunMeta,
+	RunOrigin,
+	WorkingRow,
+} from "./focus";
 import { Composer, Recipes } from "./forms";
 import {
 	Bob,
@@ -292,6 +298,7 @@ function Settled({ runs, all }: { runs: any[]; all: any[] }) {
 							<Link to={`/runs/${run.id}`}>{run.title}</Link>
 							<small>
 								{settleReason(run, all)} · {ago(run.updatedAt ?? run.createdAt)}
+								<span> · {originLabel(run)}</span>
 							</small>
 							<Button
 								variant="ghost"
@@ -788,6 +795,7 @@ function RunPage({
 					)}
 				</div>
 			</header>
+			<RunOrigin run={run} />
 			{kind && !reason && (
 				<FocusCard
 					summary={run}

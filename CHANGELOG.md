@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Configure workflow launch methods independently in Recipes, filter manual choices, reject disallowed workflow selections with actionable feedback, and retain launch/source and nested caller context across restarts. (Taskbot bobs-factory #35)
+
 - Pause factory delivery for explicit commit-bound human approval or requested changes, then honor GitHub merge rules/queues and confirm the merge; assess PR comments, review threads, conflicts and required approvals alongside CI. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Reuse previous role results and revision deltas on repeated workflow steps; reuse verified screenshots for unchanged areas and update review recaps without rebuilding unchanged evidence. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
