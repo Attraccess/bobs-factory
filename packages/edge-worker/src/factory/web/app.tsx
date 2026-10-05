@@ -1,6 +1,6 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
 	HashRouter,
@@ -35,6 +35,7 @@ import { RunConversation } from "./conversation";
 import {
 	FocusCard,
 	originLabel,
+	ReviewEntry,
 	RunMeta,
 	RunOrigin,
 	WorkingRow,
@@ -42,12 +43,21 @@ import {
 import { Composer, Recipes } from "./forms";
 import { pwaState, startPwa, usePwa } from "./pwa";
 import { ConnectionNotice, InstallControl, RecoveredDrafts } from "./pwa-ui";
+import { useReadingPosition } from "./reading-position";
 import {
 	completeRestoration,
 	forgetDraft,
 	restoredDraft,
 	useRestorableState,
 } from "./restoration";
+import { ReviewPage } from "./review-page";
+import {
+	readStored,
+	readTextStored,
+	todayContext,
+	writeStored,
+	writeTextStored,
+} from "./review-state";
 import {
 	Bob,
 	Button,
@@ -109,13 +119,9 @@ function useSettle() {
 	};
 }
 function useTheme() {
-	const [choice, setChoice] = useState(() => {
-			try {
-				return localStorage.getItem("factory-theme") ?? "system";
-			} catch {
-				return "system";
-			}
-		}),
+	const [choice, setChoice] = useState(() =>
+			readTextStored("factory-theme", "system"),
+		),
 		[systemDark, setSystemDark] = useState(
 			() => matchMedia("(prefers-color-scheme: dark)").matches,
 		);
@@ -128,11 +134,7 @@ function useTheme() {
 	const dark = choice === "dark" || (choice === "system" && systemDark);
 	useEffect(() => {
 		document.documentElement.dataset.theme = dark ? "dark" : "light";
-		try {
-			localStorage.setItem("factory-theme", choice);
-		} catch {
-			/* Keep this theme in memory. */
-		}
+		writeTextStored("factory-theme", choice);
 		document
 			.querySelector('meta[name="theme-color"]')
 			?.setAttribute("content", dark ? "#16122a" : "#fff4f6");
@@ -153,7 +155,11 @@ function Header({
 	return (
 		<header className="site-header">
 			<div>
-				<Link to="/" className="brand">
+				<Link
+					to="/"
+					state={todayContext(location.pathname, location.state)}
+					className="brand"
+				>
 					<Bob mood={mood} />
 					<strong>Bob's Factory</strong>
 				</Link>
@@ -161,6 +167,7 @@ function Header({
 					<Link
 						aria-current={location.pathname !== "/recipes" ? "page" : undefined}
 						to="/"
+						state={todayContext(location.pathname, location.state)}
 					>
 						Today{" "}
 						{count > 0 && <span className="attention-count">{count}</span>}
@@ -227,13 +234,9 @@ function Header({
 	);
 }
 function Settled({ runs, all }: { runs: any[]; all: any[] }) {
-	const [view, setView] = useState(() => {
-			try {
-				return localStorage.getItem("factory-settled-view") ?? "pebbles";
-			} catch {
-				return "pebbles";
-			}
-		}),
+	const [view, setView] = useState(() =>
+			readTextStored("factory-settled-view", "pebbles"),
+		),
 		settle = useSettle();
 	const groups: Record<string, any[]> = {
 		Today: [],
@@ -271,11 +274,7 @@ function Settled({ runs, all }: { runs: any[]; all: any[] }) {
 							key={value}
 							onClick={() => {
 								setView(value);
-								try {
-									localStorage.setItem("factory-settled-view", value);
-								} catch {
-									/* Preference stays in memory. */
-								}
+								writeTextStored("factory-settled-view", value);
 							}}
 						>
 							{value === "pebbles" ? "Pebbles" : "List"}
@@ -360,24 +359,21 @@ function Today({
 }) {
 	const settle = useSettle(),
 		navigate = useNavigate(),
+		location = useLocation(),
+		requestedFocus = useRef<string | undefined>(location.state?.focusRunId),
 		[selected, setSelected] = useRestorableState<string | undefined>(
 			"today/selected",
-			() => {
-				try {
-					return sessionStorage.getItem("bob-selected") ?? undefined;
-				} catch {
-					return undefined;
-				}
-			},
+			() =>
+				location.state?.focusRunId ??
+				(readTextStored("bob-selected", "", true) || undefined),
 		),
 		[skipped, setSkipped] = useRestorableState<string[]>(
 			"today/skipped",
 			() => {
-				try {
-					return JSON.parse(sessionStorage.getItem("bob-skipped") ?? "[]");
-				} catch {
-					return [];
-				}
+				const saved = readStored<unknown>("bob-skipped", [], true);
+				return Array.isArray(saved)
+					? saved.filter((id) => typeof id === "string")
+					: [];
 			},
 		),
 		[expanded, setExpanded] = useRestorableState<string | undefined>(
@@ -390,13 +386,10 @@ function Today({
 		),
 		[highlight, setHighlight] = useState<string>();
 	const [swipe, setSwipe] = useState(0);
+	useReadingPosition("bob-today-position");
 	useEffect(() => {
-		try {
-			if (selected) sessionStorage.setItem("bob-selected", selected);
-			sessionStorage.setItem("bob-skipped", JSON.stringify(skipped));
-		} catch {
-			/* Selection stays in memory. */
-		}
+		if (selected) writeTextStored("bob-selected", selected, true);
+		writeStored("bob-skipped", skipped, true);
 	}, [selected, skipped]);
 	const available = runs.filter((run) => !settleReason(run, runs)),
 		rank: Record<string, number> = { question: 0, stuck: 1, review: 2 },
@@ -412,12 +405,15 @@ function Today({
 					(b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt)
 				);
 			}),
-		current = deck.find((run) => run.id === selected) ?? deck[0],
+		current =
+			deck.find((run) => run.id === (requestedFocus.current ?? selected)) ??
+			deck[0],
 		index = deck.indexOf(current),
 		working = available
 			.filter((run) => active(run.status) && !attention(run))
-			.sort((a, b) =>
-				(b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt),
+			.sort(
+				(a, b) =>
+					b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
 			);
 	const initial = useRef(true),
 		priorCount = useRef(deck.length),
@@ -425,6 +421,9 @@ function Today({
 		touch = useRef<number | undefined>(undefined);
 	useEffect(() => {
 		if (current && selected !== current.id) setSelected(current.id);
+		requestedFocus.current = undefined;
+		if (current && location.state?.focusRunId !== current.id)
+			navigate("/", { replace: true, state: { focusRunId: current.id } });
 		if (!initial.current && priorCount.current > 0 && deck.length === 0) {
 			setConfetti(true);
 			priorCount.current = deck.length;
@@ -434,7 +433,14 @@ function Today({
 		priorCount.current = deck.length;
 		initial.current = false;
 		return undefined;
-	}, [current, deck.length, selected, setSelected]);
+	}, [
+		current,
+		deck.length,
+		selected,
+		setSelected,
+		location.state?.focusRunId,
+		navigate,
+	]);
 	useEffect(() => {
 		if (!highlight) return;
 		const timer = setTimeout(() => setHighlight(undefined), 1600);
@@ -867,6 +873,11 @@ function RunPage({
 					settling={settle.busy}
 				/>
 			)}
+			{run.outputs?.guide && (!kind || reason) && (
+				<section className="review-surface">
+					<ReviewEntry run={run} />
+				</section>
+			)}
 			<section className="artifacts-section">
 				<div className="section-heading">
 					<h2>
@@ -974,6 +985,7 @@ function Loading() {
 function App() {
 	const pwa = usePwa();
 	useLiveUpdates();
+	const settle = useSettle();
 	const runsQuery = useRuns(),
 		configQuery = useConfig(),
 		runs = runsQuery.data ?? [],
@@ -1030,14 +1042,28 @@ function App() {
 					document.getElementById("composer-input")?.focus(),
 				);
 			}
-			if (e.key === "Escape" && location.pathname !== "/") navigate("/");
+			if (e.key === "Escape" && location.pathname !== "/")
+				navigate("/", {
+					state: todayContext(location.pathname, location.state),
+				});
 		};
 		window.addEventListener("keydown", handler);
 		return () => window.removeEventListener("keydown", handler);
-	}, [navigate, location.pathname, inspection, shortcuts]);
-	useEffect(() => {
-		if (location.pathname) window.scrollTo(0, 0);
+	}, [navigate, location.pathname, location.state, inspection, shortcuts]);
+	useLayoutEffect(() => {
+		if (
+			location.pathname !== "/" &&
+			!/^\/runs\/[^/]+\/review$/.test(location.pathname)
+		)
+			window.scrollTo(0, 0);
 	}, [location.pathname]);
+	useEffect(() => {
+		const previous = history.scrollRestoration;
+		history.scrollRestoration = "manual";
+		return () => {
+			history.scrollRestoration = previous;
+		};
+	}, []);
 	const inspect = (run: any, name: string, image?: number) =>
 		setInspection({ runId: run.id, name, image });
 	return (
@@ -1072,6 +1098,18 @@ function App() {
 								}
 							/>
 							<Route path="/recipes" element={<Recipes />} />
+							<Route
+								path="/runs/:id/review"
+								element={
+									<ReviewPage
+										key={location.pathname}
+										config={config}
+										onSettled={(run) => void settle.change(run, "settle")}
+										settling={settle.busy}
+									/>
+								}
+							/>
+
 							<Route
 								path="/runs/:id"
 								element={

@@ -291,3 +291,75 @@ No dependency changes, Web Push, deployment or production-run changes were made.
 Final-build restored older SDK reading and chat draft:
 
 ![SDK reading position and draft restored after update](media/2026-10-05-factory-pwa-review-fixes/sdk-reading-restored.png)
+
+
+## CI merge-conflict resolution (2026-10-05)
+
+Tested PR head `454986ed1ac7e63cd7dc1863cac6086bfd9dfb43` merged with
+`origin/main` at `91656030c9b3e8d32bc2b2d3202864e895425e8a`, plus the
+conflict-resolution edits committed with this section. Final shell:
+`41b731ef662a96a5b9bb4abc`. F1 applies to the combined review navigation,
+draft preservation and connection-gated actions.
+
+Fresh validated fixture: `node_modules/.cache/manual41-ci-merge/home-validated`,
+with a separate local repository/worktree, UI 3655 and RPC 3656. The compiled
+EdgeWorker, real CLI tracker, issue routing, worktrees, workflow runtime, pending
+human gates, API and SSE were used. A deterministic tool emitted the guide and
+fixture PR receipt. No remote provider or production run was invoked. An initial
+fixture omitted a required chapter field; its failed state is retained separately
+in `home`. All passing assertions below use the corrected, fresh validated home.
+
+- F1 create-issue/start-session returned DEF-1/session-1 and DEF-2/session-2.
+  Timestamped initial and routing activities appeared in view-session.
+- Selected the first Today card, entered the second review by a direct hash
+  route in the same mounted app, and returned with Back to Today. The second
+  card was selected and persisted, rather than the first card's older PWA state.
+- Opened a feature chapter and its Code & evidence disclosure, and entered an
+  unsent review-feedback draft. Later retained the mounted guide and draft.
+- Explicit updates from the final shell to an isolated candidate differing only
+  by an HTML comment (`c7b87c4419342b377fce361f`), then back to the final shell,
+  retained `/#/runs/session-2/review`, chapter 1, its open disclosure and the
+  revision-scoped draft. Update storage was consumed. For the second update,
+  the Update button's click handler was invoked without automation scrolling
+  the page to the button; the saved document reading position restored to 700px.
+  The temporary source comment was removed before rebuilding the final shell.
+- Before and after both updates, both runs retained their workspaces, pending
+  gates, histories and zero decisions. UI snapshot replacement did not restart
+  the EdgeWorker or runtime.
+- The other review had no feedback draft. Returning to the original review
+  retained its draft and Checks & decision page. The final review rendered at
+  390 × 844; its unsent draft and disabled offline controls were captured.
+- Offline status disabled Approve, Refresh guide and Send to Bob. The draft
+  remained editable and visible. Reconnection restored valid actions. One
+  deliberate Send to Bob recorded exactly one revision-bound rejection with
+  the original feedback and workspace; no production PR was reviewed.
+- F1 view-session pagination returned the two timestamped activities. Both
+  tracker sessions stopped cleanly; owned browser and worker were stopped.
+  No page errors occurred in the corrected validated drive.
+
+Commands followed the existing F1/browser flow with ports 3655/3656 and browser
+session `manual41ci`. SIGUSR2 replaced only the FactoryServer's UI snapshot.
+Evidence receipts and the fixture are in the run evidence directory as
+`ci-merge-before.json`, `ci-merge-after-update.json`,
+`ci-merge-explicit-decision.json` and `ci-merge-fixture.mjs`.
+
+The merged image route required its filesystem import and the private API
+`no-store` expectation. The snapshot validator now accepts dedicated review
+routes and boolean disclosures. A behavioral regression covers their round-trip
+with revision-scoped feedback. Relevant existing factory, PWA, review, pipeline,
+runtime, takeover and prompt-routing tests passed: **128 tests in 11 files**.
+Full `pnpm build`, `pnpm typecheck`, changed-file Biome and `git diff --check`
+passed. Repository build/typecheck gates also run at commit.
+
+Native installation remains unverified under the accepted waiver. The scoped
+exception for the two existing security advisories remains unchanged. This drive
+does not establish provider merges, native installation, push delivery or any
+production deployment. Historical evidence above is unchanged.
+
+Final-shell restored review reading and disclosure:
+
+![Review reading restored after update](media/2026-10-05-factory-pwa-ci-merge/review-reading-restored.png)
+
+Final-shell revision-scoped feedback retained while offline:
+
+![Review feedback retained offline on mobile](media/2026-10-05-factory-pwa-ci-merge/review-draft-offline-mobile.png)

@@ -74,7 +74,8 @@ function validDraft(key: string, value: any): boolean {
 			record(value) &&
 			Number.isInteger(value.page) &&
 			value.page >= 0 &&
-			values(value.reviewed, "boolean")
+			values(value.reviewed, "boolean") &&
+			(value.disclosures === undefined || values(value.disclosures, "boolean"))
 		);
 	if (key.startsWith("reading/"))
 		return (
@@ -117,7 +118,7 @@ export function decodeSnapshot(
 			typeof data.target !== "string" ||
 			!/^[a-f0-9]{24}$/.test(data.target) ||
 			typeof data.route !== "string" ||
-			!/^#\/(?:$|recipes$|runs\/[^/]+$)/.test(data.route) ||
+			!/^#\/(?:$|recipes$|runs\/[^/]+(?:\/review)?$)/.test(data.route) ||
 			!data.drafts ||
 			Array.isArray(data.drafts) ||
 			typeof data.drafts !== "object" ||
@@ -207,7 +208,11 @@ function pristineDraft(key: string, value: any): boolean {
 			Object.keys(value).length === 0
 		);
 	if (key.startsWith("review/progress/"))
-		return value?.page === 0 && Object.keys(value.reviewed ?? {}).length === 0;
+		return (
+			value?.page === 0 &&
+			Object.keys(value.reviewed ?? {}).length === 0 &&
+			!Object.values(value.disclosures ?? {}).some(Boolean)
+		);
 	if (key.startsWith("reading/"))
 		return (
 			value?.following === true &&

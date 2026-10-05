@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Install Bob’s Factory with branded app icons and browser guidance; open its static shell while disconnected and explicitly update while preserving drafts, panels and reading position, including older SDK activity. Browsing untouched runs does not fill the draft snapshot. Pause unsafe actions until authoritative state reconnects. Push notifications are tracked separately in Taskbot #69. (Taskbot bobs-factory #41, [#12](https://github.com/Attraccess/bobs-factory/pull/12))
+- Install Bob’s Factory with branded app icons and browser guidance; open its static shell while disconnected and explicitly update while preserving drafts, panels and reading position, including older SDK activity and dedicated review pages. Keep review feedback scoped to its revision. Browsing untouched runs does not fill the draft snapshot. Pause unsafe actions until authoritative state reconnects. Push notifications are tracked separately in Taskbot #69. (Taskbot bobs-factory #41, [#12](https://github.com/Attraccess/bobs-factory/pull/12))
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
 - Configure workflow launch methods independently in Recipes, preserve saved permissions even when a configuration refresh fails, filter manual choices, reject disallowed workflow selections with actionable feedback, and retain launch/source and nested caller context across restarts. (Taskbot bobs-factory #35, [#2](https://github.com/Attraccess/bobs-factory/pull/2))
 
@@ -26,6 +26,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Review guides open on a dedicated reading page, with a compact entry on Today, saved reading positions and feedback drafts, and a clear empty state when no guide is available. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59), [#9](https://github.com/Attraccess/bobs-factory/pull/9))
+
 - Review the complete PR through feature chapters with before/after cards, processing diagrams, relevant screenshots and expandable code evidence. Reading progress survives updates; guide-only refresh preserves completed work and images. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Keep long runs responsive with SSE updates, paged and virtualized conversations, bounded transcript caches, lazy raw details/images, virtual screenshot galleries and revision-aware artifact caching. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
@@ -34,6 +36,12 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Bob's clarification and implementation-blocker questions now explain the relevant facts, source of the decision and consequences in plain language; optional diagrams and images appear beside the answer box.
+
+- Allow factory planning and review to propose changes to current product capabilities without mistaking capability documentation for a task restriction; retain explicit planning-only and deferred-implementation limits. ([#10](https://github.com/Attraccess/bobs-factory/pull/10))
+- Pause blocked factory implementations for actionable answers, retain those waits across restarts, and prevent empty or unfinished work from being published as a draft PR. ([#8](https://github.com/Attraccess/bobs-factory/pull/8))
+- Keep “Humming along” in newest-created order while progress updates arrive. ([Taskbot #67](https://taskbot.apps.janjaap.de/p/bobs-factory/t/67))
 
 - Correct rejected factory outputs in the same conversation with durable validation feedback; preserve run definitions across restarts, ignore generated build churn in visual source fingerprints, and keep screenshot provenance out of agent context. ([#6](https://github.com/Attraccess/bobs-factory/pull/6))
 

@@ -408,6 +408,34 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });
+it("preserves dedicated review routes, disclosures and revision-scoped feedback during updates", () => {
+	browserState();
+	vi.stubGlobal("location", { hash: "#/runs/r/review" });
+	const saved = storage();
+	const progressKey = "review/progress/factory-review/r/head/guide";
+	const feedbackKey = "feedback/text/factory-review/r/head/guide/feedback/gate";
+	const progress = {
+		page: 0,
+		reviewed: {},
+		disclosures: { "0/evidence": true },
+	};
+	rememberDraft(progressKey, progress);
+	rememberDraft(feedbackKey, "Keep this feedback with this revision", "gate");
+	preserveForUpdate(build, saved);
+	const snapshot = decodeSnapshot([...saved.values.values()][0]);
+	expect(snapshot?.route).toBe("#/runs/r/review");
+	expect(snapshot?.drafts[progressKey]?.value).toEqual(progress);
+	expect(snapshot?.drafts[feedbackKey]).toEqual({
+		value: "Keep this feedback with this revision",
+		revision: "gate",
+	});
+	loadRestoration(build, saved);
+	expect(restoredDraft(progressKey)).toEqual(progress);
+	expect(restoredDraft(feedbackKey)).toBe(
+		"Keep this feedback with this revision",
+	);
+	completeRestoration();
+});
 it("keeps browsing defaults out of update snapshots while preserving edits and explicit panel choices", () => {
 	browserState();
 	const saved = storage();

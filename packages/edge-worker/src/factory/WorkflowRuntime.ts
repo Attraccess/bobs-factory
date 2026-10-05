@@ -568,7 +568,14 @@ export class WorkflowRuntime {
 			run.step = key;
 			this.log(run, key, `Starting ${step.name} (pass ${count})`);
 			const input = step.inputs
-				? Object.fromEntries(step.inputs.map((name) => [name, outputs[name]]))
+				? {
+						...Object.fromEntries(
+							step.inputs.map((name) => [name, outputs[name]]),
+						),
+						...(step.askQuestions
+							? { answers: structuredClone(run.answers) }
+							: {}),
+					}
 				: {
 						originalInput: run.input,
 						launchInputs: structuredClone(run.launchInputs ?? {}),

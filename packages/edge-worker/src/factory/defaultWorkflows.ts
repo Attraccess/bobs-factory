@@ -49,7 +49,7 @@ const definitions = [
 			agent(
 				"clarify",
 				"Clarify requirements",
-				`Read the input, all comments, metadata, assets and previous answers. Determine whether you fully understand the requirements. Ask only questions that materially affect implementation. Do not assume answers or implement anything. Return {"questions":["..."],"decisions":[{"question":"...","answer":"...","reason":"..."}],"requirements":["..."]}. Empty questions means everything is understood. Preserve all answered decisions across rounds.`,
+				`Read the input, all comments, metadata, assets and previous answers. Determine whether you fully understand the requirements. Ask only questions that materially affect implementation. If the input says backlog only, planning only, or do not implement yet, and no later user instruction explicitly authorizes implementation, ask whether to proceed with implementation now or retain that restriction before returning empty questions. Do not infer authorization from answers about feature scope. Do not assume answers or implement anything. Return {"questions":["..."],"decisions":[{"question":"...","answer":"...","reason":"..."}],"requirements":["..."]}. Empty questions means everything is understood. Preserve all answered decisions across rounds.`,
 				{ askQuestions: true },
 			),
 			tool("decisions", "Record decisions", "record-decisions"),
@@ -67,8 +67,8 @@ const definitions = [
 			agent(
 				"implement",
 				"Implement accepted plan",
-				`Implement the provided plan and use its assets. Follow repository conventions and appropriate verification. Return {"summary":"...","checks":["commands and outcomes"]}. Do not create or publish a PR; the next step handles delivery.`,
-				{ inputs: ["plan"] },
+				`Implement the provided plan and use its assets. Read /answers alongside /plan for subsequent human responses, including resolution of implementation blockers. Follow repository conventions and appropriate verification. If implementation is forbidden, deferred, or blocked by missing access or a necessary decision, preserve completed work and return {"status":"blocked","summary":"concrete blocker","checks":["commands and outcomes"],"questions":["specific question or action needed to unblock implementation"]}. The workflow waits for an answer and resumes this role; do not report deferred or unfinished work as completed. Only after completing implementation return {"status":"completed","summary":"...","checks":["commands and outcomes"],"questions":[]}. Do not create or publish a PR; the next step handles delivery.`,
+				{ inputs: ["plan"], askQuestions: true },
 			),
 			tool("draft-pr", "Push and create draft PR", "draft-pr"),
 			agent("code-review", "Review code", review),
@@ -269,6 +269,20 @@ export function upgradeWorkflows(value: unknown): unknown {
 			const stock = defaultWorkflows
 				.find((item) => item.id === "factory-pipeline")!
 				.steps.find((item) => item.id === step.id);
+			if (
+				step.id === "clarify" &&
+				step.prompt ===
+					`Read the input, all comments, metadata, assets and previous answers. Determine whether you fully understand the requirements. Ask only questions that materially affect implementation. Do not assume answers or implement anything. Return {"questions":["..."],"decisions":[{"question":"...","answer":"...","reason":"..."}],"requirements":["..."]}. Empty questions means everything is understood. Preserve all answered decisions across rounds.`
+			)
+				step.prompt = stock!.prompt;
+			if (
+				step.id === "implement" &&
+				step.prompt ===
+					`Implement the provided plan and use its assets. Follow repository conventions and appropriate verification. Return {"summary":"...","checks":["commands and outcomes"]}. Do not create or publish a PR; the next step handles delivery.`
+			) {
+				step.prompt = stock!.prompt;
+				step.askQuestions = true;
+			}
 			if (
 				step.type === "tool" &&
 				step.maxVisits === 8 &&

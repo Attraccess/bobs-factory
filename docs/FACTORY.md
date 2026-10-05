@@ -236,7 +236,12 @@ if Factory disallows ticket starts even when Simple is eligible. If an unlabeled
 ticket's saved default disallows ticket starts, it rejects even when another
 recipe is eligible. Enable the selected permission in Recipes, change the
 workflow/label, or choose an eligible default; no automatic alternative is used.
-Unknown explicit IDs reject. No workflow message-selector syntax is introduced.
+Unknown explicit IDs reject. Workflow message selectors are not currently
+supported; use the launch methods above. This describes the current product,
+and development tasks can request changes to it. Agents evaluate such proposals
+against the task's requirements and accepted decisions, within their assigned
+role, and update the capability reference when implementing the change. Explicit
+planning-only or deferred-implementation restrictions still apply.
 
 Composer only shows recipes allowing manual starts. An ineligible default or
 invalidated selected recipe requires choosing an eligible recipe; entered inputs
@@ -290,6 +295,15 @@ an active run retains its original definition.
 Clarification pauses until you answer in the dashboard or original agent-session
 ticket thread. There is no automatic answer or approval. Decisions and all Q&A
 are saved in run history and posted as a comment when a real ticket exists.
+Questions include their own brief context, the reason a decision is needed and
+the consequences of the choices, so you can answer without reading the step
+transcript. Asking Bob to explain or rephrase keeps the decision pending.
+Question-enabled roles, including saved and custom recipes, receive this guidance
+at execution time. Their question strings support Markdown, small fenced text
+diagrams and optional PNG/JPEG images saved in the run's evidence directory.
+Use `![caption](/api/runs/RUN_ID/question-images/unique-filename.png)` to display
+a local image beside the question; nested paths and external symlink targets
+are rejected. Visuals supplement a question that is understandable on its own.
 
 The factory runs clarification → decisions → planner/plan-review loop →
 implementation → push/draft PR → code-review/fix loop → CI/fix loop → visual
@@ -415,7 +429,8 @@ and tool steps as `input.launchInputs`, including shared child workflows.
 Scripts read them from `FACTORY_INPUT_FILE` (or `FACTORY_INPUT` for small inputs);
 tool templates can use
 `{{input.launchInputs.target}}`. Steps with explicit `inputs` still receive only
-their selected outputs, so the implementer retains its plan-only handoff.
+their selected outputs, so the implementer retains its plan handoff. Question-enabled
+steps also receive the human answers needed to resolve their blockers.
 Custom Simple fields are appended to its task prompt because it uses Cyrus's
 original execution path rather than graph steps.
 
@@ -479,7 +494,8 @@ another step. `next: "end"` finishes. A branch such as
 `{"when":{"path":"approved","equals":false},"next":"plan"}` loops back.
 Each step defaults to at most eight visits (`maxVisits`, configurable up to 100).
 Agents return JSON unless `json: false`. `inputs: ["plan"]` restricts supplied
-context to those output keys; otherwise agents receive the original input,
+context to those output keys (plus `/answers` when `askQuestions: true`);
+otherwise agents receive the original input,
 launch inputs, outputs, answers and full structured history.
 
 Factory agent roles receive a short role prompt and a private `factory-context`
@@ -489,6 +505,13 @@ follow it until null to read complete discussions and review/fixer history.
 Paths use JSON Pointer syntax, for example `/outputs/ticket/comments/0/body`.
 Strings use raw text pages; other values use JSON pages. Only the step's scoped
 input is served: `inputs: ["plan"]` exposes `/plan` without ticket/history.
+The stock implementer also receives `/answers` and returns `status`, `summary`,
+`checks`, and `questions`. A `blocked` status requires at least one actionable
+question; the run waits, persists the blocker across restarts, and reruns only
+implementation after the answer. `completed` requires an empty question list.
+Clarification asks about explicit backlog/planning-only restrictions before
+proceeding. PR delivery verifies commits and a nonempty diff against the fetched
+base before pushing; an empty implementation cannot advance to GitHub delivery.
 Each role/loop/fanout invocation has a separate snapshot, deleted when the role
 finishes, fails or is terminated. Persisted run history remains available in the
 UI. This works through stdio for the existing runners and needs no additional

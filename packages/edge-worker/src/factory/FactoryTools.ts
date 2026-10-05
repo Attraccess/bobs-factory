@@ -329,6 +329,10 @@ export class FactoryTools {
 				return decisions;
 			}
 			case "draft-pr": {
+				if (readPath(run.outputs, "implement.status") === "blocked")
+					throw new Error(
+						`Implementation is blocked: ${String(readPath(run.outputs, "implement.summary"))}. Answer the implementation questions before publishing.`,
+					);
 				const branch = await command("git", ["branch", "--show-current"]);
 				if (!branch) throw new Error("Draft PR requires a branch");
 				if (readPath(run.outputs, "source.url")) {
@@ -363,6 +367,27 @@ export class FactoryTools {
 						`chore: ${subject || "factory changes"}`,
 					]);
 				}
+				const baseBranch = String(
+					readPath(run.outputs, "source.baseRefName") ??
+						readPath(run.outputs, "repository.baseBranch") ??
+						"main",
+				);
+				await command("git", ["fetch", "origin", baseBranch]);
+				const baseRef = `refs/remotes/origin/${baseBranch}`;
+				const commits = await command("git", [
+					"rev-list",
+					"--count",
+					`${baseRef}..HEAD`,
+				]);
+				const changes = await command("git", [
+					"diff",
+					"--name-only",
+					`${baseRef}...HEAD`,
+				]);
+				if (commits.trim() === "0" || !changes.trim())
+					throw new Error(
+						`No implementation changes to publish against ${baseBranch}. ${String(readPath(run.outputs, "implement.summary") ?? "The worktree has no deliverable changes.")} Resolve the implementation blocker before delivery; retrying PR creation cannot fix an empty branch.`,
+					);
 				await command("git", ["push", "-u", "origin", "HEAD"]);
 				const existing: { url: string; isDraft: boolean }[] = JSON.parse(
 					await command("gh", [
@@ -388,9 +413,6 @@ export class FactoryTools {
 						"Existing PR is not draft; refusing to change its state automatically",
 					);
 				if (!url) {
-					const baseBranch = String(
-						readPath(run.outputs, "repository.baseBranch") ?? "main",
-					);
 					url = await command("gh", [
 						"pr",
 						"create",
