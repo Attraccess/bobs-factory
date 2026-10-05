@@ -263,3 +263,34 @@ Regression checks cover full PR versus last-role delta, omitted PR files/criteri
 invented screenshot references, prior-human-review requirements and nested
 guide refresh without approval. All959 edge-worker tests passed (one skipped);
 53 focused checks pass after the publisher change; root build/typecheck pass.
+
+
+### Final instance verification
+
+The replacement Attraccess guide is pending human review at clean
+`731caf1ce17759b6837311bca1e61d72607af1ba`. It contains nine feature chapters,
+four process diagrams and 23 chapter-associated references to the existing
+24 accepted images. All 148 base-to-head changed files and all 16 original
+acceptance criteria (plus two later clarifications) are covered. The guide
+retains fixture limitations and disputed scope explicitly. History increased
+from 102 to 105 only through guide, handoff and human review. No implementation
+or capture repeated, and no human decision was recorded.
+
+Native T3 checks on the actual guide at 390×844 dark and 1440×1000 light show
+readable before/after cards, diagrams, associated screenshots and no horizontal
+overflow. Only the active chapter mounts. The reporting chapter's three PNGs
+load on approach and its 17 file links contain exact GitHub diff anchors.
+The dashboard-preview and artifact readers use the same progress key and
+restore the same chapter; a subsequent reload preserves the position. An SSE
+notification from an unchanged view-state update preserves chapter and scroll.
+Approval appears only on the decision page; it was never submitted. Reading
+markers remain empty and the overview was restored for the user.
+
+The final UI bundle is loaded after a graceful service restart, confirmed
+byte-identical to the built asset. The same pending gate survived that restart.
+The five-minute monitor exited after observing the pending gate. Saved native
+T3 screenshots were visually inspected, including
+`browser-screenshot-127-0-0-1-muuzqv6p-067057e6.png` (mobile dark cards/diagram)
+and `browser-screenshot-127-0-0-1-muuztijx-d95fb1b8.png` (desktop light images).
+These checks establish the guide presentation and lifecycle, not physical-reader
+integration or provider merge behavior.
