@@ -28,6 +28,7 @@ const ciAssessmentInstructions = ` Set reviewRequired=false ONLY when every newl
 const definitions = [
 	{
 		id: "simple",
+		allowedTriggers: ["manual", "ticket-assignment"],
 		icon: "⚡",
 		name: "Simple / Cyrus",
 		description:
@@ -37,6 +38,7 @@ const definitions = [
 	},
 	{
 		id: "factory",
+		allowedTriggers: ["workflow", "manual", "ticket-assignment"],
 		icon: "🏭",
 		name: "Software factory",
 		description:
@@ -168,6 +170,7 @@ export const defaultWorkflows = validateWorkflows([
 	},
 	{
 		id: "takeover",
+		allowedTriggers: ["workflow", "manual", "ticket-assignment"],
 		icon: "🤝",
 		launchFields: takeoverLaunchFields,
 		name: "Take over existing work",
@@ -198,6 +201,7 @@ export const defaultWorkflows = validateWorkflows([
 		id: "factory-pipeline",
 		name: "Shared factory pipeline",
 		internal: true,
+		allowedTriggers: ["workflow"],
 		labels: [],
 	},
 ]);

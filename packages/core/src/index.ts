@@ -22,6 +22,10 @@ export type {
 	LogEventAttributes,
 } from "./logging/index.js";
 export { createLogger, LogLevel } from "./logging/index.js";
+export type {
+	WorkflowTrigger,
+	WorkflowTriggerOrigin,
+} from "./WorkflowTrigger.js";
 
 // export { Session } from './Session.js'
 // export type { SessionOptions, , NarrativeItem } from './Session.js'

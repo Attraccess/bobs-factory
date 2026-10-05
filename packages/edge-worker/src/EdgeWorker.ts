@@ -55,6 +55,7 @@ import type {
 	Webhook,
 	WebhookAgentSession,
 	WebhookIssue,
+	WorkflowTriggerOrigin,
 } from "cyrus-core";
 import {
 	AgentSessionStatus,
@@ -193,7 +194,10 @@ import {
 	type TakeoverPullRequest,
 	ticketIdentifier,
 } from "./factory/Takeover.js";
-import { readPath as readFactoryPath } from "./factory/Workflow.js";
+import {
+	readPath as readFactoryPath,
+	workflowTriggerInstructions,
+} from "./factory/Workflow.js";
 import {
 	type ExecutionContext,
 	type FactoryRun,
@@ -349,6 +353,8 @@ export class EdgeWorker extends EventEmitter {
 	 * Key: Linear issue ID (the blocked issue)
 	 * Value: All data needed to replay initializeAgentRunner when unblocked
 	 */
+	private pendingTriggerOrigins = new Map<string, WorkflowTriggerOrigin>();
+
 	private parkedSessions = new Map<
 		string,
 		{
@@ -836,6 +842,7 @@ export class EdgeWorker extends EventEmitter {
 							? "running"
 							: session.status,
 						createdAt: new Date(session.createdAt).toISOString(),
+						triggerOrigin: session.triggerOrigin,
 						workspace: session.workspace.path,
 						repositoryId: this.sessionRepositories.get(session.id),
 					})),
@@ -859,6 +866,7 @@ export class EdgeWorker extends EventEmitter {
 						session?.issue?.identifier;
 					const workflow = this.getFactoryRuntime().selectWorkflow(
 						[],
+						"manual",
 						source ? "takeover" : "factory",
 					);
 					return this.startManualFactoryRun(
@@ -874,6 +882,7 @@ export class EdgeWorker extends EventEmitter {
 							runner: run?.runner as RunnerType | undefined,
 							model: run?.model,
 						}),
+						id,
 					);
 				},
 				stop: (id) => {
@@ -4497,10 +4506,36 @@ ${taskSection}`;
 			throw new Error(`Failed to fetch full issue details for ${issue.id}`);
 		}
 
-		const takeover =
-			this.getFactoryRuntime().selectWorkflow(
+		let launch: ReturnType<WorkflowRuntime["selectLaunch"]>;
+		try {
+			launch = this.getFactoryRuntime().selectLaunch(
 				await this.fetchIssueLabels(fullIssue),
-			).id === "takeover";
+				"ticket-assignment",
+			);
+			if (launch.workflow.id !== "simple" && repositories.length !== 1)
+				throw new Error(
+					"Factory MVP runs use one repository; use Simple for multi-repository tasks",
+				);
+		} catch (error) {
+			const tracker = this.issueTrackers.get(linearWorkspaceId);
+			if (tracker)
+				await this.activityPoster.postActivityDirect(
+					tracker,
+					{
+						agentSessionId: sessionId,
+						content: {
+							type: "response",
+							body:
+								error instanceof Error
+									? error.message
+									: "Workflow launch rejected",
+						},
+					},
+					"workflow rejection",
+				);
+			throw error;
+		}
+		const takeover = launch.workflow.id === "takeover";
 		if (takeover && fullIssue.branchName) {
 			baseBranchOverrides = new Map(baseBranchOverrides);
 			for (const repo of repositories)
@@ -4571,6 +4606,33 @@ ${taskSection}`;
 			"linear",
 			repositoryContexts,
 		);
+
+		const origin = this.pendingTriggerOrigins.get(sessionId) ?? {
+			type: "ticket-assignment" as const,
+			workflowId: launch.workflow.id,
+			at: new Date().toISOString(),
+			ticket: {
+				provider:
+					this.config.platform === "cli"
+						? ("cli" as const)
+						: ("linear" as const),
+				workspaceId: linearWorkspaceId,
+				issueId: fullIssue.id,
+				agentSessionId: sessionId,
+			},
+		};
+		const createdSession = agentSessionManager.getSession(sessionId)!;
+		createdSession.triggerOrigin = {
+			...origin,
+			workflowId: launch.workflow.id,
+			selectionMethod: launch.selectionMethod,
+			ticket: {
+				...origin.ticket!,
+				identifier: fullIssue.identifier,
+				url: fullIssue.url,
+			},
+		};
+		this.pendingTriggerOrigins.delete(sessionId);
 
 		// Register session-to-repo mapping and activity sink (use primary repo)
 		this.sessionRepositories.set(sessionId, primaryRepo.id);
@@ -4664,6 +4726,7 @@ ${taskSection}`;
 		const disallowedTools = this.buildDisallowedTools(repositories);
 
 		return {
+			launch,
 			session,
 			fullIssue,
 			workspace,
@@ -4681,10 +4744,59 @@ ${taskSection}`;
 	 * @param webhook The agent session created webhook
 	 * @param repos All available repositories for routing
 	 */
+	private captureTicketOrigin(
+		webhook: AgentSessionCreatedWebhook,
+		created: boolean,
+	): void {
+		const { agentSession, agentActivity } = webhook;
+		if (!agentSession.issue || this.pendingTriggerOrigins.has(agentSession.id))
+			return;
+		const body = agentSession.comment?.body;
+		this.pendingTriggerOrigins.set(agentSession.id, {
+			type: "ticket-assignment",
+			workflowId: "",
+			at: new Date().toISOString(),
+			ticket: {
+				provider: this.config.platform === "cli" ? "cli" : "linear",
+				// CLI issue sessions omit comments; its comment-session API retains them.
+				// Linear sessions without source evidence keep the subtype unavailable.
+				subtype: created
+					? agentSession.sourceCommentId
+						? "mention"
+						: body
+							? !body.includes("This thread is for an agent session")
+								? "mention"
+								: "assignment"
+							: this.config.platform === "cli"
+								? "assignment"
+								: undefined
+					: undefined,
+				workspaceId: webhook.organizationId,
+				issueId: agentSession.issue.id,
+				identifier: agentSession.issue.identifier,
+				agentSessionId: agentSession.id,
+				commentId:
+					agentSession.sourceCommentId ??
+					agentSession.comment?.id ??
+					agentSession.commentId ??
+					agentActivity?.sourceCommentId ??
+					undefined,
+				activityId: agentActivity?.id,
+				sourceTimestamp: webhook.createdAt
+					? webhook.createdAt instanceof Date
+						? webhook.createdAt.toISOString()
+						: String(webhook.createdAt)
+					: undefined,
+			},
+		});
+		void this.savePersistedState();
+	}
+
 	private async handleAgentSessionCreatedWebhook(
 		webhook: AgentSessionCreatedWebhook,
 		repos: RepositoryConfig[],
 	): Promise<void> {
+		this.captureTicketOrigin(webhook, true);
 		const issueId = webhook.agentSession?.issue?.id;
 
 		// Check the cache first, as the agentSessionCreated webhook may have been triggered by an @mention
@@ -5005,7 +5117,7 @@ ${taskSection}`;
 			}
 
 			// Create agent runner with system prompt from assembly
-			const workflow = this.getFactoryRuntime().selectWorkflow(labels);
+			const { workflow, workflowDefinitions } = sessionData.launch;
 			if (workflow.id !== "simple") {
 				if (repositories.length !== 1)
 					throw new Error(
@@ -5035,6 +5147,8 @@ ${taskSection}`;
 					title: fullIssue.title,
 					repositoryId: primaryRepo.id,
 					workflow,
+					workflowDefinitions,
+					triggerOrigin: session.triggerOrigin!,
 					workspace: session.workspace.path,
 					input: `${assembly.userPrompt}\n\nComplete ticket snapshot:\n${JSON.stringify(ticket, null, 2)}`,
 					issueId: fullIssue.id,
@@ -5378,47 +5492,19 @@ ${taskSection}`;
 
 		const agentSessionManager = this.agentSessionManager;
 
-		let session = agentSessionManager.getSession(sessionId);
-		let isNewSession = false;
-		let fullIssue: Issue | null = null;
+		const session = agentSessionManager.getSession(sessionId);
+		const isNewSession = false;
 
 		if (!session) {
-			this.logger.debug(
-				`No existing session found for agent activity session ${sessionId}, creating new session`,
-			);
-			isNewSession = true;
-
-			// Post instant acknowledgment for new session creation
-			await this.postInstantPromptedAcknowledgment(
-				sessionId,
-				linearWorkspaceId,
-				false,
-			);
-
-			// Create the session using the shared method with all repositories
-			const sessionData = await this.createCyrusAgentSession(
-				sessionId,
-				issue,
+			this.captureTicketOrigin(webhook, false);
+			await this.initializeAgentRunner(
+				agentSession,
 				repositories,
-				agentSessionManager,
 				linearWorkspaceId,
+				webhook.guidance,
+				webhook.agentActivity.content?.body ?? "",
 			);
-
-			// Destructure session data for new session
-			fullIssue = sessionData.fullIssue;
-			session = sessionData.session;
-
-			this.logger.debug(`Created new session ${sessionId} (prompted webhook)`);
-
-			// Save state and emit events for new session
-			await this.savePersistedState();
-			// Emit events using full issue (core Issue type)
-			this.emit("session:started", fullIssue.id, fullIssue, repository.id);
-			this.config.handlers?.onSessionStart?.(
-				fullIssue.id,
-				fullIssue,
-				repository.id,
-			);
+			return;
 		} else {
 			this.logger.debug(
 				`Found existing session ${sessionId} for new user prompt`,
@@ -5433,20 +5519,6 @@ ${taskSection}`;
 				linearWorkspaceId,
 				isCurrentlyStreaming,
 			);
-
-			// Need to fetch full issue for routing context
-			const issueTracker = this.issueTrackers.get(linearWorkspaceId);
-			if (issueTracker) {
-				try {
-					fullIssue = await issueTracker.fetchIssue(issue.id);
-				} catch (error) {
-					this.logger.warn(
-						`Failed to fetch full issue for routing: ${issue.id}`,
-						error,
-					);
-					// Continue with degraded routing context
-				}
-			}
 		}
 
 		// Note: Streaming check happens later in handlePromptWithStreamingCheck
@@ -5980,7 +6052,7 @@ ${taskSection}`;
 				);
 			}
 		}
-		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
 			repository,
@@ -6205,11 +6277,13 @@ ${taskSection}`;
 
 	private async startManualFactoryRun(
 		input: ResolvedLaunchRequest,
+		sourceRunId?: string,
 	): Promise<FactoryRun> {
 		const repository = this.repositories.get(input.repositoryId);
 		if (!repository?.isActive) throw new Error("Select an active repository");
 		const runtime = this.getFactoryRuntime();
-		const workflow = runtime.selectWorkflow([], input.workflow);
+		const { workflow, workflowDefinitions, selectionMethod } =
+			runtime.selectLaunch([], "manual", input.workflow);
 		if (workflow.id === "takeover" && !input.source)
 			throw new Error(
 				"Takeover needs an existing PR URL or ticket identifier/URL",
@@ -6227,6 +6301,17 @@ ${taskSection}`;
 		if (workflow.id === "simple" && Object.keys(customInputs).length)
 			prompt += `\n\nWorkflow launch inputs:\n${JSON.stringify(customInputs, null, 2)}`;
 		const run = runtime.create({
+			triggerOrigin: {
+				type: "manual",
+				workflowId: workflow.id,
+				selectionMethod,
+				at: new Date().toISOString(),
+				manual: {
+					method: sourceRunId ? "follow-up" : "composer-api",
+					sourceRunId,
+				},
+			},
+			workflowDefinitions,
 			id: `manual-${randomUUID()}`,
 			title: input.title,
 			repositoryId: repository.id,
@@ -8247,6 +8332,7 @@ ${input.userComment}
 		);
 
 		return {
+			pendingTriggerOrigins: Object.fromEntries(this.pendingTriggerOrigins),
 			agentSessions: serializedState.sessions,
 			agentSessionEntries: serializedState.entries,
 			childToParentAgentSession,
@@ -8258,6 +8344,9 @@ ${input.userComment}
 	 * Restore EdgeWorker mappings from serialized state (v4.0 flat format)
 	 */
 	public restoreMappings(state: SerializableEdgeWorkerState): void {
+		this.pendingTriggerOrigins = new Map(
+			Object.entries(state.pendingTriggerOrigins ?? {}),
+		);
 		// Restore Agent Session state from flat format
 		if (state.agentSessions && state.agentSessionEntries) {
 			this.agentSessionManager.restoreState(

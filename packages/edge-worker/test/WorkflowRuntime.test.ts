@@ -35,9 +35,10 @@ function create(hooks: Partial<RuntimeHooks> = {}) {
 	});
 	return { runtime, home };
 }
-function workflow(steps: unknown[]): Workflow {
+function workflow(steps: unknown[], dependencies: unknown[] = []): Workflow {
 	return validateWorkflows([
 		...defaultWorkflows,
+		...dependencies,
 		{ id: "custom", name: "Custom", steps },
 	]).at(-1)!;
 }
@@ -50,6 +51,11 @@ const agent = (id: string, extra = {}) => ({
 });
 function start(runtime: WorkflowRuntime, definition: Workflow) {
 	return runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: definition.id,
+			at: new Date().toISOString(),
+		},
 		title: "Build a dashboard",
 		repositoryId: "repo",
 		workspace: "/tmp",
@@ -57,6 +63,237 @@ function start(runtime: WorkflowRuntime, definition: Workflow) {
 		workflow: definition,
 	});
 }
+
+describe("workflow trigger permissions", () => {
+	it.each([
+		false,
+		true,
+	])("normalizes legacy configuration idempotently, preserving custom roles/default (object=%s)", (object) => {
+		const { home, runtime } = create();
+		const legacy = [
+			...defaultWorkflows,
+			workflow([agent("work", { model: "custom-model" })]),
+		].map(({ allowedTriggers: _triggers, ...definition }) => definition);
+		writeFileSync(
+			join(home, "factory", "workflows.json"),
+			JSON.stringify(
+				object ? { workflows: legacy, defaultWorkflow: "custom" } : legacy,
+			),
+		);
+		const migrated = reload(home);
+		expect(migrated.getDefaultWorkflow()).toBe(object ? "custom" : "simple");
+		expect(
+			migrated.listWorkflows().map((w) => [w.id, w.allowedTriggers]),
+		).toEqual([
+			["simple", ["manual", "ticket-assignment"]],
+			["factory", ["workflow", "manual", "ticket-assignment"]],
+			["takeover", ["workflow", "manual", "ticket-assignment"]],
+			["factory-pipeline", ["workflow"]],
+			["custom", ["workflow", "manual", "ticket-assignment"]],
+		]);
+		expect(migrated.listWorkflows().at(-1)!.steps[0]!.model).toBe(
+			"custom-model",
+		);
+		const saved = readFileSync(join(home, "factory", "workflows.json"), "utf8");
+		reload(home);
+		expect(readFileSync(join(home, "factory", "workflows.json"), "utf8")).toBe(
+			saved,
+		);
+		expect(runtime.getDefaultWorkflow()).toBe("simple");
+	});
+	it("rejects selected disallowed explicit, first label and default without falling back", () => {
+		const { runtime, home } = create();
+		const first = {
+			...workflow([agent("work")]),
+			allowedTriggers: [],
+			labels: ["first"],
+		};
+		const second = {
+			...first,
+			id: "second",
+			name: "Second",
+			labels: ["second"],
+			allowedTriggers: ["ticket-assignment"],
+		};
+		runtime.updateWorkflows([...defaultWorkflows, first, second], "custom");
+		for (const [labels, explicit] of [
+			[[], "custom"],
+			[["second", "first"], undefined],
+			[[], undefined],
+		] as const)
+			expect(() =>
+				runtime.selectWorkflow([...labels], "ticket-assignment", explicit),
+			).toThrow(/custom.*ticket-assignment.*Recipes/);
+		expect(
+			runtime.selectLaunch(["second"], "ticket-assignment").selectionMethod,
+		).toBe("label");
+		expect(
+			runtime.selectWorkflow(["first"], "ticket-assignment", "second").id,
+		).toBe("second");
+		expect(() => runtime.selectWorkflow([], "manual", "unknown")).toThrow(
+			"Unknown workflow",
+		);
+		expect(runtime.getDefaultWorkflow()).toBe("custom");
+		expect(
+			reload(home)
+				.listWorkflows()
+				.find((w) => w.id === "custom")!.allowedTriggers,
+		).toEqual([]);
+	});
+	it("permits deliberate top-level access to an internal recipe and an ineligible saved default", () => {
+		const { runtime } = create();
+		const saved = runtime.listWorkflows();
+		const shared = saved.find((w) => w.internal)!;
+		shared.allowedTriggers.push("manual");
+		runtime.updateWorkflows(saved, shared.id);
+		expect(runtime.selectWorkflow([], "manual").id).toBe(shared.id);
+		expect(() => runtime.selectWorkflow([], "ticket-assignment")).toThrow(
+			"ticket-assignment",
+		);
+	});
+	it.each(
+		[["manual", "manual"], ["unknown"], ["workflow"]].map(
+			(allowedTriggers) => ({ allowedTriggers }),
+		),
+	)("rejects invalid Simple permissions $allowedTriggers without partial save", ({
+		allowedTriggers,
+	}) => {
+		const { runtime, home } = create();
+		const saved = runtime.listWorkflows();
+		const disk = readFileSync(join(home, "factory", "workflows.json"), "utf8");
+		expect(() =>
+			runtime.updateWorkflows(
+				saved.map((w) => (w.id === "simple" ? { ...w, allowedTriggers } : w)),
+			),
+		).toThrow();
+		expect(runtime.listWorkflows()).toEqual(saved);
+		expect(readFileSync(join(home, "factory", "workflows.json"), "utf8")).toBe(
+			disk,
+		);
+	});
+	it("rejects disabling a called child, including fanout, while preserving config", () => {
+		const { runtime } = create();
+		const child = {
+			...workflow([agent("work")]),
+			id: "child",
+			internal: true,
+			allowedTriggers: ["workflow"],
+		};
+		const parent = workflow(
+			[
+				{
+					id: "fork",
+					name: "Fork",
+					type: "fanout",
+					groups: [
+						[{ id: "call", name: "Call", type: "workflow", workflow: "child" }],
+					],
+				},
+			],
+			[child],
+		);
+		runtime.updateWorkflows([...defaultWorkflows, parent, child]);
+		const saved = runtime.listWorkflows();
+		expect(() =>
+			runtime.updateWorkflows(
+				saved.map((w) =>
+					w.id === "child" ? { ...w, allowedTriggers: [] } : w,
+				),
+			),
+		).toThrow(/child.*workflow.*Recipes/);
+		expect(runtime.listWorkflows()).toEqual(saved);
+	});
+	it.each([
+		"manual",
+		"ticket-assignment",
+	] as const)("requires trusted root context and checks %s before saving a run", (type) => {
+		const { runtime } = create();
+		const definition = { ...workflow([agent("work")]), allowedTriggers: [] };
+		expect(() =>
+			runtime.create({
+				title: "Denied",
+				repositoryId: "repo",
+				workspace: "/tmp",
+				input: "",
+				workflow: definition,
+				triggerOrigin: {
+					type,
+					workflowId: definition.id,
+					at: new Date().toISOString(),
+				},
+			}),
+		).toThrow(`does not allow ${type}`);
+		expect(runtime.runs.size).toBe(0);
+	});
+	it("uses frozen call permissions after edits/restart, retaining origin and one call-start receipt", async () => {
+		const { runtime, home } = create({
+			agent: async () => ({ questions: ["Choose?"] }),
+		});
+		const child = {
+			...workflow([agent("ask", { askQuestions: true })]),
+			id: "child",
+			internal: true,
+			allowedTriggers: ["workflow"],
+		};
+		const parent = workflow(
+			[{ id: "call", name: "Call", type: "workflow", workflow: "child" }],
+			[child],
+		);
+		runtime.updateWorkflows([...defaultWorkflows, parent, child]);
+		const run = start(runtime, runtime.selectWorkflow([], "manual", "custom"));
+		void runtime.launch(run);
+		await vi.waitFor(() => expect(run.status).toBe("waiting"));
+		const call = {
+			type: "workflow",
+			callerWorkflowId: "custom",
+			step: "call",
+			key: "call",
+			workflowId: "child",
+		};
+		expect(run.events.filter((e) => e.call).map((e) => e.call)).toEqual([call]);
+		runtime.updateWorkflows(defaultWorkflows);
+		await runtime.shutdown();
+		const restarted = reload(home, {
+			agent: async (ctx) => ({
+				questions: ctx.run.answers.length ? [] : ["Choose?"],
+			}),
+		});
+		const restored = restarted.get(run.id);
+		expect(restored.triggerOrigin).toEqual(run.triggerOrigin);
+		void restarted.launch(restored);
+		await vi.waitFor(() => expect(restored.status).toBe("waiting"));
+		restarted.answer(restored.id, "Yes");
+		await vi.waitFor(() => expect(restored.status).toBe("completed"));
+		expect(restored.events.filter((e) => e.call).map((e) => e.call)).toEqual([
+			call,
+		]);
+		expect(restored.history.find((h) => h.step === "call")?.call).toEqual(call);
+		expect(restored.workflowCalls).toEqual(run.workflowCalls);
+		expect(restored.workflowCalls).toHaveLength(1);
+	});
+	it("defends nested execution against a corrupt frozen target", async () => {
+		const script = vi.fn();
+		const { runtime } = create({ script });
+		const child = {
+			...workflow([
+				{ id: "work", name: "Work", type: "script", script: "echo ok" },
+			]),
+			id: "child",
+		};
+		const parent = workflow(
+			[{ id: "call", name: "Call", type: "workflow", workflow: "child" }],
+			[child],
+		);
+		runtime.updateWorkflows([...defaultWorkflows, parent, child]);
+		const run = start(runtime, parent);
+		run.workflowDefinitions!.find((w) => w.id === "child")!.allowedTriggers =
+			[];
+		await runtime.launch(run);
+		expect(run.status).toBe("failed");
+		expect(run.error).toMatch(/child.*workflow.*Recipes/);
+		expect(script).not.toHaveBeenCalled();
+	});
+});
 
 describe("workflow runtime", () => {
 	it("upgrades the legacy visual reviewer with a real newline while retaining its model", () => {
@@ -149,7 +386,7 @@ describe("workflow runtime", () => {
 	it("uses the persisted default behind explicit choices and matching labels, including legacy config", () => {
 		const { runtime, home } = create();
 		expect(runtime.getDefaultWorkflow()).toBe("simple");
-		expect(runtime.selectWorkflow([]).id).toBe("simple");
+		expect(runtime.selectWorkflow([], "manual").id).toBe("simple");
 		writeFileSync(
 			join(home, "factory", "workflows.json"),
 			JSON.stringify(defaultWorkflows),
@@ -160,21 +397,23 @@ describe("workflow runtime", () => {
 			tool: async () => ({}),
 		};
 		const legacy = new WorkflowRuntime(home, hooks);
-		expect(legacy.selectWorkflow([]).id).toBe("simple");
+		expect(legacy.selectWorkflow([], "manual").id).toBe("simple");
 		const custom = workflow([agent("work")]);
 		legacy.updateWorkflows([...defaultWorkflows, custom], "custom");
-		expect(legacy.selectWorkflow([]).id).toBe("custom");
-		expect(legacy.selectWorkflow(["unrelated"]).id).toBe("custom");
-		expect(legacy.selectWorkflow(["workflow:factory"]).id).toBe("factory");
-		expect(legacy.selectWorkflow(["workflow:factory"], "simple").id).toBe(
-			"simple",
+		expect(legacy.selectWorkflow([], "manual").id).toBe("custom");
+		expect(legacy.selectWorkflow(["unrelated"], "manual").id).toBe("custom");
+		expect(legacy.selectWorkflow(["workflow:factory"], "manual").id).toBe(
+			"factory",
 		);
-		expect(() => legacy.selectWorkflow([], "missing")).toThrow(
+		expect(
+			legacy.selectWorkflow(["workflow:factory"], "manual", "simple").id,
+		).toBe("simple");
+		expect(() => legacy.selectWorkflow([], "manual", "missing")).toThrow(
 			"Unknown workflow",
 		);
 		const restarted = new WorkflowRuntime(home, hooks);
 		expect(restarted.getDefaultWorkflow()).toBe("custom");
-		expect(restarted.selectWorkflow([]).id).toBe("custom");
+		expect(restarted.selectWorkflow([], "manual").id).toBe("custom");
 		// Legacy API callers updating definitions retain the selected default.
 		restarted.updateWorkflows(restarted.listWorkflows());
 		expect(restarted.getDefaultWorkflow()).toBe("custom");
@@ -183,7 +422,7 @@ describe("workflow runtime", () => {
 		const { runtime, home } = create();
 		const custom = workflow([agent("work")]);
 		runtime.updateWorkflows([...defaultWorkflows, custom], "custom");
-		const run = start(runtime, runtime.selectWorkflow([]));
+		const run = start(runtime, runtime.selectWorkflow([], "manual"));
 		const saved = readFileSync(join(home, "factory", "workflows.json"), "utf8");
 		expect(() => runtime.updateWorkflows(defaultWorkflows, "missing")).toThrow(
 			"Unknown default workflow",
@@ -194,9 +433,9 @@ describe("workflow runtime", () => {
 		expect(readFileSync(join(home, "factory", "workflows.json"), "utf8")).toBe(
 			saved,
 		);
-		expect(runtime.selectWorkflow([]).id).toBe("custom");
+		expect(runtime.selectWorkflow([], "manual").id).toBe("custom");
 		runtime.updateWorkflows(defaultWorkflows, "factory");
-		expect(runtime.selectWorkflow([]).id).toBe("factory");
+		expect(runtime.selectWorkflow([], "manual").id).toBe("factory");
 		expect(run.workflow.id).toBe("custom");
 	});
 	it("waits for human answers and repeats clarification with retained Q&A", async () => {
@@ -369,12 +608,17 @@ describe("workflow runtime", () => {
 	});
 	it("freezes the workflow per run and applies saved changes only to new runs", () => {
 		const { runtime } = create();
-		const run = start(runtime, runtime.selectWorkflow(["workflow:factory"]));
+		const run = start(
+			runtime,
+			runtime.selectWorkflow(["workflow:factory"], "manual"),
+		);
 		const definitions = runtime.listWorkflows();
 		definitions.find((item) => item.id === "factory")!.name = "New name";
 		runtime.updateWorkflows(definitions);
 		expect(run.workflow.name).toBe("Software factory");
-		expect(runtime.selectWorkflow([], "factory").name).toBe("New name");
+		expect(runtime.selectWorkflow([], "manual", "factory").name).toBe(
+			"New name",
+		);
 	});
 	it("rejects dangling edges, duplicate IDs and malformed results", () => {
 		expect(() => workflow([agent("x", { next: "missing" })])).toThrow(
@@ -468,7 +712,7 @@ it("calls frozen reusable workflows with shared plan/history and human checkpoin
 		},
 	]);
 	runtime.updateWorkflows(definitions);
-	const run = start(runtime, runtime.selectWorkflow([], "parent"));
+	const run = start(runtime, runtime.selectWorkflow([], "manual", "parent"));
 	const execution = runtime.launch(run);
 	await vi.waitFor(() => expect(run.status).toBe("waiting"));
 	const changed = runtime.listWorkflows();
@@ -542,15 +786,17 @@ it("upgrades a saved flat Factory without losing role settings or its selected d
 		script: async () => ({}),
 		tool: async () => ({}),
 	});
-	expect(restarted.selectWorkflow([]).id).toBe("factory");
+	expect(restarted.selectWorkflow([], "manual").id).toBe("factory");
 	expect(
 		restarted.listWorkflows().find((item) => item.id === "factory-pipeline")!
 			.steps[0]!.model,
 	).toBe("custom-model");
-	expect(restarted.selectWorkflow(["workflow:takeover"]).id).toBe("takeover");
-	expect(() => restarted.selectWorkflow([], "factory-pipeline")).toThrow(
-		"Unknown workflow",
+	expect(restarted.selectWorkflow(["workflow:takeover"], "manual").id).toBe(
+		"takeover",
 	);
+	expect(() =>
+		restarted.selectWorkflow([], "manual", "factory-pipeline"),
+	).toThrow("does not allow manual");
 	expect(runtime.getDefaultWorkflow()).toBe("simple");
 });
 
@@ -614,7 +860,7 @@ it.each([
 			},
 		]),
 	);
-	const run = start(runtime, runtime.selectWorkflow([], "parent"));
+	const run = start(runtime, runtime.selectWorkflow([], "manual", "parent"));
 	void runtime.launch(run);
 	await vi.waitFor(() => expect(first).toHaveBeenCalledTimes(2));
 	await runtime.shutdown();
