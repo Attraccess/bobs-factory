@@ -1031,3 +1031,26 @@ it("upgrades only stock CI routing, retaining customized models and routes", () 
 			.steps.find((x) => x.id === "ci-fix")!.next,
 	).toBe("code-review");
 });
+
+it("upgrades stock coordination limits without changing agent/custom limits", () => {
+	const definitions = structuredClone(defaultWorkflows);
+	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
+	const gate = shared.steps.find((x) => x.id === "review-gate")!;
+	gate.maxVisits = 8;
+	const ci = shared.steps.find((x) => x.id === "ci")!;
+	ci.maxVisits = 3;
+	const upgraded = validateWorkflows(upgradeWorkflows(definitions)).find(
+		(x) => x.id === "factory-pipeline",
+	)!;
+	expect(upgraded.steps.find((x) => x.id === "review-gate")!.maxVisits).toBe(
+		100,
+	);
+	expect(upgraded.steps.find((x) => x.id === "ci")!.maxVisits).toBe(3);
+	expect(upgraded.steps.find((x) => x.id === "code-review")!.maxVisits).toBe(8);
+	gate.name = "My custom review gate";
+	expect(
+		validateWorkflows(upgradeWorkflows(definitions))
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.find((x) => x.id === "review-gate")!.maxVisits,
+	).toBe(8);
+});

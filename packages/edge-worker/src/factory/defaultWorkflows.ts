@@ -13,6 +13,7 @@ const tool = (id: string, name: string, tool: string, extra = {}) => ({
 	name,
 	type: "tool",
 	tool,
+	maxVisits: 100,
 	...extra,
 });
 const back = (path: string, next: string) => [
@@ -251,6 +252,17 @@ export function upgradeWorkflows(value: unknown): unknown {
 		if (!["factory-pipeline", "factory"].includes(String(definition.id)))
 			continue;
 		for (const step of steps) {
+			const stock = defaultWorkflows
+				.find((item) => item.id === "factory-pipeline")!
+				.steps.find((item) => item.id === step.id);
+			if (
+				step.type === "tool" &&
+				step.maxVisits === 8 &&
+				stock?.type === "tool" &&
+				step.tool === stock.tool &&
+				step.name === stock.name
+			)
+				step.maxVisits = stock.maxVisits;
 			if (
 				Object.hasOwn(legacyVisualPrompts, String(step.id)) &&
 				legacyVisualPrompts[String(step.id)]!.includes(String(step.prompt))

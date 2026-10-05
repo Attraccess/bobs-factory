@@ -172,3 +172,19 @@ informational/already-accepted unchanged requirements. Review threads and reques
 changes always require review; three additional routing cases passed (57 tests in
 the runtime/readiness/pipeline subset). Legacy assessment timestamps now retain
 the latest assessment, while content hashes continue to detect later edits.
+
+
+## Coordination gate continuation
+
+F1 issue `DEF-3` / `issue-3`, session `session-3`, used one real native Codex
+reviewer followed by nine deterministic review-gate passes and nine counter-script
+passes. It completed with 19 retained history records and `cycle.count=9`;
+`code-review.maxVisits=1` remained unchanged. This exercises the larger bounded
+stock tool ceiling without granting extra compute-heavy agent passes. The
+migration regression preserves custom tool limits and agent limits. All 58
+runtime/readiness/pipeline tests, root typecheck and root build passed.
+
+Production monitoring identified this defect after the authorized ninth code
+review finished: the old eight-visit gate stopped before consuming its saved
+result. The rollout resumes from that gate and preserves the completed reviewer
+output, including the new receipt-translation migration finding.

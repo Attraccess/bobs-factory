@@ -29,7 +29,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Continue iteration-limited runs with a bounded per-step budget while preserving saved progress; retry transient GitHub errors and skip repeated code reviews after verified no-change CI assessments. Reassess edited feedback and ignore recognizable integration/build notices. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+- Continue iteration-limited runs with a bounded per-step budget while preserving saved progress, without coordination gates prematurely exhausting agent allowances; retry transient GitHub errors and skip repeated code reviews after verified no-change CI assessments. Reassess edited feedback and ignore recognizable integration/build notices. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Upgrade saved stock visual-review instructions correctly and compact legacy screenshot matrices on the next visual-scope pass, preserving role models and existing evidence. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 

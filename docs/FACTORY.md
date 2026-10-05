@@ -176,7 +176,7 @@ After resolving a failed step's cause, select **Retry failed step** in the run
 view. It keeps the same run, worktree, frozen workflow, answers and history,
 and continues from saved progress. Completed steps are skipped; an unfinished
 script/tool step runs again, so check any external effects before retrying.
-An exhausted iteration limit shows **Continue (+4 passes)**. Each explicit continuation grants four additional visits only to the exhausted step, including nested workflows; historical counters and finished steps remain intact. If those additional visits are exhausted, the run stops again rather than looping indefinitely. The limit counts cumulative visits, including returns after real code/visual corrections.
+An exhausted iteration limit shows **Continue (+4 passes)**. Each explicit continuation grants four additional visits only to the exhausted step, including nested workflows; historical counters and finished steps remain intact. If those additional visits are exhausted, the run stops again rather than looping indefinitely. The limit counts cumulative visits, including returns after real code/visual corrections. Stock coordination tools (review gates, readiness and routing) have a bounded 100-visit ceiling so they do not immediately block an authorized extra agent pass; customized limits are retained.
 
 Completed or explicitly terminated runs cannot be retried. Publication uses a
 short conventional commit message (`chore: …`) derived from the ticket title,
