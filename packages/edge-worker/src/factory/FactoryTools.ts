@@ -196,12 +196,17 @@ const screenshotSchema = z.object({
 	revision: z.string().optional(),
 	imageSha256: z.string().optional(),
 	dependencyHashes: z.record(z.string(), z.string()).optional(),
+	fingerprintVersion: z.number().int().optional(),
+	dependencyManifest: z.string().optional(),
 	reused: z.boolean().optional(),
 	area: z.string(),
 	state: z.string().optional(),
 });
 export const CaptureSchema = z.object({
 	screenshots: z.array(screenshotSchema),
+	dependencyManifests: z
+		.record(z.string(), z.record(z.string(), z.string()))
+		.optional(),
 	unavailable: z
 		.array(z.object({ area: z.string(), reason: z.string() }))
 		.default([]),
@@ -704,7 +709,10 @@ export function captureEvidence(
 		  }
 		| undefined;
 	const previous = context.progress?.previousOutput as
-		| { screenshots?: z.infer<typeof screenshotSchema>[] }
+		| {
+				screenshots?: z.infer<typeof screenshotSchema>[];
+				dependencyManifests?: Record<string, Record<string, string>>;
+		  }
 		| undefined;
 	const dependencies = (scope?.areas ?? []).flatMap(
 		(area) => area.dependencies ?? [],
@@ -716,7 +724,10 @@ export function captureEvidence(
 				!nonVisual.has(file) &&
 				!dependencies.some((dependency) => dependencyCovers(file, dependency)),
 		) ?? true;
+	// Only runtime-computed manifests may survive finalization.
+	delete capture.dependencyManifests;
 	const rejected: CaptureReuseError["screenshots"] = [];
+	const manifests = new Map<string, Record<string, string>>();
 	for (const shot of capture.screenshots) {
 		if (!existsSync(shot.path))
 			throw new Error(`Screenshot missing: ${shot.path}`);
@@ -726,18 +737,35 @@ export function captureEvidence(
 			.digest("hex");
 		const area = scope?.areas?.find((area) => area.name === shot.area);
 		let hashes: Record<string, string> | undefined;
-		if (area?.dependencies?.length)
-			hashes = dependencyHashes(context.run.workspace, area.dependencies);
+		if (area?.dependencies?.length) {
+			const key = JSON.stringify([...area.dependencies].sort());
+			hashes = manifests.get(key);
+			if (!hashes) {
+				hashes = dependencyHashes(context.run.workspace, area.dependencies);
+				manifests.set(key, hashes);
+			}
+		}
 		const old = previous?.screenshots?.find((old) => old.path === shot.path);
 		if (old) {
+			const oldHashes =
+				old.dependencyHashes ??
+				(old.dependencyManifest
+					? previous?.dependencyManifests?.[old.dependencyManifest]
+					: undefined);
+			const sameSources =
+				hashes &&
+				oldHashes &&
+				JSON.stringify(hashes) === JSON.stringify(oldHashes);
+			// Exact revision alone cannot prove explicit ignored runtime inputs unchanged.
+			// Legacy maps migrate only when their complete source fingerprint agrees.
 			const unchanged =
-				context.progress?.unchangedCode ||
-				(!context.progress?.uncertain &&
-					!unexplained &&
-					area?.changed === false &&
-					hashes &&
-					old.dependencyHashes &&
-					JSON.stringify(hashes) === JSON.stringify(old.dependencyHashes));
+				!context.progress?.uncertain &&
+				sameSources &&
+				(context.progress?.unchangedCode ||
+					(!unexplained &&
+						area?.changed === false &&
+						old.fingerprintVersion === 2));
+
 			if (
 				!unchanged ||
 				old.area !== shot.area ||
@@ -765,7 +793,17 @@ export function captureEvidence(
 		} else shot.reused = false;
 		shot.revision = context.progress?.currentRevision?.headSha;
 		shot.imageSha256 = imageSha256;
-		shot.dependencyHashes = hashes;
+		delete shot.dependencyManifest;
+		if (hashes) {
+			const digest = createHash("sha256")
+				.update(JSON.stringify(hashes))
+				.digest("hex");
+			capture.dependencyManifests ??= {};
+			capture.dependencyManifests[digest] = hashes;
+			shot.dependencyManifest = digest;
+		}
+		delete shot.dependencyHashes;
+		shot.fingerprintVersion = 2;
 	}
 	if (rejected.length) throw new CaptureReuseError(rejected);
 	return capture;

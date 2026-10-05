@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -5,10 +6,50 @@ import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-export const factoryContextInstructions = `Your step input is served by the factory-context MCP server, not embedded in this prompt. First call list_context at path "" to discover it. Browse objects/arrays with list_context and read values with read_context using JSON Pointer paths (escape ~ as ~0 and / as ~1). Both tools paginate: follow nextOffset until null for every relevant collection/value. Read all ticket comments, answers, decisions and assets required by your role; reviewers/fixers must also read all past review rounds and dispositions. Read small records/arrays with one read_context call rather than field by field. For large values, browse and read relevant sections instead of downloading the entire root context or repeated copies in outputs/history. originalInput may itself contain JSON: read it in pages and parse it. Never infer missing pages or claim unread context was reviewed. Only this role's declared step inputs are available. If these tools are unavailable, fail explicitly rather than proceeding without the input.`;
+export const factoryContextInstructions = `Your step input is served by the factory-context MCP server, not embedded in this prompt. First call list_context at path "" to discover it. Browse objects/arrays with list_context and read values with read_context using JSON Pointer paths (escape ~ as ~0 and / as ~1). Both tools paginate: follow nextOffset until null for every relevant collection/value. Read all ticket comments, answers, decisions and assets required by your role; reviewers/fixers must also read all past review rounds and dispositions. Read small records/arrays with one read_context call rather than field by field. For large values, browse and read relevant sections instead of downloading the entire root context or repeated copies in outputs/history. originalInput may itself contain JSON: read it in pages and parse it. Never infer missing pages or claim unread context was reviewed. Screenshot source fingerprints are compact runtime provenance summaries; do not request or reconstruct full hash maps. Only this role's declared step inputs are available. If these tools are unavailable, fail explicitly rather than proceeding without the input.`;
 
 /** One immutable snapshot per role, including only the workflow's scoped input. */
+/** Runtime provenance is not role input. Project every path, including old history. */
+export function compactFactoryContext(input: unknown): unknown {
+	const manifests = new Map<
+		object,
+		{ digest: string; entries: number; version: number }
+	>();
+	const project = (value: unknown): unknown => {
+		if (!value || typeof value !== "object") return value;
+		if (Array.isArray(value)) return value.map(project);
+		return Object.fromEntries(
+			Object.entries(value).map(([key, child]) => {
+				if (key === "dependencyManifests" && child && typeof child === "object")
+					return [
+						"manifestInventory",
+						{ count: Object.keys(child).length, runtimeOnly: true },
+					];
+				if (key === "dependencyHashes" && child && typeof child === "object") {
+					let manifest = manifests.get(child);
+					if (!manifest) {
+						manifest = {
+							digest: createHash("sha256")
+								.update(JSON.stringify(child))
+								.digest("hex"),
+							entries: Object.keys(child).length,
+							version: Number(
+								(value as Record<string, unknown>).fingerprintVersion ?? 1,
+							),
+						};
+						manifests.set(child, manifest);
+					}
+					return ["sourceFingerprint", manifest];
+				}
+				return [key, project(child)];
+			}),
+		);
+	};
+	return project(input);
+}
+
 export function prepareFactoryContext(input: unknown) {
+	input = compactFactoryContext(input);
 	const directory = mkdtempSync(join(tmpdir(), "cyrus-factory-context-"));
 	const path = join(directory, "input.json");
 	try {

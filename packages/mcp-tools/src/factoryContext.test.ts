@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { expect, it } from "vitest";
 import {
+	compactFactoryContext,
 	createFactoryContextServer,
 	prepareFactoryContext,
 } from "./factoryContext.js";
@@ -156,4 +157,44 @@ it("isolates snapshots across roles/rounds and removes private files on cleanup"
 		first.cleanup();
 		second.cleanup();
 	}
+});
+
+it("projects machine provenance in outputs, history and correction without dropping requirements", () => {
+	const hashes = Object.fromEntries(
+		Array.from({ length: 16000 }, (_, i) => [`build/${i}`, "a".repeat(64)]),
+	);
+	const shot = {
+		area: "Reader",
+		state: "Paid",
+		path: "reader.png",
+		imageSha256: "image",
+		dependencyHashes: hashes,
+	};
+	const input = {
+		outputs: { capture: { screenshots: [shot] } },
+		history: [{ output: { screenshots: [shot] } }],
+		outputCorrection: { output: { screenshots: [shot] } },
+		requirements: ["Keep every requirement"],
+		current: { dependencyManifests: { digest: hashes } },
+	};
+	const projected = compactFactoryContext(input);
+	expect(JSON.stringify(projected).length).toBeLessThan(2000);
+	expect(projected).toMatchObject({
+		outputs: {
+			capture: {
+				screenshots: [
+					{
+						area: "Reader",
+						state: "Paid",
+						path: "reader.png",
+						imageSha256: "image",
+						sourceFingerprint: { entries: 16000, version: 1 },
+					},
+				],
+			},
+		},
+		requirements: input.requirements,
+		current: { manifestInventory: { count: 1, runtimeOnly: true } },
+	});
+	expect(input.outputs.capture.screenshots[0]!.dependencyHashes).toBe(hashes);
 });

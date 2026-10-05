@@ -163,11 +163,11 @@ it("resumes a rejected completed capture to replace only invalid evidence", asyn
 		})),
 	});
 	expect((output as any).screenshots[2].path).toBe(fresh.path);
-	expect(ctx.checkpointAgent).toHaveBeenNthCalledWith(1, {
-		runner: "codex",
-		sessionId: "existing-conversation",
-		result: ctx.resumeAgent!.result,
-	});
+	expect(ctx.checkpointAgent).toHaveBeenCalledWith(
+		expect.objectContaining({
+			rejected: expect.objectContaining({ attempts: 1, output: saved }),
+		}),
+	);
 	expect(ctx.checkpointAgent).toHaveBeenLastCalledWith(
 		expect.objectContaining({
 			result: {
@@ -178,7 +178,7 @@ it("resumes a rejected completed capture to replace only invalid evidence", asyn
 			},
 		}),
 	);
-	expect(ctx.resumeAgent!.result!.output).toEqual(saved);
+	expect(ctx.resumeAgent!.rejected).toBeUndefined();
 });
 
 it("still revalidates valid saved output without restarting the runner", async () => {
@@ -199,4 +199,149 @@ it("keeps filesystem/finalization failures retryable without discarding the save
 	);
 	expect(runner.start).not.toHaveBeenCalled();
 	expect(ctx.resumeAgent!.result!.output).toEqual(repaired);
+});
+
+async function guideFixture() {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "guide",
+		name: "Guide",
+		type: "agent",
+		prompt: "Guide",
+	} as ExecutionContext["step"];
+	f.ctx.run.step = "pipeline/guide";
+	f.ctx.run.outputs.ci = {
+		baseSha: execFileSync("git", ["rev-parse", "HEAD^"], {
+			cwd: f.ctx.run.workspace,
+			encoding: "utf8",
+		}).trim(),
+	};
+	const guide = {
+		goal: "Feature",
+		summary: "Feature",
+		decision: { status: "ready", summary: "Ready" },
+		requirements: [
+			{
+				criterion: "Support feature",
+				status: "supported",
+				evidence: ["Verified"],
+			},
+		],
+		behavior: [],
+		checks: [],
+		risks: [],
+		reviewInstructions: ["Inspect"],
+		chapters: [
+			{
+				id: "feature",
+				title: "Feature",
+				summary: "Feature",
+				before: "Old",
+				after: "New",
+				requirementIndexes: [0],
+				files: ["other.txt"],
+				screenshots: [],
+				diagrams: [],
+				reviewChecks: ["Inspect"],
+				risks: [],
+				evidence: ["Verified"],
+			},
+		],
+	};
+	const invalid = structuredClone(guide);
+	invalid.chapters[0]!.files.push("view.txt");
+	f.ctx.resumeAgent!.result!.output = invalid;
+	f.runner.getMessages = () => [
+		{ type: "result", result: JSON.stringify(guide) },
+	];
+	return { ...f, guide, invalid };
+}
+
+it("validates recovered guide coverage and resumes the same conversation with exact issues", async () => {
+	const f = await guideFixture();
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(output).toEqual(f.guide);
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	expect(f.getInput().outputCorrection).toMatchObject({
+		output: f.invalid,
+		attempts: 1,
+		issues: [
+			{
+				path: "/chapters/files",
+				expected: ["other.txt"],
+				actual: ["view.txt"],
+			},
+		],
+	});
+	expect(f.ctx.resumeAgent!.rejected).toBeUndefined();
+});
+
+it("corrects fresh malformed JSON and missing PR files through the same boundary", async () => {
+	const f = await guideFixture();
+	delete f.ctx.resumeAgent!.result;
+	let turn = 0;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result:
+				turn++ === 0
+					? "invalid JSON"
+					: turn === 2
+						? JSON.stringify({
+								...f.guide,
+								chapters: [{ ...f.guide.chapters[0], files: [] }],
+							})
+						: JSON.stringify(f.guide),
+		},
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toEqual(f.guide);
+	expect(f.runner.start).toHaveBeenCalledTimes(3);
+	expect(f.getInput().outputCorrection).toMatchObject({
+		attempts: 2,
+		issues: [{ path: "/chapters/files", expected: ["other.txt"], actual: [] }],
+	});
+});
+
+it("persists correction across interruption and bounds repeated validation rejection", async () => {
+	const f = await guideFixture();
+	f.runner.start.mockRejectedValueOnce(new Error("Transport offline"));
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"Transport offline",
+	);
+	const checkpoint = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
+	expect(checkpoint.rejected).toMatchObject({ attempts: 1, output: f.invalid });
+	f.ctx.resumeAgent = checkpoint;
+	f.runner.start.mockResolvedValue(undefined);
+	f.runner.getMessages = () => [
+		{ type: "result", result: JSON.stringify(f.invalid) },
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"exhausted after 2",
+	);
+	expect(f.ctx.resumeAgent!.rejected).toMatchObject({
+		exhausted: true,
+		attempts: 2,
+	});
+	const count = f.runner.start.mock.calls.length;
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"exhausted",
+	);
+	expect(f.runner.start).toHaveBeenCalledTimes(count);
+});
+
+it("applies schema validation to recovered malformed guides before accepting them", async () => {
+	const f = await guideFixture();
+	f.ctx.resumeAgent!.result!.output = { chapters: [] };
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toEqual(f.guide);
+	expect(f.getInput().outputCorrection).toMatchObject({
+		output: { chapters: [] },
+		attempts: 1,
+	});
+	expect(
+		f
+			.getInput()
+			.outputCorrection.issues.some(
+				(issue: { path: string }) => issue.path === "/goal",
+			),
+	).toBe(true);
 });

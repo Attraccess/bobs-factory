@@ -216,3 +216,62 @@ it("gives the guide the entire PR file inventory separately from the last role d
 		files: ["a.txt", "b.txt"],
 	});
 });
+
+it("excludes ignored build churn while retaining tracked ignored source, additions and tracked deletions", () => {
+	const { workspace, git } = context();
+	mkdirSync(join(workspace, "app", "build"), { recursive: true });
+	writeFileSync(join(workspace, ".gitignore"), "app/build/\n");
+	writeFileSync(join(workspace, "app", "view.ts"), "View");
+	writeFileSync(join(workspace, "app", "build", "required.ts"), "Required");
+	git("add", ".");
+	git("add", "-f", "app/build/required.ts");
+	git("commit", "-m", "feat: source");
+	const first = dependencyHashes(workspace, ["app/**"]);
+	const timestamp = join(workspace, "app", "build", ".bin_timestamp");
+	writeFileSync(timestamp, "1");
+	expect(dependencyHashes(workspace, ["app/**"])).toEqual(first);
+	writeFileSync(timestamp, "2");
+	expect(dependencyHashes(workspace, ["app/**"])).toEqual(first);
+	expect(
+		dependencyHashes(workspace, ["app/build/.bin_timestamp"]),
+	).toHaveProperty("app/build/.bin_timestamp");
+	writeFileSync(join(workspace, "app", "view.ts"), "Changed");
+	expect(dependencyHashes(workspace, ["app/**"])).not.toEqual(first);
+	rmSync(join(workspace, "app", "build", "required.ts"));
+	expect(dependencyHashes(workspace, ["app/**"])["app/build/required.ts"]).toBe(
+		"missing",
+	);
+});
+
+it("invalidates explicit ignored runtime assets at the same clean SHA and migrates compatible legacy maps conservatively", async () => {
+	const { context: ctx, workspace, git } = context();
+	writeFileSync(join(workspace, ".gitignore"), "runtime.asset\n");
+	git("add", ".");
+	git("commit", "-m", "chore: runtime input");
+	writeFileSync(join(workspace, "runtime.asset"), "One");
+	(ctx.run.outputs["visual-scope"] as any).areas[0].dependencies.push(
+		"runtime.asset",
+	);
+	const path = join(ctx.evidenceDir, "runtime.png");
+	writeFileSync(path, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1]));
+	ctx.progress = await roleProgress(ctx);
+	const first = captureEvidence(ctx, {
+		screenshots: [{ path, caption: "A", area: "A", state: "desktop" }],
+	}) as any;
+	ctx.run.roleRevisions = { "pipeline/capture": ctx.progress.currentRevision! };
+	const legacy = structuredClone(first);
+	const shot = legacy.screenshots[0];
+	shot.dependencyHashes = legacy.dependencyManifests[shot.dependencyManifest];
+	delete shot.dependencyManifest;
+	delete shot.fingerprintVersion;
+	delete legacy.dependencyManifests;
+	ctx.run.history = [{ step: "pipeline/capture", output: legacy, at: "" }];
+	ctx.progress = await roleProgress(ctx);
+	expect(captureEvidence(ctx, legacy)).toMatchObject({
+		screenshots: [{ fingerprintVersion: 2, reused: true }],
+	});
+	writeFileSync(join(workspace, "runtime.asset"), "Two");
+	ctx.progress = await roleProgress(ctx);
+	expect(ctx.progress.unchangedCode).toBe(true);
+	expect(() => captureEvidence(ctx, legacy)).toThrow("not verified");
+});
