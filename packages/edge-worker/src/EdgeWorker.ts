@@ -4777,6 +4777,7 @@ ${taskSection}`;
 				commentId:
 					agentSession.sourceCommentId ??
 					agentSession.comment?.id ??
+					agentSession.commentId ??
 					agentActivity?.sourceCommentId ??
 					undefined,
 				activityId: agentActivity?.id,

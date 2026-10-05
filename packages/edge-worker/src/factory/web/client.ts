@@ -112,10 +112,11 @@ export function useAction() {
 			body?: any;
 			method?: string;
 		}) => api(path, { method, body: JSON.stringify(body) }),
-		onSuccess: () => {
+		onSuccess: async () => {
 			void cache.invalidateQueries({ queryKey: ["runs"] });
 			void cache.invalidateQueries({ queryKey: ["run"] });
-			void cache.invalidateQueries({ queryKey: ["config"] });
+			// Keep edits pending until forms can build the next save from fresh config.
+			await cache.invalidateQueries({ queryKey: ["config"] });
 		},
 	});
 }

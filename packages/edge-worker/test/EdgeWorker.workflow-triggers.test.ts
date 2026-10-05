@@ -132,9 +132,20 @@ it.each([
 		}),
 	);
 });
-it("retains original mention context across delayed replies and original Simple serialization", async () => {
+it.each([
+	false,
+	true,
+])("retains original ticket context across delayed replies and Simple serialization (scalar comment ID: %s)", async (scalarCommentId) => {
 	const { edge, worker, repository } = setup();
-	const original = webhook("@Bob implement this");
+	const event = webhook("@Bob implement this");
+	const original = {
+		...event,
+		agentSession: {
+			...event.agentSession,
+			comment: scalarCommentId ? undefined : event.agentSession.comment,
+			commentId: scalarCommentId ? "comment" : "fallback-comment",
+		},
+	};
 	edge.captureTicketOrigin(original, true);
 	const state = worker.serializeMappings();
 	worker.restoreMappings(state);
@@ -165,7 +176,7 @@ it("retains original mention context across delayed replies and original Simple 
 		selectionMethod: "default",
 		ticket: {
 			provider: "cli",
-			subtype: "mention",
+			subtype: scalarCommentId ? "assignment" : "mention",
 			commentId: "comment",
 			sourceTimestamp: "2026-10-05T10:00:00Z",
 			identifier: "TEST-1",
