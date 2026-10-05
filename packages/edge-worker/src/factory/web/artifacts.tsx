@@ -8,6 +8,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { Link } from "react-router-dom";
 import { api, artifactsOf, friendly, screenshotUrl } from "./client";
 import { LazyImage } from "./media";
 import { GuidedReview } from "./review";
@@ -719,6 +720,16 @@ export function Inspector({
 			}}
 		>
 			<div className="inspector-toolbar">
+				{artifactType(v) === "guide" && (
+					<Link
+						className="button secondary"
+						to={`/runs/${run.id}/review`}
+						state={{ focusRunId: run.id }}
+						onClick={onClose}
+					>
+						Open review guide →
+					</Link>
+				)}
 				<div className="toggle">
 					<button
 						type="button"
