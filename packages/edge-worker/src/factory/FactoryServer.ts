@@ -150,7 +150,12 @@ export class FactoryServer {
 				})
 				.parse(request.body);
 			return {
-				workflows: runtime.updateWorkflows(workflows, defaultWorkflow),
+				workflows: runtime
+					.updateWorkflows(workflows, defaultWorkflow)
+					.map((workflow) => ({
+						...workflow,
+						launchFields: getLaunchFields(workflow),
+					})),
 				defaultWorkflow: runtime.getDefaultWorkflow(),
 			};
 		});

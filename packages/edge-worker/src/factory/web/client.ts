@@ -112,10 +112,18 @@ export function useAction() {
 			body?: any;
 			method?: string;
 		}) => api(path, { method, body: JSON.stringify(body) }),
-		onSuccess: async () => {
+		onSuccess: async (data, { path, method = "POST" }) => {
+			if (path === "/api/workflows" && method === "PUT") {
+				// A failed refresh must not let the next edit restore old permissions.
+				await cache.cancelQueries({ queryKey: ["config"] });
+				cache.setQueryData(["config"], (previous: any) => ({
+					...previous,
+					...data,
+				}));
+			}
 			void cache.invalidateQueries({ queryKey: ["runs"] });
 			void cache.invalidateQueries({ queryKey: ["run"] });
-			// Keep edits pending until forms can build the next save from fresh config.
+			// Keep edits pending while refreshing any other configuration changes.
 			await cache.invalidateQueries({ queryKey: ["config"] });
 		},
 	});

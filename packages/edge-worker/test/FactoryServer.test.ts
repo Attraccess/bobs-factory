@@ -140,6 +140,16 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		});
 		expect(settings.statusCode).toBe(200);
 		expect(settings.json().defaultWorkflow).toBe("factory");
+		const savedConfig = (
+			await server.app.inject({ url: "/api/config", headers })
+		).json();
+		expect(settings.json().workflows).toEqual(savedConfig.workflows);
+		expect(
+			settings
+				.json()
+				.workflows.find((workflow: { id: string }) => workflow.id === "simple")
+				.launchFields,
+		).toMatchObject([{ name: "prompt", required: true }, { name: "title" }]);
 		expect(runtime.selectWorkflow([], "manual").id).toBe("factory");
 		expect(
 			(await server.app.inject({ url: "/api/config", headers })).json()
