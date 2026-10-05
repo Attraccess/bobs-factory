@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
 	active,
@@ -13,6 +12,8 @@ import {
 	workflowOf,
 } from "./client";
 import { activitiesOf } from "./conversation";
+import { DraftNotice } from "./pwa-ui";
+import { revisionOf, useRestorableState } from "./restoration";
 import { GuidedReview } from "./review";
 import { Bob, Button, ConfirmStop, External, Markdown, useToast } from "./ui";
 export const labels: Record<string, string> = {
@@ -90,11 +91,18 @@ function QuickReplies({ question }: { question: string }) {
 export function QuestionForm({ run }: { run: any }) {
 	const toast = useToast(),
 		action = useAction(),
-		[answers, setAnswers] = useState<Record<number, string>>({});
+		[answers, setAnswers, staleAnswers] = useRestorableState<
+			Record<number, string>
+		>(
+			`answers/${run.id}`,
+			{},
+			revisionOf([run.questions, run.step, run.status]),
+		);
 	const questions = run.questions ?? [];
 	const submit = async () => {
 		if (
 			action.isPending ||
+			staleAnswers ||
 			questions.some((_: string, i: number) => !answers[i]?.trim())
 		)
 			return;
@@ -102,6 +110,7 @@ export function QuestionForm({ run }: { run: any }) {
 			await action.mutateAsync({
 				path: `/api/runs/${run.id}/answer`,
 				body: {
+					context: { questions, step: run.step },
 					answer: questions
 						.map((q: string, i: number) => `${i + 1}. ${q}\n${answers[i]}`)
 						.join("\n\n"),
@@ -126,6 +135,7 @@ export function QuestionForm({ run }: { run: any }) {
 				}
 			}}
 		>
+			<DraftNotice conflict={staleAnswers} draftKey={`answers/${run.id}`} />
 			<fieldset disabled={action.isPending}>
 				<legend className="sr-only">
 					Answers to Bob's clarification questions
@@ -170,8 +180,10 @@ export function QuestionForm({ run }: { run: any }) {
 			)}
 			<Button
 				type="submit"
+				requiresConnection
 				busy={action.isPending}
 				disabled={
+					staleAnswers ||
 					!questions.length ||
 					questions.some((_: string, i: number) => !answers[i]?.trim())
 				}
@@ -197,15 +209,25 @@ export function ReviewActions({
 	const toast = useToast(),
 		navigate = useNavigate(),
 		action = useAction(),
-		[decisionPage, setDecisionPage] = useState(false),
-		[feedbackOpen, setFeedbackOpen] = useState(false),
-		[feedback, setFeedback] = useState("");
+		[decisionPage, setDecisionPage] = useRestorableState(
+			`review/decision/${run.id}`,
+			false,
+		),
+		[feedbackOpen, setFeedbackOpen] = useRestorableState(
+			`feedback/open/${run.id}`,
+			false,
+		),
+		[feedback, setFeedback, staleFeedback] = useRestorableState(
+			`feedback/text/${run.id}`,
+			"",
+			revisionOf([run.reviewGate, run.status, run.chat?.mode]),
+		);
 	const guide = run.outputs?.guide,
 		gate = run.reviewGate,
 		waiting = gate?.status === "pending",
 		url = run.outputs?.["draft-pr"]?.url ?? gate?.url;
 	const reject = async () => {
-		if (!feedback.trim()) return;
+		if (!feedback.trim() || staleFeedback) return;
 		try {
 			if (waiting) {
 				await action.mutateAsync({
@@ -232,12 +254,17 @@ export function ReviewActions({
 			}
 			toast({ text: "Feedback sent — Bob is on it" });
 			setFeedbackOpen(false);
+			setFeedback("");
 		} catch {
 			/* error stays visible */
 		}
 	};
 	return (
 		<>
+			<DraftNotice
+				conflict={staleFeedback}
+				draftKey={`feedback/text/${run.id}`}
+			/>
 			{guide ? (
 				<GuidedReview value={guide} run={run} onDecision={setDecisionPage} />
 			) : (
@@ -270,14 +297,15 @@ export function ReviewActions({
 					<div className="actions">
 						<Button
 							type="submit"
+							requiresConnection
 							busy={action.isPending}
-							disabled={!feedback.trim()}
+							disabled={!feedback.trim() || staleFeedback}
 						>
 							Send to Bob
 						</Button>
 						<Button
 							variant="ghost"
-							disabled={action.isPending}
+							disabled={action.isPending || action.isBlocked}
 							onClick={() => setFeedbackOpen(false)}
 						>
 							Cancel
@@ -323,6 +351,7 @@ export function ReviewActions({
 					{waiting && (
 						<Button
 							variant="ghost"
+							requiresConnection
 							busy={action.isPending}
 							onClick={() => {
 								void action
@@ -449,6 +478,7 @@ export function FocusCard({
 					</div>
 					<div className="actions">
 						<Button
+							requiresConnection
 							busy={action.isPending}
 							onClick={() =>
 								void action
@@ -580,6 +610,7 @@ export function WorkingRow({
 							Open run
 						</Link>
 						<ConfirmStop
+							requiresConnection
 							busy={action.isPending}
 							onStop={() =>
 								void action

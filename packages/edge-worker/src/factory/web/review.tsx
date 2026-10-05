@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./client";
 import { LazyImage } from "./media";
+import { useRestorableState } from "./restoration";
 import { Button, External, Markdown } from "./ui";
 
 function signature(value: unknown) {
@@ -126,10 +127,10 @@ function ReviewReader({ storageKey, guide, run, onDecision }: any) {
 			...chapters.map((c: any) => c.title),
 			"Checks & decision",
 		],
-		[progress, setProgress] = useState<{
+		[progress, setProgress] = useRestorableState<{
 			page: number;
 			reviewed: Record<string, boolean>;
-		}>(() => {
+		}>(`review/progress/${storageKey}`, () => {
 			try {
 				const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
 				if (

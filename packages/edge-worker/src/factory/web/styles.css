@@ -2804,3 +2804,35 @@ kbd {
 	overflow-wrap: anywhere;
 	font-size: 0.8rem;
 }
+
+.update-notice {
+	margin: 0 0 18px;
+	padding: 16px;
+	border: 1px solid var(--line);
+	border-radius: 16px;
+	background: var(--blue);
+	color: var(--text);
+}
+.update-notice .actions {
+	margin-top: 10px;
+	flex-wrap: wrap;
+}
+.update-notice label {
+	display: block;
+	margin-top: 12px;
+}
+.install-help ul {
+	padding-inline-start: 20px;
+}
+.install-help li {
+	margin-block: 12px;
+}
+.site-header {
+	padding-top: env(safe-area-inset-top);
+}
+@media (max-width: 640px) {
+	.install-control {
+		font-size: 12px;
+		padding-inline: 8px;
+	}
+}

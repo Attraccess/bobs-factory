@@ -5,14 +5,45 @@ import {
 	useMutation,
 	useQueryClient,
 } from "@tanstack/react-query";
-import { afterEach, expect, it, vi } from "vitest";
-import { api, useAction } from "../src/factory/web/client.js";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import {
+	api,
+	useAction,
+	validateLiveConnection,
+} from "../src/factory/web/client.js";
+import {
+	authoritativeReady,
+	checkVersion,
+	disconnected,
+	pwaState,
+	uiBuild,
+} from "../src/factory/web/pwa.js";
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@tanstack/react-query")>()),
 	useMutation: vi.fn(),
 	useQueryClient: vi.fn(),
 }));
+
+vi.mock("../src/factory/web/pwa.js", async (importOriginal) => {
+	const original =
+		await importOriginal<typeof import("../src/factory/web/pwa.js")>();
+	return { ...original, usePwa: () => original.pwaState() };
+});
+const factoryResponse = (body: unknown, init: ResponseInit = {}) =>
+	Response.json(body, {
+		...init,
+		headers: { ...init.headers, "X-Factory-Build": uiBuild },
+	});
+const version = () => factoryResponse({ build: uiBuild, protocol: 1 });
+beforeEach(async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => version()),
+	);
+	await checkVersion();
+	authoritativeReady();
+});
 
 afterEach(() => {
 	vi.unstubAllGlobals();
@@ -49,16 +80,17 @@ it("preserves consecutive permission revocations after failed refreshes and a la
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async (_path: string, options: RequestInit = {}) => {
+			if (_path === "/api/version") return version();
 			if (options.method === "PUT") {
 				const saved = JSON.parse(options.body as string);
 				writes.push(saved.workflows);
-				return Response.json(saved);
+				return factoryResponse(saved);
 			}
 			if (!staleRead)
 				return new Promise<Response>((resolve) => {
 					staleRead = resolve;
 				});
-			return Response.json(
+			return factoryResponse(
 				{ error: "Config refresh unavailable" },
 				{ status: 503 },
 			);
@@ -95,7 +127,9 @@ it("preserves consecutive permission revocations after failed refreshes and a la
 		expect(query.getCurrentResult().error?.message).toBe(
 			"Config refresh unavailable",
 		);
-		staleRead!(Response.json(initial));
+		staleRead!(factoryResponse(initial));
+		await checkVersion();
+		authoritativeReady();
 		await oldRead;
 		await revoke("ticket-assignment");
 		expect(writes.map(([workflow]) => workflow.allowedTriggers)).toEqual([
@@ -121,8 +155,10 @@ it("retains saved config when a workflow write is rejected", async () => {
 	cache.setQueryData(["config"], saved);
 	vi.stubGlobal(
 		"fetch",
-		vi.fn(async () =>
-			Response.json({ error: "Invalid workflow call" }, { status: 409 }),
+		vi.fn(async (path) =>
+			path === "/api/version"
+				? version()
+				: factoryResponse({ error: "Invalid workflow call" }, { status: 409 }),
 		),
 	);
 	try {
@@ -133,4 +169,56 @@ it("retains saved config when a workflow write is rejected", async () => {
 	} finally {
 		cache.clear();
 	}
+});
+
+it("blocks offline and stale writes without sending a mutation", async () => {
+	const fetch = vi.fn(async () =>
+		factoryResponse({ build: "different", protocol: 1 }),
+	);
+	vi.stubGlobal("fetch", fetch);
+	disconnected();
+	await expect(
+		api("/api/runs", { method: "POST", body: "{}" }),
+	).rejects.toThrow("paused");
+	expect(fetch).not.toHaveBeenCalled();
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => version()),
+	);
+	await checkVersion();
+	authoritativeReady();
+	vi.stubGlobal("fetch", fetch);
+	await expect(
+		api("/api/runs", { method: "POST", body: "{}" }),
+	).rejects.toThrow("version");
+	expect(fetch.mock.calls).toEqual([["/api/version", expect.any(Object)]]);
+	expect(pwaState().status).toBe("mismatch");
+});
+it("checks response versions before consuming potentially incompatible data", async () => {
+	const response = factoryResponse(
+		{ sensitive: "incompatible" },
+		{ headers: {} },
+	);
+	response.headers.set("X-Factory-Build", "different");
+	const json = vi.spyOn(response, "json");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => response),
+	);
+	await expect(api("/api/config")).rejects.toThrow("version changed");
+	expect(json).not.toHaveBeenCalled();
+	expect(pwaState().status).toBe("mismatch");
+});
+
+it("releases a rejected SSE response before retrying or waiting for an update", async () => {
+	const cancel = vi.fn();
+	const response = new Response(new ReadableStream({ cancel }), {
+		headers: { "Content-Type": "text/event-stream" },
+	});
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => factoryResponse({ build: "different", protocol: 1 })),
+	);
+	await expect(validateLiveConnection(response)).rejects.toThrow("version");
+	expect(cancel).toHaveBeenCalledOnce();
 });

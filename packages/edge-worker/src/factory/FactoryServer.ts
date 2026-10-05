@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
 import { activityMarkers, activityPage } from "./ActivityPage.js";
 import { reasoningLevels, serviceTierRunners } from "./AgentSettings.js";
 import { CaptureSchema, verifiedScreenshot } from "./FactoryTools.js";
+import { factoryWebAssets } from "./FactoryWebAssets.js";
 import {
 	getLaunchFields,
 	LaunchRequestSchema,
@@ -80,6 +82,22 @@ export class FactoryServer {
 			for (const stream of this.streams) stream.end();
 			this.streams.clear();
 		});
+		const shell = factoryWebAssets();
+		const configRevision = () =>
+			createHash("sha256")
+				.update(
+					JSON.stringify([
+						runtime.listWorkflows(),
+						runtime.getDefaultWorkflow(),
+					]),
+				)
+				.digest("hex");
+		this.app.addHook("onSend", async (request, reply) => {
+			if (request.url.startsWith("/api/")) {
+				reply.header("Cache-Control", "no-store");
+				reply.header("X-Factory-Build", shell.build);
+			}
+		});
 		// This separate listener is loopback-only and never registered on Cyrus's webhook tunnel.
 		this.app.addHook("onRequest", async (request, reply) => {
 			const host = request.headers.host ?? "";
@@ -93,30 +111,52 @@ export class FactoryServer {
 					return reply
 						.code(403)
 						.send({ error: "Factory request header required" });
+				const version = request.headers["x-factory-build"];
+				// Header-less local automation remains compatible; the versioned UI always sends it.
+				if (version !== undefined && version !== shell.build)
+					return reply.code(409).send({
+						error:
+							"Factory updated. Preserve your drafts and update before trying again.",
+						code: "FACTORY_VERSION_MISMATCH",
+					});
+				const config = request.headers["x-factory-config"];
+				if (
+					["/api/workflows", "/api/runs"].includes(request.url) &&
+					config !== undefined &&
+					config !== configRevision()
+				)
+					return reply.code(409).send({
+						error:
+							"Recipe settings changed. Refresh and review your draft before sending.",
+					});
 			}
 		});
-		for (const [path, name, contentType] of [
-			["/", "index.html", "text/html"],
-			["/app.js", "app.js", "application/javascript"],
-			["/styles.css", "styles.css", "text/css"],
-		]) {
-			const assetRoot = existsSync(new URL("./web/app.js", import.meta.url))
-				? "./web/"
-				: "../../dist/factory/web/";
-			const asset = readFileSync(
-				new URL(`${assetRoot}${name}`, import.meta.url),
-				"utf8",
-			);
-			this.app.get(path!, (_request, reply) =>
-				reply.type(contentType!).send(asset),
+		for (const asset of shell.assets) {
+			this.app.get(asset.path, (_request, reply) =>
+				reply
+					.header(
+						"Cache-Control",
+						asset.immutable
+							? "public, max-age=31536000, immutable"
+							: "no-cache",
+					)
+					.header("X-Factory-Build", shell.build)
+					.header("X-Content-Type-Options", "nosniff")
+					.type(asset.type)
+					.send(asset.bytes),
 			);
 		}
+		this.app.get("/api/version", () => ({
+			build: shell.build,
+			protocol: shell.protocol,
+		}));
 		this.app.get("/api/events", (_request, reply) => {
 			reply.hijack();
 			const stream = reply.raw;
 			stream.writeHead(200, {
 				"Content-Type": "text/event-stream",
-				"Cache-Control": "no-cache, no-transform",
+				"Cache-Control": "no-store, no-transform",
+				"X-Factory-Build": shell.build,
 				Connection: "keep-alive",
 				"X-Accel-Buffering": "no",
 			});
@@ -132,6 +172,7 @@ export class FactoryServer {
 			});
 		});
 		this.app.get("/api/config", () => ({
+			configRevision: configRevision(),
 			repositories: hooks.repositories(),
 			workflows: runtime.listWorkflows().map((workflow) => ({
 				...workflow,
@@ -160,6 +201,7 @@ export class FactoryServer {
 						launchFields: getLaunchFields(workflow),
 					})),
 				defaultWorkflow: runtime.getDefaultWorkflow(),
+				configRevision: configRevision(),
 			};
 		});
 		this.app.get("/api/runs", () => {
@@ -487,9 +529,26 @@ export class FactoryServer {
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/answer",
 			(request) => {
-				const { answer } = z
-					.object({ answer: z.string().trim().min(1).max(100000) })
+				const { answer, context } = z
+					.object({
+						answer: z.string().trim().min(1).max(100000),
+						context: z
+							.object({
+								questions: z.array(z.string()),
+								step: z.string().optional(),
+							})
+							.optional(),
+					})
 					.parse(request.body);
+				const run = runtime.get(request.params.id);
+				if (
+					context &&
+					(context.step !== run.step ||
+						!isDeepStrictEqual(context.questions, run.questions))
+				)
+					throw new Error(
+						"The question or step changed. Refresh and review your draft before answering.",
+					);
 				runtime.answer(request.params.id, answer);
 				return { accepted: true };
 			},

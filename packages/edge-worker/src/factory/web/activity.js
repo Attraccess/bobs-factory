@@ -311,6 +311,7 @@ export function formatActivities(run) {
 				continue;
 			activities.push({
 				key: `event/${event.at}/${event.activityIndex ?? index}`,
+				cursor: event.activityCursor,
 				at: event.at,
 				step: event.step,
 				type: "system",
@@ -331,6 +332,7 @@ export function formatActivities(run) {
 			else
 				activities.push({
 					key: `event/${event.at}/${event.activityIndex ?? index}`,
+					cursor: event.activityCursor,
 					at: event.at,
 					step: event.step,
 					type: "system",

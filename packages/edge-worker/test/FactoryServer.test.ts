@@ -143,6 +143,24 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		const savedConfig = (
 			await server.app.inject({ url: "/api/config", headers })
 		).json();
+		const rejectedSettings = await server.app.inject({
+			method: "PUT",
+			url: "/api/workflows",
+			headers: { ...headers, "x-factory-config": "stale" },
+			payload: { workflows: defaultWorkflows, defaultWorkflow: "simple" },
+		});
+		expect(rejectedSettings.statusCode).toBe(409);
+		expect(runtime.getDefaultWorkflow()).toBe("factory");
+		const unchangedSettings = await server.app.inject({
+			method: "PUT",
+			url: "/api/workflows",
+			headers: { ...headers, "x-factory-config": savedConfig.configRevision },
+			payload: { workflows: defaultWorkflows, defaultWorkflow: "factory" },
+		});
+		expect(unchangedSettings.statusCode).toBe(200);
+		expect(unchangedSettings.json().configRevision).toBe(
+			savedConfig.configRevision,
+		);
 		expect(settings.json().workflows).toEqual(savedConfig.workflows);
 		expect(
 			settings
@@ -207,13 +225,30 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		await vi.waitFor(() => expect(runtime.get(id).status).toBe("waiting"));
 		const detail = await server.app.inject({ url: `/api/runs/${id}`, headers });
 		expect(detail.json().questions).toEqual(["Which provider?"]);
+		const staleAnswer = await server.app.inject({
+			method: "POST",
+			url: `/api/runs/${id}/answer`,
+			headers,
+			payload: {
+				answer: "Old draft",
+				context: { questions: ["Old question?"], step: detail.json().step },
+			},
+		});
+		expect(staleAnswer.statusCode).toBe(409);
+		expect(runtime.get(id).answers).toHaveLength(0);
 		expect(
 			(
 				await server.app.inject({
 					method: "POST",
 					url: `/api/runs/${id}/answer`,
 					headers,
-					payload: { answer: "Codex" },
+					payload: {
+						answer: "Codex",
+						context: {
+							questions: detail.json().questions,
+							step: detail.json().step,
+						},
+					},
 				})
 			).statusCode,
 		).toBe(200);
@@ -774,6 +809,158 @@ it("protects chat delivery, validates input, preserves messages and refuses disa
 		});
 		expect((await send("Too late")).json().error).toBe("Turn ended");
 		expect(runtime.chatMessages("legacy")).toHaveLength(1);
+	} finally {
+		await server.stop();
+		await runtime.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+it("serves a coherent installable shell with protected versioned writes and explicit static routes", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-pwa-api-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const start = vi.fn(async () => ({ id: "test" }) as any);
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start,
+		stop: () => {},
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	try {
+		const version = await server.app.inject({ url: "/api/version", headers });
+		expect(version.statusCode).toBe(200);
+		expect(version.headers["cache-control"]).toBe("no-store");
+		const { build, protocol } = version.json();
+		expect(protocol).toBe(1);
+		expect(build).toMatch(/^[a-f0-9]{24}$/);
+		const index = await server.app.inject({ url: "/", headers });
+		expect(index.headers["content-type"]).toContain("text/html");
+		expect(index.headers["cache-control"]).toBe("no-cache");
+		expect(index.headers["x-factory-build"]).toBe(build);
+		const scripts = index.body.matchAll(
+			/(?:src|href)="(\/(?:app|styles)\.[a-f0-9]+\.(?:js|css))"/g,
+		);
+		const paths = [...scripts].map((match) => match[1]);
+		expect(paths).toHaveLength(2);
+		for (const url of paths) {
+			const asset = await server.app.inject({ url, headers });
+			expect(asset.statusCode).toBe(200);
+			expect(asset.headers["cache-control"]).toContain("immutable");
+			expect(asset.headers["x-factory-build"]).toBe(build);
+		}
+		const manifest = await server.app.inject({
+			url: "/manifest.webmanifest",
+			headers,
+		});
+		expect(manifest.headers["content-type"]).toContain(
+			"application/manifest+json",
+		);
+		expect(manifest.json()).toMatchObject({
+			id: "/",
+			display: "standalone",
+			scope: "/",
+			start_url: "/",
+			name: "Bob’s Factory",
+		});
+		for (const icon of [
+			...manifest.json().icons,
+			{ src: "/icons/apple-touch-icon.png" },
+		]) {
+			const image = await server.app.inject({ url: icon.src, headers });
+			expect(image.headers["content-type"]).toBe("image/png");
+			expect([...image.rawPayload.subarray(0, 8)]).toEqual([
+				137, 80, 78, 71, 13, 10, 26, 10,
+			]);
+		}
+		const worker = await server.app.inject({ url: "/sw.js", headers });
+		expect(worker.headers["cache-control"]).toBe("no-cache");
+		for (const url of [
+			"/shell.json",
+			"/current.json",
+			"/package.json",
+			"/icons/not-allowed.png",
+			"/api/version",
+		]) {
+			const result = await server.app.inject({
+				url,
+				headers: { host: "evil.test" },
+			});
+			expect(result.statusCode).toBe(403);
+		}
+		for (const url of [
+			"/shell.json",
+			"/current.json",
+			"/package.json",
+			"/icons/not-allowed.png",
+		]) {
+			expect((await server.app.inject({ url, headers })).statusCode).toBe(404);
+		}
+		const payload = {
+			repositoryId: "repo",
+			workflow: "simple",
+			inputs: { prompt: "task" },
+		};
+		const stale = await server.app.inject({
+			method: "POST",
+			url: "/api/runs",
+			headers: { ...headers, "x-factory-build": "stale" },
+			payload,
+		});
+		expect(stale.statusCode).toBe(409);
+		expect(stale.json().code).toBe("FACTORY_VERSION_MISMATCH");
+		expect(start).not.toHaveBeenCalled();
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/runs",
+					headers: {
+						...headers,
+						"x-factory-build": build,
+						origin: "https://evil.test",
+					},
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/runs",
+					headers: { host: "localhost", "x-factory-build": build },
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/runs",
+					headers: { ...headers, "x-factory-build": build },
+					payload,
+				})
+			).statusCode,
+		).toBe(202);
+		expect(start).toHaveBeenCalledOnce();
+		// Legacy header-less local automation is explicitly compatible.
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/runs",
+					headers,
+					payload,
+				})
+			).statusCode,
+		).toBe(202);
 	} finally {
 		await server.stop();
 		await runtime.shutdown();

@@ -26,6 +26,119 @@ your existing Cyrus repository configuration and state directory. The dashboard
 binds to loopback separately from the webhook listener and is intended for one
 trusted local operator.
 
+## Install Bob’s Factory
+
+Open your usual **stable HTTPS Tailscale address** while Tailscale is connected
+and the factory server is running. Keep using the same origin: changing the
+hostname or port creates a separate app and separate browser data. The existing
+tailnet-only Serve deployment and its validating loopback proxy remain in place.
+Installation does not make the factory public or keep its server online.
+Loopback addresses also work as secure development contexts.
+
+**Install app** in the header explains the browser’s installation path. When a
+browser offers a native install prompt, its install button appears in this help
+dialog and prompts only after you click. Dismissing it leaves the browser app
+usable. Standalone windows show **App help** instead.
+
+| Browser | Installation path |
+| --- | --- |
+| Mac Chrome | Address bar install icon, or menu → Cast, save, and share → Install page as app. |
+| Mac Brave | Address bar install icon, or menu → Save and Share → Install. |
+| Mac Safari | File or Share → Add to Dock; requires macOS Sonoma 14 or later. |
+| iPhone Safari | Share → Add to Home Screen; enable Open as Web App when offered. |
+| iPhone Brave | Use Add to Home Screen if its menu offers it. Otherwise open the same address in Safari and install there. |
+| Android Chrome | Menu → Install and create shortcut → Install; menu wording can vary. |
+
+These paths follow the current [Chrome](https://support.google.com/chrome/answer/9658361),
+[Brave](https://support.brave.app/hc/en-us/articles/39077114659597-How-do-I-install-and-use-Web-Apps-in-Brave),
+[Safari on Mac](https://support.apple.com/en-ca/104996), and
+[iPhone Safari](https://support.apple.com/en-lamr/guide/iphone/iphea86e5236/ios)
+guidance. Brave’s iPhone menu availability is conditional; the Safari fallback
+is the supported alternative. Ordinary Safari and its installed app may have
+different site data; do not assume shared cookies or storage.
+
+To uninstall on Chrome/Brave, use the app’s menu or the browser’s app management
+page. Remove Safari’s app from Applications/Dock, or delete the iPhone/Android
+Home Screen app. Removing an app does not stop backend runs. Clearing its site
+data can also remove preferences and unsent browser drafts.
+
+### Disconnection and updates
+
+The service worker bundles maintained Workbox precaching and routing modules
+locally; it does not load a CDN or depend on an external app provider. Browser
+subresource integrity checks and the server build header validate its allowlist.
+After a successful first visit, the service worker caches only the branded
+static shell: HTML, versioned JavaScript/CSS, manifest and icons. A cold offline
+launch explains how to reconnect instead of loading indefinitely. Run history,
+API responses, live events, artifacts, screenshots and raw entries are not
+stored in this offline cache. Already-loaded information remains in memory and
+is marked potentially stale after disconnection. Drafts remain editable, but
+server actions pause; nothing is queued or replayed offline. Reconnection
+refreshes configuration and current runs/gates before actions become available.
+Unsupported service workers or failed registration leave the connected app
+usable.
+
+Updates are offered explicitly. **Later** keeps the mounted app, drafts and
+reading position. If its version differs from the server, actions remain paused
+until you update. **Update now** waits for outstanding actions to settle, checks
+the complete new shell, then reloads only the tab you chose. Other tabs retain
+their UI and receive their own update notice. Installation and frontend updates
+do not stop, restart, approve or replace backend runs.
+
+An explicit update saves a bounded, tab-local snapshot of unsent launch/chat/
+answer/feedback/recipe edits, selected route, open panels, inspector selection
+and stable conversation reading anchors. It contains no query cache, transcript,
+artifact or screenshot. The snapshot expires after 30 minutes, is limited to
+512,000 characters, and is removed after restoration. Ordinary editing does not
+persist these drafts, and a manual browser reload or closing the tab does not
+guarantee preservation. Denied/full session storage postpones the update with
+edits still on screen. Copy unusually large drafts before retrying.
+
+Restored drafts are never sent automatically. If questions, review gates or
+recipe settings changed, review the warning and current state before explicitly
+acknowledging the draft. Recovered copies remain available when a former gate is
+no longer open. Reading restoration fetches the relevant bounded history page;
+if its anchor is no longer retained, the app explains that limitation.
+
+For damaged browser caches, first copy unsent drafts and reconnect. Try **Retry
+connection**, then **Update now**. If that fails, remove this origin’s service
+worker and `bobs-factory-shell-*` caches in browser developer tools, then reload
+while connected. The browser’s clear-site-data option is a broader reset and
+also removes browser preferences/drafts. Server run/checkpoint data is separate
+and remains intact.
+
+The versioned UI sends `X-Factory-Build` on API requests; mismatched writes are
+rejected before execution. Configuration edits/launches also check the fetched
+recipe revision, and answers check their question/step context. Existing local
+automation without this metadata remains compatible and must still satisfy the
+Host, Origin and `X-Factory-Request` guards. Such legacy clients do not gain UI
+version protection by omitting the metadata.
+
+Push notifications are a separate backlog task, **Taskbot #69: Add opt-in Web
+Push for Bob’s Factory attention and completion events**, linked behind #41.
+The follow-up will use maintained Web Push libraries: Bob’s Factory server
+will send directly to browser push-service endpoints with VAPID authentication,
+without a hosted notification provider. Installing this version does not request
+notification permission or send push.
+
+### Installation validation record
+
+The 2026-10-05 isolated F1/browser drive verifies Chromium 154 shell caching,
+cold offline launch, mobile layout, reconnect, two-tab update deferral, draft/
+inspector/reading restoration and continued execution of a waiting run. Google
+Chrome 154.0.8037.97 on this Mac also renders the connected app and registers its
+worker. These checks do **not** establish native installation completion.
+
+The user waived native-device installation testing on 2026-10-05. Native
+installation/standalone launch through the protected HTTPS origin on Mac Chrome,
+Brave and Safari, and iPhone Safari/Brave, has not been verified.
+Desktop UI automation was unavailable; no iPhone/iOS version was confirmed.
+Installed Brave 154.1.96.61 and Safari 26.6.2 are inventory, not passing test
+results. The 390 × 844 screenshot is Chromium emulation, not iPhone evidence.
+Android Chrome’s physical-device check is explicitly waived because no test
+device is available. See the [scoped F1 report](../apps/f1/test-drives/2026-10-05-factory-pwa.md)
+for exact assertions and limits, including the Workbox follow-up drive.
+
 ## Run and configure
 
 The React dashboard uses TanStack Query for cached requests and mutations, Radix for
