@@ -34,6 +34,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Correct rejected factory outputs in the same conversation with durable validation feedback; preserve run definitions across restarts, ignore generated build churn in visual source fingerprints, and keep screenshot provenance out of agent context. ([#6](https://github.com/Attraccess/bobs-factory/pull/6))
+
 - Keep the factory dashboard responsive during agent tool bursts by batching activity saves while preserving immediate execution checkpoints ([#4](https://github.com/Attraccess/bobs-factory/pull/4)).
 
 - Resume a rejected completed screenshot capture with all invalid states and its saved inventory, preserving valid images and the existing conversation instead of repeating the same validation failure on every retry. Reload changed MCP context in resumed Codex conversations. ([#3](https://github.com/Attraccess/bobs-factory/pull/3))

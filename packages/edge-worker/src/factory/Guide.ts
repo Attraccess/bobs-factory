@@ -1,5 +1,6 @@
 import { defaultWorkflows } from "./defaultWorkflows.js";
 import { GuideSchema } from "./FactoryResults.js";
+import { OutputValidationError } from "./OutputValidation.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 /** Validate guide coverage against the entire PR, not the last agent's delta. */
@@ -54,9 +55,25 @@ export function validateGuideCoverage(
 	if (scope) {
 		const omitted = scope.files.filter((file) => !files.has(file));
 		if (omitted.length)
-			throw new Error(`Guide chapters omit PR files: ${omitted.join(", ")}`);
-		if ([...files].some((file) => !scope.files.includes(file)))
-			throw new Error("Guide chapter files must be actual changed PR files");
+			throw new OutputValidationError(value, [
+				{
+					path: "/chapters/files",
+					message: `Guide chapters omit PR files: ${omitted.join(", ")}`,
+					expected: scope.files,
+					actual: [...files],
+				},
+			]);
+		const extra = [...files].filter((file) => !scope.files.includes(file));
+		if (extra.length)
+			throw new OutputValidationError(value, [
+				{
+					path: "/chapters/files",
+					message:
+						"Guide chapter files must be actual changed PR files; move integration/approval-delta information to evidence or revisionNote",
+					expected: scope.files,
+					actual: extra,
+				},
+			]);
 	}
 	if (
 		guide.revisionSummary &&

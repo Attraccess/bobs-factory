@@ -1539,3 +1539,55 @@ it("continues a finished simple run once with the same conversation and persists
 	expect(run.workspace).toBe(home);
 	expect(run.input).toBe("Original");
 });
+
+it("keeps legacy run definitions stable on load and audits contract migration at retry", async () => {
+	const { runtime, home } = create();
+	const run = start(runtime, workflow([agent("work")]));
+	run.status = "failed";
+	run.error = "Interrupted legacy output";
+	delete run.contractVersion;
+	run.workflow.steps[0]!.prompt = "Frozen original prompt";
+	run.workflowDefinitions = [run.workflow];
+	run.checkpoint = {
+		current: "work",
+		visits: { work: 1 },
+		active: {
+			phase: "executing",
+			agent: {
+				runner: "codex",
+				sessionId: "native",
+				rejected: {
+					output: "bad",
+					issues: [{ path: "/", message: "Invalid" }],
+					attempts: 1,
+				},
+			},
+		},
+	};
+	runtime.save(run);
+	const definitions = structuredClone(run.workflowDefinitions);
+	const restarted = reload(home, {
+		agent: async (context) => {
+			expect(context.resumeAgent?.rejected).toMatchObject({
+				output: "bad",
+				attempts: 1,
+			});
+			expect(context.step.prompt).toBe("Frozen original prompt");
+			return {};
+		},
+	});
+	expect(restarted.get(run.id).workflowDefinitions).toEqual(definitions);
+	restarted.retry(run.id);
+	await vi.waitFor(() =>
+		expect(restarted.get(run.id).status).toBe("completed"),
+	);
+	expect(restarted.get(run.id).contractVersion).toBe(2);
+	expect(
+		restarted
+			.get(run.id)
+			.events.some((event) =>
+				event.message.startsWith("Migrated legacy output contract"),
+			),
+	).toBe(true);
+	expect(restarted.get(run.id).workflowDefinitions).toEqual(definitions);
+});

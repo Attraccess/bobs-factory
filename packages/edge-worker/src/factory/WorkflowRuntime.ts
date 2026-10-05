@@ -48,7 +48,20 @@ export interface WorkflowCall {
 export interface AgentCheckpoint {
 	runner: NonNullable<WorkflowStep["runner"]>;
 	sessionId: string;
-	result?: { output: unknown; revision: RoleRevision };
+	result?: { output: unknown; revision: RoleRevision; finalizing?: boolean };
+	rejected?: {
+		output: unknown;
+		issues: {
+			path: string;
+			message: string;
+			expected?: unknown;
+			actual?: unknown;
+		}[];
+		revision?: RoleRevision;
+		attempts: number;
+		exhausted?: boolean;
+		screenshots?: { path: string; area: string; state?: string }[];
+	};
 }
 export interface GraphCheckpoint {
 	current: string;
@@ -89,6 +102,7 @@ export interface FactoryRun {
 	repositoryId: string;
 	workflow: Workflow;
 	workflowDefinitions?: Workflow[];
+	contractVersion?: number;
 	source?: string;
 	status: RunStatus;
 	createdAt: string;
@@ -221,33 +235,9 @@ export class WorkflowRuntime {
 			);
 			run.workflow = WorkflowSchema.parse(run.workflow);
 
-			if (
-				run.workflowDefinitions &&
-				["running", "waiting", "interrupted", "failed"].includes(run.status)
-			) {
-				run.workflowDefinitions = validateWorkflows(
-					upgradeWorkflows(run.workflowDefinitions),
-				);
-				const updated = run.workflowDefinitions.find(
-					(workflow) => workflow.id === run.workflow.id,
-				);
-				if (updated) {
-					const flat =
-						run.workflow.id === "factory" &&
-						!run.workflow.steps.some((step) => step.type === "workflow") &&
-						run.checkpoint;
-					run.workflow = flat
-						? {
-								...run.workflow,
-								steps: structuredClone(
-									run.workflowDefinitions.find(
-										(item) => item.id === "factory-pipeline",
-									)!.steps,
-								),
-							}
-						: structuredClone(updated);
-				}
-			}
+			// Persisted definitions are immutable. Legacy contract migration occurs
+			// explicitly at retry/start, preserving graph positions and native IDs.
+
 			if (run.workflow.id === "simple" && run.workflow.chat === undefined)
 				run.workflow.chat = true;
 			this.runs.set(run.id, run);
@@ -414,6 +404,7 @@ export class WorkflowRuntime {
 			workflowDefinitions: structuredClone(
 				options.workflowDefinitions ?? this.listWorkflows(),
 			),
+			contractVersion: 2,
 			id,
 			status: "running",
 			createdAt: now,
@@ -487,6 +478,18 @@ export class WorkflowRuntime {
 		task?: (signal: AbortSignal) => Promise<void>,
 	): Promise<void> {
 		try {
+			if (run.contractVersion !== 2) {
+				if (run.contractVersion !== undefined && run.contractVersion !== 1)
+					throw new Error(
+						`Unsupported workflow contract version: ${run.contractVersion}`,
+					);
+				run.contractVersion = 2;
+				this.log(
+					run,
+					"run",
+					"Migrated legacy output contract to v2 at execution boundary; workflow definitions, checkpoint positions and accepted history preserved.",
+				);
+			}
 			await this.hooks.prepare?.(run, controller.signal);
 			controller.signal.throwIfAborted();
 			if (task) await task(controller.signal);

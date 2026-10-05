@@ -190,6 +190,10 @@ import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
 import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
 import {
+	OutputValidationError,
+	outputValidationError,
+} from "./factory/OutputValidation.js";
+import {
 	type ChatState,
 	SessionChat,
 	steeringState,
@@ -6149,33 +6153,112 @@ ${taskSection}`;
 	private async executeFactoryAgent(
 		context: ExecutionContext,
 	): Promise<unknown> {
+		if (
+			context.resumeAgent?.rejected?.exhausted &&
+			context.resumeAgent.rejected.revision?.headSha ===
+				(await roleProgress(context)).currentRevision?.headSha
+		)
+			throw new Error(
+				`Output correction exhausted at ${context.step.id}; inspect persisted rejected output/issues. A new revision is required before further automatic correction.`,
+			);
+		const checkpoint = context.checkpointAgent;
+		context.checkpointAgent = (agent) => {
+			context.resumeAgent = agent;
+			checkpoint?.(agent);
+		};
+		try {
+			while (true) {
+				try {
+					const output = await this.executeFactoryAgentAttempt(context);
+					if (
+						context.resumeAgent?.rejected ||
+						context.resumeAgent?.result?.finalizing
+					) {
+						const { rejected: _rejected, ...agent } = context.resumeAgent;
+						if (agent.result) {
+							const { finalizing: _finalizing, ...result } = agent.result;
+							agent.result = result;
+						}
+						context.checkpointAgent(agent);
+					}
+					return output;
+				} catch (error) {
+					const capture = error instanceof CaptureReuseError;
+					if (!(error instanceof OutputValidationError) && !capture)
+						throw error;
+					const previous = context.resumeAgent?.rejected;
+					const revision = (await roleProgress(context)).currentRevision;
+					const attempts =
+						previous?.revision?.headSha === revision?.headSha
+							? (previous?.attempts ?? 0)
+							: 0;
+					const rejection = {
+						output:
+							error instanceof OutputValidationError
+								? error.output
+								: context.resumeAgent?.result?.output,
+						issues:
+							error instanceof OutputValidationError
+								? error.issues
+								: [{ path: "/screenshots", message: (error as Error).message }],
+						revision,
+						attempts,
+						...(capture ? { screenshots: error.screenshots } : {}),
+					};
+					if (!context.resumeAgent) throw error;
+					context.checkpointAgent({
+						...context.resumeAgent,
+						...(context.resumeAgent.result
+							? { result: { ...context.resumeAgent.result, finalizing: false } }
+							: {}),
+						rejected: rejection,
+					});
+					context.log(
+						`Output validation rejected ${context.step.id}: ${error.message}`,
+					);
+					if (attempts >= 2) {
+						context.checkpointAgent({
+							...context.resumeAgent,
+							rejected: { ...rejection, exhausted: true },
+						});
+						throw new Error(
+							`Output correction exhausted after 2 attempts at ${context.step.id}: ${error.message}. Inspect the persisted rejected output/issues before retrying.`,
+						);
+					}
+					// Increment before launching so process restarts cannot reset the budget.
+					context.checkpointAgent({
+						...context.resumeAgent,
+						rejected: { ...rejection, attempts: attempts + 1 },
+					});
+				}
+			}
+		} finally {
+			context.checkpointAgent = checkpoint;
+		}
+	}
+
+	private async executeFactoryAgentAttempt(
+		context: ExecutionContext,
+	): Promise<unknown> {
 		const { run, step } = context;
 		const session = this.agentSessionManager.getSession(run.id);
 		const repository = this.repositories.get(run.repositoryId);
 		if (!session || !repository)
 			throw new Error("Run session/repository unavailable");
-		const recovered = await completedAgentResult(context);
-		let captureCorrection:
-			| {
-					rejectedOutput: unknown;
-					screenshots: CaptureReuseError["screenshots"];
-			  }
-			| undefined;
-		if (recovered) {
-			try {
-				return await this.finalizeFactoryAgentOutput(context, recovered.output);
-			} catch (error) {
-				if (step.id !== "capture" || !(error instanceof CaptureReuseError))
-					throw error;
-				captureCorrection = {
-					rejectedOutput: recovered.output,
-					screenshots: error.screenshots,
-				};
-				context.log(
-					`Saved capture needs fresh evidence for ${error.screenshots.length} state(s); resuming the existing agent to correct only those images.`,
-				);
-			}
-		}
+		const outputCorrection = context.resumeAgent?.rejected;
+		const recovered =
+			outputCorrection && !context.resumeAgent?.result?.finalizing
+				? undefined
+				: await completedAgentResult(context);
+		if (recovered)
+			return this.finalizeFactoryAgentOutput(context, recovered.output);
+		const captureCorrection = outputCorrection?.screenshots
+			? {
+					rejectedOutput: outputCorrection.output,
+					screenshots: outputCorrection.screenshots,
+				}
+			: undefined;
+
 		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
@@ -6242,9 +6325,11 @@ ${taskSection}`;
 				agentCheckpoint = {
 					runner: runnerType,
 					sessionId: message.session_id,
-					// Keep the correction inventory durable until a replacement result arrives.
-					...(captureCorrection && context.resumeAgent?.result
+					...(context.resumeAgent?.result
 						? { result: context.resumeAgent.result }
+						: {}),
+					...(context.resumeAgent?.rejected
+						? { rejected: context.resumeAgent.rejected }
 						: {}),
 				};
 				context.checkpointAgent?.(agentCheckpoint);
@@ -6265,6 +6350,7 @@ ${taskSection}`;
 				: { input: context.input }),
 			progress: context.progress,
 			...(captureCorrection ? { captureCorrection } : {}),
+			...(outputCorrection ? { outputCorrection } : {}),
 		});
 		try {
 			built.config.mcpConfig = {
@@ -6295,7 +6381,7 @@ ${taskSection}`;
 						? runner.startStreaming.bind(runner)
 						: runner.start.bind(runner);
 				await start(
-					`${captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent ? "This role was interrupted by a process restart. Continue from your existing conversation and worktree. Inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
+					`${outputCorrection && !captureCorrection ? "Your previous output failed validation. Read /outputCorrection from the NEW factory-context connection: it contains the rejected candidate, precise issues, and revision. Correct those issues and return the COMPLETE result for this role. Preserve accepted evidence and completed work; correct only this role output and, for capture, invalid states. Do not replay other pipeline roles. This is an output correction, not a process restart.\n\n" : captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent ? "This role was interrupted by a process restart. Continue from your existing conversation and worktree. Inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
 				);
 				context.signal.throwIfAborted();
 				const messages = runner.getMessages();
@@ -6316,20 +6402,23 @@ ${taskSection}`;
 									.map((block) => (block.type === "text" ? block.text : ""))
 									.join("\n")
 							: "";
-				let output = step.json === false ? { text } : parseAgentOutput(text);
-				if (
-					["factory", "takeover"].includes(run.workflow.id) ||
-					run.workflowDefinitions
-						?.find((item) => item.id === "factory-pipeline")
-						?.steps.includes(step)
-				)
-					output = validateFactoryResult(step.id, output);
-				if (step.id === "guide") validateGuideCoverage(context, output);
+				let output: unknown;
+				try {
+					output = step.json === false ? { text } : parseAgentOutput(text);
+				} catch (error) {
+					throw outputValidationError(text, error);
+				}
+				context.progress = await roleProgress(context);
+				output = this.validateFactoryAgentOutput(context, output);
 				const completed = (await roleProgress(context)).currentRevision;
 				if (agentCheckpoint && completed)
 					context.checkpointAgent?.({
-						...agentCheckpoint,
-						result: { output, revision: completed },
+						runner: agentCheckpoint.runner,
+						sessionId: agentCheckpoint.sessionId,
+						...(context.resumeAgent?.rejected
+							? { rejected: context.resumeAgent.rejected }
+							: {}),
+						result: { output, revision: completed, finalizing: true },
 					});
 				return this.finalizeFactoryAgentOutput(context, output);
 			} finally {
@@ -6341,12 +6430,33 @@ ${taskSection}`;
 		}
 	}
 
+	private validateFactoryAgentOutput(
+		context: ExecutionContext,
+		value: unknown,
+	): unknown {
+		const { run, step } = context;
+		try {
+			let output = value;
+			if (
+				["factory", "takeover"].includes(run.workflow.id) ||
+				run.workflowDefinitions
+					?.find((item) => item.id === "factory-pipeline")
+					?.steps.includes(step)
+			)
+				output = validateFactoryResult(step.id, output);
+			if (step.id === "guide") validateGuideCoverage(context, output);
+			return output;
+		} catch (error) {
+			throw outputValidationError(value, error);
+		}
+	}
+
 	private async finalizeFactoryAgentOutput(
 		context: ExecutionContext,
 		value: unknown,
 	): Promise<unknown> {
 		const { run, step } = context;
-		let output = value;
+		let output = this.validateFactoryAgentOutput(context, value);
 		if (step.id === "capture") output = captureEvidence(context, output);
 		if (step.id === "ci-fix")
 			output = recordFeedbackAssessment(context, output);

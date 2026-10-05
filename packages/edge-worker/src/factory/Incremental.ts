@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	existsSync,
@@ -28,6 +28,7 @@ export interface RoleProgress {
 	unchangedCode: boolean;
 	uncertain: boolean;
 	newHistory: unknown[];
+	approvalDelta?: { headSha: string; files: string[] };
 	reviewScope?: {
 		baseSha: string;
 		headSha: string;
@@ -94,6 +95,20 @@ export async function roleProgress(
 				};
 			}
 		}
+		if (context.step.id === "guide") {
+			const approval = [...(run.humanDecisions ?? [])]
+				.reverse()
+				.find((d) => d.decision === "approve");
+			if (approval)
+				result.approvalDelta = {
+					headSha: approval.headSha,
+					files: (
+						await git(["diff", "--name-only", "-z", approval.headSha, headSha])
+					)
+						.split("\0")
+						.filter(Boolean),
+				};
+		}
 		if (previousRevision) {
 			result.changedFiles = (
 				await git(["diff", "--name-only", "-z", previousRevision.headSha])
@@ -123,6 +138,25 @@ export function dependencyHashes(
 		throw new Error("An unchanged area needs explicit file dependencies");
 	const root = realpathSync(workspace);
 	const hashes: Record<string, string> = {};
+	// Git supplies source membership, including deleted tracked files. Explicit file
+	// dependencies still include ignored runtime assets when requested by the scope.
+	const sourceFiles = new Set(
+		execFileSync(
+			"git",
+			["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+			{ cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+		)
+			.split("\0")
+			.filter(Boolean),
+	);
+	const membership = new Set(sourceFiles);
+	for (const file of sourceFiles) {
+		const parts = file.split("/");
+		for (let i = 1; i < parts.length; i++)
+			membership.add(parts.slice(0, i).join("/"));
+	}
+	const included = (path: string) => membership.has(path);
+
 	const inside = (path: string) => {
 		const name = relative(root, path);
 		if (
@@ -152,7 +186,15 @@ export function dependencyHashes(
 				.digest("hex");
 			for (const entry of readdirSync(full).sort()) {
 				if ([".git", "node_modules"].includes(entry)) continue;
-				visit(`${path}/${entry}`, next);
+				const child = `${path}/${entry}`;
+				// A tracked internal symlink may target a directory: apply ignore rules
+				// against the real target as well, while retaining cycle/escape checks.
+				if (!included(child)) {
+					if (real === full) continue;
+					const realChild = relative(root, realpathSync(resolve(root, child)));
+					if (!included(realChild)) continue;
+				}
+				visit(child, next);
 			}
 		} else
 			hashes[path] = createHash("sha256")
@@ -166,6 +208,10 @@ export function dependencyHashes(
 				"Visual dependencies support exact files or directory/** paths",
 			);
 		visit(prefix);
+		for (const file of [...sourceFiles].sort()) {
+			if (file.startsWith(`${prefix}/`) && !existsSync(resolve(root, file)))
+				hashes[file] = "missing";
+		}
 	}
 	return Object.fromEntries(
 		Object.entries(hashes).sort(([a], [b]) => a.localeCompare(b)),
@@ -201,8 +247,8 @@ export const incrementalInstructions = `On repeated visits, start with /progress
 
 export const incrementalRoleInstructions: Record<string, string> = {
 	"visual-scope": `For a repeat, compare /progress/previousOutput with the revision delta. Return the COMPLETE cumulative visual area/state inventory, updating only affected areas, not merely the newest delta. If previousOutput has no captureBudget or contains combined/matrix state labels, first replace the legacy evidence plan with at most 24 concrete representative states covering the cumulative changed feature. This compaction applies even to unchanged areas: preserve requirements and risk coverage, not every historical screenshot combination. Group co-visible regions, choose 1–2 exact states per area, and document omitted redundant combinations in rationale; use existing tests for nonvisual behavior. Do not copy the old matrix into the new plan. Reuse existing images only when they exactly demonstrate a selected state and meet the usual provenance/acceptance rules. Set captureBudget=24, with a justified exception up to 48 only when essential distinct visual coverage requires it. Include per-area dependencies as exact relative repository files or directory/** groups (including all shared components/styles/assets that affect the area); do not use other glob syntax, changed=true for affected/new/uncertain areas and changed=false only for proven unaffected areas. Include nonVisualFiles for changed files demonstrated to have no visual effect. An unexplained/global dependency change invalidates every possibly affected area. If the original PR had visual changes, changed remains true even when the newest correction is nonvisual; unchanged areas can reuse prior capture evidence.`,
-	capture: `For a repeat, read /progress/previousOutput and current visual-scope. Reuse a previous verified screenshot path only if its area/state still exists, the previous visual gate approved it OR visual-review.acceptedScreenshots explicitly accepted its exact area/state/imageSha256, and code is unchanged or the area is explicitly unchanged with identical dependency hashes and no unexplained changed files. Preserve its metadata; include reused=true. Capture ONLY new/affected/uncertain areas/states with fresh filenames and assemble the COMPLETE screenshot inventory from reused plus fresh images. Missing dependencies, dirty revisions, unavailable evidence or evidence without an explicit prior acceptance requires fresh captures. Do not start the dev server for wholly reusable evidence; otherwise set it up once and delegate independent changed areas where possible.`,
+	capture: `For a repeat, read /progress/previousOutput and current visual-scope. Reuse a previous verified screenshot path only if its area/state still exists, the previous visual gate approved it OR visual-review.acceptedScreenshots explicitly accepted its exact area/state/imageSha256, and code is unchanged or the area is explicitly unchanged with identical dependency hashes and no unexplained changed files. Preserve its metadata; include reused=true. Source provenance is verified by the runtime; compact manifest references are sufficient for this role. Directory dependencies exclude ignored build/cache output; required ignored runtime assets must be explicit file dependencies. Capture ONLY new/affected/uncertain areas/states with fresh filenames and assemble the COMPLETE screenshot inventory from reused plus fresh images. Missing dependencies, dirty revisions, unavailable evidence or evidence without an explicit prior acceptance requires fresh captures. Do not start the dev server for wholly reusable evidence; otherwise set it up once and delegate independent changed areas where possible.`,
 	"visual-review": `For a repeat with previously approved visual evidence, inspect only new/changed screenshots and new requirements, retain earlier verified results for identical reused images, and reassess every unresolved finding/dispute. Do not reopen unchanged accepted findings without new evidence. If the prior gate was not approved, preserve explicitly acceptedScreenshots with identical reused hashes and inspect only the unresolved/new evidence. Without per-image acceptance, inspect all relevant evidence again. Your result still covers the complete current inventory, never just the delta.`,
-	guide: `The review guide describes the COMPLETE cumulative PR, including inherited takeover work. On the first guide inspect /progress/reviewScope and the accepted requirements/plan, not just the latest role result. On repeats keep unchanged chapters and feature coverage, update affected evidence and add a separate short delta note if appropriate. Full feature scope is separate from /progress/diff. A revision summary requires an actual prior human-reviewed guide; previous agent iterations alone never qualify. Never lead the first guide with the last repair or drop unchanged features.`,
+	guide: `The review guide describes the COMPLETE cumulative PR, including inherited takeover work. On the first guide inspect /progress/reviewScope and the accepted requirements/plan, not just the latest role result. On repeats keep unchanged chapters and feature coverage, update affected evidence and add a separate short delta note if appropriate. Full feature scope is separate from /progress/diff. chapter.files MUST contain only files from /progress/reviewScope/files. Changes since prior human approval are separately available in /progress/approvalDelta; describe base integration and reapproval in chapter evidence/risks or revisionNote, never put base-only files in chapter.files. Empty files is allowed for an integration-context chapter. A revision summary requires an actual prior human-reviewed guide; previous agent iterations alone never qualify. Never lead the first guide with the last repair or drop unchanged features.`,
 	"ci-fix": `Use the latest merge-readiness receipt, assess all newly unassessed PR comments/review requests exactly once and return addressedCommentIds and addressedReviewIds. On revision mismatch synchronize local and remote branch without discarding existing work, commit/push pending changes, then the pipeline redoes all reviews. Never dismiss reviews, bypass rules, assume approval or resolve a review thread without addressing it or supplying evidence. Waiting for an external human approval is not a code fix.`,
 };
