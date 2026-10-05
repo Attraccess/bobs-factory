@@ -481,6 +481,9 @@ export function Recipes() {
 								}
 							/>
 							Enable chat steering
+							{workflow.internal && workflow.chat === undefined && (
+								<small>(inherits caller)</small>
+							)}
 						</label>
 						<div className="recipe-columns">
 							<section>

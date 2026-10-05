@@ -2762,3 +2762,14 @@ kbd {
 		flex-direction: column;
 	}
 }
+
+.recipe-chat {
+	min-height: 44px;
+}
+.recipe-chat input[type="checkbox"] {
+	width: 20px;
+	height: 20px;
+	min-height: 20px;
+	flex-shrink: 0;
+	padding: 0;
+}
