@@ -254,6 +254,7 @@ export function formatActivities(run) {
 		const previous = activities.at(-1);
 		if (
 			type === "response" &&
+			previous?.type === "thought" &&
 			previous?.body === body &&
 			previous.step === step
 		) {

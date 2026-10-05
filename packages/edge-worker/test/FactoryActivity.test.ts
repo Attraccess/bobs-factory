@@ -372,3 +372,27 @@ it("shows each persisted chat message once, including repeated instructions and 
 			.map((item: any) => item.key),
 	).toEqual(["chat/one", "chat/two"]);
 });
+
+it("retains identical answers in separate chat turns", () => {
+	const result = formatActivities({
+		createdAt: at,
+		step: "simple",
+		entries: [
+			entry("result", "apricot"),
+			entry("result", "apricot", { timestamp: stamp + 2000 }),
+		],
+		chatMessages: [
+			{
+				id: "question",
+				text: "Repeat the word",
+				at: new Date(stamp + 1000).toISOString(),
+				step: "simple",
+			},
+		],
+	});
+	expect(result.map((item: any) => item.body)).toEqual([
+		"apricot",
+		"Repeat the word",
+		"apricot",
+	]);
+});

@@ -5982,6 +5982,16 @@ ${taskSection}`;
 		const enabled =
 			(run?.workflow ?? runtime.selectWorkflow([], "simple")).chat ?? false;
 		if (!enabled) return { enabled: false, available: false };
+		if (
+			(run && !["running", "completed"].includes(run.status)) ||
+			session.status === AgentSessionStatus.Error
+		)
+			return {
+				enabled,
+				available: false,
+				reason:
+					"This session has stopped or needs recovery. Retry failed runs before chatting.",
+			};
 		if (this.askUserQuestionHandler.hasPendingQuestion(id))
 			return { enabled, available: true, mode: "steer", step: "simple" };
 		if (session.agentRunner?.isRunning())
@@ -6037,6 +6047,7 @@ ${taskSection}`;
 		if (!repository?.isActive)
 			throw new Error("Session repository unavailable");
 		this.chatContinuations.add(id);
+		runtime.updateViewState(id, { keptOpen: true });
 		session.status = AgentSessionStatus.Active;
 		void this.resumeAgentSession(
 			session,
@@ -6198,7 +6209,7 @@ ${taskSection}`;
 				run.id,
 				runner,
 				context.chat ?? false,
-				run.step ?? step.id,
+				context.stepKey ?? run.step ?? step.id,
 			);
 			const stop = () => runner.stop();
 			context.signal.addEventListener("abort", stop, { once: true });

@@ -119,6 +119,7 @@ export interface ChatMessage {
 	step: string;
 }
 export interface ExecutionContext {
+	stepKey?: string;
 	chat?: boolean;
 	progress?: RoleProgress;
 	run: FactoryRun;
@@ -265,6 +266,7 @@ export class WorkflowRuntime {
 		return this.controllers.has(id);
 	}
 	continueSimple(id: string, prompt: string): void {
+		if (this.shuttingDown) throw new Error("Factory is shutting down");
 		const run = this.get(id);
 		if (
 			run.workflow.id !== "simple" ||
@@ -275,7 +277,6 @@ export class WorkflowRuntime {
 		if (run.simpleExecution) {
 			if (!run.simpleExecution.agent)
 				throw new Error("Session conversation unavailable");
-			run.simpleExecution.userPrompt = prompt;
 		}
 		run.simplePrompt = prompt;
 		run.status = "running";
@@ -527,6 +528,7 @@ export class WorkflowRuntime {
 			const context: ExecutionContext = {
 				run,
 				step,
+				stepKey: key,
 				chat: step.chat ?? chat,
 				input,
 				outputs,

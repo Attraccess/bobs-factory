@@ -169,6 +169,12 @@ export function ReviewActions({
 						feedback,
 					},
 				});
+			} else if (run.chat?.available && run.chat.mode === "continue") {
+				await action.mutateAsync({
+					path: `/api/runs/${run.id}/messages`,
+					body: { text: feedback },
+				});
+				navigate(`/runs/${run.id}`);
 			} else {
 				const next = await action.mutateAsync({
 					path: `/api/runs/${run.id}/followup`,
