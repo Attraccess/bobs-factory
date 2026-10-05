@@ -1061,3 +1061,83 @@ it("upgrades stock coordination limits without changing agent/custom limits", ()
 			.steps.find((x) => x.id === "review-gate")!.maxVisits,
 	).toBe(8);
 });
+
+it("regenerates only the pending guide in a nested pipeline without approval or repeating captures", async () => {
+	const order: string[] = [];
+	const { runtime } = create({
+		agent: async (context) => {
+			order.push(context.step.id);
+			return { summary: "Whole feature" };
+		},
+		tool: async (context) => {
+			order.push(context.step.id);
+			return { headSha: "same", url: "https://github.com/test/repo/pull/1" };
+		},
+	});
+	const child = workflow([
+		{ id: "capture", name: "Capture", type: "tool", tool: "test" },
+		agent("guide", { next: "handoff" }),
+		{
+			id: "handoff",
+			name: "Handoff",
+			type: "tool",
+			tool: "handoff",
+			next: "human-review",
+		},
+		{
+			id: "human-review",
+			name: "Human review",
+			type: "tool",
+			tool: "human-review",
+			next: "merge",
+		},
+		{ id: "merge", name: "Merge", type: "tool", tool: "merge", next: "end" },
+	]);
+	const parent = validateWorkflows([
+		...defaultWorkflows,
+		child,
+		{
+			id: "parent",
+			name: "Parent",
+			steps: [
+				{
+					id: "pipeline",
+					name: "Pipeline",
+					type: "workflow",
+					workflow: child.id,
+				},
+			],
+		},
+	]).at(-1)!;
+	runtime.updateWorkflows([...defaultWorkflows, child, parent]);
+	const run = start(runtime, parent);
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const original = run.reviewGate!;
+	const history = run.history.map((h) => h.step);
+	await runtime.refreshGuide(run.id, original.id);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(order).toEqual([
+		"capture",
+		"guide",
+		"handoff",
+		"human-review",
+		"guide",
+		"handoff",
+		"human-review",
+	]);
+	expect(run.history.slice(0, history.length).map((h) => h.step)).toEqual(
+		history,
+	);
+	expect(run.humanDecisions).toBeUndefined();
+	expect(run.reviewGate?.headSha).toBe(original.headSha);
+	expect(run.reviewGate?.id).not.toBe(original.id);
+	expect(() =>
+		runtime.decide(run.id, {
+			reviewId: original.id,
+			headSha: original.headSha,
+			decision: "approve",
+		}),
+	).toThrow("revision changed");
+	await runtime.shutdown();
+});

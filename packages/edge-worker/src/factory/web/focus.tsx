@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Pairs } from "./artifacts";
 import {
 	active,
 	ago,
@@ -8,14 +7,13 @@ import {
 	elapsed,
 	icons,
 	phase,
-	screenshotUrl,
 	stepsOf,
 	useAction,
 	useRun,
 	workflowOf,
 } from "./client";
 import { activitiesOf } from "./conversation";
-import { LazyImage } from "./media";
+import { GuidedReview } from "./review";
 import { Bob, Button, ConfirmStop, External, Markdown, useToast } from "./ui";
 export const labels: Record<string, string> = {
 	question: "💬 Question",
@@ -137,8 +135,8 @@ export function QuestionForm({ run }: { run: any }) {
 }
 export function ReviewActions({
 	run,
-	full = false,
-	onInspect,
+	full: _full = false,
+	onInspect: _onInspect,
 	onSettled,
 	settling,
 }: {
@@ -151,16 +149,12 @@ export function ReviewActions({
 	const toast = useToast(),
 		navigate = useNavigate(),
 		action = useAction(),
-		[checks, setChecks] = useState<Record<number, boolean>>({}),
+		[decisionPage, setDecisionPage] = useState(false),
 		[feedbackOpen, setFeedbackOpen] = useState(false),
 		[feedback, setFeedback] = useState("");
 	const guide = run.outputs?.guide,
 		gate = run.reviewGate,
 		waiting = gate?.status === "pending",
-		instructions = guide?.reviewInstructions ?? [],
-		allChecked =
-			instructions.length > 0 &&
-			instructions.every((_: any, i: number) => checks[i]),
 		url = run.outputs?.["draft-pr"]?.url ?? gate?.url;
 	const reject = async () => {
 		if (!feedback.trim()) return;
@@ -191,65 +185,7 @@ export function ReviewActions({
 	return (
 		<>
 			{guide ? (
-				<>
-					<Markdown>{guide.summary}</Markdown>
-					<div className="review-thumbnails">
-						{(run.outputs.capture?.screenshots ?? [])
-							.slice(0, 4)
-							.map((shot: any, i: number) => (
-								<button
-									type="button"
-									key={shot.path}
-									onClick={() => onInspect("capture", i)}
-								>
-									<LazyImage
-										src={screenshotUrl(run, i)}
-										alt={shot.caption}
-										loading="lazy"
-									/>
-								</button>
-							))}
-						{run.outputs.capture?.screenshots?.length > 4 && (
-							<Button variant="secondary" onClick={() => onInspect("capture")}>
-								+{run.outputs.capture.screenshots.length - 4}
-							</Button>
-						)}
-					</div>
-					<Pairs pairs={full ? guide.behavior : guide.behavior?.slice(0, 2)} />
-					<p className="checklist-label">
-						Your checklist{" "}
-						<small>
-							{Object.values(checks).filter(Boolean).length} of{" "}
-							{instructions.length}
-						</small>
-					</p>
-					<div className="checklist">
-						{instructions.map((item: string, i: number) => (
-							<label key={item} className={checks[i] ? "checked" : ""}>
-								<input
-									type="checkbox"
-									checked={checks[i] ?? false}
-									onChange={(e) =>
-										setChecks({ ...checks, [i]: e.target.checked })
-									}
-								/>
-								<span>{item}</span>
-							</label>
-						))}
-					</div>
-					{run.outputs["merge-readiness"]?.blockers?.length > 0 && (
-						<details className="merge-blockers">
-							<summary>Merge criteria</summary>
-							<ul>
-								{run.outputs["merge-readiness"].blockers.map(
-									(b: any, i: number) => (
-										<li key={i}>{b.message}</li>
-									),
-								)}
-							</ul>
-						</details>
-					)}
-				</>
+				<GuidedReview value={guide} run={run} onDecision={setDecisionPage} />
 			) : (
 				<div className="final-message">
 					<Bob mood="happy" size={32} />
@@ -296,38 +232,61 @@ export function ReviewActions({
 				</form>
 			) : (
 				<div className="actions">
-					<Button
-						variant={guide ? "rainbow" : "primary"}
-						busy={action.isPending || settling}
-						onClick={() => {
-							if (!waiting) {
-								onSettled();
-								return;
-							}
-							void action
-								.mutateAsync({
-									path: `/api/runs/${run.id}/review`,
-									body: {
-										reviewId: gate.id,
-										headSha: gate.headSha,
-										decision: "approve",
-									},
-								})
-								.then(() =>
-									toast({ text: "Approved — Bob is checking merge criteria" }),
-								)
-								.catch(() => {});
-						}}
-					>
-						{waiting
-							? allChecked
-								? "All checked — approve 🎉"
-								: "Approve & settle"
-							: guide
-								? "Settle"
-								: "Got it — settle"}{" "}
-						<kbd>e</kbd>
-					</Button>
+					{(!guide || decisionPage) &&
+						!["running", "interrupted"].includes(run.status) && (
+							<Button
+								variant={guide ? "rainbow" : "primary"}
+								busy={action.isPending || settling}
+								onClick={() => {
+									if (!waiting) {
+										onSettled();
+										return;
+									}
+									void action
+										.mutateAsync({
+											path: `/api/runs/${run.id}/review`,
+											body: {
+												reviewId: gate.id,
+												headSha: gate.headSha,
+												decision: "approve",
+											},
+										})
+										.then(() =>
+											toast({
+												text: "Approved — Bob is checking merge criteria",
+											}),
+										)
+										.catch(() => {});
+								}}
+							>
+								{waiting
+									? "Approve this PR"
+									: guide
+										? "Settle"
+										: "Got it — settle"}
+							</Button>
+						)}
+					{waiting && (
+						<Button
+							variant="ghost"
+							busy={action.isPending}
+							onClick={() => {
+								void action
+									.mutateAsync({
+										path: `/api/runs/${run.id}/guide/refresh`,
+										body: { reviewId: gate.id },
+									})
+									.then(() =>
+										toast({
+											text: "Refreshing the guide — existing reviews and images are retained",
+										}),
+									)
+									.catch(() => {});
+							}}
+						>
+							Refresh guide
+						</Button>
+					)}
 					{url && (
 						<External className="button secondary" href={`${url}/files`}>
 							Open diff ↗

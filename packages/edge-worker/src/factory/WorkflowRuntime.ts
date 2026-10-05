@@ -678,6 +678,65 @@ export class WorkflowRuntime {
 		this.controllers.get(id)?.abort();
 		this.log(run, "run", "Terminated by user");
 	}
+	async refreshGuide(id: string, reviewId: string): Promise<FactoryRun> {
+		const run = this.get(id);
+		if (
+			this.shuttingDown ||
+			run.status !== "waiting" ||
+			run.reviewGate?.status !== "pending" ||
+			run.reviewGate.id !== reviewId
+		)
+			throw new Error(
+				"Only the current pending human guide can be regenerated",
+			);
+		const find = (
+			frame: GraphCheckpoint | undefined,
+			steps: WorkflowStep[],
+		): GraphCheckpoint | undefined => {
+			if (!frame) return;
+			const step = steps.find((s) => s.id === frame.current);
+			if (
+				step?.tool === "human-review" &&
+				frame.active?.phase === "waiting" &&
+				steps.some(
+					(s) => s.id === "guide" && s.type === "agent" && s.next === "handoff",
+				) &&
+				steps.some(
+					(s) =>
+						s.id === "handoff" && s.tool === "handoff" && s.next === step.id,
+				)
+			)
+				return frame;
+			if (step?.type === "workflow") {
+				const child = run.workflowDefinitions?.find(
+					(w) => w.id === step.workflow,
+				);
+				if (child) return find(frame.active?.children?.[0], child.steps);
+			}
+			return undefined;
+		};
+		const frame = find(run.checkpoint, run.workflow.steps);
+		if (!frame)
+			throw new Error("This workflow has no regeneratable guide checkpoint");
+		// Retire only the waiting gate. Completed agents, evidence and history stay intact.
+		delete run.reviewGate;
+		this.controllers.get(id)?.abort();
+		await this.executions.get(id);
+		frame.current = "guide";
+		delete frame.active;
+		delete run.outputs.handoff;
+		delete run.outputs["human-review"];
+		run.status = "running";
+		delete run.error;
+		this.log(
+			run,
+			"guide",
+			"Regenerating the full PR review guide; implementation, reviews and captures are retained.",
+		);
+		this.save(run);
+		void this.launch(run);
+		return run;
+	}
 	retry(id: string): FactoryRun {
 		const run = this.get(id);
 		if (this.shuttingDown) throw new Error("Factory is shutting down");

@@ -236,3 +236,30 @@ clean `731caf1c`: 24 images, 22 reused and only two fresh documentation captures
 No capture agent needs to relaunch. Today had moved the failed run from working
 items into the attention deck; its empty view state proves it was not settled.
 The previously inert extra-items count now exposes a collapsible complete list.
+
+
+## Complete guided review and guide-only regeneration — Taskbot #51
+
+F1 is applicable to native guide generation/context and persisted human gates.
+DEF-7 / session-7 used the compiled EdgeWorker, real Codex + factory-context,
+CLI issue tracker and activity sink. Two fixture files were committed in separate
+rounds (inherited feature, then receipt correction); provider checks remained
+explicit fixtures. The guide covered both files in two cohesive chapters and
+disclosed that these text fixtures do not prove app behavior.
+
+Guide-only API refresh preserved all four existing history records, appended
+only guide/handoff/human-review (seven total), retained the same clean SHA, issued
+a new pending gate and recorded no human decision. Seed/capture/implementation
+did not repeat. This verifies lifecycle and coverage, not a real provider merge.
+
+The native T3 browser at390×844 rendered one chapter with before/after cards,
+expandable evidence and no horizontal overflow. Marked reading progress and
+scroll remained unchanged after an SSE-triggering seen-state update. Approval
+was absent before the decision page. A native screenshot was saved and visually
+inspected. The preview host disconnected during reload; that reload assertion
+was not established by this browser run.
+
+Regression checks cover full PR versus last-role delta, omitted PR files/criteria,
+invented screenshot references, prior-human-review requirements and nested
+guide refresh without approval. All959 edge-worker tests passed (one skipped);
+53 focused checks pass after the publisher change; root build/typecheck pass.

@@ -10,6 +10,7 @@ import {
 } from "react";
 import { api, artifactsOf, friendly, screenshotUrl } from "./client";
 import { LazyImage } from "./media";
+import { GuidedReview } from "./review";
 import { Button, External, Markdown, Modal, useToast } from "./ui";
 export function artifactType(v: any) {
 	if (!v || typeof v !== "object")
@@ -185,42 +186,6 @@ function Findings({ items = [] }: { items?: any[] }) {
 		</div>
 	) : (
 		<p className="success">🎉 No findings</p>
-	);
-}
-export function Guide({ value: v }: { value: any }) {
-	return (
-		<>
-			<section className="guide-hero">
-				<small>GOAL</small>
-				<h3>{v.goal}</h3>
-				<Markdown>{v.summary}</Markdown>
-				<span className="chip green">{v.decision?.status}</span>
-				<p>{v.decision?.summary}</p>
-			</section>
-			<h3>Before → after</h3>
-			<Pairs pairs={v.behavior} />
-			<h3>Requirements</h3>
-			{(v.requirements ?? []).map((r: any, i: number) => (
-				<section className="requirement" key={i}>
-					<strong>
-						{["supported", "met"].includes(r.status) ? "✅" : "⚠️"} {r.criterion}
-					</strong>
-					<List items={r.evidence} />
-				</section>
-			))}
-			<h3>Checks</h3>
-			<List items={v.checks} />
-			<h3>Risks</h3>
-			<List items={v.risks?.map((risk: string) => `⚠️ ${risk}`)} />
-			<h3>How to review</h3>
-			<ol>
-				{(v.reviewInstructions ?? []).map((item: string, i: number) => (
-					<li key={i}>
-						<Markdown>{item}</Markdown>
-					</li>
-				))}
-			</ol>
-		</>
 	);
 }
 export function Structure({
@@ -420,7 +385,7 @@ function RenderArtifact({
 				</>
 			);
 		case "guide":
-			return <Guide value={v} />;
+			return <GuidedReview value={v} run={run} />;
 		case "decisions":
 			return (
 				<>

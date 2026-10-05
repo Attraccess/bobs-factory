@@ -421,6 +421,17 @@ export class FactoryServer {
 			},
 		);
 		this.app.post<{ Params: { id: string } }>(
+			"/api/runs/:id/guide/refresh",
+			async (request, reply) => {
+				const { reviewId } = z
+					.object({ reviewId: z.string().min(1) })
+					.parse(request.body);
+				return reply
+					.code(202)
+					.send(await runtime.refreshGuide(request.params.id, reviewId));
+			},
+		);
+		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/retry",
 			(request, reply) =>
 				reply.code(202).send(runtime.retry(request.params.id)),
@@ -433,6 +444,33 @@ export class FactoryServer {
 					.parse(request.body);
 				runtime.answer(request.params.id, answer);
 				return { accepted: true };
+			},
+		);
+		this.app.get<{ Params: { id: string } }>(
+			"/api/runs/:id/evidence",
+			(request) => {
+				const run = runtime.get(request.params.id);
+				const capture = run.outputs.capture as
+					| {
+							screenshots?: {
+								area: string;
+								state: string;
+								caption: string;
+								imageSha256?: string;
+							}[];
+					  }
+					| undefined;
+				return {
+					screenshots: (capture?.screenshots ?? []).map(
+						({ area, state, caption, imageSha256 }, index) => ({
+							area,
+							state,
+							caption,
+							imageSha256,
+							index,
+						}),
+					),
+				};
 			},
 		);
 		this.app.get<{

@@ -192,3 +192,27 @@ it("reuses unchanged verified evidence, rejecting affected, unexplained, dirty o
 	ctx.progress.unchangedCode = true;
 	expect(() => captureEvidence(ctx, first)).toThrow("not verified");
 });
+
+it("gives the guide the entire PR file inventory separately from the last role delta", async () => {
+	const { context: ctx, workspace, git } = context();
+	const baseSha = git("rev-parse", "HEAD");
+	writeFileSync(join(workspace, "a.txt"), "Feature A");
+	git("add", ".");
+	git("commit", "-m", "feat: a");
+	ctx.step.id = "guide";
+	ctx.run.step = "pipeline/guide";
+	ctx.run.outputs["merge-readiness"] = { baseSha };
+	ctx.run.roleRevisions = {
+		"pipeline/guide": (await roleProgress(ctx)).currentRevision!,
+	};
+	writeFileSync(join(workspace, "b.txt"), "Small correction");
+	git("add", ".");
+	git("commit", "-m", "fix: b");
+	const progress = await roleProgress(ctx);
+	expect(progress.changedFiles).toEqual(["b.txt"]);
+	expect(progress.reviewScope).toMatchObject({
+		baseSha,
+		source: "whole-pr",
+		files: ["a.txt", "b.txt"],
+	});
+});

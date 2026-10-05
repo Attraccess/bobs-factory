@@ -54,7 +54,42 @@ export const VisualScopeSchema = z
 	});
 export const GuideSchema = z.object({
 	revisionSummary: z.boolean().optional(),
+	revisionNote: text.max(600).optional(),
 	previousHeadSha: text.optional(),
+	chapters: z
+		.array(
+			z.object({
+				id: text.max(80),
+				title: text.max(120),
+				summary: text.max(600),
+				before: text.max(600),
+				after: text.max(600),
+				requirementIndexes: z.array(z.number().int().nonnegative()).min(1),
+				files: z.array(text),
+				screenshots: z.array(
+					z.object({ area: text, state: text, caption: text }),
+				),
+				diagrams: z
+					.array(
+						z.object({
+							title: text,
+							steps: z
+								.array(
+									z.object({ label: text.max(100), detail: text.max(300) }),
+								)
+								.min(2)
+								.max(8),
+						}),
+					)
+					.max(3),
+				reviewChecks: z.array(text.max(300)).min(1).max(8),
+				risks: z.array(text),
+				evidence: z.array(text),
+			}),
+		)
+		.min(1)
+		.max(20)
+		.optional(),
 	goal: text,
 	summary: text,
 	decision: z.object({

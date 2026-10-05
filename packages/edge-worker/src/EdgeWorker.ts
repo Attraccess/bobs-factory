@@ -176,6 +176,7 @@ import {
 	parseAgentOutput,
 	toolArguments,
 } from "./factory/FactoryTools.js";
+import { validateGuideCoverage } from "./factory/Guide.js";
 import {
 	completedAgentResult,
 	incrementalInstructions,
@@ -6091,6 +6092,7 @@ ${taskSection}`;
 						?.steps.includes(step)
 				)
 					output = validateFactoryResult(step.id, output);
+				if (step.id === "guide") validateGuideCoverage(context, output);
 				const completed = (await roleProgress(context)).currentRevision;
 				if (agentCheckpoint && completed)
 					context.checkpointAgent?.({
