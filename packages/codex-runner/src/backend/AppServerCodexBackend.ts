@@ -109,7 +109,7 @@ export class AppServerCodexBackend
 			return { threadId };
 		} catch (error) {
 			this.appServer = null;
-			appServer.release();
+			await appServer.release();
 			throw error;
 		}
 	}
@@ -202,7 +202,7 @@ export class AppServerCodexBackend
 			appServer.unregisterThread(threadId, this.threadHandler);
 		}
 		this.settleTurn(new Error("app-server backend closed"));
-		appServer?.release();
+		await appServer?.release();
 	}
 
 	// ---- Thread setup -------------------------------------------------------

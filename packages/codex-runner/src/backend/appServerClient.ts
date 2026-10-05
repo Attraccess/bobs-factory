@@ -195,10 +195,22 @@ export class AppServerClient extends EventEmitter {
 		this.rl = null;
 		const child = this.child;
 		this.child = null;
-		if (child && !child.killed) {
-			this.terminateChild(child);
-		}
 		this.failAllPending(new Error("app-server client closed"));
+		if (child && child.exitCode === null && child.signalCode === null) {
+			const exited = new Promise<void>((resolve) =>
+				child.once("close", () => resolve()),
+			);
+			const force = setTimeout(
+				() => this.terminateChild(child, "SIGKILL"),
+				2000,
+			);
+			this.terminateChild(child);
+			try {
+				await exited;
+			} finally {
+				clearTimeout(force);
+			}
+		}
 	}
 
 	/**
@@ -208,17 +220,20 @@ export class AppServerClient extends EventEmitter {
 	 * once. Falls back to a direct kill if the group is already gone or on
 	 * Windows (no process groups).
 	 */
-	private terminateChild(child: ChildProcessWithoutNullStreams): void {
+	private terminateChild(
+		child: ChildProcessWithoutNullStreams,
+		signal: NodeJS.Signals = "SIGTERM",
+	): void {
 		try {
 			if (process.platform !== "win32" && typeof child.pid === "number") {
-				process.kill(-child.pid, "SIGTERM");
+				process.kill(-child.pid, signal);
 				return;
 			}
 		} catch {
 			// Group already dead or unavailable — fall through to a direct kill.
 		}
 		try {
-			child.kill();
+			child.kill(signal);
 		} catch {
 			// best-effort
 		}

@@ -119,7 +119,7 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		if (this.sessionInfo?.isRunning) {
 			this.wasStopped = true;
 		}
-		this.cleanupRuntimeState();
+		void this.cleanupRuntimeState();
 	}
 
 	isRunning(): boolean {
@@ -174,7 +174,7 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		} catch (error) {
 			caughtError = error;
 		} finally {
-			this.finalizeSession(caughtError);
+			await this.finalizeSession(caughtError);
 		}
 
 		return this.sessionInfo;
@@ -236,9 +236,9 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		};
 	}
 
-	private finalizeSession(caughtError?: unknown): void {
+	private async finalizeSession(caughtError?: unknown): Promise<void> {
 		if (!this.sessionInfo) {
-			this.cleanupRuntimeState();
+			await this.cleanupRuntimeState();
 			return;
 		}
 
@@ -247,15 +247,15 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 			caughtError,
 			wasStopped: this.wasStopped,
 		});
+		await this.cleanupRuntimeState();
 		this.emit("complete", messages);
-		this.cleanupRuntimeState();
 	}
 
-	private cleanupRuntimeState(): void {
+	private async cleanupRuntimeState(): Promise<void> {
 		const backend = this.backend;
 		this.backend = null;
 		if (backend) {
-			void backend.close();
+			await backend.close();
 		}
 		this.skillStager.cleanup();
 	}
