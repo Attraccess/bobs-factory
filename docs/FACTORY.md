@@ -123,7 +123,12 @@ if Factory disallows ticket starts even when Simple is eligible. If an unlabeled
 ticket's saved default disallows ticket starts, it rejects even when another
 recipe is eligible. Enable the selected permission in Recipes, change the
 workflow/label, or choose an eligible default; no automatic alternative is used.
-Unknown explicit IDs reject. No workflow message-selector syntax is introduced.
+Unknown explicit IDs reject. Workflow message selectors are not currently
+supported; use the launch methods above. This describes the current product,
+and development tasks can request changes to it. Agents evaluate such proposals
+against the task's requirements and accepted decisions, within their assigned
+role, and update the capability reference when implementing the change. Explicit
+planning-only or deferred-implementation restrictions still apply.
 
 Composer only shows recipes allowing manual starts. An ineligible default or
 invalidated selected recipe requires choosing an eligible recipe; entered inputs
