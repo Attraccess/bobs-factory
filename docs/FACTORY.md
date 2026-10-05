@@ -302,7 +302,8 @@ and tool steps as `input.launchInputs`, including shared child workflows.
 Scripts read them from `FACTORY_INPUT_FILE` (or `FACTORY_INPUT` for small inputs);
 tool templates can use
 `{{input.launchInputs.target}}`. Steps with explicit `inputs` still receive only
-their selected outputs, so the implementer retains its plan-only handoff.
+their selected outputs, so the implementer retains its plan handoff. Question-enabled
+steps also receive the human answers needed to resolve their blockers.
 Custom Simple fields are appended to its task prompt because it uses Cyrus's
 original execution path rather than graph steps.
 
@@ -366,7 +367,8 @@ another step. `next: "end"` finishes. A branch such as
 `{"when":{"path":"approved","equals":false},"next":"plan"}` loops back.
 Each step defaults to at most eight visits (`maxVisits`, configurable up to 100).
 Agents return JSON unless `json: false`. `inputs: ["plan"]` restricts supplied
-context to those output keys; otherwise agents receive the original input,
+context to those output keys (plus `/answers` when `askQuestions: true`);
+otherwise agents receive the original input,
 launch inputs, outputs, answers and full structured history.
 
 Factory agent roles receive a short role prompt and a private `factory-context`
@@ -376,6 +378,13 @@ follow it until null to read complete discussions and review/fixer history.
 Paths use JSON Pointer syntax, for example `/outputs/ticket/comments/0/body`.
 Strings use raw text pages; other values use JSON pages. Only the step's scoped
 input is served: `inputs: ["plan"]` exposes `/plan` without ticket/history.
+The stock implementer also receives `/answers` and returns `status`, `summary`,
+`checks`, and `questions`. A `blocked` status requires at least one actionable
+question; the run waits, persists the blocker across restarts, and reruns only
+implementation after the answer. `completed` requires an empty question list.
+Clarification asks about explicit backlog/planning-only restrictions before
+proceeding. PR delivery verifies commits and a nonempty diff against the fetched
+base before pushing; an empty implementation cannot advance to GitHub delivery.
 Each role/loop/fanout invocation has a separate snapshot, deleted when the role
 finishes, fails or is terminated. Persisted run history remains available in the
 UI. This works through stdio for the existing runners and needs no additional

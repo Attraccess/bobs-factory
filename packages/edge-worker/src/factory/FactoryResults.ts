@@ -133,6 +133,22 @@ export function validateFactoryResult(step: string, output: unknown): unknown {
 			return z
 				.object({ approved: z.boolean(), feedback: z.array(text) })
 				.parse(output);
+		case "implement":
+			return z
+				.object({
+					status: z.enum(["completed", "blocked"]),
+					summary: text,
+					checks: z.array(text),
+					questions: z.array(text),
+				})
+				.refine(
+					(result) =>
+						result.status === "blocked"
+							? result.questions.length > 0
+							: result.questions.length === 0,
+					"Blocked implementation requires a question to resolve the blocker; completed implementation must have no questions",
+				)
+				.parse(output);
 		case "code-review":
 		case "visual-review":
 			return filterReview(output);
