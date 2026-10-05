@@ -80,7 +80,7 @@ export function ReviewPage({
 					loaded review.
 				</p>
 			)}
-			{gate?.status !== "pending" && (
+			{guide && gate?.status !== "pending" && (
 				<p className="notice" role="status">
 					{gate?.status === "approve"
 						? complete

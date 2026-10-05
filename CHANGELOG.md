@@ -25,7 +25,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Review guides open on a dedicated reading page, with a compact entry on Today and saved reading positions and feedback drafts. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59))
+- Review guides open on a dedicated reading page, with a compact entry on Today, saved reading positions and feedback drafts, and a clear empty state when no guide is available. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59), [#9](https://github.com/Attraccess/bobs-factory/pull/9))
 
 - Review the complete PR through feature chapters with before/after cards, processing diagrams, relevant screenshots and expandable code evidence. Reading progress survives updates; guide-only refresh preserves completed work and images. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
