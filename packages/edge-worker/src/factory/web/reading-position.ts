@@ -1,16 +1,28 @@
 import { useLayoutEffect } from "react";
+import {
+	collectRestoration,
+	forgetDraft,
+	rememberDraft,
+	restoredDraft,
+} from "./restoration";
 import { readStored, writeStored } from "./review-state";
 
 /** Document coordinates only; the artifact inspector has its own scroll container. */
 export function useReadingPosition(key?: string, restoreSaved = true) {
 	useLayoutEffect(() => {
 		if (!key) return;
-		const saved = readStored<unknown>(key, 0),
+		const draftKey = `position/${key}`,
+			saved = restoredDraft<unknown>(draftKey) ?? readStored<unknown>(key, 0),
 			y =
 				typeof saved === "number" && Number.isFinite(saved) && saved >= 0
 					? saved
 					: 0;
 		let restoring = restoreSaved;
+		// Capture this mounted tab, even at zero, instead of a value another tab
+		// may have written to shared storage. Only Update registers a position draft.
+		const stopCollecting = collectRestoration(() =>
+			rememberDraft(draftKey, restoring ? y : Math.max(0, window.scrollY)),
+		);
 		const restore = () => {
 			if (restoring) window.scrollTo({ top: y, behavior: "instant" });
 		};
@@ -31,6 +43,8 @@ export function useReadingPosition(key?: string, restoreSaved = true) {
 		for (const event of ["wheel", "touchstart", "pointerdown", "keydown"])
 			window.addEventListener(event, finish, { passive: true });
 		return () => {
+			stopCollecting();
+			forgetDraft(draftKey);
 			clearTimeout(timer);
 			observer.disconnect();
 			window.removeEventListener("scroll", save);

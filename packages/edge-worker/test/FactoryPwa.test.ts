@@ -413,6 +413,7 @@ it("preserves dedicated review routes, disclosures and revision-scoped feedback 
 	vi.stubGlobal("location", { hash: "#/runs/r/review" });
 	const saved = storage();
 	const progressKey = "review/progress/factory-review/r/head/guide";
+	const positionKey = "position/factory-review/r/head/guide/position/0";
 	const feedbackKey = "feedback/text/factory-review/r/head/guide/feedback/gate";
 	const progress = {
 		page: 0,
@@ -420,21 +421,38 @@ it("preserves dedicated review routes, disclosures and revision-scoped feedback 
 		disclosures: { "0/evidence": true },
 	};
 	rememberDraft(progressKey, progress);
+	rememberDraft(positionKey, 700);
 	rememberDraft(feedbackKey, "Keep this feedback with this revision", "gate");
 	preserveForUpdate(build, saved);
 	const snapshot = decodeSnapshot([...saved.values.values()][0]);
 	expect(snapshot?.route).toBe("#/runs/r/review");
 	expect(snapshot?.drafts[progressKey]?.value).toEqual(progress);
+	expect(snapshot?.drafts[positionKey]?.value).toBe(700);
 	expect(snapshot?.drafts[feedbackKey]).toEqual({
 		value: "Keep this feedback with this revision",
 		revision: "gate",
 	});
 	loadRestoration(build, saved);
 	expect(restoredDraft(progressKey)).toEqual(progress);
+	expect(restoredDraft(positionKey)).toBe(700);
 	expect(restoredDraft(feedbackKey)).toBe(
 		"Keep this feedback with this revision",
 	);
 	completeRestoration();
+});
+it("retains a tab's document position at zero rather than falling back to shared storage", () => {
+	browserState();
+	const saved = storage();
+	const key = "position/bob-today-position";
+	rememberDraft(key, 0);
+	preserveForUpdate(build, saved);
+	expect(
+		decodeSnapshot([...saved.values.values()][0])?.drafts[key]?.value,
+	).toBe(0);
+	loadRestoration(build, saved);
+	expect(restoredDraft(key)).toBe(0);
+	completeRestoration();
+	forgetDraft(key);
 });
 it("keeps browsing defaults out of update snapshots while preserving edits and explicit panel choices", () => {
 	browserState();
@@ -539,6 +557,9 @@ it("rejects expired, malformed and unexpected snapshot surfaces", () => {
 		["recipe/role", { workflowId: "r" }],
 		["today/skipped", 4],
 		["reading/r", { following: false, groups: 2 }],
+		["position/review", -1],
+		["position/review", "700"],
+		["position/review", null],
 	])
 		expect(
 			decodeSnapshot(

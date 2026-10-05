@@ -20,7 +20,7 @@ type Snapshot = {
 	details: string[];
 };
 const allowed =
-	/^(composer|today|recipe|answers|feedback|chat|panels|inspector|reading|review)\//;
+	/^(composer|today|recipe|answers|feedback|chat|panels|inspector|reading|review|position)\//;
 function validDraft(key: string, value: any): boolean {
 	const record = (v: any) =>
 		v !== null && typeof v === "object" && !Array.isArray(v);
@@ -28,6 +28,8 @@ function validDraft(key: string, value: any): boolean {
 		Array.isArray(v) && v.every((item) => typeof item === "string");
 	const values = (v: any, type: string) =>
 		record(v) && Object.values(v).every((item) => typeof item === type);
+	if (key.startsWith("position/"))
+		return typeof value === "number" && Number.isFinite(value) && value >= 0;
 	if (
 		/^(chat\/|feedback\/text\/|recipe\/(json\/|modal-json$))/.test(key) ||
 		[
@@ -153,6 +155,9 @@ let storageIssue = "";
 const collectors = new Set<() => void>();
 export function collectRestoration(collect: () => void) {
 	collectors.add(collect);
+	return () => {
+		collectors.delete(collect);
+	};
 }
 export function recoveredDrafts() {
 	return restored?.drafts ?? {};

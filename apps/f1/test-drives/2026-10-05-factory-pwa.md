@@ -363,3 +363,62 @@ Final-shell restored review reading and disclosure:
 Final-shell revision-scoped feedback retained while offline:
 
 ![Review feedback retained offline on mobile](media/2026-10-05-factory-pwa-ci-merge/review-draft-offline-mobile.png)
+
+
+## Tab-local review reading fix (2026-10-05)
+
+Tested PR head `a7b1e54bd686b665a836a8c09756cbef3e245a96` plus the fix
+committed with this section. Final shell: `bf4a5d36e1588ed21f82127c`.
+F1 applies to document reading restoration through explicit PWA updates.
+
+Fresh isolated fixture: `node_modules/.cache/manual41-tab-state`, UI 3675 and
+RPC 3676, with its own clone, home and worktree. It reused the preceding drive's
+deterministic guide tool; the CLI tracker, issue routing, EdgeWorker, workflow
+runtime, checkpoints, dashboard, API and SSE were real. No production run or
+remote provider was used.
+
+- F1 ping/create-issue/start-session returned DEF-1/session-1. Tracker output
+  contained two timestamped initial/routing activities.
+- Two browser tabs opened the same review chapter with different unsent drafts.
+  Tab A was at 700px while tab B wrote 1400px to shared localStorage. An explicit
+  update captured 700px in A's session snapshot and restored that position,
+  chapter, open Code & evidence disclosure and A's draft. Storage was consumed.
+- Repeated with A at 0px and shared storage at 1400px. The snapshot retained zero
+  and restored zero, rather than falling back to the other tab's saved position.
+- Tab B then explicitly updated with its position at 1400px and shared storage
+  at 0px. It restored 1400px and B's own draft. A kept its mounted script, 0px
+  position and draft without reloading when B activated the worker.
+- All four explicit updates preserved run ID, workspace, status, checkpoint,
+  history and the pending review gate. The first transition also retained A's
+  actual 916px position after an update banner shifted the document. Update
+  banners can shift an untouched tab's document coordinates through browser
+  scroll anchoring; retained scripts and drafts confirm it was not reloaded.
+- Tested final → HTML-comment-only candidate `905da5448b6d457fb2647dd6` → final,
+  then candidate → final again. The temporary comment was removed; final source
+  and the published local build pointer were restored before finishing.
+- One deliberate Send to Bob in the isolated fixture rejected the current gate.
+  No decision was sent during updates. F1 pagination returned the two activities;
+  stop-session finished cleanly. Both owned browser tabs and worker were stopped.
+  No browser page errors occurred.
+
+Commands used `CYRUS_PORT=3676 apps/f1/f1`,
+`agent-browser --session manual41tabs`, and SIGUSR2 to refresh only the server's
+UI snapshot. Compact assertion receipts are in the factory evidence directory:
+`tab-state-a-restored.json`, `tab-state-zero-restored.json`,
+`tab-state-b-restored.json`, and `tab-state-a-retained.json`. The before/after
+run receipts demonstrate unchanged backend state. DOM invocation of Update now
+avoided scrolling to the toolbar; only the browser probe copied snapshot writes
+for inspection, leaving product values intact.
+
+Focused PWA, review-state, server, web-client, activity and pagination checks:
+**56 tests passed**. The snapshot tests cover document coordinates, zero and
+invalid position values. Only the mounted document registers a position
+collector, which is removed on unmount so historical browsing does not add
+position records to the snapshot. Build/typecheck are enforced by the existing
+pre-commit hook. The native-installation waiver and scoped exception for the
+two existing advisories remain unchanged. No dependencies, push delivery or
+production deployments changed.
+
+Final-shell tab A restored to 700px, with its chapter disclosure open:
+
+![Tab A restored its own review reading position](media/2026-10-05-factory-pwa-tab-state/tab-a-reading-restored.png)
