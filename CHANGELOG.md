@@ -33,7 +33,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Correct rejected factory outputs in the same conversation with durable validation feedback; preserve run definitions across restarts, ignore generated build churn in visual source fingerprints, and keep screenshot provenance out of agent context.
+- Correct rejected factory outputs in the same conversation with durable validation feedback; preserve run definitions across restarts, ignore generated build churn in visual source fingerprints, and keep screenshot provenance out of agent context. ([#6](https://github.com/Attraccess/bobs-factory/pull/6))
 
 - Keep the factory dashboard responsive during agent tool bursts by batching activity saves while preserving immediate execution checkpoints ([#4](https://github.com/Attraccess/bobs-factory/pull/4)).
 
