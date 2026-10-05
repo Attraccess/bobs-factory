@@ -237,3 +237,57 @@ The existing build, typecheck, 26 focused-test results and F1/browser evidence
 above remain valid; runtime code was unchanged during this decision pass.
 `git diff --check` passed. Native installation remains unverified under the
 user's recorded test waiver. Web Push remains in linked backlog ticket #69.
+
+## Review restoration fixes (2026-10-05)
+
+Tested PR head `6944c2002391e0f40c00bff2d64bf26b724dd8a9` plus the fixes
+committed with this section. Final shell: `df1c47d7aa8d30e7b946e30c`.
+F1 applies to the changed reading/activity and update-restoration behavior.
+The fresh isolated fixture `node_modules/.cache/manual41-review-fixes` used UI
+3645 and RPC 3646, a local bare origin, and its own clone/home/worktree. It reused
+the real tracker, routing, runtime, checkpoints and server from the earlier drive.
+Only the model was deterministic: emit 400 agent SDK events, each with text and
+thinking blocks, ask one question, and continue after a deliberate answer.
+The fixture also added 305 in-memory copies for read-only browsing.
+
+- F1 create-issue/start-session returned DEF-1/issue-1 and session-1. The initial
+  activity page showed four timestamped routing/thought/clarification activities.
+- Navigated through all 305 copies in the same mounted browser app, allowing
+  each run's default step to open, then returned to session-1. Empty drafts and
+  untouched historical panels did not accumulate. The explicit-update snapshot
+  contained only four records: current panels, question draft, chat draft and
+  paused reading state. There was no size-limit error.
+- Loaded an older activity page and paused around SDK message 162, outside the
+  latest 120 events. The snapshot retained its event cursor through SDK block
+  formatting. After reload, the browser requested the bounded activity page
+  using that cursor; the older SDK messages and both drafts were restored, the
+  restoration notice cleared, and the product snapshot was consumed.
+- Tested explicit updates from the final shell to an isolated candidate differing
+  only by an HTML comment (`eba7f7e04eb776403c0cad92`), then back to the final
+  shell. The comment was removed before rebuilding the final source. Before and
+  after both updates, session-1 retained its workspace, waiting/clarify checkpoint,
+  one history record and zero answers. No automatic action occurred.
+- Submitted the current question once through the browser. Releasing the fixture
+  script completed the same run/workspace at checkpoint `end`, with three history
+  records and exactly one answer. F1 pagination returned two of five activities;
+  stop-session finished the tracker cleanly. No browser page errors were reported.
+  The owned browser and worker were stopped.
+
+Commands followed the earlier F1 flow with ports 3645/3646 and browser session
+`manual41fix`. SIGUSR1 added the browsing copies; SIGUSR2 replaced only the server's
+UI snapshot. Route checks ran in batches of 20 after a long browser evaluation hit
+the automation timeout and was restarted with a fresh page. The passing evidence
+above comes from the completed batch run and subsequent explicit updates.
+
+Focused checks: FactoryPwa, ActivityPage, FactoryActivity, FactoryServer and
+FactoryWebClient: **48 tests passed**. New regressions cover 301 pristine records,
+cleared drafts, preserved explicit panel/blank-editor changes, refusal to discard
+301 meaningful drafts, and refetching SDK anchors through text/thinking/tool blocks.
+The edge-worker build, full `pnpm typecheck`, changed-file Biome and
+`git diff --check` passed; repository build/typecheck gates also run at commit.
+Native-installation waiver and the existing scoped audit exception are unchanged.
+No dependency changes, Web Push, deployment or production-run changes were made.
+
+Final-build restored older SDK reading and chat draft:
+
+![SDK reading position and draft restored after update](media/2026-10-05-factory-pwa-review-fixes/sdk-reading-restored.png)

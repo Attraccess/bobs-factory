@@ -174,7 +174,7 @@ export function loadRestoration(
 		}
 		restored = data;
 		for (const [key, draft] of Object.entries(data.drafts))
-			drafts.set(key, draft);
+			rememberDraft(key, draft.value, draft.revision);
 		if (location.hash !== data.route) location.hash = data.route;
 	} catch {
 		storageIssue =
@@ -187,9 +187,38 @@ export function restorationNotice() {
 export function restoredDraft<T>(key: string): T | undefined {
 	return drafts.get(key)?.value;
 }
+function pristineDraft(key: string, value: any): boolean {
+	if (value === undefined) return true;
+	// Only discard known defaults. A blank recipe editor or an explicit panel
+	// collapse is still an edit and must survive an update.
+	if (/^(chat\/|feedback\/text\/|recipe\/modal-json$)/.test(key))
+		return value === "";
+	if (
+		/^(feedback\/open\/|inspector\/raw\/|review\/decision\/)/.test(key) ||
+		["composer/agent-panel", "today/all-attention"].includes(key)
+	)
+		return value === false;
+	if (key === "today/skipped")
+		return Array.isArray(value) && value.length === 0;
+	if (/^(answers\/|panels\/|composer\/(inputs|settings)$)/.test(key))
+		return (
+			value !== null &&
+			typeof value === "object" &&
+			Object.keys(value).length === 0
+		);
+	if (key.startsWith("review/progress/"))
+		return value?.page === 0 && Object.keys(value.reviewed ?? {}).length === 0;
+	if (key.startsWith("reading/"))
+		return (
+			value?.following === true &&
+			!value.expanded?.length &&
+			!value.groups?.length
+		);
+	return false;
+}
 export function rememberDraft(key: string, value: any, revision?: string) {
 	if (!allowed.test(key)) throw new Error("Unknown update draft surface");
-	if (value === undefined) drafts.delete(key);
+	if (pristineDraft(key, value)) drafts.delete(key);
 	else drafts.set(key, { value, revision });
 }
 export function forgetDraft(key: string) {

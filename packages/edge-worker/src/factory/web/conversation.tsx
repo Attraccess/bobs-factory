@@ -478,14 +478,14 @@ export function Conversation({
 					const first = virtual
 						.getVirtualItems()
 						.find((item) => item.end >= element.scrollTop);
-					if (first)
+					if (first) {
+						const item = rows[first.index]?.tools?.[0] ?? rows[first.index];
 						anchor.current = {
 							key: String(first.key),
 							offset: element.scrollTop - first.start,
-							cursor:
-								(rows[first.index]?.tools?.[0] ?? rows[first.index])?.raw
-									?.activityCursor ?? rows[first.index]?.cursor,
+							cursor: item?.raw?.activityCursor ?? item?.cursor,
 						};
+					}
 					state.anchor = anchor.current;
 					setBehind(!state.following);
 					if (!wasFollowing && state.following && hasUpdates) onLatest?.();

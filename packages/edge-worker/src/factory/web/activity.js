@@ -121,7 +121,7 @@ export function formatActivities(run) {
 			stepIndex++;
 		return steps[stepIndex]?.step ?? run.step ?? "Cyrus";
 	};
-	const add = (entry, at, step, key) => {
+	const add = (entry, at, step, key, cursor = entry.activityCursor) => {
 		const runner =
 			["codex", "gemini", "cursor", "opencode"].find(
 				(name) => entry[`${name}SessionId`],
@@ -148,6 +148,7 @@ export function formatActivities(run) {
 						at,
 						step,
 						`${key}/${index}`,
+						cursor,
 					);
 				else if (block.type === "tool_result")
 					add(
@@ -162,6 +163,7 @@ export function formatActivities(run) {
 						at,
 						step,
 						`${key}/${index}`,
+						cursor,
 					);
 				else if (block.type === "text" || block.type === "thinking")
 					add(
@@ -172,6 +174,7 @@ export function formatActivities(run) {
 						at,
 						step,
 						`${key}/${index}`,
+						cursor,
 					);
 			});
 			return;
@@ -181,6 +184,7 @@ export function formatActivities(run) {
 				input = metadata.toolInput ?? parse(entry.content) ?? {};
 			const item = {
 				key,
+				cursor,
 				at,
 				step,
 				type: "action",
@@ -199,6 +203,7 @@ export function formatActivities(run) {
 		if (metadata.toolUseId && entry.type === "user") {
 			const item = tools.get(metadata.toolUseId) ?? {
 				key,
+				cursor,
 				at,
 				step,
 				type: "action",
@@ -264,6 +269,7 @@ export function formatActivities(run) {
 		}
 		activities.push({
 			key,
+			cursor,
 			at,
 			step,
 			type,
@@ -328,6 +334,7 @@ export function formatActivities(run) {
 					event.at,
 					event.step,
 					`event/${event.at}/${event.activityIndex ?? index}`,
+					event.activityCursor,
 				);
 			else
 				activities.push({

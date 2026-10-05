@@ -42,7 +42,12 @@ import {
 import { Composer, Recipes } from "./forms";
 import { pwaState, startPwa, usePwa } from "./pwa";
 import { ConnectionNotice, InstallControl, RecoveredDrafts } from "./pwa-ui";
-import { completeRestoration, useRestorableState } from "./restoration";
+import {
+	completeRestoration,
+	forgetDraft,
+	restoredDraft,
+	useRestorableState,
+} from "./restoration";
 import {
 	Bob,
 	Button,
@@ -728,7 +733,16 @@ function RunPage({
 		[open, setOpen] = useRestorableState<Record<string, boolean>>(
 			`panels/${id}`,
 			{},
-		);
+		),
+		panelsEdited = useRef(Boolean(restoredDraft(`panels/${id}`)));
+	// Auto-opened steps belong to this mounted page. Retain historical panel
+	// state only when the user changed it or it was restored from an update.
+	useEffect(
+		() => () => {
+			if (!panelsEdited.current) forgetDraft(`panels/${id}`);
+		},
+		[id],
+	);
 
 	const current = run?.step;
 	const hasRun = Boolean(run);
@@ -903,7 +917,10 @@ function RunPage({
 									className="step-row"
 									disabled={!started}
 									aria-expanded={isOpen}
-									onClick={() => setOpen({ ...open, [step.key]: !isOpen })}
+									onClick={() => {
+										panelsEdited.current = true;
+										setOpen({ ...open, [step.key]: !isOpen });
+									}}
 								>
 									<span className="step-dot">{icons[step.id] ?? "⚙️"}</span>
 									<strong>{step.name}</strong>

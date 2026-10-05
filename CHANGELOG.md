@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Install Bob’s Factory with branded app icons and browser guidance; open its static shell while disconnected and explicitly update while preserving drafts, panels and reading position. Pause unsafe actions until authoritative state reconnects. Push notifications are tracked separately in Taskbot #69. (Taskbot bobs-factory #41)
+- Install Bob’s Factory with branded app icons and browser guidance; open its static shell while disconnected and explicitly update while preserving drafts, panels and reading position, including older SDK activity. Browsing untouched runs does not fill the draft snapshot. Pause unsafe actions until authoritative state reconnects. Push notifications are tracked separately in Taskbot #69. (Taskbot bobs-factory #41, [#12](https://github.com/Attraccess/bobs-factory/pull/12))
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
 - Configure workflow launch methods independently in Recipes, preserve saved permissions even when a configuration refresh fails, filter manual choices, reject disallowed workflow selections with actionable feedback, and retain launch/source and nested caller context across restarts. (Taskbot bobs-factory #35, [#2](https://github.com/Attraccess/bobs-factory/pull/2))
 

@@ -26,6 +26,7 @@ import {
 	acknowledgeDraft,
 	completeRestoration,
 	decodeSnapshot,
+	forgetDraft,
 	loadRestoration,
 	preserveForUpdate,
 	rememberDraft,
@@ -406,6 +407,68 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	expect(restoredDraft("chat/r")).toBe("chat draft");
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
+});
+it("keeps browsing defaults out of update snapshots while preserving edits and explicit panel choices", () => {
+	browserState();
+	const saved = storage();
+	for (let i = 0; i < 301; i++) {
+		rememberDraft(`panels/visited-${i}`, {});
+		rememberDraft(`chat/visited-${i}`, "");
+		rememberDraft(`answers/visited-${i}`, {});
+		rememberDraft(`feedback/open/visited-${i}`, false);
+		rememberDraft(`reading/visited-${i}/all`, {
+			following: true,
+			expanded: [],
+			groups: [],
+		});
+	}
+	rememberDraft("chat/edited", "keep this");
+	rememberDraft("panels/edited", { clarify: false, work: true });
+	rememberDraft("recipe/json/edited", "");
+	rememberDraft("answers/cleared", { 0: "answer" });
+	rememberDraft("answers/cleared", {});
+	rememberDraft("chat/cleared", "draft");
+	rememberDraft("chat/cleared", "");
+	try {
+		preserveForUpdate(build, saved);
+		const snapshot = decodeSnapshot([...saved.values.values()][0])!;
+		for (let i = 0; i < 301; i++)
+			expect(
+				Object.keys(snapshot.drafts).some((key) =>
+					key.includes(`visited-${i}`),
+				),
+			).toBe(false);
+		expect(snapshot.drafts).toMatchObject({
+			"chat/edited": { value: "keep this" },
+			"panels/edited": { value: { clarify: false, work: true } },
+			"recipe/json/edited": { value: "" },
+		});
+		expect(snapshot.drafts["answers/cleared"]).toBeUndefined();
+		expect(snapshot.drafts["chat/cleared"]).toBeUndefined();
+		loadRestoration(build, saved);
+		expect(restoredDraft("chat/edited")).toBe("keep this");
+		expect(restoredDraft("panels/edited")).toEqual({
+			clarify: false,
+			work: true,
+		});
+		expect(restoredDraft("recipe/json/edited")).toBe("");
+		completeRestoration();
+	} finally {
+		for (const key of ["chat/edited", "panels/edited", "recipe/json/edited"])
+			forgetDraft(key);
+	}
+});
+it("still postpones updates rather than dropping too many meaningful drafts", () => {
+	browserState();
+	try {
+		for (let i = 0; i < 301; i++)
+			rememberDraft(`chat/edited-${i}`, `draft ${i}`);
+		expect(() => preserveForUpdate(build, storage())).toThrow("too large");
+		expect(restoredDraft("chat/edited-0")).toBe("draft 0");
+		expect(restoredDraft("chat/edited-300")).toBe("draft 300");
+	} finally {
+		for (let i = 0; i < 301; i++) forgetDraft(`chat/edited-${i}`);
+	}
 });
 it("postpones when storage is denied or drafts exceed the bound and retains edits", () => {
 	browserState();
