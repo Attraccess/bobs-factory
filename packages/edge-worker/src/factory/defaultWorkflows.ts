@@ -34,6 +34,7 @@ const definitions = [
 		description:
 			"The existing Cyrus run, with its original prompts, skills and runner lifecycle.",
 		labels: ["workflow:simple"],
+		chat: true,
 		steps: [],
 	},
 	{
@@ -249,6 +250,8 @@ export function upgradeWorkflows(value: unknown): unknown {
 			structuredClone(defaultWorkflows.find((item) => item.id === "takeover")!),
 		);
 	for (const definition of definitions) {
+		if (definition.id === "simple" && definition.chat === undefined)
+			definition.chat = true;
 		if (
 			Array.isArray(definition.launchFields) &&
 			definition.launchFields.length === 2 &&

@@ -494,6 +494,26 @@ export function Recipes() {
 								</button>
 							}
 						</header>
+						<label className="recipe-chat">
+							<input
+								type="checkbox"
+								checked={workflow.chat ?? false}
+								disabled={action.isPending}
+								onChange={(event) =>
+									void save(
+										config.workflows.map((w: any) =>
+											w.id === workflow.id
+												? { ...w, chat: event.target.checked }
+												: w,
+										),
+									)
+								}
+							/>
+							Enable chat steering
+							{workflow.internal && workflow.chat === undefined && (
+								<small>(inherits caller)</small>
+							)}
+						</label>
 						<fieldset className="trigger-permissions">
 							<legend>Launch methods</legend>
 							{triggerOptions.map(([type, label]) => (

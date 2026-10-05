@@ -105,6 +105,7 @@ export interface FactoryRun {
 	workspaceId?: string;
 	step?: string;
 	checkpoint?: GraphCheckpoint;
+	simplePrompt?: string;
 	simpleExecution?: {
 		userPrompt: string;
 		systemPrompt?: string;
@@ -126,7 +127,15 @@ export interface FactoryRun {
 	iterationLimit?: { step: string; visits: number; limit: number };
 	error?: string;
 }
+export interface ChatMessage {
+	id: string;
+	text: string;
+	at: string;
+	step: string;
+}
 export interface ExecutionContext {
+	stepKey?: string;
+	chat?: boolean;
 	progress?: RoleProgress;
 	run: FactoryRun;
 	step: WorkflowStep;
@@ -177,6 +186,7 @@ export class WorkflowRuntime {
 	private shuttingDown = false;
 	private defaultWorkflow = "simple";
 	private viewStates: Record<string, RunViewState> = {};
+	private chats = new Map<string, ChatMessage[]>();
 	readonly directory: string;
 
 	constructor(
@@ -238,10 +248,65 @@ export class WorkflowRuntime {
 						: structuredClone(updated);
 				}
 			}
+			if (run.workflow.id === "simple" && run.workflow.chat === undefined)
+				run.workflow.chat = true;
 			this.runs.set(run.id, run);
 		}
 	}
 
+	chatMessages(id: string): ChatMessage[] {
+		let messages = this.chats.get(id);
+		if (!messages) {
+			const path = join(
+				this.directory,
+				"chats",
+				`${encodeURIComponent(id)}.json`,
+			);
+			messages = existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : [];
+			this.chats.set(id, messages!);
+		}
+		return messages!;
+	}
+	recordChatMessage(id: string, text: string, step: string): ChatMessage {
+		const message = {
+			id: randomUUID(),
+			text,
+			step,
+			at: new Date().toISOString(),
+		};
+		const messages = this.chatMessages(id);
+		messages.push(message);
+		mkdirSync(join(this.directory, "chats"), { recursive: true });
+		this.atomicWrite(
+			join(this.directory, "chats", `${encodeURIComponent(id)}.json`),
+			messages,
+		);
+		this.changed({ id });
+		return message;
+	}
+	isExecuting(id: string): boolean {
+		return this.controllers.has(id);
+	}
+	continueSimple(id: string, prompt: string): void {
+		if (this.shuttingDown) throw new Error("Factory is shutting down");
+		const run = this.get(id);
+		if (
+			run.workflow.id !== "simple" ||
+			run.status !== "completed" ||
+			this.isExecuting(id)
+		)
+			throw new Error("Only a finished Cyrus session can continue here");
+		if (run.simpleExecution) {
+			if (!run.simpleExecution.agent)
+				throw new Error("Session conversation unavailable");
+		}
+		run.simplePrompt = prompt;
+		run.status = "running";
+		run.error = undefined;
+		this.updateViewState(id, { keptOpen: true });
+		this.save(run);
+		void this.launch(run);
+	}
 	viewState(id: string): RunViewState {
 		return this.viewStates[id] ?? {};
 	}
@@ -440,6 +505,7 @@ export class WorkflowRuntime {
 					"",
 					run.checkpoint,
 					run.workflow.id,
+					run.workflow.chat ?? false,
 				);
 			}
 			controller.signal.throwIfAborted();
@@ -474,6 +540,7 @@ export class WorkflowRuntime {
 		prefix: string,
 		checkpoint: GraphCheckpoint,
 		workflowId: string,
+		chat = false,
 	): Promise<Record<string, unknown>> {
 		while (checkpoint.current !== "end") {
 			signal.throwIfAborted();
@@ -504,12 +571,15 @@ export class WorkflowRuntime {
 						launchInputs: structuredClone(run.launchInputs ?? {}),
 						outputs: structuredClone(outputs),
 						answers: structuredClone(run.answers),
+						chatMessages: structuredClone(this.chatMessages(run.id)),
 						history: structuredClone(run.history),
 						humanDecisions: structuredClone(run.humanDecisions ?? []),
 					};
 			const context: ExecutionContext = {
 				run,
 				step,
+				stepKey: key,
+				chat: step.chat ?? chat,
 				input,
 				outputs,
 				signal,
@@ -548,6 +618,7 @@ export class WorkflowRuntime {
 								`${key}/${index}/`,
 								state.children![index]!,
 								workflowId,
+								chat,
 							),
 						),
 					);
@@ -592,6 +663,7 @@ export class WorkflowRuntime {
 						`${key}/`,
 						state.children[0]!,
 						definition.id,
+						definition.chat ?? chat,
 					);
 					output = { workflow: definition.id, completed: true };
 				} else {

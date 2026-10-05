@@ -1434,3 +1434,108 @@ it("regenerates only the pending guide in a nested pipeline without approval or 
 	).toThrow("revision changed");
 	await runtime.shutdown();
 });
+
+it("inherits chat through nested workflows with explicit workflow and step overrides", async () => {
+	const observed: boolean[] = [];
+	const { runtime, home } = create({
+		agent: async (context) => {
+			observed.push(context.chat!);
+			return {};
+		},
+	});
+	const definitions = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "chat-parent",
+			name: "Parent",
+			chat: true,
+			steps: [
+				{
+					id: "nested",
+					name: "Nested",
+					type: "workflow",
+					workflow: "chat-child",
+				},
+			],
+		},
+		{
+			id: "chat-child",
+			name: "Child",
+			internal: true,
+			steps: [
+				agent("inherited"),
+				agent("private", { chat: false }),
+				agent("public", { chat: true }),
+			],
+		},
+	]);
+	runtime.updateWorkflows(definitions);
+	const make = () =>
+		runtime.create({
+			title: "Chat",
+			repositoryId: "repo",
+			workspace: home,
+			input: "",
+			workflow: runtime.selectWorkflow([], "manual", "chat-parent"),
+			triggerOrigin: {
+				type: "manual",
+				workflowId: "chat-parent",
+				at: new Date().toISOString(),
+			},
+		});
+	await runtime.launch(make());
+	expect(observed).toEqual([true, false, true]);
+	observed.length = 0;
+	runtime.updateWorkflows(
+		definitions.map((w) => (w.id === "chat-child" ? { ...w, chat: false } : w)),
+	);
+	await runtime.launch(make());
+	expect(observed).toEqual([false, false, true]);
+});
+it("continues a finished simple run once with the same conversation and persists messages separately", async () => {
+	let finish!: () => void;
+	const { runtime, home } = create({
+		simple: (run) => {
+			expect(run.simpleExecution?.agent?.sessionId).toBe("native-thread");
+			expect(run.simplePrompt).toBe("Follow up");
+			return new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+		},
+	});
+	const run = runtime.create({
+		title: "Chat",
+		repositoryId: "repo",
+		workspace: home,
+		input: "Original",
+		workflow: runtime.selectWorkflow([], "manual", "simple"),
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "simple",
+			at: new Date().toISOString(),
+		},
+	});
+	run.status = "completed";
+	run.simpleExecution = {
+		runner: "codex",
+		userPrompt: "Original",
+		agent: { runner: "codex", sessionId: "native-thread" },
+	};
+	runtime.save(run);
+	runtime.continueSimple(run.id, "Follow up");
+	expect(run.status).toBe("running");
+	expect(() => runtime.continueSimple(run.id, "Duplicate")).toThrow();
+	const message = runtime.recordChatMessage(run.id, "Follow up", "simple");
+	expect(
+		new WorkflowRuntime(home, {
+			agent: async () => ({}),
+			script: async () => ({}),
+			tool: async () => ({}),
+		}).chatMessages(run.id),
+	).toEqual([message]);
+	await vi.waitFor(() => expect(finish).toBeTypeOf("function"));
+	finish();
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(run.workspace).toBe(home);
+	expect(run.input).toBe("Original");
+});

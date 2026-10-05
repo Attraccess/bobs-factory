@@ -254,6 +254,7 @@ export function formatActivities(run) {
 		const previous = activities.at(-1);
 		if (
 			type === "response" &&
+			previous?.type === "thought" &&
 			previous?.body === body &&
 			previous.step === step
 		) {
@@ -343,6 +344,22 @@ export function formatActivities(run) {
 					raw: message,
 				});
 		});
+	for (let i = activities.length - 1; i >= 0; i--)
+		if (
+			activities[i].type === "user" &&
+			(run.chatMessages ?? []).some((m) => m.text === activities[i].body)
+		)
+			activities.splice(i, 1);
+	for (const message of run.chatMessages ?? []) {
+		activities.push({
+			key: `chat/${message.id}`,
+			at: message.at,
+			step: message.step,
+			type: "user",
+			title: "You",
+			body: message.text,
+		});
+	}
 	for (const [index, answer] of (run.answers ?? []).entries()) {
 		if (
 			!activities.some(

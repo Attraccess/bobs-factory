@@ -43,6 +43,40 @@ selected cards survive live updates. A reconnecting SSE connection sends coalesc
 pause following; **Scroll to latest** resumes it. Inspector Escape returns focus
 and screenshot Escape returns to the gallery first.
 
+**Simple / Cyrus** exposes a **Message Bob** composer below its conversation.
+Send questions or instructions while Claude/Codex is working; after completion,
+a message resumes the same native conversation and worktree. Successful submissions
+appear as your chat bubbles and remain available after restart. Failed submissions
+retain the draft. Use ⌘ / Ctrl + Enter to send; Enter adds a newline.
+
+In **Recipes**, enable **Chat steering** for other workflows, or set `"chat": true`
+in their JSON. Chat defaults off for custom workflows. An agent step can set
+`"chat": false` to prevent steering or `"chat": true` to opt in independently.
+Nested workflows inherit the caller's setting unless they specify their own.
+For example:
+
+```json
+{
+  "id": "interactive-inspection",
+  "name": "Interactive inspection",
+  "chat": true,
+  "steps": [
+    { "id": "inspect", "name": "Inspect", "type": "agent", "prompt": "Inspect the requested change; answer follow-up questions.", "json": false },
+    { "id": "review", "name": "Review", "type": "agent", "prompt": "Review the result.", "chat": false }
+  ]
+}
+```
+
+Messages target the current agent role. The composer explains when sending is
+unavailable: scripts/tools, multiple parallel agents, starting/finishing turns,
+unsupported streaming runners, and explicit clarification/review/recovery gates.
+Use those gates' existing controls; chat never approves a PR. Runners without
+streaming input can still receive follow-ups once a Cyrus session completes.
+Completed multi-step workflows retain their existing **Follow-up** action, which
+starts a new run; chat does not reopen completed pipeline steps.
+Existing runs retain their saved chat setting; old Cyrus runs gain the default
+unless explicitly disabled.
+
 Select a repository and workflow in the composer, then fill its launch fields.
 **Simple / Cyrus** retains the existing Cyrus execution path and is the initial
 default. **Software factory** adds the pipeline

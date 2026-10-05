@@ -2732,6 +2732,49 @@ kbd {
 	}
 }
 
+.chat-composer {
+	display: grid;
+	gap: 10px;
+	padding-top: 16px;
+	border-top: 1px solid var(--line);
+}
+.chat-composer textarea {
+	width: 100%;
+	resize: vertical;
+	min-height: 86px;
+}
+.chat-composer-actions {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+	justify-content: space-between;
+}
+.chat-composer-actions small {
+	color: var(--muted);
+}
+.recipe-chat {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin: 12px 0;
+}
+@media (max-width: 600px) {
+	.chat-composer-actions {
+		align-items: stretch;
+		flex-direction: column;
+	}
+}
+
+.recipe-chat {
+	min-height: 44px;
+}
+.recipe-chat input[type="checkbox"] {
+	width: 20px;
+	height: 20px;
+	min-height: 20px;
+	flex-shrink: 0;
+	padding: 0;
+}
 .trigger-permissions {
 	margin: 1rem 0;
 	border: 1px solid var(--line);
