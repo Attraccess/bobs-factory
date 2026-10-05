@@ -526,6 +526,24 @@ export class FactoryServer {
 				};
 			},
 		);
+		this.app.get<{ Params: { id: string; name: string } }>(
+			"/api/runs/:id/question-images/:name",
+			(request, reply) => {
+				const run = runtime.get(request.params.id);
+				const name = z
+					.string()
+					.regex(/^[a-zA-Z0-9][\w.-]*\.(?:png|jpe?g)$/i)
+					.parse(request.params.name);
+				const directory = join(runtime.directory, "evidence", run.id);
+				if (!existsSync(join(directory, name)))
+					return reply.code(404).send({ error: "Question image not found" });
+				const bytes = readFileSync(verifiedScreenshot(name, directory));
+				return reply
+					.header("Cache-Control", "no-cache")
+					.type(bytes[0] === 137 ? "image/png" : "image/jpeg")
+					.send(bytes);
+			},
+		);
 		this.app.get<{
 			Params: { id: string; index: string };
 			Querystring: { artifact?: string; v?: string };

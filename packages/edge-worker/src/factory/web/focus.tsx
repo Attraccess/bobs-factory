@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
 	active,
 	ago,
 	attention,
 	elapsed,
+	finished,
 	icons,
 	phase,
 	stepsOf,
@@ -14,6 +15,12 @@ import {
 } from "./client";
 import { activitiesOf } from "./conversation";
 import { GuidedReview } from "./review";
+import {
+	guideMatchesGate,
+	readStored,
+	signature,
+	writeStored,
+} from "./review-state";
 import { Bob, Button, ConfirmStop, External, Markdown, useToast } from "./ui";
 export const labels: Record<string, string> = {
 	question: "💬 Question",
@@ -132,10 +139,12 @@ export function QuestionForm({ run }: { run: any }) {
 				</legend>
 				{questions.map((q: string, i: number) => (
 					<div className="question" key={`${i}/${q}`}>
-						<label htmlFor={`answer-${run.id}-${i}`}>
+						<div className="question-heading">
 							<Bob mood="alert" size={32} />
-							<span>{q}</span>
-						</label>
+							<div id={`question-${run.id}-${i}`} className="question-content">
+								<Markdown>{q}</Markdown>
+							</div>
+						</div>
 						<div className="answer-controls">
 							<div className="quick-replies">
 								{QuickReplies({ question: q }).map((value) => (
@@ -151,6 +160,7 @@ export function QuestionForm({ run }: { run: any }) {
 							</div>
 							<textarea
 								id={`answer-${run.id}-${i}`}
+								aria-labelledby={`question-${run.id}-${i}`}
 								required
 								rows={2}
 								placeholder="Type your answer…"
@@ -181,31 +191,139 @@ export function QuestionForm({ run }: { run: any }) {
 		</form>
 	);
 }
-export function ReviewActions({
+export function ReviewEntry({ run }: { run: any }) {
+	const guide = run.outputs.guide,
+		gate = run.reviewGate,
+		url = gate?.url ?? run.outputs["draft-pr"]?.url;
+	return (
+		<div className="review-entry">
+			<p>
+				{String(
+					guide.summary ??
+						guide.goal ??
+						"Read the changes, evidence and final checks before deciding.",
+				).slice(0, 320)}
+			</p>
+			<p className="muted">
+				{gate?.status === "pending"
+					? "Awaiting your review"
+					: `Review guide · ${run.status}`}
+				{gate?.headSha && (
+					<>
+						{" "}
+						· revision <code>{gate.headSha.slice(0, 8)}</code>
+					</>
+				)}
+			</p>
+			<div className="actions">
+				<Link
+					className="button primary"
+					to={`/runs/${run.id}/review`}
+					state={{ focusRunId: run.id }}
+				>
+					Open review guide →
+				</Link>
+				<Link
+					className="button ghost"
+					to={`/runs/${run.id}`}
+					state={{ focusRunId: run.id }}
+				>
+					Open run
+				</Link>
+				{url && (
+					<External className="button secondary" href={url}>
+						Open PR ↗
+					</External>
+				)}
+			</div>
+		</div>
+	);
+}
+
+export function FullReview({
 	run,
-	full: _full = false,
-	onInspect: _onInspect,
 	onSettled,
 	settling,
 }: {
 	run: any;
-	full?: boolean;
-	onInspect: (name: string, image?: number) => void;
+	onSettled: () => void;
+	settling?: boolean;
+}) {
+	const guide = run.outputs.guide,
+		version = `${run.reviewGate?.id ?? "historical"}/${run.reviewGate?.headSha ?? ""}/${guide?.__artifactHash ?? signature(guide)}`,
+		previous = useRef(version),
+		[updated, setUpdated] = useState(false);
+	useEffect(() => {
+		if (previous.current !== version) setUpdated(true);
+		previous.current = version;
+	}, [version]);
+	return (
+		<>
+			{updated && (
+				<p className="notice" role="status">
+					This review has been updated. Review the current guide and revision
+					before deciding. Earlier feedback drafts stay with their original
+					review.
+				</p>
+			)}
+			<GuidedReview
+				value={guide}
+				run={run}
+				documentPage
+				controls={(identity, decisionPage) => (
+					<DecisionActions
+						key={`${identity}/${run.reviewGate?.id ?? "finished"}`}
+						identity={identity}
+						decisionPage={decisionPage}
+						run={run}
+						onSettled={onSettled}
+						settling={settling}
+					/>
+				)}
+			/>
+		</>
+	);
+}
+
+function DecisionActions({
+	run,
+	identity = `factory-review/${run.id}/finished`,
+	decisionPage = true,
+	onSettled,
+	settling,
+}: {
+	run: any;
+	identity?: string;
+	decisionPage?: boolean;
 	onSettled: () => void;
 	settling?: boolean;
 }) {
 	const toast = useToast(),
 		navigate = useNavigate(),
 		action = useAction(),
-		[decisionPage, setDecisionPage] = useState(false),
-		[feedbackOpen, setFeedbackOpen] = useState(false),
-		[feedback, setFeedback] = useState("");
+		draftKey = `${identity}/feedback/${run.reviewGate?.id ?? "finished"}`,
+		[draft, setDraft] = useState(() => {
+			const saved = readStored<any>(draftKey, {});
+			return {
+				feedback: typeof saved?.feedback === "string" ? saved.feedback : "",
+				open: saved?.open === true,
+			};
+		});
+	const feedback = draft.feedback,
+		feedbackOpen = draft.open;
+	const setFeedback = (feedback: string) =>
+		setDraft((d) => ({ ...d, feedback }));
+	const setFeedbackOpen = (open: boolean) => setDraft((d) => ({ ...d, open }));
+	useEffect(() => {
+		writeStored(draftKey, draft);
+	}, [draftKey, draft]);
 	const guide = run.outputs?.guide,
 		gate = run.reviewGate,
 		waiting = gate?.status === "pending",
+		matching = !waiting || (run.status === "waiting" && guideMatchesGate(run)),
 		url = run.outputs?.["draft-pr"]?.url ?? gate?.url;
 	const reject = async () => {
-		if (!feedback.trim()) return;
+		if (!feedback.trim() || action.isPending || !matching) return;
 		try {
 			if (waiting) {
 				await action.mutateAsync({
@@ -231,16 +349,21 @@ export function ReviewActions({
 				navigate(`/runs/${next.id}`);
 			}
 			toast({ text: "Feedback sent — Bob is on it" });
-			setFeedbackOpen(false);
+			writeStored(draftKey, { feedback: "", open: false });
+			setDraft({ feedback: "", open: false });
 		} catch {
 			/* error stays visible */
 		}
 	};
 	return (
 		<>
-			{guide ? (
-				<GuidedReview value={guide} run={run} onDecision={setDecisionPage} />
-			) : (
+			{waiting && !matching && (
+				<p className="notice" role="status">
+					The pending revision changed. Decisions are unavailable until its
+					matching guide is loaded.
+				</p>
+			)}
+			{!guide && (
 				<div className="final-message">
 					<Bob mood="happy" size={32} />
 					<Markdown>
@@ -271,7 +394,7 @@ export function ReviewActions({
 						<Button
 							type="submit"
 							busy={action.isPending}
-							disabled={!feedback.trim()}
+							disabled={!feedback.trim() || !matching}
 						>
 							Send to Bob
 						</Button>
@@ -291,7 +414,9 @@ export function ReviewActions({
 							<Button
 								variant={guide ? "rainbow" : "primary"}
 								busy={action.isPending || settling}
+								disabled={!matching || (!waiting && !finished(run.status))}
 								onClick={() => {
+									if (!matching || action.isPending) return;
 									if (!waiting) {
 										onSettled();
 										return;
@@ -379,7 +504,7 @@ export function FocusCard({
 	summary,
 	config,
 	full = false,
-	onInspect,
+	onInspect: _onInspect,
 	onSettled,
 	settling,
 	onSkip,
@@ -473,12 +598,12 @@ export function FocusCard({
 						</p>
 					)}
 				</>
+			) : run.outputs?.guide ? (
+				<ReviewEntry run={run} />
 			) : (
-				<ReviewActions
+				<DecisionActions
 					key={`${run.id}/${run.reviewGate?.id ?? "finished"}`}
 					run={run}
-					full={full}
-					onInspect={(name, image) => onInspect(run, name, image)}
 					onSettled={onSettled}
 					settling={settling}
 				/>

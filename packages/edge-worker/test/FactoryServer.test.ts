@@ -1,4 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -7,6 +13,71 @@ import { FactoryServer } from "../src/factory/FactoryServer.js";
 import type { ResolvedLaunchRequest } from "../src/factory/LaunchFields.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
+
+it("serves question images only from the requested run, rejecting traversal, external symlinks and non-images", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-question-images-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("Unused");
+		},
+		stop: (id) => runtime.stop(id),
+	});
+	const create = (id: string) =>
+		runtime.create({
+			id,
+			triggerOrigin: {
+				type: "manual",
+				workflowId: "factory",
+				at: new Date().toISOString(),
+			},
+			title: "Question",
+			repositoryId: "repo",
+			workspace: home,
+			input: "",
+			workflow: defaultWorkflows.find((workflow) => workflow.id === "factory")!,
+		});
+	const run = create("with-image");
+	create("without-image");
+	const directory = join(runtime.directory, "evidence", run.id);
+	mkdirSync(directory, { recursive: true });
+	const png = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=",
+		"base64",
+	);
+	writeFileSync(join(directory, "context.png"), png);
+	writeFileSync(join(home, "outside.png"), png);
+	writeFileSync(join(directory, "text.png"), "Private text is not an image");
+	symlinkSync(join(home, "outside.png"), join(directory, "external.png"));
+	const get = (id: string, name: string) =>
+		server.app.inject({
+			url: `/api/runs/${id}/question-images/${name}`,
+			headers: { host: "localhost" },
+		});
+	try {
+		const image = await get(run.id, "context.png");
+		expect(image.statusCode).toBe(200);
+		expect(image.headers["content-type"]).toBe("image/png");
+		expect(image.headers["cache-control"]).toBe("no-cache");
+		expect(image.rawPayload).toEqual(png);
+		expect((await get("without-image", "context.png")).statusCode).toBe(404);
+		expect((await get(run.id, "missing.png")).statusCode).toBe(404);
+		expect((await get(run.id, "external.png")).statusCode).toBe(409);
+		expect((await get(run.id, "text.png")).statusCode).toBe(409);
+		expect((await get(run.id, "..%2F..%2Foutside.png")).statusCode).toBe(400);
+	} finally {
+		await runtime.shutdown();
+		await server.stop();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
 
 it("accepts failed-run retries through the protected API and rejects duplicate retries", async () => {
 	const home = mkdtempSync(join(tmpdir(), "factory-retry-api-"));

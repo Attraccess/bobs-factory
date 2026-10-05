@@ -732,15 +732,27 @@ kbd {
 	background: none;
 	color: var(--text);
 }
-.question-form .question label {
+.question-heading {
 	display: flex;
 	align-items: flex-start;
 	gap: 12px;
 	font-size: 16px;
 	font-weight: 700;
 }
-.question-form .question label .bob {
+.question-heading .bob {
 	flex-shrink: 0;
+}
+.question-content {
+	min-width: 0;
+	flex: 1;
+}
+.question-content img {
+	display: block;
+	max-width: 100%;
+	max-height: 360px;
+	object-fit: contain;
+	margin: 12px 0;
+	border-radius: 12px;
 }
 .answer-controls {
 	margin-left: 44px;
@@ -2165,7 +2177,7 @@ kbd {
 		min-height: 44px;
 		width: 44px;
 	}
-	.question-form .question label {
+	.question-heading {
 		font-size: 15px;
 		gap: 8px;
 	}
@@ -2501,6 +2513,9 @@ kbd {
 	font-weight: 700;
 	color: var(--muted);
 }
+.guide-topline button.chip {
+	min-height: 44px;
+}
 .guide-progress {
 	margin: 18px 0 8px;
 	color: var(--muted);
@@ -2668,11 +2683,18 @@ kbd {
 	cursor: pointer;
 	color: var(--muted);
 	font-size: 13px;
+	min-height: 44px;
+	align-content: center;
 }
 .guide-files {
 	padding-left: 20px;
 	overflow-wrap: anywhere;
 	font-size: 12px;
+}
+.guide-files a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 44px;
 }
 .guide-lines {
 	padding-left: 20px;
@@ -2709,6 +2731,46 @@ kbd {
 	margin: 24px 0;
 	padding-top: 20px;
 	border-top: 1px solid var(--line);
+}
+.review-document,
+.review-entry {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.review-links {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	gap: 12px;
+}
+.review-links a {
+	min-height: 44px;
+	display: inline-flex;
+	align-items: center;
+}
+.review-surface {
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 24px;
+	padding: clamp(18px, 4vw, 32px);
+	margin: 24px 0;
+	min-width: 0;
+}
+.review-entry > p:first-child {
+	font-size: 16px;
+	line-height: 1.6;
+}
+.review-document .guide-topline,
+.review-document .guide-navigation {
+	flex-wrap: wrap;
+}
+.review-document h1:focus-visible,
+.guide-page h2:focus-visible {
+	outline: 3px solid #7b61ff;
+	outline-offset: 4px;
+}
+.review-document .actions > a {
+	white-space: normal;
 }
 @media (max-width: 600px) {
 	.guide-comparison {

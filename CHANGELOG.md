@@ -27,6 +27,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Review guides open on a dedicated reading page, with a compact entry on Today, saved reading positions and feedback drafts, and a clear empty state when no guide is available. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59), [#9](https://github.com/Attraccess/bobs-factory/pull/9))
+
 - Review the complete PR through feature chapters with before/after cards, processing diagrams, relevant screenshots and expandable code evidence. Reading progress survives updates; guide-only refresh preserves completed work and images. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Keep long runs responsive with SSE updates, paged and virtualized conversations, bounded transcript caches, lazy raw details/images, virtual screenshot galleries and revision-aware artifact caching. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
@@ -38,6 +40,9 @@ All notable changes to this project will be documented in this file.
 
 - Acknowledge chat resume requests without reporting that the conversation has resumed while setup is still pending. ([#11](https://github.com/Attraccess/bobs-factory/pull/11))
 
+- Bob's clarification and implementation-blocker questions now explain the relevant facts, source of the decision and consequences in plain language; optional diagrams and images appear beside the answer box.
+
+- Allow factory planning and review to propose changes to current product capabilities without mistaking capability documentation for a task restriction; retain explicit planning-only and deferred-implementation limits. ([#10](https://github.com/Attraccess/bobs-factory/pull/10))
 - Pause blocked factory implementations for actionable answers, retain those waits across restarts, and prevent empty or unfinished work from being published as a draft PR. ([#8](https://github.com/Attraccess/bobs-factory/pull/8))
 - Keep “Humming along” in newest-created order while progress updates arrive. ([Taskbot #67](https://taskbot.apps.janjaap.de/p/bobs-factory/t/67))
 
