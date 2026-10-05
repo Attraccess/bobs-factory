@@ -296,6 +296,53 @@ describe("workflow trigger permissions", () => {
 });
 
 describe("workflow runtime", () => {
+	it("batches agent event bursts while saving checkpoints immediately", async () => {
+		vi.useFakeTimers();
+		try {
+			const { runtime, home } = create();
+			const run = start(runtime, workflow([agent("review")]));
+			const changed = vi.fn();
+			runtime.subscribe(changed);
+			const path = join(home, "factory", "runs", `${run.id}.json`);
+			for (let index = 0; index < 500; index++)
+				runtime.log(run, "review", `Tool result ${index}`, "agent");
+			expect(run.events).toHaveLength(500);
+			expect(changed).not.toHaveBeenCalled();
+			expect(JSON.parse(readFileSync(path, "utf8")).events).toEqual([]);
+			await vi.advanceTimersByTimeAsync(250);
+			expect(changed).toHaveBeenCalledTimes(1);
+			expect(JSON.parse(readFileSync(path, "utf8")).events).toEqual(run.events);
+
+			runtime.log(run, "review", "Last tool result", "agent");
+			run.checkpoint = { current: "end", visits: { review: 1 } };
+			runtime.save(run);
+			const saved = JSON.parse(readFileSync(path, "utf8"));
+			expect(saved.checkpoint).toEqual(run.checkpoint);
+			expect(saved.events).toEqual(run.events);
+			await vi.advanceTimersByTimeAsync(250);
+			expect(changed).toHaveBeenCalledTimes(2);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+	it("flushes pending agent activity on shutdown", async () => {
+		vi.useFakeTimers();
+		try {
+			const { runtime, home } = create();
+			const run = start(runtime, workflow([agent("review")]));
+			runtime.log(run, "review", "Final activity", "agent");
+			await runtime.shutdown();
+			expect(
+				JSON.parse(
+					readFileSync(join(home, "factory", "runs", `${run.id}.json`), "utf8"),
+				).events,
+			).toEqual(run.events);
+			expect(vi.getTimerCount()).toBe(0);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("upgrades the legacy visual reviewer with a real newline while retaining its model", () => {
 		const saved = structuredClone(defaultWorkflows);
 		const shared = saved.find(

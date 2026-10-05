@@ -33,6 +33,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Keep the factory dashboard responsive during agent tool bursts by batching activity saves while preserving immediate execution checkpoints ([#4](https://github.com/Attraccess/bobs-factory/pull/4)).
+
 - Resume a rejected completed screenshot capture with all invalid states and its saved inventory, preserving valid images and the existing conversation instead of repeating the same validation failure on every retry. Reload changed MCP context in resumed Codex conversations. ([#3](https://github.com/Attraccess/bobs-factory/pull/3))
 
 - Accept repository-local directory links in screenshot dependencies without permitting external traversal or cycles, and let Today reveal every attention item when a failed run leaves the running list. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))

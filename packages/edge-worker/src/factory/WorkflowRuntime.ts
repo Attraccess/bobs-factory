@@ -170,6 +170,10 @@ export class WorkflowRuntime {
 	>();
 	private workflows: Workflow[];
 	private executions = new Map<string, Promise<void>>();
+	private pendingActivitySaves = new Map<
+		string,
+		ReturnType<typeof setTimeout>
+	>();
 	private shuttingDown = false;
 	private defaultWorkflow = "simple";
 	private viewStates: Record<string, RunViewState> = {};
@@ -388,7 +392,15 @@ export class WorkflowRuntime {
 		});
 		if (run.events.length > 1500)
 			run.events.splice(0, run.events.length - 1500);
-		this.save(run);
+		if (source === "agent") {
+			// A native turn can emit thousands of tool events in one burst. Persist
+			// activity together so repeated full-run writes cannot starve HTTP I/O.
+			if (!this.pendingActivitySaves.has(run.id)) {
+				const timer = setTimeout(() => this.save(run), 250);
+				timer.unref();
+				this.pendingActivitySaves.set(run.id, timer);
+			}
+		} else this.save(run);
 	}
 	launch(
 		run: FactoryRun,
@@ -874,6 +886,7 @@ export class WorkflowRuntime {
 		this.shuttingDown = true;
 		for (const controller of this.controllers.values()) controller.abort();
 		await Promise.allSettled(this.executions.values());
+		for (const id of this.pendingActivitySaves.keys()) this.save(this.get(id));
 	}
 	resumeAll(): void {
 		for (const run of this.runs.values()) {
@@ -1007,6 +1020,11 @@ export class WorkflowRuntime {
 		return recover(run.workflow.steps, run.outputs, "");
 	}
 	save(run: FactoryRun): void {
+		const pending = this.pendingActivitySaves.get(run.id);
+		if (pending) {
+			clearTimeout(pending);
+			this.pendingActivitySaves.delete(run.id);
+		}
 		run.updatedAt = new Date().toISOString();
 		this.atomicWrite(join(this.directory, "runs", `${run.id}.json`), run);
 		this.changed({ id: run.id });
