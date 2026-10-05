@@ -1,4 +1,3 @@
-import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import { ClaudeRunner } from "cyrus-claude-runner";
 import { LinearEventTransport } from "cyrus-linear-event-transport";
@@ -509,57 +508,22 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 			// Session not found initially
 			mockAgentSessionManager.getSession.mockReturnValue(null);
 
-			// Mock createCyrusAgentSession on EdgeWorker (the full method)
-			const createSessionSpy = vi
-				.spyOn(edgeWorker as any, "createCyrusAgentSession")
-				.mockResolvedValue({
-					session: {
-						id: "agent-session-legacy-123",
-						status: "active",
-						workspace: {
-							path: "/test/workspaces/TEST-123",
-							isGitWorktree: false,
-						},
-						agentRunner: null,
-					},
-					fullIssue: {
-						id: "issue-123",
-						identifier: "TEST-123",
-						title: "Test Issue",
-					},
-					workspace: {
-						path: "/test/workspaces/TEST-123",
-						isGitWorktree: false,
-					},
-					attachmentsDir: join(TEST_CYRUS_HOME, "TEST-123", "attachments"),
-				});
-
-			// Also mock the handlePromptWithStreamingCheck to prevent further execution
-			vi.spyOn(
-				edgeWorker as any,
-				"handlePromptWithStreamingCheck",
-			).mockResolvedValue(undefined);
-
-			// Mock postInstantPromptedAcknowledgment
-			vi.spyOn(
-				edgeWorker as any,
-				"postInstantPromptedAcknowledgment",
-			).mockResolvedValue(undefined);
+			// A genuinely new launch goes through trigger validation and workflow selection.
+			const initializeSpy = vi
+				.spyOn(edgeWorker as any, "initializeAgentRunner")
+				.mockResolvedValue(undefined);
 
 			const webhook = createPromptedWebhook();
 
 			// Act
 			await (edgeWorker as any).handleWebhook(webhook, [mockRepository]);
 
-			// Assert: A new session should be created as replacement
-			// This scenario is already handled by the existing code in
-			// handleNormalPromptedActivity, but this test verifies the full path
-			expect(createSessionSpy).toHaveBeenCalledWith(
-				"agent-session-legacy-123",
-				expect.objectContaining({ id: "issue-123" }),
+			expect(initializeSpy).toHaveBeenCalledWith(
+				webhook.agentSession,
 				[mockRepository],
-				mockAgentSessionManager,
 				"test-workspace",
+				webhook.guidance,
+				webhook.agentActivity?.content.body,
 			);
 		});
 	});

@@ -14,6 +14,7 @@ import {
 	type WebhookAgentSession,
 	type WebhookComment,
 } from "cyrus-core";
+import { workflowTriggerInstructions } from "./factory/Workflow.js";
 import type { GitService } from "./GitService.js";
 
 /**
@@ -668,6 +669,8 @@ The system evaluates routing methods in this strict priority order. The FIRST ma
 4. **Team Selection (Priority 4 - Lowest)**: Create the issue in a Linear team that routes to the target repository.
 
 For reliable cross-repository routing, prefer Description Tags as they are explicit and unambiguous.
+
+${workflowTriggerInstructions}
 </description>
 
 <available_repositories>

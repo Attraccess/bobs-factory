@@ -84,6 +84,7 @@ describe("Prompt Assembly - Routing Context", () => {
 <user_comment>
 Orchestrate this task
 </user_comment>`)
+			.expectSystemPrompt(undefined)
 			.expectPromptType("label-based")
 			.expectComponents("issue-context", "user-comment")
 			.verify();
@@ -191,6 +192,8 @@ The system evaluates routing methods in this strict priority order. The FIRST ma
 4. **Team Selection (Priority 4 - Lowest)**: Create the issue in a Linear team that routes to the target repository.
 
 For reliable cross-repository routing, prefer Description Tags as they are explicit and unambiguous.
+
+Workflow selection is separate from repository routing. Stock workflow labels are workflow:factory (or factory), workflow:takeover (or takeover), and workflow:simple; operators can customize labels in Recipes. Selection uses an explicit workflow ID, then the first matching workflow in configured order, then the single saved default. The selected workflow must allow ticket-assignment for assignments or @mentions, manual for new UI/API or follow-up launches, and workflow for nested calls. A disallowed selection is rejected without fallback; enable its permission in Recipes, change the selection/label, or choose an eligible default. Existing runs retain their accepted definitions; replies and resume do not select a new workflow. No workflow message-selector syntax is introduced.
 </description>
 
 <available_repositories>
@@ -219,6 +222,7 @@ For reliable cross-repository routing, prefer Description Tags as they are expli
 <user_comment>
 Orchestrate this cross-repo feature
 </user_comment>`)
+			.expectSystemPrompt(undefined)
 			.expectPromptType("label-based")
 			.expectComponents("issue-context", "user-comment")
 			.verify();
@@ -309,6 +313,7 @@ Orchestrate this cross-repo feature
 <user_comment>
 Check routing context
 </user_comment>`)
+			.expectSystemPrompt(undefined)
 			.expectPromptType("label-based")
 			.expectComponents("issue-context", "user-comment")
 			.verify();
@@ -397,6 +402,7 @@ Check routing context
 <user_comment>
 Check workspace isolation
 </user_comment>`)
+			.expectSystemPrompt(undefined)
 			.expectPromptType("label-based")
 			.expectComponents("issue-context", "user-comment")
 			.verify();
