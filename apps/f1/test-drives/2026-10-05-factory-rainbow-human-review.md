@@ -138,3 +138,30 @@ migration and preservation of custom model/prompt settings. Applying the compile
 migration to the actual saved run produced the current stock scope, capture and
 reviewer prompts with unchanged runners/models. The run was still at code review;
 its next visual-scope result had not yet been generated during this check.
+
+## Bounded recovery and no-change CI routing (#43/#45)
+
+F1 applies to this runtime/session recovery change. The isolated compiled EdgeWorker on
+RPC 3600 / UI 3495 used real Codex and factory-context MCP with a nested test workflow.
+Only GitHub readiness was fixture-backed; Git/native conversations and issue-tracker
+activities were real. No real PR was approved or merged.
+
+- Manual run `manual-f45ff658-ff54-4d8a-bc06-4e40a7562b34` completed its first review,
+  hit maxVisits=1, and displayed **Continue (+4 passes)** in the mobile native browser.
+  Clicking it continued at review pass 2, preserved the first draft/review outputs,
+  and reached pending human gate `f68c0cb4-365e-4775-8ba0-4de1332f54cf`.
+- F1 RPC created `issue-2` / `DEF-2` and started `session-2` with the configured
+  nested recovery workflow. It stopped at the same limit; explicit retry retained
+  all previous work and persisted `additionalVisits.code-review=4`. It reached
+  gate `9cfad0ea-1af7-4f6c-8b0d-e45bfb8b03f7`, revision
+  `003f4f8943e40f4ae8369a678fa010cb88c8912f`, six history records and no human decision.
+  `f1 view-session` showed real thought/tool activity via the CLI issue tracker.
+- 61 tests across WorkflowRuntime, MergeReadiness, FactoryPipeline, FactoryServer
+  and Incremental passed. They exercise re-exhaustion after exactly four additional
+  nested passes, restart persistence, stock/custom routing migration, same-revision
+  skip vs changed head/base/dirty/missing provenance, transient transport retry and
+  cancellation, meaningful vs informational comments, and edited comment hashes.
+- Current stored production definition upgrades CI routing without changing role
+  models/prompts or 47 completed records. Real code/base changes still return to
+  code review; no-change assessments return directly to readiness only when Git
+  and saved accepted review provenance agree. The human approval gate stays intact.

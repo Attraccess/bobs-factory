@@ -940,3 +940,94 @@ it("rejects human review gates hidden in shared fanout workflows", () => {
 		]),
 	).toThrow("outside fanout");
 });
+
+it("grants a bounded persisted retry budget only to the exhausted nested step", async () => {
+	let approve = false;
+	const hooks = {
+		agent: async () => ({ approved: approve }),
+		script: async () => ({}),
+		tool: async () => ({}),
+	};
+	const { runtime, home } = create(hooks);
+	const child = workflow([
+		agent("review", {
+			maxVisits: 1,
+			branches: [{ when: { path: "approved", equals: false }, next: "review" }],
+		}),
+	]);
+	child.id = "child";
+	runtime.updateWorkflows([...defaultWorkflows, child]);
+	const parent = validateWorkflows([
+		...defaultWorkflows,
+		child,
+		{
+			id: "parent",
+			name: "parent",
+			steps: [
+				{
+					id: "pipeline",
+					name: "pipeline",
+					type: "workflow",
+					workflow: "child",
+				},
+			],
+		},
+	]).at(-1)!;
+	const run = start(runtime, parent);
+	await runtime.launch(run);
+	expect(run.iterationLimit).toEqual({
+		step: "pipeline/review",
+		visits: 2,
+		limit: 1,
+	});
+	const prior = structuredClone(run.history);
+	runtime.retry(run.id);
+	await vi.waitFor(() => expect(run.status).toBe("failed"));
+	expect(run.history).toHaveLength(5);
+	expect(run.iterationLimit).toEqual({
+		step: "pipeline/review",
+		visits: 6,
+		limit: 5,
+	});
+	expect(run.checkpoint?.additionalVisits).toBeUndefined();
+	expect(run.checkpoint?.active?.children?.[0]?.additionalVisits).toEqual({
+		review: 4,
+	});
+	const restarted = new WorkflowRuntime(home, hooks);
+	const restored = restarted.get(run.id);
+	expect(restored.history.slice(0, prior.length)).toEqual(prior);
+	approve = true;
+	restarted.retry(restored.id);
+	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	expect(
+		restored.history.filter((x) => x.step === "pipeline/review"),
+	).toHaveLength(6);
+	expect(restored.iterationLimit).toBeUndefined();
+});
+
+it("upgrades only stock CI routing, retaining customized models and routes", () => {
+	const definitions = structuredClone(defaultWorkflows);
+	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
+	shared.steps = shared.steps.filter((x) => x.id !== "after-ci-fix");
+	const fix = shared.steps.find((x) => x.id === "ci-fix")!;
+	fix.next = "code-review";
+	fix.model = "custom-fixer";
+	const upgraded = validateWorkflows(upgradeWorkflows(definitions)).find(
+		(x) => x.id === "factory-pipeline",
+	)!;
+	expect(upgraded.steps.find((x) => x.id === "ci-fix")).toMatchObject({
+		next: "after-ci-fix",
+		model: "custom-fixer",
+	});
+	expect(
+		validateWorkflows(upgradeWorkflows(upgradeWorkflows(definitions)))
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.filter((x) => x.id === "after-ci-fix"),
+	).toHaveLength(1);
+	fix.prompt = "Custom CI correction policy";
+	expect(
+		validateWorkflows(upgradeWorkflows(definitions))
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.find((x) => x.id === "ci-fix")!.next,
+	).toBe("code-review");
+});

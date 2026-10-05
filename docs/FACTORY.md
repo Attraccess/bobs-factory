@@ -96,7 +96,7 @@ scope → screenshots/visual-review/fix loop → human review guide. The impleme
 receives only the accepted plan and its asset references. Reviews retain earlier
 findings and fixer dispositions, use stable finding IDs, discard severity 1,
 and allow evidence-based rejection and review of that rejection. Visual and CI
-fixes return through code review and CI. The guide now pauses at an explicit human review gate. **Approve & settle**
+fixes return through code review and CI. A CI assessment that leaves the accepted code and base unchanged returns directly to readiness, verified by Git and saved review provenance. Transient provider transport errors retry in the watcher; recognizable link/build notices do not trigger a fixer, and edited feedback is assessed again. The guide now pauses at an explicit human review gate. **Approve & settle**
 authorizes only its displayed commit; **Open diff** opens the provider in another
 tab; **Request changes** records instructions, runs the fixer and repeats code,
 readiness and visual review before a new guide and fresh approval. Approval marks
@@ -176,6 +176,8 @@ After resolving a failed step's cause, select **Retry failed step** in the run
 view. It keeps the same run, worktree, frozen workflow, answers and history,
 and continues from saved progress. Completed steps are skipped; an unfinished
 script/tool step runs again, so check any external effects before retrying.
+An exhausted iteration limit shows **Continue (+4 passes)**. Each explicit continuation grants four additional visits only to the exhausted step, including nested workflows; historical counters and finished steps remain intact. If those additional visits are exhausted, the run stops again rather than looping indefinitely. The limit counts cumulative visits, including returns after real code/visual corrections.
+
 Completed or explicitly terminated runs cannot be retried. Publication uses a
 short conventional commit message (`chore: …`) derived from the ticket title,
 with the repository's Git hooks and signing configuration still enabled.

@@ -99,7 +99,18 @@ const definitions = [
 				"ci-fix",
 				"Fix CI failures",
 				`Diagnose and fix CI failures, merge conflicts, stale branches and actionable PR review comments in the supplied merge-readiness receipt and full history. Fetch the base before resolving conflicts. For each supplied unresolved review thread, address it or post an evidence-backed response before resolving it using gh api graphql resolveReviewThread. Do not dismiss reviews or bypass rules. Required reviewer approvals must wait for the reviewer; do not impersonate one. Assess every supplied new PR comment. Act on requested corrections or document why a comment is informational. Record its ID in addressedCommentIds after assessment, and include disposition/reason in the summary. Add <!-- generated-by-cyrus --> to any PR reply you write. Retain all discussion and report addressed comment/thread IDs. Run relevant checks, commit and push to the same draft PR. Return {"summary":"...","checks":["..."],"addressedReviewIds":["review IDs"],"addressedCommentIds":["comment IDs"]}. Do not merge or mark ready.`,
-				{ next: "code-review" },
+				{ next: "after-ci-fix" },
+			),
+			tool(
+				"after-ci-fix",
+				"Check whether code needs another review",
+				"review-after-fix",
+				{
+					branches: [
+						{ when: { path: "reviewRequired", equals: false }, next: "ci" },
+					],
+					next: "code-review",
+				},
 			),
 			agent("visual-fix", "Fix visual findings", fix, { next: "code-review" }),
 			agent(
@@ -255,6 +266,24 @@ export function upgradeWorkflows(value: unknown): unknown {
 			stockFix.prompt = defaultWorkflows
 				.find((item) => item.id === "factory-pipeline")!
 				.steps.find((step) => step.id === "ci-fix")!.prompt;
+		const ciFix = steps.find((step) => step.id === "ci-fix");
+		if (
+			ciFix?.next === "code-review" &&
+			!steps.some((step) => step.id === "after-ci-fix") &&
+			ciFix.prompt ===
+				defaultWorkflows
+					.find((item) => item.id === "factory-pipeline")!
+					.steps.find((step) => step.id === "ci-fix")!.prompt
+		) {
+			ciFix.next = "after-ci-fix";
+			steps.push(
+				structuredClone(
+					defaultWorkflows
+						.find((item) => item.id === "factory-pipeline")!
+						.steps.find((step) => step.id === "after-ci-fix")!,
+				) as unknown as Record<string, unknown>,
+			);
+		}
 		const ci = steps.find((step) => step.tool === "ci");
 		if (ci && Array.isArray(ci.branches))
 			ci.branches = ci.branches.map((branch) =>

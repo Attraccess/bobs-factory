@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 export type ProviderCommand = (
@@ -202,28 +203,126 @@ export function reportReadiness(
 		);
 }
 
+/** A provider transport error is not evidence that repository code needs fixing. */
+export async function inspectReadinessWithRetry(
+	context: ExecutionContext,
+	command: ProviderCommand,
+	url: string,
+): Promise<MergeReadiness> {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			return await inspectMergeReadiness(command, url);
+		} catch (error) {
+			context.signal.throwIfAborted();
+			const message = error instanceof Error ? error.message : String(error);
+			if (
+				attempt >= 5 ||
+				!/timed? out|timeout|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network|TLS handshake|HTTP 50[0234]|HTTP 429|rate limit/i.test(
+					message,
+				)
+			)
+				throw error;
+			context.log(
+				`GitHub readiness temporarily unavailable; retrying transport (${attempt + 1}/5). ${message.slice(0, 300)}`,
+			);
+			await delay(context.signal, Math.min(10000 * 2 ** attempt, 60000));
+		}
+	}
+}
+const commentHash = (body: string) =>
+	createHash("sha256").update(body).digest("hex");
+interface FeedbackComment {
+	id: string;
+	body: string;
+	updated_at?: string;
+	user?: { login?: string; type?: string };
+}
+/** Only recognizable provider notices; unknown bot messages still need assessment. */
+export function informationalComment(comment: FeedbackComment): boolean {
+	if (comment.user?.type !== "Bot") return false;
+	const body = comment.body.trim();
+	if (comment.user.login === "linear-code[bot]")
+		return /^<!-- linear-linkback -->\s*<p><a href="https:\/\/linear\.app\/[^"<>]+">[^<>]+<\/a><\/p>$/.test(
+			body,
+		);
+	if (comment.user.login === "github-actions[bot]")
+		return /^🐳 Docker images built and pushed:\s+GitHub Container Registry: `[^`]+`\s+Docker Hub: `[^`]+`\s+Image Digest: `sha256:[a-f0-9]+`$/.test(
+			body,
+		);
+	return false;
+}
+/** Capture the actual assessed content, so edits under the same comment ID wake us again. */
+export function recordFeedbackAssessment(
+	context: ExecutionContext,
+	output: unknown,
+): unknown {
+	if (!output || typeof output !== "object") return output;
+	const value = output as { addressedCommentIds?: string[] };
+	const ids = new Set((value.addressedCommentIds ?? []).map(String));
+	const comments =
+		readComments(context.run.outputs["merge-readiness"]) ??
+		readComments(context.run.outputs.ci) ??
+		[];
+	return {
+		...value,
+		assessedComments: comments
+			.filter((comment) => ids.has(String(comment.id)))
+			.map((comment) => ({
+				id: String(comment.id),
+				bodySha256: commentHash(comment.body),
+			})),
+	};
+}
+function readComments(receipt: unknown): FeedbackComment[] | undefined {
+	return receipt && typeof receipt === "object"
+		? (receipt as { comments?: FeedbackComment[] }).comments
+		: undefined;
+}
+
 /** Assess provider discussion once, while still respecting required human reviews. */
 export function assessFeedback(
 	context: ExecutionContext,
 	snapshot: MergeReadiness,
 ): void {
-	const addressedComments = new Set<string>(),
+	const addressedComments = new Map<string, { hash?: string; at: string }>(),
 		addressedReviews = new Set<string>();
 	for (const item of context.run.history) {
 		if (!item.step.endsWith("ci-fix")) continue;
 		const output = item.output as
-			| { addressedCommentIds?: string[]; addressedReviewIds?: string[] }
+			| {
+					addressedCommentIds?: string[];
+					addressedReviewIds?: string[];
+					assessedComments?: { id: string; bodySha256: string }[];
+			  }
 			| undefined;
 		for (const id of output?.addressedCommentIds ?? [])
-			addressedComments.add(String(id));
+			if (!addressedComments.has(String(id)))
+				addressedComments.set(String(id), { at: item.at });
+		for (const comment of output?.assessedComments ?? [])
+			addressedComments.set(String(comment.id), {
+				hash: comment.bodySha256,
+				at: item.at,
+			});
 		for (const id of output?.addressedReviewIds ?? [])
 			addressedReviews.add(String(id));
 	}
-	const comments = (snapshot.comments as { id: string; body: string }[]).filter(
-		(comment) =>
-			!addressedComments.has(String(comment.id)) &&
-			comment.body?.trim() &&
-			!/<!-- generated-by-cyrus -->/.test(comment.body),
+	const comments = (snapshot.comments as FeedbackComment[]).filter(
+		(comment) => {
+			if (
+				!comment.body?.trim() ||
+				/<!-- generated-by-cyrus -->/.test(comment.body) ||
+				informationalComment(comment)
+			)
+				return false;
+			const assessed = addressedComments.get(String(comment.id));
+			if (!assessed) return true;
+			if (assessed.hash) return assessed.hash !== commentHash(comment.body);
+			return Boolean(
+				comment.updated_at &&
+					(!Number.isFinite(Date.parse(assessed.at)) ||
+						Date.parse(comment.updated_at) > Date.parse(assessed.at)),
+			);
+		},
 	);
 	if (comments.length)
 		snapshot.blockers.push({

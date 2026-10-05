@@ -15,7 +15,7 @@ import { dependencyHashes } from "./Incremental.js";
 import {
 	assessFeedback,
 	delay,
-	inspectMergeReadiness,
+	inspectReadinessWithRetry,
 	reportReadiness,
 } from "./MergeReadiness.js";
 import { inspectPullRequest } from "./Takeover.js";
@@ -419,11 +419,43 @@ export class FactoryTools {
 				}
 				return { approved: open.length === 0, findings: open };
 			}
+			case "review-after-fix": {
+				const prefix = (run.step ?? context.step.id).replace(/[^/]+$/, "");
+				const reviewed = run.roleRevisions?.[`${prefix}code-review`];
+				const headSha = await command("git", ["rev-parse", "HEAD"]);
+				const dirty = Boolean(await command("git", ["status", "--porcelain"]));
+				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
+				const readiness = await inspectReadinessWithRetry(
+					context,
+					command,
+					url,
+				);
+				const previousBase = readPath(run.outputs, "ci.baseSha");
+				const reviewRequired =
+					!reviewed ||
+					reviewed.dirty ||
+					dirty ||
+					reviewed.headSha !== headSha ||
+					readiness.headSha !== headSha ||
+					!previousBase ||
+					previousBase !== readiness.baseSha ||
+					readPath(run.outputs, "review-gate.approved") !== true;
+				context.log(
+					reviewRequired
+						? "Code or base revision changed (or review provenance is missing); returning to code review."
+						: "Accepted code and base are unchanged; returning directly to merge readiness.",
+				);
+				return { reviewRequired, headSha, baseSha: readiness.baseSha };
+			}
 			case "ci": {
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
 				if (!url) throw new Error("No PR to check");
 				for (;;) {
-					const snapshot = await inspectMergeReadiness(command, url);
+					const snapshot = await inspectReadinessWithRetry(
+						context,
+						command,
+						url,
+					);
 					assessFeedback(context, snapshot);
 					const headSha = await command("git", ["rev-parse", "HEAD"]);
 					if (snapshot.headSha !== headSha)
@@ -439,7 +471,7 @@ export class FactoryTools {
 			case "human-review": {
 				const headSha = await command("git", ["rev-parse", "HEAD"]);
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
-				const snapshot = await inspectMergeReadiness(command, url);
+				const snapshot = await inspectReadinessWithRetry(context, command, url);
 				assessFeedback(context, snapshot);
 				if (
 					snapshot.headSha !== headSha ||
@@ -457,7 +489,11 @@ export class FactoryTools {
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
 				let submitted = false;
 				for (;;) {
-					const snapshot = await inspectMergeReadiness(command, url);
+					const snapshot = await inspectReadinessWithRetry(
+						context,
+						command,
+						url,
+					);
 					assessFeedback(context, snapshot);
 					reportReadiness(context, snapshot);
 					if (
@@ -526,7 +562,11 @@ export class FactoryTools {
 					throw new Error(
 						"PR revision or CI evidence changed; handoff blocked",
 					);
-				const readiness = await inspectMergeReadiness(command, url);
+				const readiness = await inspectReadinessWithRetry(
+					context,
+					command,
+					url,
+				);
 				assessFeedback(context, readiness);
 				if (!readiness.reviewReady || readiness.headSha !== headSha)
 					throw new Error("Merge readiness changed; handoff blocked");

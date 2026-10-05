@@ -2,7 +2,10 @@ import { expect, it, vi } from "vitest";
 import { FactoryTools } from "../src/factory/FactoryTools.js";
 import {
 	assessFeedback,
+	informationalComment,
 	inspectMergeReadiness,
+	inspectReadinessWithRetry,
+	recordFeedbackAssessment,
 } from "../src/factory/MergeReadiness.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
@@ -168,4 +171,137 @@ it("assesses new feedback during human review before any merge request", async (
 			([, exe, args]) => exe === "gh" && args.includes("merge"),
 		),
 	).toBe(false);
+});
+
+it("ignores only recognized bot notices and re-assesses edited comment content", async () => {
+	const snapshot = await inspectMergeReadiness(command(), url);
+	const context = {
+		run: { history: [], outputs: { ci: snapshot } },
+	} as unknown as ExecutionContext;
+	const comment = {
+		id: "12",
+		body: "Fix the actual billing calculation",
+		updated_at: "2026-10-05T01:00:00Z",
+	};
+	snapshot.comments = [comment];
+	const output = recordFeedbackAssessment(context, {
+		addressedCommentIds: ["12"],
+	});
+	context.run.history.push({
+		step: "pipeline/ci-fix",
+		at: "2026-10-05T02:00:00Z",
+		output,
+	});
+	const unchanged = await inspectMergeReadiness(command(), url);
+	unchanged.comments = [comment];
+	assessFeedback(context, unchanged);
+	expect(unchanged.fix).toBe(false);
+	const changed = await inspectMergeReadiness(command(), url);
+	changed.comments = [{ ...comment, body: "Another must fix" }];
+	assessFeedback(context, changed);
+	expect(changed.fix).toBe(true);
+	expect(
+		informationalComment({
+			id: "1",
+			user: { login: "linear-code[bot]", type: "Bot" },
+			body: '<!-- linear-linkback -->\n<p><a href="https://linear.app/x/issue/Y-1">Y-1</a></p>',
+		}),
+	).toBe(true);
+	expect(
+		informationalComment({
+			id: "2",
+			user: { login: "github-actions[bot]", type: "Bot" },
+			body: "🐳 Docker images built and pushed:\n\nGitHub Container Registry: `image:sha`\nDocker Hub: `image:sha`\n\nImage Digest: `sha256:123abc`",
+		}),
+	).toBe(true);
+	expect(
+		informationalComment({
+			id: "3",
+			user: { login: "agent-rocky-bot[bot]", type: "Bot" },
+			body: "## Business Rules Validation\nFix billing",
+		}),
+	).toBe(false);
+	expect(
+		informationalComment({
+			id: "4",
+			user: { login: "human", type: "User" },
+			body: "🐳 Docker images built and pushed: Fix billing",
+		}),
+	).toBe(false);
+});
+it("retries transient readiness errors without a fixer and cancels waiting promptly", async () => {
+	vi.useFakeTimers();
+	try {
+		const cmd = command();
+		cmd.mockRejectedValueOnce(new Error("Command timed out: gh"));
+		const ctx = {
+			signal: new AbortController().signal,
+			log: vi.fn(),
+		} as unknown as ExecutionContext;
+		const pending = inspectReadinessWithRetry(ctx, cmd, url);
+		await vi.advanceTimersByTimeAsync(10000);
+		await expect(pending).resolves.toMatchObject({ reviewReady: true });
+		const abort = new AbortController();
+		const blocked = inspectReadinessWithRetry(
+			{ ...ctx, signal: abort.signal },
+			vi.fn(async () => {
+				throw new Error("HTTP 503");
+			}),
+			url,
+		);
+		const assertion = expect(blocked).rejects.toThrow("Run terminated");
+		await vi.advanceTimersByTimeAsync(1);
+		abort.abort();
+		await assertion;
+		await expect(
+			inspectReadinessWithRetry(
+				ctx,
+				vi.fn(async () => {
+					throw new Error("Bad credentials HTTP 401");
+				}),
+				url,
+			),
+		).rejects.toThrow("401");
+	} finally {
+		vi.useRealTimers();
+	}
+});
+it.each([
+	["head", "base", false, true, false],
+	["new-head", "base", false, true, true],
+	["head", "new-base", false, true, true],
+	["head", "base", true, true, true],
+	["head", "base", false, false, true],
+])("routes CI assessments using actual revision provenance (%s,%s,%s,%s)", async (head, base, dirty, provenance, required) => {
+	const ctx = {
+		run: {
+			step: "pipeline/after-ci-fix",
+			roleRevisions: provenance
+				? { "pipeline/code-review": { headSha: "head", dirty: false } }
+				: {},
+			outputs: {
+				"draft-pr": { url },
+				ci: { baseSha: "base" },
+				"review-gate": { approved: true },
+			},
+		},
+		step: { tool: "review-after-fix" },
+		signal: new AbortController().signal,
+		log: vi.fn(),
+	} as unknown as ExecutionContext;
+	const cmd = async (_ctx: ExecutionContext, exe: string, args: string[]) =>
+		exe === "git"
+			? args[0] === "rev-parse"
+				? head
+				: dirty
+					? " M file"
+					: ""
+			: args.includes("graphql")
+				? JSON.stringify(
+						providerReceipt({ headRefOid: head, baseRefOid: base }),
+					)
+				: "[[]]";
+	await expect(
+		new FactoryTools({ command: cmd, postComment: async () => {} }).tool(ctx),
+	).resolves.toMatchObject({ reviewRequired: required });
 });

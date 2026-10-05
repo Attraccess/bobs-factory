@@ -184,6 +184,7 @@ import {
 import { issueSnapshot } from "./factory/issueSnapshot.js";
 import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
+import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
 import {
 	inspectPullRequest,
 	type TakeoverPullRequest,
@@ -6085,6 +6086,8 @@ ${taskSection}`;
 				)
 					output = validateFactoryResult(step.id, output);
 				if (step.id === "capture") output = captureEvidence(context, output);
+				if (step.id === "ci-fix")
+					output = recordFeedbackAssessment(context, output);
 				const completed = (await roleProgress(context)).currentRevision;
 				if (completed) {
 					run.roleRevisions ??= {};

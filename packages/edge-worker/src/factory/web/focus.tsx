@@ -428,7 +428,9 @@ export function FocusCard({
 								{run.error ?? "The run stopped before finishing."}
 							</Markdown>
 							<small>
-								Retry keeps the worktree, your answers and every finished step.
+								{run.iterationLimit
+									? "Continue grants 4 more passes for this step. Your work and history stay intact."
+									: "Retry keeps the worktree, your answers and every finished step."}
 							</small>
 						</div>
 					</div>
@@ -442,7 +444,8 @@ export function FocusCard({
 									.catch(() => {})
 							}
 						>
-							↻ Retry step <kbd>r</kbd>
+							↻ {run.iterationLimit ? "Continue (+4 passes)" : "Retry step"}{" "}
+							<kbd>r</kbd>
 						</Button>
 						<Link className="button secondary" to={`/runs/${run.id}`}>
 							What happened?

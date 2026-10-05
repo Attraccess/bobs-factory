@@ -40,6 +40,7 @@ export interface AgentCheckpoint {
 export interface GraphCheckpoint {
 	current: string;
 	visits: Record<string, number>;
+	additionalVisits?: Record<string, number>;
 	active?: {
 		phase: "executing" | "result" | "waiting" | "answered";
 		agent?: AgentCheckpoint;
@@ -106,6 +107,7 @@ export interface FactoryRun {
 	questions: string[];
 	events: RunEvent[];
 	activitySteps?: { at: string; step: string }[];
+	iterationLimit?: { step: string; visits: number; limit: number };
 	error?: string;
 }
 export interface ExecutionContext {
@@ -421,10 +423,15 @@ export class WorkflowRuntime {
 			}
 			const state = checkpoint.active;
 			const count = checkpoint.visits[step.id]!;
-			if (count > step.maxVisits)
+			const limit =
+				step.maxVisits + (checkpoint.additionalVisits?.[step.id] ?? 0);
+			if (count > limit) {
+				run.step = key;
+				run.iterationLimit = { step: key, visits: count, limit };
 				throw new Error(
-					`Iteration limit reached at ${key}. Review history is retained; human intervention is needed.`,
+					`Iteration limit reached at ${key} (${limit} passes). Continue grants 4 additional passes for this step; all completed work is retained.`,
 				);
+			}
 			run.step = key;
 			this.log(run, key, `Starting ${step.name} (pass ${count})`);
 			const input = step.inputs
@@ -678,6 +685,40 @@ export class WorkflowRuntime {
 			!["failed", "interrupted"].includes(run.status)
 		)
 			throw new Error("Only failed or interrupted runs can be retried");
+		// Retry is an explicit request for bounded additional work, never a global reset.
+		const extend = (
+			frame: GraphCheckpoint,
+			steps: WorkflowStep[],
+			prefix: string,
+		) => {
+			const step = steps.find((item) => item.id === frame.current);
+			if (!step) return;
+			const limit = step.maxVisits + (frame.additionalVisits?.[step.id] ?? 0);
+			if ((frame.visits[step.id] ?? 0) > limit) {
+				frame.additionalVisits ??= {};
+				frame.additionalVisits[step.id] =
+					(frame.additionalVisits[step.id] ?? 0) + 4;
+				this.log(
+					run,
+					"run",
+					`Continue authorized 4 additional passes for ${prefix}${step.id} (limit ${limit + 4}); history retained.`,
+				);
+			}
+			if (step.type === "workflow") {
+				const child = run.workflowDefinitions?.find(
+					(item) => item.id === step.workflow,
+				);
+				if (child && frame.active?.children?.[0])
+					extend(frame.active.children[0], child.steps, `${prefix}${step.id}/`);
+			} else if (step.type === "fanout") {
+				step.groups?.forEach((group, index) => {
+					const child = frame.active?.children?.[index];
+					if (child) extend(child, group, `${prefix}${step.id}/${index}/`);
+				});
+			}
+		};
+		if (run.checkpoint) extend(run.checkpoint, run.workflow.steps, "");
+		delete run.iterationLimit;
 		run.status = "running";
 		delete run.error;
 		this.log(run, "run", "Retry requested; continuing from saved progress.");

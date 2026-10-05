@@ -175,6 +175,7 @@ it("returns visual and CI fixes through code review, keeping dispute history", a
 		"review-gate",
 		"ci",
 		"ci-fix",
+		"after-ci-fix",
 		"code-review",
 		"review-gate",
 		"ci",
