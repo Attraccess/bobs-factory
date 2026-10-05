@@ -260,7 +260,8 @@ export function upgradeWorkflows(value: unknown): unknown {
 				step.maxVisits === 8 &&
 				stock?.type === "tool" &&
 				step.tool === stock.tool &&
-				step.name === stock.name
+				(step.name === stock.name ||
+					(step.id === "ci" && step.name === "Watch pull request CI"))
 			)
 				step.maxVisits = stock.maxVisits;
 			if (

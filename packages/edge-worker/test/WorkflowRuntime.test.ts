@@ -1047,6 +1047,13 @@ it("upgrades stock coordination limits without changing agent/custom limits", ()
 	);
 	expect(upgraded.steps.find((x) => x.id === "ci")!.maxVisits).toBe(3);
 	expect(upgraded.steps.find((x) => x.id === "code-review")!.maxVisits).toBe(8);
+	ci.maxVisits = 8;
+	ci.name = "Watch pull request CI";
+	expect(
+		validateWorkflows(upgradeWorkflows(definitions))
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.find((x) => x.id === "ci")!.maxVisits,
+	).toBe(100);
 	gate.name = "My custom review gate";
 	expect(
 		validateWorkflows(upgradeWorkflows(definitions))
