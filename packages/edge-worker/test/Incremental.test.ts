@@ -1,10 +1,21 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { captureEvidence } from "../src/factory/FactoryTools.js";
-import { roleProgress } from "../src/factory/Incremental.js";
+import {
+	completedAgentResult,
+	dependencyCovers,
+	dependencyHashes,
+	roleProgress,
+} from "../src/factory/Incremental.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 
 const homes: string[] = [];
@@ -71,6 +82,47 @@ it("keeps per-role results and exposes only new history and exact revision chang
 	expect(changed.visit).toBe(2);
 	writeFileSync(join(workspace, "a.txt"), "dirty");
 	expect((await roleProgress(ctx)).uncertain).toBe(true);
+});
+it("fingerprints recursive dependency groups, additions/deletions and missing paths without escaping the repository", () => {
+	const { workspace } = context();
+	mkdirSync(join(workspace, "area"));
+	writeFileSync(join(workspace, "area", "view.ts"), "View");
+	const paths = ["area/**", "a.txt", "deleted.ts"];
+	const first = dependencyHashes(workspace, paths);
+	expect(dependencyHashes(workspace, paths.toReversed())).toEqual(first);
+	expect(first["area/view.ts"]).toMatch(/^[a-f0-9]{64}$/);
+	expect(dependencyCovers("area/view.ts", "area/**")).toBe(true);
+	expect(dependencyCovers("other/view.ts", "area/**")).toBe(false);
+	writeFileSync(join(workspace, "area", "new.ts"), "New");
+	expect(dependencyHashes(workspace, paths)).not.toEqual(first);
+	rmSync(join(workspace, "area", "view.ts"));
+	expect(dependencyHashes(workspace, paths)["area/view.ts"]).toBeUndefined();
+	expect(() => dependencyHashes(workspace, ["../outside/**"])).toThrow(
+		"repository files",
+	);
+	symlinkSync(tmpdir(), join(workspace, "escape"));
+	expect(() => dependencyHashes(workspace, ["escape/**"])).toThrow(
+		"repository files",
+	);
+});
+
+it("recovers completed output only on its saved clean revision", async () => {
+	const { context: ctx, workspace, git } = context();
+	ctx.log = vi.fn();
+	const revision = (await roleProgress(ctx)).currentRevision!;
+	ctx.resumeAgent = {
+		runner: "codex",
+		sessionId: "saved",
+		result: { output: { screenshots: [] }, revision },
+	};
+	expect(await completedAgentResult(ctx)).toEqual({
+		output: { screenshots: [] },
+	});
+	writeFileSync(join(workspace, "a.txt"), "Changed");
+	expect(await completedAgentResult(ctx)).toBeUndefined();
+	git("add", ".");
+	git("commit", "-m", "fix: changed revision");
+	expect(await completedAgentResult(ctx)).toBeUndefined();
 });
 it("reuses unchanged verified evidence, rejecting affected, unexplained, dirty or unapproved evidence", async () => {
 	const { context: ctx, workspace, git } = context();

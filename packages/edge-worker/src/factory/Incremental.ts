@@ -1,6 +1,13 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import {
+	existsSync,
+	lstatSync,
+	readdirSync,
+	readFileSync,
+	realpathSync,
+	statSync,
+} from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
@@ -88,23 +95,85 @@ export function dependencyHashes(
 	if (!paths.length)
 		throw new Error("An unchanged area needs explicit file dependencies");
 	const root = realpathSync(workspace);
+	const hashes: Record<string, string> = {};
+	const inside = (path: string) => {
+		const name = relative(root, path);
+		if (
+			!name ||
+			name === ".." ||
+			name.split(/[\\/]/)[0] === ".." ||
+			isAbsolute(name)
+		)
+			throw new Error("Visual dependencies must be repository files");
+	};
+	const visit = (path: string) => {
+		const full = resolve(root, path);
+		inside(full);
+		if (!existsSync(full)) {
+			hashes[path] = "missing";
+			return;
+		}
+		inside(realpathSync(full));
+		const stat = lstatSync(full);
+		if (stat.isSymbolicLink() && statSync(full).isDirectory())
+			throw new Error(
+				"Use the real repository directory for visual dependencies",
+			);
+		if (stat.isDirectory()) {
+			hashes[`${path}/`] = createHash("sha256")
+				.update("directory")
+				.digest("hex");
+			for (const entry of readdirSync(full).sort()) {
+				if ([".git", "node_modules"].includes(entry)) continue;
+				visit(`${path}/${entry}`);
+			}
+		} else
+			hashes[path] = createHash("sha256")
+				.update(readFileSync(full))
+				.digest("hex");
+	};
+	for (const path of [...new Set(paths)].sort()) {
+		const prefix = path.replace(/\/\*\*\/?$/, "");
+		if (/[*?[\]{}]/.test(prefix))
+			throw new Error(
+				"Visual dependencies support exact files or directory/** paths",
+			);
+		visit(prefix);
+	}
 	return Object.fromEntries(
-		paths.map((path) => {
-			const full = realpathSync(resolve(root, path));
-			const inside = relative(root, full);
-			if (!inside || inside.startsWith("..") || isAbsolute(inside))
-				throw new Error("Visual dependencies must be repository files");
-			return [
-				path,
-				createHash("sha256").update(readFileSync(full)).digest("hex"),
-			];
-		}),
+		Object.entries(hashes).sort(([a], [b]) => a.localeCompare(b)),
 	);
+}
+
+export function dependencyCovers(file: string, dependency: string): boolean {
+	const prefix = dependency.replace(/\/\*\*\/?$/, "");
+	return file === prefix || file.startsWith(`${prefix}/`);
+}
+
+/** Revalidate saved output after a post-processing failure without launching another agent. */
+export async function completedAgentResult(
+	context: ExecutionContext,
+): Promise<{ output: unknown } | undefined> {
+	const saved = context.resumeAgent?.result;
+	if (!saved) return;
+	context.progress = await roleProgress(context);
+	const current = context.progress.currentRevision;
+	if (
+		!current ||
+		current.dirty ||
+		saved.revision.dirty ||
+		current.headSha !== saved.revision.headSha
+	)
+		return;
+	context.log(
+		"Revalidating completed agent output; existing work is preserved.",
+	);
+	return { output: structuredClone(saved.output) };
 }
 export const incrementalInstructions = `On repeated visits, start with /progress through factory-context: previous role result, revision, changed files/diff and new history. Reuse established decisions and supported findings; inspect only changed requirements/files and affected dependencies, while retaining all unresolved findings and disputes. Do not reread the entire ticket/plan/repository by default. Fetch unchanged context only when needed to assess a new change. An uncertain or dirty revision requires full relevant inspection. Never skip required checks or assume human approval. If code is unchanged, validate new feedback/results rather than redoing the same repository exploration. Planning/clarification should update prior results for new answers/feedback, not start over; reviewers assess the delta, regressions and all unresolved findings, preserving stable issue IDs and past dispositions.`;
 
 export const incrementalRoleInstructions: Record<string, string> = {
-	"visual-scope": `For a repeat, compare /progress/previousOutput with the revision delta. Return the COMPLETE cumulative visual area/state inventory, updating only affected areas, not merely the newest delta. If previousOutput has no captureBudget or contains combined/matrix state labels, first replace the legacy evidence plan with at most 24 concrete representative states covering the cumulative changed feature. This compaction applies even to unchanged areas: preserve requirements and risk coverage, not every historical screenshot combination. Group co-visible regions, choose 1–2 exact states per area, and document omitted redundant combinations in rationale; use existing tests for nonvisual behavior. Do not copy the old matrix into the new plan. Reuse existing images only when they exactly demonstrate a selected state and meet the usual provenance/acceptance rules. Set captureBudget=24, with a justified exception up to 48 only when essential distinct visual coverage requires it. Include per-area dependencies (all repo files whose content can affect the area, including shared components/styles/assets), changed=true for affected/new/uncertain areas and changed=false only for proven unaffected areas. Include nonVisualFiles for changed files demonstrated to have no visual effect. An unexplained/global dependency change invalidates every possibly affected area. If the original PR had visual changes, changed remains true even when the newest correction is nonvisual; unchanged areas can reuse prior capture evidence.`,
+	"visual-scope": `For a repeat, compare /progress/previousOutput with the revision delta. Return the COMPLETE cumulative visual area/state inventory, updating only affected areas, not merely the newest delta. If previousOutput has no captureBudget or contains combined/matrix state labels, first replace the legacy evidence plan with at most 24 concrete representative states covering the cumulative changed feature. This compaction applies even to unchanged areas: preserve requirements and risk coverage, not every historical screenshot combination. Group co-visible regions, choose 1–2 exact states per area, and document omitted redundant combinations in rationale; use existing tests for nonvisual behavior. Do not copy the old matrix into the new plan. Reuse existing images only when they exactly demonstrate a selected state and meet the usual provenance/acceptance rules. Set captureBudget=24, with a justified exception up to 48 only when essential distinct visual coverage requires it. Include per-area dependencies as exact relative repository files or directory/** groups (including all shared components/styles/assets that affect the area); do not use other glob syntax, changed=true for affected/new/uncertain areas and changed=false only for proven unaffected areas. Include nonVisualFiles for changed files demonstrated to have no visual effect. An unexplained/global dependency change invalidates every possibly affected area. If the original PR had visual changes, changed remains true even when the newest correction is nonvisual; unchanged areas can reuse prior capture evidence.`,
 	capture: `For a repeat, read /progress/previousOutput and current visual-scope. Reuse a previous verified screenshot path only if its area/state still exists, the previous visual gate approved it OR visual-review.acceptedScreenshots explicitly accepted its exact area/state/imageSha256, and code is unchanged or the area is explicitly unchanged with identical dependency hashes and no unexplained changed files. Preserve its metadata; include reused=true. Capture ONLY new/affected/uncertain areas/states with fresh filenames and assemble the COMPLETE screenshot inventory from reused plus fresh images. Missing dependencies, dirty revisions, unavailable evidence or evidence without an explicit prior acceptance requires fresh captures. Do not start the dev server for wholly reusable evidence; otherwise set it up once and delegate independent changed areas where possible.`,
 	"visual-review": `For a repeat with previously approved visual evidence, inspect only new/changed screenshots and new requirements, retain earlier verified results for identical reused images, and reassess every unresolved finding/dispute. Do not reopen unchanged accepted findings without new evidence. If the prior gate was not approved, preserve explicitly acceptedScreenshots with identical reused hashes and inspect only the unresolved/new evidence. Without per-image acceptance, inspect all relevant evidence again. Your result still covers the complete current inventory, never just the delta.`,
 	guide: `For a repeat, update the previous recap using /progress/newHistory, the delta and fresh readiness/capture receipts. Keep unchanged supported requirements and evidence. Explain what changed since the previous guide; use a concise revision summary for verified minor/typo/documentation-only corrections, but still return the full required JSON shape and require fresh human approval. Substantive requirements/visual/behavior changes need the full recap. Do not rebuild unchanged narrative or evidence.`,

@@ -202,3 +202,21 @@ Complete provider receipts remain in artifacts; no real PR action occurred.
 Sixty focused runtime/readiness/pipeline tests pass, including actual spawned
 command stdout, quiet failures, explicit CLI output and deduplicated status
 updates that still retain freshly changed receipt data.
+
+
+## Completed capture recovery (#49)
+
+F1 `DEF-5` / `issue-5`, session `session-5`, used a real native Codex
+capture role on the isolated compiled worker. It created one fixture PNG and
+returned a valid screenshot result. An injected failure after native completion
+left the graph failed with one history record and the completed result saved in
+the active agent checkpoint. The worker was stopped and restarted, then retried.
+It completed with two history records, the same PNG and native conversation, and
+`Revalidating completed agent output` without another agent invocation. The
+fixture proves restart/finalization recovery, not application visual quality.
+
+64 focused tests pass, including deterministic recursive dependency inventories,
+file additions/deletions, missing dependencies, repository escapes, and refusing
+completed-result reuse at a changed or dirty revision. Production's native result
+contains 24 images; recovery will run the normal evidence validator rather than
+inject an accepted capture or visual approval.

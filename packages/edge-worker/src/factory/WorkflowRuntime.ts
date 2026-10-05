@@ -36,6 +36,7 @@ export interface RunEvent {
 export interface AgentCheckpoint {
 	runner: NonNullable<WorkflowStep["runner"]>;
 	sessionId: string;
+	result?: { output: unknown; revision: RoleRevision };
 }
 export interface GraphCheckpoint {
 	current: string;

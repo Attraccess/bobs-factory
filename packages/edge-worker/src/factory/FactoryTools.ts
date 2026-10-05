@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
-import { dependencyHashes } from "./Incremental.js";
+import { dependencyCovers, dependencyHashes } from "./Incremental.js";
 import {
 	assessFeedback,
 	delay,
@@ -693,12 +693,16 @@ export function captureEvidence(
 	const previous = context.progress?.previousOutput as
 		| { screenshots?: z.infer<typeof screenshotSchema>[] }
 		| undefined;
-	const covered = new Set([
-		...(scope?.areas ?? []).flatMap((area) => area.dependencies ?? []),
-		...(scope?.nonVisualFiles ?? []),
-	]);
+	const dependencies = (scope?.areas ?? []).flatMap(
+		(area) => area.dependencies ?? [],
+	);
+	const nonVisual = new Set(scope?.nonVisualFiles ?? []);
 	const unexplained =
-		context.progress?.changedFiles.some((file) => !covered.has(file)) ?? true;
+		context.progress?.changedFiles.some(
+			(file) =>
+				!nonVisual.has(file) &&
+				!dependencies.some((dependency) => dependencyCovers(file, dependency)),
+		) ?? true;
 	for (const shot of capture.screenshots) {
 		if (!existsSync(shot.path))
 			throw new Error(`Screenshot missing: ${shot.path}`);

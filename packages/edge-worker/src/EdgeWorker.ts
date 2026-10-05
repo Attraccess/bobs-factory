@@ -177,6 +177,7 @@ import {
 	toolArguments,
 } from "./factory/FactoryTools.js";
 import {
+	completedAgentResult,
 	incrementalInstructions,
 	incrementalRoleInstructions,
 	roleProgress,
@@ -5955,6 +5956,9 @@ ${taskSection}`;
 		const repository = this.repositories.get(run.repositoryId);
 		if (!session || !repository)
 			throw new Error("Run session/repository unavailable");
+		const recovered = await completedAgentResult(context);
+		if (recovered)
+			return this.finalizeFactoryAgentOutput(context, recovered.output);
 		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
@@ -6010,6 +6014,7 @@ ${taskSection}`;
 			"mcp__factory-context__read_context",
 		];
 		const originalMessage = built.config.onMessage;
+		let agentCheckpoint = context.resumeAgent;
 		built.config.onMessage = (message) => {
 			if (
 				message.type === "system" &&
@@ -6017,10 +6022,11 @@ ${taskSection}`;
 				message.session_id &&
 				message.session_id !== "pending"
 			) {
-				context.checkpointAgent?.({
+				agentCheckpoint = {
 					runner: runnerType,
 					sessionId: message.session_id,
-				});
+				};
+				context.checkpointAgent?.(agentCheckpoint);
 			}
 			this.saveFactorySession(run);
 			void originalMessage?.(message);
@@ -6085,22 +6091,37 @@ ${taskSection}`;
 						?.steps.includes(step)
 				)
 					output = validateFactoryResult(step.id, output);
-				if (step.id === "capture") output = captureEvidence(context, output);
-				if (step.id === "ci-fix")
-					output = recordFeedbackAssessment(context, output);
 				const completed = (await roleProgress(context)).currentRevision;
-				if (completed) {
-					run.roleRevisions ??= {};
-					completed.historyLength = run.history.length + 1;
-					run.roleRevisions[run.step ?? step.id] = completed;
-				}
-				return output;
+				if (agentCheckpoint && completed)
+					context.checkpointAgent?.({
+						...agentCheckpoint,
+						result: { output, revision: completed },
+					});
+				return this.finalizeFactoryAgentOutput(context, output);
 			} finally {
 				context.signal.removeEventListener("abort", stop);
 			}
 		} finally {
 			factoryContext.cleanup();
 		}
+	}
+
+	private async finalizeFactoryAgentOutput(
+		context: ExecutionContext,
+		value: unknown,
+	): Promise<unknown> {
+		const { run, step } = context;
+		let output = value;
+		if (step.id === "capture") output = captureEvidence(context, output);
+		if (step.id === "ci-fix")
+			output = recordFeedbackAssessment(context, output);
+		const completed = (await roleProgress(context)).currentRevision;
+		if (completed) {
+			run.roleRevisions ??= {};
+			completed.historyLength = run.history.length + 1;
+			run.roleRevisions[run.step ?? step.id] = completed;
+		}
+		return output;
 	}
 
 	private async executeFactoryMcpTool(
