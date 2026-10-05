@@ -1,3 +1,4 @@
+import type { CodexConfigValue } from "../types.js";
 import {
 	AppServerClient,
 	type AppServerClientFactory,
@@ -32,12 +33,13 @@ interface LaunchOptions {
 	args: string[];
 	env?: Record<string, string>;
 	requestTimeoutMs?: number;
+	mcpServers?: CodexConfigValue;
 }
 
 /**
  * A single shared Codex app-server process serving every thread that shares an
- * identical launch configuration (command + args + env). Individual
- * CodexRunner threads acquire lightweight leases over the one JSON-RPC
+ * identical launch and MCP configuration (command + args + env + servers).
+ * Individual CodexRunner threads acquire lightweight leases over the one JSON-RPC
  * connection; notifications are fanned out to the owning thread by `threadId`.
  * The process is torn down once the last lease is released (after an idle grace
  * period) or when the process exits.
@@ -263,8 +265,8 @@ class PooledAppServerProcess {
 
 /**
  * Owns Codex app-server processes for this Node process, pooled by launch
- * configuration. Threads that share an identical launch config (command + args
- * + env) reuse one process; threads with a different config get their own,
+ * configuration. Threads that share identical launch and MCP config reuse one
+ * process; threads with a different config get their own,
  * rather than failing. This keeps the startup-cost savings of sharing while
  * supporting heterogeneous concurrent sessions and confining a process crash to
  * the threads that share that exact configuration.
@@ -289,6 +291,11 @@ export class AppServerProcessManager {
 			command,
 			args,
 			...(config.env ? { env: config.env } : {}),
+			// A live thread/resume rejoins cached thread resources. Changed MCP
+			// endpoints need a fresh process so the resumed thread loads the new tools.
+			...(config.configOverrides?.mcp_servers !== undefined
+				? { mcpServers: config.configOverrides.mcp_servers }
+				: {}),
 			...(this.requestTimeoutMs !== undefined
 				? { requestTimeoutMs: this.requestTimeoutMs }
 				: {}),
@@ -346,7 +353,19 @@ function buildLaunchKey(options: LaunchOptions): string {
 		args: options.args,
 		env: options.env ? sortRecord(options.env) : null,
 		requestTimeoutMs: options.requestTimeoutMs ?? null,
+		mcpServers: options.mcpServers ? sortConfig(options.mcpServers) : null,
 	});
+}
+
+function sortConfig(value: CodexConfigValue): CodexConfigValue {
+	if (Array.isArray(value)) return value.map(sortConfig);
+	if (value && typeof value === "object")
+		return Object.fromEntries(
+			Object.entries(value)
+				.sort(([a], [b]) => a.localeCompare(b))
+				.map(([key, item]) => [key, sortConfig(item)]),
+		);
+	return value;
 }
 
 function sortRecord(record: Record<string, string>): Record<string, string> {

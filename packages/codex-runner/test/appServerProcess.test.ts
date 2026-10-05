@@ -65,6 +65,45 @@ function recordingFactory() {
 }
 
 describe("AppServerProcessManager pool", () => {
+	it("isolates changed MCP endpoints while sharing equivalent configurations", async () => {
+		const { clients, factory } = recordingFactory();
+		const manager = new AppServerProcessManager(factory, {
+			idleCloseMs: 30000,
+		});
+		const config = configWithEnv();
+		const first = await manager.acquire({
+			...config,
+			configOverrides: {
+				mcp_servers: {
+					context: { command: "node", args: ["server.mjs", "old-input.json"] },
+				},
+			},
+		});
+		first.release();
+		const resumed = await manager.acquire({
+			...config,
+			resumeSessionId: "saved-thread",
+			configOverrides: {
+				mcp_servers: {
+					context: { command: "node", args: ["server.mjs", "new-input.json"] },
+				},
+			},
+		});
+		const equivalent = await manager.acquire({
+			...config,
+			configOverrides: {
+				mcp_servers: {
+					context: { args: ["server.mjs", "new-input.json"], command: "node" },
+				},
+			},
+		});
+		expect(clients).toHaveLength(2);
+		expect(clients.map((client) => client.startCalls)).toEqual([1, 1]);
+		resumed.release();
+		equivalent.release();
+		await manager.closeAll();
+		expect(clients.map((client) => client.closeCalls)).toEqual([1, 1]);
+	});
 	it("shares one process for identical launch configs", async () => {
 		const { clients, factory } = recordingFactory();
 		const manager = new AppServerProcessManager(factory, { idleCloseMs: 0 });
