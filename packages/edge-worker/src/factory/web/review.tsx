@@ -85,7 +85,7 @@ export function GuidedReview({
 			staleTime: Infinity,
 		}),
 		guide = value?.__artifactPreview ? full.data : value,
-		key = `factory-review/${run.id}/${run.reviewGate?.headSha ?? run.roleRevisions?.["pipeline/guide"]?.headSha ?? ""}/${version}`;
+		key = `factory-review/${run.id}/${run.reviewGate?.headSha ?? run.roleRevisions?.["pipeline/guide"]?.headSha ?? ""}/${guide ? signature(guide) : version}`;
 	if (!guide)
 		return (
 			<p role="status">
