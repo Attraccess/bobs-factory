@@ -36,6 +36,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Acknowledge chat resume requests without reporting that the conversation has resumed while setup is still pending. ([#11](https://github.com/Attraccess/bobs-factory/pull/11))
+
 - Pause blocked factory implementations for actionable answers, retain those waits across restarts, and prevent empty or unfinished work from being published as a draft PR. ([#8](https://github.com/Attraccess/bobs-factory/pull/8))
 - Keep “Humming along” in newest-created order while progress updates arrive. ([Taskbot #67](https://taskbot.apps.janjaap.de/p/bobs-factory/t/67))
 
