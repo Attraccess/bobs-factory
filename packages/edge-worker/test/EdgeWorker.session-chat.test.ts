@@ -19,7 +19,7 @@ function fixture() {
 	const runtime = {
 		runs: new Map([[session.id, run]]),
 		isExecuting: () => false,
-		selectWorkflow: () => ({ id: "simple", chat: true }),
+		listWorkflows: () => [{ id: "simple", chat: true, allowedTriggers: [] }],
 		continueSimple: vi.fn(),
 		updateViewState: vi.fn(),
 	};

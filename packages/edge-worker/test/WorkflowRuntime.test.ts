@@ -1476,7 +1476,12 @@ it("inherits chat through nested workflows with explicit workflow and step overr
 			repositoryId: "repo",
 			workspace: home,
 			input: "",
-			workflow: runtime.selectWorkflow([], "chat-parent"),
+			workflow: runtime.selectWorkflow([], "manual", "chat-parent"),
+			triggerOrigin: {
+				type: "manual",
+				workflowId: "chat-parent",
+				at: new Date().toISOString(),
+			},
 		});
 	await runtime.launch(make());
 	expect(observed).toEqual([true, false, true]);
@@ -1503,7 +1508,12 @@ it("continues a finished simple run once with the same conversation and persists
 		repositoryId: "repo",
 		workspace: home,
 		input: "Original",
-		workflow: runtime.selectWorkflow([], "simple"),
+		workflow: runtime.selectWorkflow([], "manual", "simple"),
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "simple",
+			at: new Date().toISOString(),
+		},
 	});
 	run.status = "completed";
 	run.simpleExecution = {
