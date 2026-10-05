@@ -13,9 +13,12 @@ import {
 	type ResolvedLaunchRequest,
 	resolveLaunchRequest,
 } from "./LaunchFields.js";
+import type { ChatState } from "./SessionChat.js";
 import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	chat?(id: string): ChatState;
+	message?(id: string, text: string): void;
 	defaultRunner?(): string;
 	subscribe?(listener: (id: string) => void): () => void;
 	repositories(): { id: string; name: string }[];
@@ -218,11 +221,16 @@ export class FactoryServer {
 				const detail = {
 					...(run ?? {
 						...session,
-						workflow: { id: "simple", steps: [] },
+						workflow: runtime.selectWorkflow([], "simple"),
 						events: [],
 						questions: [],
 						outputs: {},
 					}),
+					chat: hooks.chat?.(request.params.id) ?? {
+						enabled: false,
+						available: false,
+					},
+					chatMessages: runtime.chatMessages(request.params.id),
 					entries: hooks.entries(request.params.id),
 					viewState: runtime.viewState(request.params.id),
 				};
@@ -352,6 +360,32 @@ export class FactoryServer {
 					.parse(request.params.index);
 				const value = hooks.entries(request.params.id)[index];
 				return value ?? reply.code(404).send({ error: "Entry not found" });
+			},
+		);
+		this.app.post<{ Params: { id: string } }>(
+			"/api/runs/:id/messages",
+			(request, reply) => {
+				const id = request.params.id;
+				if (
+					!runtime.runs.has(id) &&
+					!hooks.sessions().some((session) => session.id === id)
+				)
+					return reply.code(404).send({ error: "Run not found" });
+				const { text } = z
+					.object({ text: z.string().trim().min(1).max(100000) })
+					.parse(request.body);
+				const state = hooks.chat?.(id);
+				if (!state?.enabled || !state.available || !hooks.message)
+					throw new Error(
+						state?.reason ?? "Chat is disabled for this workflow",
+					);
+				hooks.message(id, text);
+				const message = runtime.recordChatMessage(
+					id,
+					text,
+					state.step ?? "simple",
+				);
+				return reply.code(202).send({ message, mode: state.mode });
 			},
 		);
 		this.app.post<{ Params: { id: string } }>(

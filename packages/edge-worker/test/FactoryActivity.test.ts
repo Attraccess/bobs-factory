@@ -349,3 +349,26 @@ it("keeps an old answer under its original shared step after later agent message
 		body: "Local UI",
 	});
 });
+
+it("shows each persisted chat message once, including repeated instructions and native echoes", () => {
+	const result = formatActivities({
+		createdAt: at,
+		step: "simple",
+		entries: [entry("user", "Again")],
+		events: [],
+		chatMessages: [
+			{ id: "one", text: "Again", at, step: "simple" },
+			{
+				id: "two",
+				text: "Again",
+				at: "2026-10-04T21:01:00.000Z",
+				step: "simple",
+			},
+		],
+	});
+	expect(
+		result
+			.filter((item: any) => item.type === "user")
+			.map((item: any) => item.key),
+	).toEqual(["chat/one", "chat/two"]);
+});

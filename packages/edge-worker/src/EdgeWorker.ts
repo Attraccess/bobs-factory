@@ -189,6 +189,11 @@ import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
 import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
 import {
+	type ChatState,
+	SessionChat,
+	steeringState,
+} from "./factory/SessionChat.js";
+import {
 	inspectPullRequest,
 	type TakeoverPullRequest,
 	ticketIdentifier,
@@ -285,6 +290,8 @@ export class EdgeWorker extends EventEmitter {
 	private recoveryAbort = new AbortController();
 	private stopping = false;
 	private factoryServer?: FactoryServer;
+	private factoryChat = new SessionChat();
+	private chatContinuations = new Set<string>();
 	/** Per-org GitHub App installation tokens pushed by cyrus-hosted (lazy file-backed reads) */
 	private githubTokenStore: GitHubTokenStore;
 	private globalSessionRegistry: GlobalSessionRegistry; // Centralized session storage across all repositories
@@ -846,6 +853,8 @@ export class EdgeWorker extends EventEmitter {
 						this.agentSessionManager.off("sessionChanged", notify);
 					};
 				},
+				chat: (id) => this.factoryChatState(id),
+				message: (id, text) => this.sendFactoryChat(id, text),
 				start: (input) => this.startManualFactoryRun(input),
 				followup: async (id, feedback) => {
 					const run = this.getFactoryRuntime().runs.get(id);
@@ -5950,6 +5959,107 @@ ${taskSection}`;
 		await tracker.createComment(run.issueId, { body });
 	}
 
+	private factoryChatState(id: string): ChatState {
+		const runtime = this.getFactoryRuntime();
+		const run = runtime.runs.get(id);
+		const session = this.agentSessionManager.getSession(id);
+		if (!session)
+			return {
+				enabled: Boolean(run?.workflow.chat),
+				available: false,
+				reason: "Session is being prepared.",
+			};
+		if (run && run.workflow.id !== "simple") {
+			if (run.status !== "running")
+				return {
+					enabled: run.workflow.chat ?? false,
+					available: false,
+					reason:
+						"Use the question, review or recovery action for this workflow.",
+				};
+			return this.factoryChat.state(id, run.workflow.chat ?? false);
+		}
+		const enabled =
+			(run?.workflow ?? runtime.selectWorkflow([], "simple")).chat ?? false;
+		if (!enabled) return { enabled: false, available: false };
+		if (this.askUserQuestionHandler.hasPendingQuestion(id))
+			return { enabled, available: true, mode: "steer", step: "simple" };
+		if (session.agentRunner?.isRunning())
+			return { ...steeringState(session.agentRunner), step: "simple" };
+		if (this.chatContinuations.has(id))
+			return {
+				enabled,
+				available: false,
+				reason: "The conversation is resuming.",
+			};
+		if (
+			run
+				? run.status === "completed" && !runtime.isExecuting(id)
+				: session.status === AgentSessionStatus.Complete
+		) {
+			return { enabled, available: true, mode: "continue", step: "simple" };
+		}
+		return {
+			enabled,
+			available: false,
+			reason:
+				"The session is starting, stopping or needs recovery. Retry failed runs before chatting.",
+		};
+	}
+
+	private sendFactoryChat(id: string, text: string): void {
+		const state = this.factoryChatState(id);
+		if (!state.available) throw new Error(state.reason ?? "Chat unavailable");
+		if (this.askUserQuestionHandler.hasPendingQuestion(id)) {
+			this.askUserQuestionHandler.handleUserResponse(id, text);
+			return;
+		}
+		const runtime = this.getFactoryRuntime();
+		const run = runtime.runs.get(id);
+		if (run && run.workflow.id !== "simple") {
+			this.factoryChat.send(id, text);
+			return;
+		}
+		const session = this.agentSessionManager.getSession(id)!;
+		if (state.mode === "steer") {
+			session.agentRunner!.addStreamMessage!(text);
+			return;
+		}
+		if (run) {
+			runtime.continueSimple(id, text);
+			return;
+		}
+		const repositoryId =
+			this.sessionRepositories.get(id) ?? session.repositories[0]?.repositoryId;
+		const repository = repositoryId
+			? this.repositories.get(repositoryId)
+			: undefined;
+		if (!repository?.isActive)
+			throw new Error("Session repository unavailable");
+		this.chatContinuations.add(id);
+		session.status = AgentSessionStatus.Active;
+		void this.resumeAgentSession(
+			session,
+			repository,
+			id,
+			this.agentSessionManager,
+			text,
+			"",
+			false,
+			[],
+			repository.linearWorkspaceId,
+		)
+			.catch(async (error) => {
+				session.status = AgentSessionStatus.Error;
+				await this.agentSessionManager.createResponseActivity(
+					id,
+					`Chat continuation failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				await this.savePersistedState();
+			})
+			.finally(() => this.chatContinuations.delete(id));
+	}
+
 	private async executeFactoryAgent(
 		context: ExecutionContext,
 	): Promise<unknown> {
@@ -6083,11 +6193,22 @@ ${taskSection}`;
 				context.signal,
 			);
 			this.agentSessionManager.addAgentRunner(run.id, runner);
+			this.factoryChat ??= new SessionChat();
+			const unregisterChat = this.factoryChat.register(
+				run.id,
+				runner,
+				context.chat ?? false,
+				run.step ?? step.id,
+			);
 			const stop = () => runner.stop();
 			context.signal.addEventListener("abort", stop, { once: true });
 			try {
 				context.signal.throwIfAborted();
-				await runner.start(
+				const start =
+					context.chat && runner.supportsStreamingInput && runner.startStreaming
+						? runner.startStreaming.bind(runner)
+						: runner.start.bind(runner);
+				await start(
 					`${captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent ? "This role was interrupted by a process restart. Continue from your existing conversation and worktree. Inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
 				);
 				context.signal.throwIfAborted();
@@ -6127,6 +6248,7 @@ ${taskSection}`;
 				return this.finalizeFactoryAgentOutput(context, output);
 			} finally {
 				context.signal.removeEventListener("abort", stop);
+				unregisterChat();
 			}
 		} finally {
 			factoryContext.cleanup();
@@ -6515,7 +6637,8 @@ ${taskSection}`;
 					repository,
 					run.id,
 					this.agentSessionManager,
-					"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
+					run.simplePrompt ??
+						"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
 					"",
 					false,
 					[],
@@ -6529,6 +6652,7 @@ ${taskSection}`;
 			} finally {
 				signal.removeEventListener("abort", stop);
 			}
+			delete run.simplePrompt;
 			return;
 		}
 		const built = await this.buildAgentRunnerConfig(
@@ -6578,10 +6702,17 @@ ${taskSection}`;
 		signal.addEventListener("abort", stop, { once: true });
 		try {
 			signal.throwIfAborted();
-			await runner.start(
-				execution.agent
-					? "The process restarted. Continue the interrupted task from this conversation and worktree; inspect previous results before repeating actions."
-					: execution.userPrompt,
+			const start =
+				run.workflow.chat &&
+				runner.supportsStreamingInput &&
+				runner.startStreaming
+					? runner.startStreaming.bind(runner)
+					: runner.start.bind(runner);
+			await start(
+				run.simplePrompt ??
+					(execution.agent
+						? "The process restarted. Continue the interrupted task from this conversation and worktree; inspect previous results before repeating actions."
+						: execution.userPrompt),
 			);
 			signal.throwIfAborted();
 			const result = runner
@@ -6590,6 +6721,7 @@ ${taskSection}`;
 				.at(-1);
 			if (result?.type === "result" && result.is_error)
 				throw new Error(`Agent failed: ${JSON.stringify(result)}`);
+			delete run.simplePrompt;
 		} finally {
 			signal.removeEventListener("abort", stop);
 		}

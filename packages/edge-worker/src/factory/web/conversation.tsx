@@ -3,7 +3,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { formatActivities } from "./activity.js";
 import { Structure } from "./artifacts";
-import { api } from "./client";
+import { api, useAction } from "./client";
 import { mergePage } from "./transcript";
 import { Button, Markdown } from "./ui";
 export function activitiesOf(run: any): any[] {
@@ -158,6 +158,7 @@ export function RunConversation({ run, step }: { run: any; step?: string }) {
 		}
 	};
 	const {
+		chatMessages,
 		answers,
 		workflow,
 		workflowDefinitions,
@@ -170,6 +171,7 @@ export function RunConversation({ run, step }: { run: any; step?: string }) {
 	const items = useMemo(
 		() =>
 			activitiesOf({
+				chatMessages,
 				answers,
 				workflow,
 				workflowDefinitions,
@@ -185,6 +187,7 @@ export function RunConversation({ run, step }: { run: any; step?: string }) {
 		[
 			step,
 			query.data,
+			chatMessages,
 			answers,
 			workflow,
 			workflowDefinitions,
@@ -212,7 +215,85 @@ export function RunConversation({ run, step }: { run: any; step?: string }) {
 				}}
 			/>
 			{error && <p role="alert">{error}</p>}
+			{run.chat?.enabled &&
+				(!step || !run.chat.step || run.chat.step === step) && (
+					<ChatComposer run={run} />
+				)}
 		</>
+	);
+}
+
+const chatDrafts = new Map<string, string>();
+function ChatComposer({ run }: { run: any }) {
+	const [text, setText] = useState(chatDrafts.get(run.id) ?? "");
+	const [notice, setNotice] = useState("");
+	const action = useAction();
+	const cache = useQueryClient();
+	const send = async () => {
+		if (!text.trim() || !run.chat.available || action.isPending) return;
+		setNotice("");
+		try {
+			const sent = await action.mutateAsync({
+				path: `/api/runs/${encodeURIComponent(run.id)}/messages`,
+				body: { text },
+			});
+			setText("");
+			chatDrafts.delete(run.id);
+			setNotice(
+				sent.mode === "continue"
+					? "Conversation resumed."
+					: "Message sent to the agent.",
+			);
+			void cache.invalidateQueries({ queryKey: ["transcript", run.id] });
+		} catch {
+			/* Mutation exposes the delivery error and retains the draft. */
+		}
+	};
+	return (
+		<form
+			className="chat-composer"
+			onSubmit={(event) => {
+				event.preventDefault();
+				void send();
+			}}
+		>
+			<label htmlFor={`chat-${run.id}`}>Message Bob</label>
+			<textarea
+				id={`chat-${run.id}`}
+				rows={3}
+				maxLength={100000}
+				value={text}
+				placeholder="Ask a question or steer the work…"
+				onChange={(event) => {
+					setText(event.target.value);
+					chatDrafts.set(run.id, event.target.value);
+				}}
+				onKeyDown={(event) => {
+					if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+						event.preventDefault();
+						void send();
+					}
+				}}
+			/>
+			<div className="chat-composer-actions">
+				<small>
+					{run.chat.available
+						? run.chat.mode === "continue"
+							? "Continue the same conversation and worktree."
+							: "Send instructions to the current agent. ⌘ / Ctrl + Enter to send."
+						: run.chat.reason}
+				</small>
+				<Button
+					type="submit"
+					busy={action.isPending}
+					disabled={!text.trim() || !run.chat.available}
+				>
+					Send message
+				</Button>
+			</div>
+			{action.error && <p role="alert">{action.error.message}</p>}
+			{notice && <p role="status">{notice}</p>}
+		</form>
 	);
 }
 

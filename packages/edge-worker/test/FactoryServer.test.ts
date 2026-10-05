@@ -538,3 +538,80 @@ it("streams coalesced changes, reconnects with a fresh snapshot, and closes subs
 		rmSync(home, { recursive: true, force: true });
 	}
 });
+
+it("protects chat delivery, validates input, preserves messages and refuses disabled or failed delivery", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-chat-api-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	let enabled = true;
+	const message = vi.fn();
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [
+			{
+				id: "legacy",
+				title: "Legacy",
+				status: "complete",
+				createdAt: new Date().toISOString(),
+				workspace: home,
+			},
+		],
+		entries: () => [],
+		start: async () => {
+			throw new Error("Unused");
+		},
+		stop: () => {},
+		chat: () => ({
+			enabled,
+			available: enabled,
+			mode: "steer",
+			step: "simple",
+		}),
+		message,
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	const send = (text: string, h = headers, id = "legacy") =>
+		server.app.inject({
+			method: "POST",
+			url: `/api/runs/${id}/messages`,
+			headers: h,
+			payload: { text },
+		});
+	try {
+		expect(
+			(await send("Hi", { host: "localhost" } as typeof headers)).statusCode,
+		).toBe(403);
+		expect((await send(" ")).statusCode).toBe(400);
+		expect((await send("Hi", headers, "missing")).statusCode).toBe(404);
+		expect((await send(" New instruction ")).statusCode).toBe(202);
+		expect(message).toHaveBeenCalledExactlyOnceWith(
+			"legacy",
+			"New instruction",
+		);
+		const detail = (
+			await server.app.inject({
+				url: "/api/runs/legacy?view=dashboard",
+				headers,
+			})
+		).json();
+		expect(detail.chat).toMatchObject({ enabled: true, available: true });
+		expect(detail.chatMessages).toMatchObject([
+			{ text: "New instruction", step: "simple" },
+		]);
+		enabled = false;
+		expect((await send("No")).statusCode).toBe(409);
+		enabled = true;
+		message.mockImplementation(() => {
+			throw new Error("Turn ended");
+		});
+		expect((await send("Too late")).json().error).toBe("Turn ended");
+		expect(runtime.chatMessages("legacy")).toHaveLength(1);
+	} finally {
+		await server.stop();
+		await runtime.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});

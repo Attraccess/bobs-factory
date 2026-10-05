@@ -23,6 +23,7 @@ export const AgentStepSchema = z.object({
 	...agentSettings,
 	json: z.boolean().default(true),
 	askQuestions: z.boolean().default(false),
+	chat: z.boolean().optional(),
 });
 export type AgentStep = z.infer<typeof AgentStepSchema>;
 export interface WorkflowStep {
@@ -41,6 +42,7 @@ export interface WorkflowStep {
 	serviceTier?: AgentStep["serviceTier"];
 	json?: boolean;
 	askQuestions?: boolean;
+	chat?: boolean;
 	script?: string;
 	tool?: string;
 	args?: string[];
@@ -75,6 +77,7 @@ export const WorkflowSchema = z.object({
 	labels: z.array(z.string().min(1)).default([]),
 	steps: z.array(StepSchema).max(100),
 	internal: z.boolean().optional(),
+	chat: z.boolean().optional(),
 	launchFields: z.array(LaunchFieldSchema).max(20).optional(),
 });
 export type Workflow = z.infer<typeof WorkflowSchema>;

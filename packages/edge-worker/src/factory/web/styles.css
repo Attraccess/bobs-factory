@@ -2729,3 +2729,36 @@ kbd {
 		font-size: 11px;
 	}
 }
+
+.chat-composer {
+	display: grid;
+	gap: 10px;
+	padding-top: 16px;
+	border-top: 1px solid var(--line);
+}
+.chat-composer textarea {
+	width: 100%;
+	resize: vertical;
+	min-height: 86px;
+}
+.chat-composer-actions {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+	justify-content: space-between;
+}
+.chat-composer-actions small {
+	color: var(--muted);
+}
+.recipe-chat {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin: 12px 0;
+}
+@media (max-width: 600px) {
+	.chat-composer-actions {
+		align-items: stretch;
+		flex-direction: column;
+	}
+}
