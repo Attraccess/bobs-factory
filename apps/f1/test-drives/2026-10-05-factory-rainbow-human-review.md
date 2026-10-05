@@ -220,3 +220,19 @@ file additions/deletions, missing dependencies, repository escapes, and refusing
 completed-result reuse at a changed or dirty revision. Production's native result
 contains 24 images; recovery will run the normal evidence validator rather than
 inject an accepted capture or visual approval.
+
+
+## Repository-linked evidence dependencies (#50)
+
+F1 `DEF-6` / `issue-6`, session `session-6`, seeded `docs/de/_media` as an
+in-repository directory link to `docs/media`, then ran one real native Codex
+capture. It completed normally with two history records and a SHA-bound image.
+The fingerprint records both logical asset paths with identical content hashes.
+65 focused tests pass, including linked asset changes, cycle detection and
+rejection of outside-repository targets. Root typecheck and affected build pass.
+
+The real Attraccess failed capture checkpoint also revalidates independently on
+clean `731caf1c`: 24 images, 22 reused and only two fresh documentation captures.
+No capture agent needs to relaunch. Today had moved the failed run from working
+items into the attention deck; its empty view state proves it was not settled.
+The previously inert extra-items count now exposes a collapsible complete list.

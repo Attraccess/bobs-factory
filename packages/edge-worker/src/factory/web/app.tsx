@@ -338,6 +338,7 @@ function Today({
 			}
 		}),
 		[expanded, setExpanded] = useState<string>(),
+		[showAllAttention, setShowAllAttention] = useState(false),
 		[highlight, setHighlight] = useState<string>();
 	const [swipe, setSwipe] = useState(0);
 	useEffect(() => {
@@ -592,24 +593,37 @@ function Today({
 					</div>
 				)}
 				{deck.length > 1 && (
-					<div className="up-next">
-						<strong>Up next</strong>
-						{deck
-							.filter((run) => run.id !== current?.id)
-							.slice(0, 3)
-							.map((run) => (
-								<button
-									type="button"
-									className={`next-${attention(run)}`}
-									key={run.id}
-									onClick={() => choose(run.id)}
-								>
-									<span>●</span>
-									{run.title}
-								</button>
-							))}
-						{deck.length > 4 && <span>+{deck.length - 4} more</span>}
-					</div>
+					<>
+						<div className={`up-next ${showAllAttention ? "expanded" : ""}`}>
+							<strong>Up next</strong>
+							{deck
+								.filter((run) => run.id !== current?.id)
+								.slice(0, showAllAttention ? deck.length : 3)
+								.map((run) => (
+									<button
+										type="button"
+										className={`next-${attention(run)}`}
+										key={run.id}
+										onClick={() => choose(run.id)}
+									>
+										<span>●</span>
+										{run.title}
+									</button>
+								))}
+						</div>
+						{deck.length > 4 && (
+							<Button
+								className="attention-toggle"
+								variant="secondary"
+								aria-expanded={showAllAttention}
+								onClick={() => setShowAllAttention(!showAllAttention)}
+							>
+								{showAllAttention
+									? "Show fewer"
+									: `Show all ${deck.length} items`}
+							</Button>
+						)}
+					</>
 				)}
 			</section>
 			<section className="humming">

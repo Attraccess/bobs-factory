@@ -29,6 +29,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Accept repository-local directory links in screenshot dependencies without permitting external traversal or cycles, and let Today reveal every attention item when a failed run leaves the running list. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
 - Fingerprint screenshot dependency groups correctly and recover completed agent results after validation failures without repeating captures, while refusing reuse after repository changes. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Continue iteration-limited runs with a bounded per-step budget while preserving saved progress, without coordination gates prematurely exhausting agent allowances; retry transient GitHub errors and skip repeated code reviews after verified no-change CI assessments. Reassess edited feedback and ignore recognizable integration/build notices. Keep internal provider-query JSON out of chat and report concise readiness progress only when it changes. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))

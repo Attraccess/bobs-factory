@@ -2,7 +2,6 @@ import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	existsSync,
-	lstatSync,
 	readdirSync,
 	readFileSync,
 	realpathSync,
@@ -106,26 +105,26 @@ export function dependencyHashes(
 		)
 			throw new Error("Visual dependencies must be repository files");
 	};
-	const visit = (path: string) => {
+	const visit = (path: string, ancestors = new Set<string>()) => {
 		const full = resolve(root, path);
 		inside(full);
 		if (!existsSync(full)) {
 			hashes[path] = "missing";
 			return;
 		}
-		inside(realpathSync(full));
-		const stat = lstatSync(full);
-		if (stat.isSymbolicLink() && statSync(full).isDirectory())
-			throw new Error(
-				"Use the real repository directory for visual dependencies",
-			);
+		const real = realpathSync(full);
+		inside(real);
+		const stat = statSync(full);
 		if (stat.isDirectory()) {
+			if (ancestors.has(real))
+				throw new Error(`Cyclic visual dependency directory: ${path}`);
+			const next = new Set([...ancestors, real]);
 			hashes[`${path}/`] = createHash("sha256")
 				.update("directory")
 				.digest("hex");
 			for (const entry of readdirSync(full).sort()) {
 				if ([".git", "node_modules"].includes(entry)) continue;
-				visit(`${path}/${entry}`);
+				visit(`${path}/${entry}`, next);
 			}
 		} else
 			hashes[path] = createHash("sha256")

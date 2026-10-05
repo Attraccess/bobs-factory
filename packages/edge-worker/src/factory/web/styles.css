@@ -2466,3 +2466,15 @@ kbd {
 	width: 100%;
 	object-fit: contain;
 }
+
+.up-next.expanded {
+	flex-wrap: wrap;
+	overflow: visible;
+	white-space: normal;
+}
+.up-next.expanded button {
+	max-width: 100%;
+}
+.attention-toggle {
+	margin-top: 12px;
+}

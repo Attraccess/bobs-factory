@@ -106,6 +106,26 @@ it("fingerprints recursive dependency groups, additions/deletions and missing pa
 	);
 });
 
+it("fingerprints repository directory links while rejecting cycles and outside targets", () => {
+	const { workspace } = context();
+	mkdirSync(join(workspace, "docs"));
+	mkdirSync(join(workspace, "docs", "media"));
+	mkdirSync(join(workspace, "docs", "de"));
+	writeFileSync(join(workspace, "docs", "media", "icon.svg"), "Icon");
+	symlinkSync("../media", join(workspace, "docs", "de", "_media"));
+	const first = dependencyHashes(workspace, ["docs/**"]);
+	expect(first["docs/de/_media/icon.svg"]).toBe(first["docs/media/icon.svg"]);
+	writeFileSync(join(workspace, "docs", "media", "icon.svg"), "Changed");
+	expect(dependencyHashes(workspace, ["docs/**"])).not.toEqual(first);
+	symlinkSync("..", join(workspace, "docs", "de", "cycle"));
+	expect(() => dependencyHashes(workspace, ["docs/**"])).toThrow("Cyclic");
+	rmSync(join(workspace, "docs", "de", "cycle"));
+	symlinkSync(tmpdir(), join(workspace, "docs", "de", "outside"));
+	expect(() => dependencyHashes(workspace, ["docs/**"])).toThrow(
+		"repository files",
+	);
+});
+
 it("recovers completed output only on its saved clean revision", async () => {
 	const { context: ctx, workspace, git } = context();
 	ctx.log = vi.fn();
