@@ -49,9 +49,10 @@ export function titleMcpConfig(
 				typeof parsed.mcpServers === "object" &&
 				!Array.isArray(parsed.mcpServers)
 			) {
-				// Preserve file-loading defaults before forwarding servers inline;
-				// Claude's SDK otherwise ignores URL-only HTTP configurations.
-				normalizeMcpHttpTransport(parsed.mcpServers);
+				// Claude's file loader defaults URL-only servers to HTTP; its SDK
+				// requires that type inline. Keep other providers' defaults intact
+				// (Gemini interprets URL-only entries as SSE).
+				if (runner === "claude") normalizeMcpHttpTransport(parsed.mcpServers);
 				servers = { ...servers, ...parsed.mcpServers };
 			}
 		} catch {

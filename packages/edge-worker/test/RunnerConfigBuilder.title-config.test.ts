@@ -15,6 +15,10 @@ import {
 	type RepositoryConfig,
 	type RunnerType,
 } from "cyrus-core";
+import {
+	convertToGeminiMcpConfig,
+	loadMcpConfigFromPaths,
+} from "cyrus-gemini-runner";
 import { afterEach, expect, it, vi } from "vitest";
 import { titleSystemPrompt } from "../src/factory/RunTitleGenerator.js";
 import { RunnerConfigBuilder } from "../src/RunnerConfigBuilder.js";
@@ -50,6 +54,11 @@ it.each([
 				context: {
 					type: "http",
 					url: "https://overridden-by-inline.example/mcp",
+				},
+				streamable: {
+					type: "http",
+					url: "https://explicit.example/mcp",
+					headers: { Authorization: "Bearer explicit-fixture" },
 				},
 			},
 		}),
@@ -162,16 +171,63 @@ it.each([
 	expect(config.model).toBe("cheap-title");
 	expect(config.workingDirectory).toBe(auxiliary);
 	expect(config.appendSystemPrompt).toBe(titleSystemPrompt);
-	expect(config.mcpConfig).toMatchObject({
-		ticket: { type: "http", url: "https://override.example/mcp" },
+	const fileDefault = runner === "claude" ? { type: "http" } : {};
+	expect({
+		ticket: config.mcpConfig?.ticket,
+		remote: config.mcpConfig?.remote,
+		legacy: config.mcpConfig?.legacy,
+		streamable: config.mcpConfig?.streamable,
+		context: config.mcpConfig?.context,
+	}).toEqual({
+		ticket: { ...fileDefault, url: "https://override.example/mcp" },
 		remote: {
-			type: "http",
+			...fileDefault,
 			url: "https://project.example/mcp",
 			headers: { Authorization: "Bearer project-fixture" },
 		},
 		legacy: { type: "sse", url: "https://project.example/sse" },
+		streamable: {
+			type: "http",
+			url: "https://explicit.example/mcp",
+			headers: { Authorization: "Bearer explicit-fixture" },
+		},
 		context: mcp.buildMcpConfig.mock.results[0].value.context,
 	});
+	if (runner === "gemini") {
+		const executionServers = {
+			...loadMcpConfigFromPaths([projectConfig, override]),
+			...mcp.buildMcpConfig.mock.results[0].value,
+		};
+		const expectedNative = {
+			ticket: { url: "https://override.example/mcp", trust: true },
+			remote: {
+				url: "https://project.example/mcp",
+				headers: { Authorization: "Bearer project-fixture" },
+				trust: true,
+			},
+			legacy: { url: "https://project.example/sse", trust: true },
+			streamable: {
+				httpUrl: "https://explicit.example/mcp",
+				headers: { Authorization: "Bearer explicit-fixture" },
+				trust: true,
+			},
+			context: {
+				httpUrl: "https://context.example/mcp",
+				headers: { Authorization: "Bearer fixture" },
+				trust: true,
+			},
+		};
+		for (const servers of [executionServers, config.mcpConfig!]) {
+			expect(
+				Object.fromEntries(
+					Object.keys(expectedNative).map((name) => [
+						name,
+						convertToGeminiMcpConfig(name, servers[name]),
+					]),
+				),
+			).toEqual(expectedNative);
+		}
+	}
 	expect(config.mcpConfigPath).toBeUndefined();
 	const local = config.mcpConfig!.local as {
 		command: string;
