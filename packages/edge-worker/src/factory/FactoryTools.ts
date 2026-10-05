@@ -431,7 +431,18 @@ export class FactoryTools {
 					url,
 				);
 				const previousBase = readPath(run.outputs, "ci.baseSha");
+				const feedback = readPath(run.outputs, "ci.blockers") as
+					| { kind: string }[]
+					| undefined;
+				const substantiveFeedback =
+					feedback?.some((item) =>
+						["threads", "reviews"].includes(item.kind),
+					) ||
+					(feedback?.some((item) => item.kind === "comments") &&
+						readPath(run.outputs, "ci-fix.reviewRequired") !== false);
 				const reviewRequired =
+					substantiveFeedback ||
+					readPath(run.outputs, "ci-fix.reviewRequired") === true ||
 					!reviewed ||
 					reviewed.dirty ||
 					dirty ||
@@ -442,7 +453,7 @@ export class FactoryTools {
 					readPath(run.outputs, "review-gate.approved") !== true;
 				context.log(
 					reviewRequired
-						? "Code or base revision changed (or review provenance is missing); returning to code review."
+						? "Changed revision, substantive feedback or missing review provenance requires code review."
 						: "Accepted code and base are unchanged; returning directly to merge readiness.",
 				);
 				return { reviewRequired, headSha, baseSha: readiness.baseSha };

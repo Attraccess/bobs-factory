@@ -96,7 +96,7 @@ scope → screenshots/visual-review/fix loop → human review guide. The impleme
 receives only the accepted plan and its asset references. Reviews retain earlier
 findings and fixer dispositions, use stable finding IDs, discard severity 1,
 and allow evidence-based rejection and review of that rejection. Visual and CI
-fixes return through code review and CI. A CI assessment that leaves the accepted code and base unchanged returns directly to readiness, verified by Git and saved review provenance. Transient provider transport errors retry in the watcher; recognizable link/build notices do not trigger a fixer, and edited feedback is assessed again. The guide now pauses at an explicit human review gate. **Approve & settle**
+fixes return through code review and CI. A CI assessment that leaves the accepted code and base unchanged returns directly to readiness, verified by Git and saved review provenance. New complaints/rejections still receive review; skipping a comment-only round requires an explicit informational-only assessment. Transient provider transport errors retry in the watcher; recognizable link/build notices do not trigger a fixer, and edited feedback is assessed again. The guide now pauses at an explicit human review gate. **Approve & settle**
 authorizes only its displayed commit; **Open diff** opens the provider in another
 tab; **Request changes** records instructions, runs the fixer and repeats code,
 readiness and visual review before a new guide and fresh approval. Approval marks

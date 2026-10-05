@@ -165,3 +165,10 @@ activities were real. No real PR was approved or merged.
   models/prompts or 47 completed records. Real code/base changes still return to
   code review; no-change assessments return directly to readiness only when Git
   and saved accepted review provenance agree. The human approval gate stays intact.
+
+A follow-up safeguard makes an unknown/new/rejected complaint conservative even
+at the same commit: CI fixer explicitly sets reviewRequired=false only for
+informational/already-accepted unchanged requirements. Review threads and requested
+changes always require review; three additional routing cases passed (57 tests in
+the runtime/readiness/pipeline subset). Legacy assessment timestamps now retain
+the latest assessment, while content hashes continue to detect later edits.

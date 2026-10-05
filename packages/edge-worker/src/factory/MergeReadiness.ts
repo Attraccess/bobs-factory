@@ -296,7 +296,7 @@ export function assessFeedback(
 			  }
 			| undefined;
 		for (const id of output?.addressedCommentIds ?? [])
-			if (!addressedComments.has(String(id)))
+			if (!addressedComments.get(String(id))?.hash)
 				addressedComments.set(String(id), { at: item.at });
 		for (const comment of output?.assessedComments ?? [])
 			addressedComments.set(String(comment.id), {
