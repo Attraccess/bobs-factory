@@ -104,6 +104,9 @@ it("takes over the same PR, converts it to draft and never creates a replacement
 			commands.push([exe, ...args]);
 			if (args[0] === "branch") return "feature/existing";
 			if (args[0] === "rev-parse") return "sha";
+			if (args[0] === "rev-list") return "1";
+			if (args[0] === "diff" && args.includes("--name-only"))
+				return "feature.ts";
 			if (args[0] === "pr" && args[1] === "view")
 				return JSON.stringify({ state: "OPEN", isDraft: true });
 			if (args[0] === "pr" && args[1] === "list") return "[]";

@@ -1591,3 +1591,26 @@ it("keeps legacy run definitions stable on load and audits contract migration at
 	).toBe(true);
 	expect(restarted.get(run.id).workflowDefinitions).toEqual(definitions);
 });
+
+it("upgrades stock implementation blockers without replacing custom instructions or role settings", () => {
+	const saved = structuredClone(defaultWorkflows);
+	const shared = saved.find((item) => item.id === "factory-pipeline")!;
+	const implementation = shared.steps.find((item) => item.id === "implement")!;
+	implementation.prompt =
+		'Implement the provided plan and use its assets. Follow repository conventions and appropriate verification. Return {"summary":"...","checks":["commands and outcomes"]}. Do not create or publish a PR; the next step handles delivery.';
+	implementation.askQuestions = false;
+	implementation.model = "custom-implementation-model";
+	const upgraded = validateWorkflows(upgradeWorkflows(saved));
+	const role = upgraded
+		.find((item) => item.id === "factory-pipeline")!
+		.steps.find((item) => item.id === "implement")!;
+	expect(role.askQuestions).toBe(true);
+	expect(role.model).toBe("custom-implementation-model");
+	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
+	implementation.prompt = "Custom implementation instructions";
+	const custom = validateWorkflows(upgradeWorkflows(saved))
+		.find((item) => item.id === "factory-pipeline")!
+		.steps.find((item) => item.id === "implement")!;
+	expect(custom.prompt).toBe(implementation.prompt);
+	expect(custom.askQuestions).toBe(false);
+});

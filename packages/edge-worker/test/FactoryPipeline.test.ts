@@ -1,8 +1,16 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
+import { validateFactoryResult } from "../src/factory/FactoryResults.js";
 import {
 	executeCommand,
 	FactoryTools,
@@ -117,8 +125,14 @@ it("returns visual and CI fixes through code review, keeping dispute history", a
 			if (step === "implement") {
 				expect(context.input).toEqual({
 					plan: { plan: "Build the dashboard", assets: [] },
+					answers: [],
 				});
-				return {};
+				return {
+					status: "completed",
+					summary: "Built",
+					checks: [],
+					questions: [],
+				};
 			}
 			if (step === "code-review") {
 				codeReviews++;
@@ -302,6 +316,8 @@ it("publishes with a conventional commit message instead of a raw ticket title",
 				if (args[0] === "branch") return "ticket-branch";
 				if (args[0] === "status") return "M  code.ts";
 				if (args[0] === "rev-parse") return "head";
+				if (args[0] === "rev-list") return "1";
+				if (args[0] === "diff") return "code.ts";
 				return "";
 			}
 			return JSON.stringify([
@@ -424,4 +440,171 @@ it("publishes a grounded human review guide while keeping the PR draft", async (
 			(command) => command.includes("ready") || command.includes("merge"),
 		),
 	).toBe(false);
+});
+
+it("waits on blocked implementation across restart and supplies the answer without leaking the ticket", async () => {
+	const directory = home();
+	const plan = { plan: "Backlog only; do not implement yet.", assets: [] };
+	const question = "Should implementation proceed now, or remain backlog only?";
+	const agents = vi.fn(async (context: ExecutionContext) => {
+		if (context.step.id === "clarify")
+			return { questions: [], decisions: [], requirements: ["Installation"] };
+		if (context.step.id === "plan") return plan;
+		if (context.step.id === "plan-review")
+			return { approved: true, feedback: [] };
+		expect(context.input).toEqual({ plan, answers: [] });
+		return validateFactoryResult("implement", {
+			status: "blocked",
+			summary: "Implementation deferred by the plan.",
+			checks: ["Worktree clean"],
+			questions: [question],
+		});
+	});
+	const tool = vi.fn(async () => ({}));
+	const runtime = new WorkflowRuntime(directory, {
+		agent: agents,
+		tool,
+		script: async () => ({}),
+	});
+	const run = runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
+		title: "Backlog installation",
+		repositoryId: "repo",
+		workspace: directory,
+		workflow: defaultWorkflows[1]!,
+		input: "Private ticket and metadata",
+	});
+	const first = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(run.step).toBe("pipeline/implement");
+	expect(run.questions).toEqual([question]);
+	expect(tool).toHaveBeenCalledTimes(1); // Decision recording only; no delivery.
+	await runtime.shutdown();
+	await first;
+	const retained = structuredClone(run.history);
+	const published = vi.fn();
+	const resumedAgent = vi.fn(async (context: ExecutionContext) => {
+		expect(context.input).toEqual({
+			plan,
+			answers: [
+				{
+					questions: [question],
+					answer: "Proceed with implementation now.",
+					at: expect.any(String),
+				},
+			],
+		});
+		return validateFactoryResult("implement", {
+			status: "completed",
+			summary: "Implemented after authorization.",
+			checks: ["Tests passed"],
+			questions: [],
+		});
+	});
+	const restarted = new WorkflowRuntime(directory, {
+		agent: resumedAgent,
+		script: async () => ({}),
+		tool: async (context) => {
+			published(context.step.id);
+			throw new Error("End fixture after delivery checkpoint");
+		},
+	});
+	const restored = restarted.get(run.id);
+	const second = restarted.launch(restored);
+	await vi.waitFor(() => expect(restored.status).toBe("waiting"));
+	expect(resumedAgent).not.toHaveBeenCalled();
+	restarted.answer(run.id, "Proceed with implementation now.");
+	await second;
+	expect(resumedAgent).toHaveBeenCalledTimes(1);
+	expect(published).toHaveBeenCalledExactlyOnceWith("draft-pr");
+	expect(restored.history.slice(0, retained.length)).toEqual(retained);
+});
+
+it("rejects implementation reports that cannot distinguish completion from a blocker", () => {
+	const report = {
+		summary: "Implementation deferred; no files changed.",
+		checks: [],
+	};
+	expect(() => validateFactoryResult("implement", report)).toThrow();
+	expect(() =>
+		validateFactoryResult("implement", {
+			...report,
+			status: "blocked",
+			questions: [],
+		}),
+	).toThrow();
+	expect(() =>
+		validateFactoryResult("implement", {
+			...report,
+			status: "completed",
+			questions: ["Need access"],
+		}),
+	).toThrow();
+});
+
+it("refuses to publish an empty branch or empty commit before invoking GitHub", async () => {
+	const input = context();
+	input.step.tool = "draft-pr";
+	input.run.outputs.repository = { baseBranch: "main" };
+	input.run.outputs.implement = {
+		summary: "Implementation deferred: backlog only.",
+	};
+	const remote = join(input.evidenceDir, "remote.git");
+	input.run.workspace = join(input.evidenceDir, "repo");
+	mkdirSync(input.run.workspace);
+	const git = (...args: string[]) =>
+		execFileSync("git", args, {
+			cwd: input.run.workspace,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "pipe"],
+		}).trim();
+	git("init", "-b", "main");
+	git("config", "user.name", "Factory fixture");
+	git("config", "user.email", "factory@example.test");
+	writeFileSync(join(input.run.workspace, "feature.txt"), "Baseline\n");
+	git("add", "feature.txt");
+	git("commit", "-m", "Baseline");
+	git("init", "--bare", remote);
+	git("remote", "add", "origin", remote);
+	git("push", "origin", "main");
+	git("switch", "-c", "factory-fixture");
+	const command = vi.fn(
+		async (context: ExecutionContext, executable: string, args: string[]) => {
+			if (executable !== "git" || args[0] === "push")
+				throw new Error("Unexpected publication");
+			return executeCommand(context, executable, args);
+		},
+	);
+	const tools = new FactoryTools({ postComment: vi.fn(), command });
+	await expect(tools.tool(input)).rejects.toThrow(
+		"No implementation changes to publish against main. Implementation deferred: backlog only.",
+	);
+	git("commit", "--allow-empty", "-m", "Empty implementation");
+	await expect(tools.tool(input)).rejects.toThrow(
+		"No implementation changes to publish",
+	);
+	expect(
+		command.mock.calls.every(
+			([, exe, args]) => exe === "git" && args[0] !== "push",
+		),
+	).toBe(true);
+});
+
+it("never publishes partial work from a blocked implementation, even for a legacy workflow", async () => {
+	const input = context();
+	input.step.tool = "draft-pr";
+	input.run.outputs.implement = {
+		status: "blocked",
+		summary: "Missing access after partial implementation",
+		questions: ["Supply access"],
+	};
+	const command = vi.fn();
+	await expect(
+		new FactoryTools({ postComment: vi.fn(), command }).tool(input),
+	).rejects.toThrow("Implementation is blocked: Missing access");
+	expect(command).not.toHaveBeenCalled();
 });
