@@ -244,3 +244,327 @@ it("rechecks manual and follow-up starts at the backend boundary before run crea
 	);
 	expect(runtime.runs.size).toBe(0);
 });
+
+it("starts ticket Simple execution with its ID while independent title work is unresolved", async () => {
+	const { edge, repository, fullIssue, runtime, home } = setup();
+	const titleStart = vi.fn();
+	edge.titleGenerator = {
+		start: titleStart,
+		cancel: vi.fn(),
+		shutdown: async () => {},
+	};
+	runtime.updateTitleSettings({ runner: "gemini", model: "cheap-title" });
+	vi.spyOn(edge, "assemblePrompt").mockResolvedValue({
+		userPrompt: "Do work",
+		systemPrompt: undefined,
+		metadata: { components: [] },
+	});
+	let runnerConfig: any;
+	let finish!: () => void;
+	const runner = {
+		supportsStreamingInput: false,
+		start: vi.fn(async () => {
+			runnerConfig.onMessage({
+				type: "system",
+				subtype: "init",
+				session_id: "primary-native",
+				model: "primary-model",
+				tools: [],
+			});
+			await new Promise<void>((resolve) => {
+				finish = resolve;
+			});
+			return { sessionId: "primary-native" };
+		}),
+		stop: vi.fn(),
+		isRunning: () => true,
+		getMessages: () => [],
+	};
+	vi.spyOn(edge, "buildRunnerForType").mockImplementation(
+		(_type: unknown, config: unknown) => {
+			runnerConfig = config;
+			return runner;
+		},
+	);
+	const event = webhook("@Bob implement this");
+	edge.captureTicketOrigin(event, true);
+	const execution = edge.initializeAgentRunner(
+		event.agentSession,
+		[repository],
+		"cli-workspace",
+		undefined,
+		"@Bob implement this",
+	);
+	await vi.waitFor(() => expect(titleStart).toHaveBeenCalledOnce());
+	const session = edge.agentSessionManager.getSession("session");
+	expect(session.displayTitle).toBe("session");
+	expect(session.issue.title).toBe(fullIssue.title);
+	expect(session.titleGeneration.settings).toEqual({
+		runner: "gemini",
+		model: "cheap-title",
+	});
+	expect(JSON.parse(session.titleGeneration.context)).toMatchObject({
+		ticketTitle: "Ticket",
+		initiatingComment: "@Bob implement this",
+	});
+	expect(session.agentRunner).toBeDefined();
+	expect(session.claudeSessionId).toBe("primary-native");
+	const originalRunner = session.agentRunner;
+	edge.updateRunTitle(
+		"session",
+		{ ...session.titleGeneration, state: "completed" },
+		"Implement ticket work",
+	);
+	expect(session.agentRunner).toBe(originalRunner);
+	expect(session.claudeSessionId).toBe("primary-native");
+	expect(session.issue.title).toBe("Ticket");
+	expect(session.metadata.model).toBe("primary-model");
+	finish();
+	await execution;
+	await edge.stateSaveQueue;
+	const restored = new AgentSessionManager(null, null, undefined, home);
+	const state = edge.serializeMappings();
+	restored.restoreState(state.agentSessions, state.agentSessionEntries);
+	expect(restored.getSession("session")?.displayTitle).toBe(
+		"Implement ticket work",
+	);
+	expect(restored.getSession("session")?.titleGeneration?.state).toBe(
+		"completed",
+	);
+});
+
+it("returns a manual launch immediately, preserves source naming data and mirrors completion before title", async () => {
+	const { edge, runtime, home } = setup();
+	const workflow = {
+		id: "custom-title",
+		name: "Custom title",
+		allowedTriggers: ["manual"],
+		steps: [{ id: "work", name: "Work", type: "script", script: "true" }],
+	};
+	runtime.updateWorkflows([...runtime.listWorkflows(), workflow]);
+	vi.spyOn(edge.gitService, "createGitWorktree").mockResolvedValue({
+		path: home,
+		isGitWorktree: false,
+	});
+	const titleStart = vi.fn();
+	edge.titleGenerator = {
+		start: titleStart,
+		cancel: vi.fn(),
+		shutdown: async () => {},
+	};
+	const run = await edge.startManualFactoryRun(
+		resolveLaunchRequest(runtime.selectWorkflow([], "manual", "custom-title"), {
+			repositoryId: "repo",
+			workflow: "custom-title",
+			inputs: { prompt: "https://taskbot.apps.janjaap.de/p/test/t/68" },
+			title: "Ignored",
+		}),
+	);
+	expect(run.title).toBe(run.id);
+	expect(run.status).toBe("running");
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(titleStart).toHaveBeenCalledOnce();
+	expect(JSON.parse(titleStart.mock.calls[0][1].context).instructions).toBe(
+		"https://taskbot.apps.janjaap.de/p/test/t/68",
+	);
+	const before = {
+		status: run.status,
+		history: structuredClone(run.history),
+		outputs: structuredClone(run.outputs),
+		workspace: run.workspace,
+	};
+	edge.updateRunTitle(
+		run.id,
+		{ ...run.titleGeneration, state: "completed" },
+		"Stabilize inventory counters",
+	);
+	expect(run).toMatchObject(before);
+	expect(run.title).toBe("Stabilize inventory counters");
+	expect(run.sessionSnapshot.displayTitle).toBe(run.title);
+	expect(edge.agentSessionManager.getSession(run.id).displayTitle).toBe(
+		run.title,
+	);
+	expect(run.sessionSnapshot.titleGeneration.state).toBe("completed");
+});
+
+it("cancels pending naming even when a user stop only interrupts a warm turn", async () => {
+	const { edge, home } = setup();
+	const session = edge.agentSessionManager.createCyrusAgentSession(
+		"warm-stop",
+		"issue",
+		{ id: "issue", identifier: "TEST-1", title: "Ticket" },
+		{ path: home, isGitWorktree: false },
+		"linear",
+	);
+	session.titleGeneration = {
+		state: "pending",
+		prepared: true,
+		context: "Task",
+		settings: { runner: "claude" },
+	};
+	const interrupt = vi.fn(async () => {});
+	session.agentRunner = { interrupt, isWarm: () => true, stop: vi.fn() };
+	const cancel = vi.fn();
+	edge.titleGenerator = { cancel, shutdown: async () => {} };
+	vi.spyOn(
+		edge.agentSessionManager,
+		"createResponseActivity",
+	).mockResolvedValue(undefined);
+	await edge.handleStopSignal({
+		agentSession: { id: session.id, issue: session.issue },
+	});
+	expect(interrupt).toHaveBeenCalledOnce();
+	expect(cancel).toHaveBeenCalledWith(session.id);
+	expect(session.titleGeneration.state).toBe("cancelled");
+});
+
+it("accepts standalone chat/view changes without treating the session as a runtime run", () => {
+	const { edge, runtime, home } = setup();
+	const session = edge.agentSessionManager.createChatSession(
+		"standalone-chat",
+		{ path: home, isGitWorktree: false },
+		"slack",
+	);
+	expect(runtime.updateViewState(session.id, { keptOpen: true })).toEqual({
+		keptOpen: true,
+	});
+	expect(
+		runtime.recordChatMessage(session.id, "Check reconnects", "simple").text,
+	).toBe("Check reconnects");
+	expect(runtime.runs.has(session.id)).toBe(false);
+});
+
+it("recovers pending titles for active non-ticket sessions without renaming historical sessions", () => {
+	const { edge, home } = setup();
+	const pending = edge.agentSessionManager.createChatSession(
+		"chat-pending",
+		{ path: home, isGitWorktree: false },
+		"slack",
+	);
+	pending.titleGeneration = {
+		state: "pending",
+		prepared: true,
+		context: "Chat task",
+		settings: { runner: "claude" },
+	};
+	edge.agentSessionManager.createChatSession(
+		"old-chat",
+		{ path: home, isGitWorktree: false },
+		"slack",
+	);
+	const start = vi.fn();
+	edge.titleGenerator = { start, shutdown: async () => {} };
+	edge.recoverFactoryRuns();
+	expect(start).toHaveBeenCalledOnce();
+	expect(start).toHaveBeenCalledWith(pending.id, pending.titleGeneration);
+});
+
+it.each([
+	"running",
+	"failed",
+])("preserves a historical %s run's title during recovery or retry", async (status) => {
+	const { edge, runtime, home } = setup();
+	runtime.updateWorkflows(
+		defaultWorkflows.map((workflow) =>
+			workflow.id === "factory"
+				? {
+						...workflow,
+						steps: [
+							{ id: "work", name: "Work", type: "script", script: "true" },
+						],
+					}
+				: workflow,
+		),
+	);
+	const workflow = runtime.selectWorkflow([], "manual", "factory");
+	const run = runtime.create({
+		id: `historical-${status}`,
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			selectionMethod: "explicit",
+			at: new Date().toISOString(),
+			manual: { method: "composer-api" },
+		},
+		repositoryId: "repo",
+		workflow,
+		workspace: home,
+		input: "Original task",
+	});
+	run.title = "Original historical title";
+	delete run.titleGeneration;
+	run.status = status;
+	runtime.save(run);
+	const start = vi.fn();
+	edge.titleGenerator = { start, shutdown: async () => {} };
+	if (status === "running") edge.recoverFactoryRuns();
+	else runtime.retry(run.id);
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(start).not.toHaveBeenCalled();
+	expect(run.titleGeneration).toBeUndefined();
+	expect(run.title).toBe("Original historical title");
+	expect(run.sessionSnapshot.displayTitle).toBe(run.title);
+
+	// A second retry must also preserve the saved historical identity.
+	run.status = "failed";
+	runtime.retry(run.id);
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(start).not.toHaveBeenCalled();
+	expect(run.titleGeneration).toBeUndefined();
+});
+
+it.each([
+	"factory",
+	"takeover",
+])("names a ticket-driven %s root once without waiting for title completion", async (workflowId) => {
+	const { edge, runtime, repository } = setup();
+	edge.issueTrackers.get("cli-workspace").fetchComments = vi.fn(async () => ({
+		nodes: [],
+		pageInfo: { hasNextPage: false },
+	}));
+	edge.issueTrackers.get("cli-workspace").fetchIssueAttachments = vi.fn(
+		async () => [],
+	);
+	runtime.updateWorkflows(
+		defaultWorkflows.map((workflow) =>
+			workflow.id === workflowId
+				? {
+						...workflow,
+						steps: [
+							{ id: "work", name: "Work", type: "script", script: "true" },
+						],
+					}
+				: workflow,
+		),
+	);
+	edge.fetchIssueLabels.mockResolvedValue([`workflow:${workflowId}`]);
+	vi.spyOn(edge, "assemblePrompt").mockResolvedValue({
+		userPrompt: "Full primary execution prompt",
+		systemPrompt: "Primary instructions",
+		metadata: { components: [], promptType: "initial" },
+	});
+	const start = vi.fn();
+	edge.titleGenerator = { start, shutdown: async () => {} };
+	const event = webhook("Check scanner totals");
+	edge.captureTicketOrigin(event, true);
+	await edge.initializeAgentRunner(
+		event.agentSession,
+		[repository],
+		"cli-workspace",
+		undefined,
+		"Check scanner totals",
+	);
+	const run = runtime.get("session");
+	expect(run.title).toBe("session");
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(start).toHaveBeenCalledOnce();
+	expect(JSON.parse(start.mock.calls[0][1].context)).toMatchObject({
+		ticketTitle: "Ticket",
+		ticketBody: "Instructions",
+		initiatingComment: "Check scanner totals",
+	});
+	expect(start.mock.calls[0][1].context).not.toContain(
+		"Full primary execution prompt",
+	);
+	expect(run.sessionSnapshot.titleGeneration.state).toBe("pending");
+});

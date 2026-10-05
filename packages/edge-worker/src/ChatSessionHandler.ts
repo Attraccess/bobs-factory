@@ -11,9 +11,10 @@ import type {
 	RepositoryConfig,
 	RunnerType,
 } from "cyrus-core";
-import { createLogger } from "cyrus-core";
+import { AgentSessionStatus, createLogger } from "cyrus-core";
 import { AgentSessionManager } from "./AgentSessionManager.js";
 import type { ChatRepositoryProvider } from "./ChatRepositoryProvider.js";
+import { type ChatState, steeringState } from "./factory/SessionChat.js";
 import type { RunnerConfigBuilder } from "./RunnerConfigBuilder.js";
 
 /**
@@ -89,6 +90,12 @@ export interface ChatPlatformAdapter<TEvent> {
  * Callbacks for EdgeWorker integration (same pattern as RepositoryRouterDeps).
  */
 export interface ChatSessionHandlerDeps {
+	onSessionChange?: (id: string) => void;
+	onNewSession?: (
+		session: CyrusAgentSession,
+		instructions: string,
+		platform: string,
+	) => void;
 	cyrusHome: string;
 	/** Provider for live repository paths, default repo, and workspace ID */
 	chatRepositoryProvider: ChatRepositoryProvider;
@@ -98,6 +105,7 @@ export interface ChatSessionHandlerDeps {
 	createRunner: (
 		config: AgentRunnerConfig,
 		runnerType?: RunnerType,
+		signal?: AbortSignal,
 	) => IAgentRunner;
 	/**
 	 * Live read of the workspace-level custom-integration MCP config paths
@@ -172,6 +180,7 @@ export class ChatSessionHandler<TEvent> {
 	// re-dispatched as a fresh turn, so a follow-up is never silently dropped —
 	// honoring the "I'll pick up your new message once I'm done" promise.
 	private pendingFollowups: Map<string, TEvent[]> = new Map();
+	private continuationStarts = new Map<string, AbortController>();
 
 	constructor(
 		adapter: ChatPlatformAdapter<TEvent>,
@@ -186,6 +195,9 @@ export class ChatSessionHandler<TEvent> {
 		this.sessionManager = new AgentSessionManager(
 			undefined, // No parent session lookup
 			undefined, // No resume parent session
+		);
+		this.sessionManager.on("sessionChanged", (id: string) =>
+			this.deps.onSessionChange?.(id),
 		);
 	}
 
@@ -220,6 +232,18 @@ export class ChatSessionHandler<TEvent> {
 				const existingRunner =
 					this.sessionManager.getAgentRunner(existingSessionId);
 
+				if (
+					existingSession &&
+					this.continuationStarts.has(existingSessionId) &&
+					!existingRunner?.isRunning()
+				) {
+					// Configuration and thread catch-up can await before isRunning()
+					// becomes true. Both dashboard and platform starts share this guard.
+					this.queuePendingFollowup(threadKey, event);
+					await this.adapter.notifyBusy(event, threadKey);
+					return;
+				}
+
 				if (existingSession && existingRunner?.isRunning()) {
 					// Session is actively running — inject the follow-up via streaming input
 					if (
@@ -250,7 +274,7 @@ export class ChatSessionHandler<TEvent> {
 					return;
 				}
 
-				if (existingSession && existingRunner) {
+				if (existingSession) {
 					// Session exists but is not running — resume with --continue
 					this.logger.info(
 						`Resuming completed ${this.adapter.platformName} session ${existingSessionId} (thread ${threadKey})`,
@@ -338,6 +362,15 @@ export class ChatSessionHandler<TEvent> {
 
 			// Build the system prompt
 			const systemPrompt = this.adapter.buildSystemPrompt(event);
+			session.metadata.chatRepositoryId =
+				this.deps.chatRepositoryProvider.getDefaultRepository()?.id;
+			if (
+				this.adapter.platformName === "slack" ||
+				this.adapter.platformName === "zulip"
+			)
+				session.metadata.chatPlatform = this.adapter.platformName;
+			session.metadata.chatThreadKey = threadKey;
+			session.metadata.chatSystemPrompt = systemPrompt;
 
 			// Build runner config
 			const runnerConfig = await this.buildRunnerConfig(
@@ -383,6 +416,7 @@ export class ChatSessionHandler<TEvent> {
 				runner.supportsStreamingInput && runner.startStreaming
 					? runner.startStreaming(userPrompt)
 					: runner.start(userPrompt);
+			this.deps.onNewSession?.(session, userPrompt, this.adapter.platformName);
 			startPromise
 				.then((sessionInfo: AgentSessionInfo) => {
 					this.logger.info(
@@ -400,6 +434,7 @@ export class ChatSessionHandler<TEvent> {
 					this.clearPendingReplies(sessionId);
 				})
 				.finally(() => {
+					this.sessionManager.emit("sessionChanged", sessionId);
 					this.deps.onStateChange().catch((error: unknown) => {
 						this.logger.error(
 							`onStateChange failed after ${this.adapter.platformName} session ${sessionId}`,
@@ -442,6 +477,111 @@ export class ChatSessionHandler<TEvent> {
 	 */
 	getAllChatSessions(): CyrusAgentSession[] {
 		return this.sessionManager.getAllSessions();
+	}
+
+	chatState(id: string): ChatState {
+		const session = this.sessionManager.getSession(id);
+		if (!session || session.status === AgentSessionStatus.Error)
+			return {
+				enabled: true,
+				available: false,
+				reason: "The chat session has stopped.",
+			};
+		const runner = session.agentRunner;
+		if (runner?.isRunning()) return steeringState(runner);
+		if (this.continuationStarts.has(id))
+			return {
+				enabled: true,
+				available: false,
+				reason: "The conversation is resuming.",
+			};
+		if (
+			session.status === AgentSessionStatus.Complete &&
+			this.getResumeInfo(session) &&
+			(this.lastReplyEvent.has(id) || session.metadata?.chatSystemPrompt)
+		)
+			return { enabled: true, available: true, mode: "continue" };
+		return {
+			enabled: true,
+			available: false,
+			reason: "The chat session is starting or needs recovery.",
+		};
+	}
+
+	/** Dashboard feedback uses this handler's native conversation and platform context. */
+	sendMessage(id: string, text: string): void {
+		const state = this.chatState(id);
+		if (!state.available) throw new Error(state.reason ?? "Chat unavailable");
+		const session = this.sessionManager.getSession(id)!;
+		if (state.mode === "steer") {
+			session.agentRunner!.addStreamMessage!(text);
+			return;
+		}
+		const event = this.lastReplyEvent.get(id);
+		const resume = this.getResumeInfo(session)!;
+		void this.resumeSession(
+			event,
+			session,
+			id,
+			resume.sessionId,
+			resume.runnerType,
+			text,
+			() => session.status === AgentSessionStatus.Error,
+		).catch(async (error: unknown) => {
+			session.status = AgentSessionStatus.Error;
+			await this.sessionManager.createResponseActivity(
+				id,
+				`Chat continuation failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		});
+	}
+
+	stopSession(id: string): void {
+		const session = this.sessionManager.getSession(id);
+		if (!session) return;
+		this.sessionManager.requestSessionStop(id);
+		session.status = AgentSessionStatus.Error;
+		this.continuationStarts.get(id)?.abort();
+		const threadKey = this.threadKeyForSession(id);
+		if (threadKey) this.pendingFollowups.delete(threadKey);
+		this.clearPendingReplies(id);
+		session.agentRunner?.stop();
+		this.sessionManager.emit("sessionChanged", id);
+	}
+
+	subscribe(listener: (id: string) => void): () => void {
+		this.sessionManager.on("sessionChanged", listener);
+		return () => {
+			this.sessionManager.off("sessionChanged", listener);
+		};
+	}
+	serializeState() {
+		return this.sessionManager.serializeState();
+	}
+	/** Move restored chat records back to the manager that owns their runner config. */
+	restoreState(
+		sessions: Parameters<AgentSessionManager["restoreState"]>[0],
+		entries: Parameters<AgentSessionManager["restoreState"]>[1],
+	): void {
+		this.sessionManager.restoreState(sessions, entries);
+		for (const session of this.getAllChatSessions()) {
+			const threadKey = session.metadata?.chatThreadKey;
+			if (threadKey) this.threadSessions.set(threadKey, session.id);
+		}
+	}
+	get platformName(): ChatPlatformName {
+		return this.adapter.platformName;
+	}
+	getSessionEntries(id: string) {
+		return this.sessionManager.getSessionEntries(id);
+	}
+
+	updateDisplayTitle(
+		id: string,
+		title: string,
+		job: CyrusAgentSession["titleGeneration"],
+	): void {
+		this.sessionManager.updateDisplayTitle(id, title, job);
 	}
 
 	/**
@@ -536,55 +676,102 @@ export class ChatSessionHandler<TEvent> {
 	 * Resume an existing session with a new prompt (--continue behavior).
 	 */
 	private async resumeSession(
-		event: TEvent,
+		event: TEvent | undefined,
 		existingSession: CyrusAgentSession,
 		sessionId: string,
 		resumeSessionId: string,
 		runnerType: RunnerType,
 		taskInstructions: string,
+		cancelled?: () => boolean,
 	): Promise<void> {
-		const systemPrompt = this.adapter.buildSystemPrompt(event);
-
-		const runnerConfig = await this.buildRunnerConfig(
-			existingSession.workspace.path,
-			sessionId,
-			systemPrompt,
-			sessionId,
-			resumeSessionId,
-			runnerType,
-		);
-
-		const runner = this.deps.createRunner(runnerConfig, runnerType);
-		this.sessionManager.addAgentRunner(sessionId, runner);
-
-		const resumePrompt = await this.withThreadCatchup(
-			existingSession,
-			event,
-			taskInstructions,
-		);
-
-		// Reply posting is driven by `result` messages on the runner's stream
-		// (see handleAgentMessage). We must not await turn completion here —
-		// warm sessions hold the streaming prompt open across turns so the
-		// start() promise only resolves when the whole session ends.
-		this.enqueueReply(sessionId, event);
-		const startPromise =
-			runner.supportsStreamingInput && runner.startStreaming
-				? runner.startStreaming(resumePrompt)
-				: runner.start(resumePrompt);
-		startPromise
-			.then((sessionInfo: AgentSessionInfo) => {
-				this.logger.info(
-					`${this.adapter.platformName} session resumed: ${sessionInfo.sessionId} (was ${resumeSessionId})`,
-				);
-			})
-			.catch((error: unknown) => {
+		if (this.continuationStarts.has(sessionId))
+			throw new Error("The conversation is resuming.");
+		const isCancelled = () =>
+			cancelled?.() || existingSession.status === AgentSessionStatus.Error;
+		const controller = new AbortController();
+		this.continuationStarts.set(sessionId, controller);
+		existingSession.status = AgentSessionStatus.Active;
+		this.sessionManager.emit("sessionChanged", sessionId);
+		let started = false;
+		const releaseStart = () => {
+			this.continuationStarts.delete(sessionId);
+			this.sessionManager.emit("sessionChanged", sessionId);
+			void this.deps.onStateChange().catch((error: unknown) => {
 				this.logger.error(
-					`${this.adapter.platformName} resume session error for ${sessionId}`,
+					"Failed to persist chat continuation",
 					error instanceof Error ? error : new Error(String(error)),
 				);
-				this.clearPendingReplies(sessionId);
 			});
+		};
+		try {
+			const systemPrompt = event
+				? this.adapter.buildSystemPrompt(event)
+				: existingSession.metadata!.chatSystemPrompt!;
+
+			const runnerConfig = await this.buildRunnerConfig(
+				existingSession.workspace.path,
+				sessionId,
+				systemPrompt,
+				sessionId,
+				resumeSessionId,
+				runnerType,
+			);
+			if (isCancelled()) return;
+
+			const runner = this.deps.createRunner(
+				runnerConfig,
+				runnerType,
+				controller.signal,
+			);
+			this.sessionManager.addAgentRunner(sessionId, runner);
+
+			const resumePrompt = event
+				? await this.withThreadCatchup(existingSession, event, taskInstructions)
+				: taskInstructions;
+			if (isCancelled()) {
+				runner.stop();
+				return;
+			}
+
+			// Reply posting is driven by `result` messages on the runner's stream
+			// (see handleAgentMessage). We must not await turn completion here —
+			// warm sessions hold the streaming prompt open across turns so the
+			// start() promise only resolves when the whole session ends.
+			if (event) this.enqueueReply(sessionId, event);
+			const startPromise =
+				runner.supportsStreamingInput && runner.startStreaming
+					? runner.startStreaming(resumePrompt)
+					: runner.start(resumePrompt);
+			started = true;
+			startPromise
+				.then((sessionInfo: AgentSessionInfo) => {
+					this.logger.info(
+						`${this.adapter.platformName} session resumed: ${sessionInfo.sessionId} (was ${resumeSessionId})`,
+					);
+				})
+				.catch((error: unknown) => {
+					this.logger.error(
+						`${this.adapter.platformName} resume session error for ${sessionId}`,
+						error instanceof Error ? error : new Error(String(error)),
+					);
+					existingSession.status = AgentSessionStatus.Error;
+					this.sessionManager.emit("sessionChanged", sessionId);
+					void this.deps.onStateChange();
+					this.clearPendingReplies(sessionId);
+				})
+				.finally(() => {
+					releaseStart();
+					if (existingSession.status !== AgentSessionStatus.Error)
+						this.drainPendingFollowups(sessionId);
+				});
+		} catch (error) {
+			existingSession.status = AgentSessionStatus.Error;
+			throw error;
+		} finally {
+			// start() can await concurrency admission before isRunning() is true.
+			// Its completion releases the guard; setup errors/cancellation release here.
+			if (!started) releaseStart();
+		}
 	}
 
 	private getResumeInfo(
@@ -620,6 +807,7 @@ export class ChatSessionHandler<TEvent> {
 		await this.sessionManager.handleClaudeMessage(sessionId, message);
 
 		if (message.type === "result") {
+			await this.deps.onStateChange();
 			// A `result` ends the turn, and the turn has seen every prompt
 			// injected so far — drain the whole queue, not just one entry
 			// (quick-succession messages get merged into a single turn).
@@ -692,6 +880,11 @@ export class ChatSessionHandler<TEvent> {
 		// Defer so the just-finished runner has fully transitioned to not-running
 		// before the follow-up is re-evaluated (otherwise it would re-queue).
 		setImmediate(() => {
+			if (
+				this.sessionManager.getSession(sessionId)?.status ===
+				AgentSessionStatus.Error
+			)
+				return;
 			for (const event of queue) {
 				this.handleEvent(event).catch((error: unknown) => {
 					this.logger.error(
