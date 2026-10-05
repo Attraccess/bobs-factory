@@ -15,6 +15,54 @@ import {
 import { providerReceipt } from "./fixtures/merge-readiness.js";
 
 const directories: string[] = [];
+it("keeps internal provider stdout quiet while preserving explicit CLI output and errors", async () => {
+	const input = context();
+	input.step.tool = "ci";
+	input.log = vi.fn();
+	const tools = new FactoryTools({
+		postComment: vi.fn(),
+		command: async (ctx, exe, args) => {
+			const output =
+				exe === "git"
+					? "head"
+					: args.includes("graphql")
+						? JSON.stringify(providerReceipt())
+						: "[[]]";
+			return executeCommand(ctx, process.execPath, [
+				"-e",
+				"process.stdout.write(process.argv[1])",
+				output,
+			]);
+		},
+	});
+	await expect(tools.tool(input)).resolves.toMatchObject({ reviewReady: true });
+	expect(input.log).toHaveBeenCalledTimes(1);
+	expect(input.log).toHaveBeenCalledWith(
+		"Merge readiness: 1/1 checks passed; Approve the review guide to mark the PR ready; Required reviewer approval is missing",
+	);
+	input.step.tool = "exec";
+	input.step.args = [
+		process.execPath,
+		"-e",
+		"console.log('Visible script output')",
+	];
+	const cli = new FactoryTools({ postComment: vi.fn() });
+	await expect(cli.tool(input)).resolves.toEqual({
+		stdout: "Visible script output",
+	});
+	expect(input.log).toHaveBeenCalledWith("Visible script output\n");
+	input.step.tool = "ci";
+	await expect(
+		new FactoryTools({
+			postComment: vi.fn(),
+			command: (ctx) =>
+				executeCommand(ctx, process.execPath, [
+					"-e",
+					"console.error('Provider unavailable');process.exit(1)",
+				]),
+		}).tool(input),
+	).rejects.toThrow("Provider unavailable");
+});
 it("runs commands with oversized input via a cleaned-up file, retaining small-input compatibility", async () => {
 	const input = context();
 	input.input = { detail: "x".repeat(1200000) };

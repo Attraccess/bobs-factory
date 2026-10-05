@@ -188,3 +188,17 @@ Production monitoring identified this defect after the authorized ninth code
 review finished: the old eight-visit gate stopped before consuming its saved
 result. The rollout resumes from that gate and preserves the completed reviewer
 output, including the new receipt-translation migration finding.
+
+
+## Quiet readiness activity
+
+F1 `DEF-4` / `issue-4`, session `session-4`, completed four steps with a real
+native Codex context probe, built-in readiness and an explicit visible script.
+The isolated provider command hook deliberately attempts to log its raw query
+responses. The CI activity contains only start, `Merge readiness: 1/1 checks
+passed; Approve the review guide to mark the PR ready`, and finish. No provider
+JSON enters the conversation. The script retains `Visible script output`.
+Complete provider receipts remain in artifacts; no real PR action occurred.
+Sixty focused runtime/readiness/pipeline tests pass, including actual spawned
+command stdout, quiet failures, explicit CLI output and deduplicated status
+updates that still retain freshly changed receipt data.

@@ -248,10 +248,14 @@ export class FactoryTools {
 	}
 	async tool(context: ExecutionContext): Promise<unknown> {
 		const { run } = context;
+		// Built-in commands return machine data retained in artifacts. Their raw
+		// stdout (especially repeated provider polling) is not conversation text.
+		const commandContext =
+			context.step.tool === "exec" ? context : { ...context, log: () => {} };
 		const command = (exe: string, args: string[], timeout?: number) =>
 			this.hooks.command
-				? this.hooks.command(context, exe, args, timeout)
-				: executeCommand(context, exe, args, timeout);
+				? this.hooks.command(commandContext, exe, args, timeout)
+				: executeCommand(commandContext, exe, args, timeout);
 		switch (context.step.tool) {
 			case "inspect-existing": {
 				const branch = await command("git", ["branch", "--show-current"]);

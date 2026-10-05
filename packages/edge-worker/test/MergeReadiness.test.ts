@@ -6,6 +6,7 @@ import {
 	inspectMergeReadiness,
 	inspectReadinessWithRetry,
 	recordFeedbackAssessment,
+	reportReadiness,
 } from "../src/factory/MergeReadiness.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
@@ -15,6 +16,27 @@ const command = (extra = {}) =>
 	vi.fn(async (_exe: string, args: string[]) =>
 		args.includes("graphql") ? JSON.stringify(providerReceipt(extra)) : "[[]]",
 	);
+it("reports readiness progress once while retaining fresh complete polling receipts", async () => {
+	const ctx = {
+		run: { outputs: {} },
+		log: vi.fn(),
+	} as unknown as ExecutionContext;
+	const snapshot = await inspectMergeReadiness(command(), url);
+	reportReadiness(ctx, snapshot);
+	const updated = structuredClone(snapshot);
+	updated.comments = [{ id: 1, body: "Changed informational metadata" }];
+	reportReadiness(ctx, updated);
+	expect(ctx.log).toHaveBeenCalledTimes(1);
+	expect(ctx.run.outputs["merge-readiness"]).toEqual(updated);
+	const progress = structuredClone(updated);
+	progress.checks.push({
+		name: "build",
+		bucket: "pending",
+		state: "IN_PROGRESS",
+	});
+	reportReadiness(ctx, progress);
+	expect(ctx.log).toHaveBeenCalledTimes(2);
+});
 it("permits the guide while draft/reviewer approval wait, but never claims mergeability", async () => {
 	const value = await inspectMergeReadiness(command(), url);
 	expect(value).toMatchObject({

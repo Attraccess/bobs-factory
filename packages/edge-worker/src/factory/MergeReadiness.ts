@@ -193,14 +193,23 @@ export function reportReadiness(
 	context: ExecutionContext,
 	snapshot: MergeReadiness,
 ): void {
+	const describe = (value: MergeReadiness) => {
+		const passed = value.checks.filter(
+			(check) => check.bucket === "pass",
+		).length;
+		return `Merge readiness: ${passed}/${value.checks.length} checks passed; ${value.blockers.map((item) => item.message).join("; ") || (value.state === "MERGED" ? "Merged" : value.queued ? "In merge queue" : "Ready")}`;
+	};
+	const previous = context.run.outputs["merge-readiness"] as
+		| MergeReadiness
+		| undefined;
+	const message = describe(snapshot);
 	const changed =
-		JSON.stringify(context.run.outputs["merge-readiness"]) !==
-		JSON.stringify(snapshot);
+		!previous ||
+		previous.headSha !== snapshot.headSha ||
+		previous.baseSha !== snapshot.baseSha ||
+		describe(previous) !== message;
 	context.run.outputs["merge-readiness"] = snapshot;
-	if (changed)
-		context.log(
-			`Merge readiness: ${snapshot.blockers.map((item) => item.message).join("; ") || (snapshot.state === "MERGED" ? "Merged" : snapshot.queued ? "In merge queue" : "Ready")}`,
-		);
+	if (changed) context.log(message);
 }
 
 /** A provider transport error is not evidence that repository code needs fixing. */
