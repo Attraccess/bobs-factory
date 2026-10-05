@@ -18,6 +18,7 @@ import {
 	inspectReadinessWithRetry,
 	reportReadiness,
 } from "./MergeReadiness.js";
+import { OutputValidationError } from "./OutputValidation.js";
 import { inspectPullRequest } from "./Takeover.js";
 import { readPath } from "./Workflow.js";
 
@@ -664,9 +665,14 @@ export function captureEvidence(
 	// Old persisted inventories remain readable/resumable; new evidence plans are bounded.
 	if (typeof budget === "number") {
 		if (capture.screenshots.length > budget)
-			throw new Error(
-				`Capture exceeds the representative evidence budget of ${budget}`,
-			);
+			throw new OutputValidationError(output, [
+				{
+					path: "/screenshots",
+					message: `Capture exceeds the representative evidence budget of ${budget}`,
+					expected: budget,
+					actual: capture.screenshots.length,
+				},
+			]);
 		const identities = capture.screenshots.map(
 			(shot) => `${shot.area}\0${shot.state}`,
 		);
@@ -681,9 +687,15 @@ export function captureEvidence(
 			new Set(identities).size !== identities.length ||
 			new Set(hashes).size !== hashes.length
 		)
-			throw new Error(
-				"Capture contains duplicate states or identical images; keep one representative image",
-			);
+			throw new OutputValidationError(output, [
+				{
+					path: "/screenshots",
+					message:
+						"Capture contains duplicate states or identical images; keep one representative image",
+					expected: "unique states and image hashes",
+					actual: { identities, hashes },
+				},
+			]);
 	}
 	if (Array.isArray(areas)) {
 		for (const area of areas) {

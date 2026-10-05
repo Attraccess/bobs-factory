@@ -345,3 +345,25 @@ it("applies schema validation to recovered malformed guides before accepting the
 			),
 	).toBe(true);
 });
+
+it("corrects recovered capture budget violations instead of replaying the same rejected output", async () => {
+	const f = await fixture();
+	(f.ctx.run.outputs["visual-scope"] as any).captureBudget = 2;
+	f.ctx.resumeAgent!.result!.output = f.repaired;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify({
+				screenshots: f.repaired.screenshots.slice(0, 2),
+			}),
+		},
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject({
+		screenshots: f.repaired.screenshots.slice(0, 2),
+	});
+	expect(f.getInput().outputCorrection).toMatchObject({
+		issues: [{ path: "/screenshots", expected: 2, actual: 3 }],
+		attempts: 1,
+	});
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+});
