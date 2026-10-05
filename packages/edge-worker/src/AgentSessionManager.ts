@@ -41,8 +41,9 @@ import type {
 /**
  * Events emitted by AgentSessionManager
  */
-// biome-ignore lint/complexity/noBannedTypes: Empty events type (events removed in CYPACK-996 skill refactor)
-export type AgentSessionManagerEvents = {};
+export type AgentSessionManagerEvents = {
+	sessionChanged: (id: string) => void;
+};
 
 /**
  * Type-safe event emitter interface for AgentSessionManager
@@ -189,6 +190,7 @@ export class AgentSessionManager extends EventEmitter {
 		// Store locally
 		this.sessions.set(sessionId, agentSession);
 		this.entries.set(sessionId, []);
+		this.emit("sessionChanged", sessionId);
 
 		return agentSession;
 	}
@@ -225,6 +227,7 @@ export class AgentSessionManager extends EventEmitter {
 
 		this.sessions.set(sessionId, agentSession);
 		this.entries.set(sessionId, []);
+		this.emit("sessionChanged", sessionId);
 
 		return agentSession;
 	}
@@ -270,6 +273,8 @@ export class AgentSessionManager extends EventEmitter {
 			linearSession.claudeSessionId = claudeSystemMessage.session_id;
 		}
 
+		if (!this.stopRequestedSessions.has(sessionId))
+			linearSession.status = AgentSessionStatus.Active;
 		linearSession.updatedAt = Date.now();
 		linearSession.metadata = {
 			...linearSession.metadata, // Preserve existing metadata
@@ -456,6 +461,9 @@ export class AgentSessionManager extends EventEmitter {
 
 	requestSessionStop(linearAgentActivitySessionId: string): void {
 		this.stopRequestedSessions.add(linearAgentActivitySessionId);
+		// A user stop must survive a reboot even if the runner hasn't emitted its result yet.
+		const session = this.sessions.get(linearAgentActivitySessionId);
+		if (session) session.status = AgentSessionStatus.Error;
 	}
 
 	/**
@@ -683,6 +691,7 @@ export class AgentSessionManager extends EventEmitter {
 		if (!session) return;
 
 		session.status = status;
+		this.emit("sessionChanged", sessionId);
 		session.updatedAt = Date.now();
 
 		if (additionalMetadata) {
@@ -938,6 +947,7 @@ export class AgentSessionManager extends EventEmitter {
 			const entries = this.entries.get(sessionId) || [];
 			entries.push(entry);
 			this.entries.set(sessionId, entries);
+			this.emit("sessionChanged", sessionId);
 
 			// Build activity content based on entry type
 			let content: any;

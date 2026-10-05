@@ -470,13 +470,19 @@ export class CLIIssueTrackerService
 
 		// Apply pagination
 		const first = options?.first ?? 50;
-		const paginatedComments = allComments.slice(0, first);
+		const afterIndex = options?.after
+			? allComments.findIndex((comment) => comment.id === options.after)
+			: -1;
+		if (options?.after && afterIndex < 0)
+			throw new Error("Unknown comment cursor");
+		const remaining = allComments.slice(afterIndex + 1);
+		const paginatedComments = remaining.slice(0, first);
 
 		return {
 			nodes: paginatedComments,
 			pageInfo: {
-				hasNextPage: allComments.length > first,
-				hasPreviousPage: false,
+				hasNextPage: remaining.length > first,
+				hasPreviousPage: afterIndex >= 0,
 				startCursor: paginatedComments[0]?.id,
 				endCursor: paginatedComments[paginatedComments.length - 1]?.id,
 			},

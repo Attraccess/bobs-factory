@@ -20,7 +20,69 @@ const repo: RepositoryConfig = {
 };
 
 describe("ConfigManager", () => {
+	it("reloads the Codex mode and restores the default when the field is removed", async () => {
+		const dir = await mkdtemp(join(tmpdir(), "cyrus-codex-mode-"));
+		const path = join(dir, "config.json");
+		const manager = new ConfigManager(
+			{ repositories: [repo] },
+			logger,
+			path,
+			new Map([[repo.id, repo]]),
+		);
+		const changed = vi.fn();
+		manager.on("configChanged", (event) => {
+			changed(event);
+			manager.setConfig(event.newConfig);
+		});
+		try {
+			for (const mode of ["danger-full-access", "read-only", undefined]) {
+				await writeFile(
+					path,
+					JSON.stringify({ repositories: [repo], codexSandboxMode: mode }),
+				);
+				await (manager as any).handleConfigChange();
+				expect(changed.mock.lastCall?.[0].newConfig.codexSandboxMode).toBe(
+					mode,
+				);
+			}
+			expect(changed).toHaveBeenCalledTimes(3);
+		} finally {
+			await rm(dir, { recursive: true, force: true });
+		}
+	});
+
 	let tempDir: string | undefined;
+
+	it("reloads and clears tool directories while network sandboxing is disabled", async () => {
+		tempDir = await mkdtemp(join(tmpdir(), "cyrus-config-manager-"));
+		const configPath = join(tempDir, "config.json");
+		const manager = new ConfigManager(
+			{ repositories: [repo] },
+			logger,
+			configPath,
+			new Map([[repo.id, repo]]),
+		);
+		const onConfigChanged = vi.fn();
+		manager.on("configChanged", onConfigChanged);
+		const reloadable = manager as unknown as {
+			handleConfigChange(): Promise<void>;
+		};
+		for (const directories of [["~/.tool-state"], []]) {
+			const sandbox = {
+				enabled: false,
+				additionalWritableDirectories: directories,
+			};
+			await writeFile(
+				configPath,
+				JSON.stringify({ repositories: [repo], sandbox }),
+			);
+			await reloadable.handleConfigChange();
+			const changes = onConfigChanged.mock.lastCall?.[0];
+			expect(changes.newConfig.sandbox).toEqual(sandbox);
+			manager.setConfig(changes.newConfig);
+		}
+		expect(onConfigChanged).toHaveBeenCalledTimes(2);
+	});
 
 	afterEach(async () => {
 		if (tempDir) {

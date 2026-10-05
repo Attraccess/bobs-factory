@@ -564,6 +564,8 @@ export class OpenCodeRunner extends EventEmitter implements IAgentRunner {
 		if (this.config.model) {
 			args.push("--model", this.config.model);
 		}
+		if (this.config.modelVariant)
+			args.push("--variant", this.config.modelVariant);
 		if (this.config.agent) {
 			args.push("--agent", this.config.agent);
 		}

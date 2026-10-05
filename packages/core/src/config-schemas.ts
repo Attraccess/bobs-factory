@@ -258,6 +258,13 @@ export const SandboxConfigSchema = z.object({
 	 */
 	enabled: z.boolean().optional(),
 
+	/**
+	 * Extra directories agent tools may write outside their session workspace.
+	 * Applies independently of the network egress proxy's enabled setting.
+	 * Supports absolute paths, ~ expansion, and paths relative to the Cyrus cwd.
+	 */
+	additionalWritableDirectories: z.array(z.string().trim().min(1)).optional(),
+
 	/** HTTP proxy port for SDK sandbox.network.httpProxyPort */
 	httpProxyPort: z.number().optional().default(9080),
 
@@ -399,6 +406,11 @@ export const EdgeConfigSchema = z.object({
 
 	/** Default Codex model to use across all repositories (e.g., "gpt-6-astra", "gpt-5.5", "gpt-5.3-codex") */
 	codexDefaultModel: z.string().optional(),
+
+	/** Codex command sandbox mode. Defaults to workspace-write; full host access is opt-in. */
+	codexSandboxMode: z
+		.enum(["read-only", "workspace-write", "danger-full-access"])
+		.optional(),
 
 	/** Default Cursor model to use across all repositories (e.g., "composer-2", "gpt-5.4") */
 	cursorDefaultModel: z.string().optional(),

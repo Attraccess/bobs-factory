@@ -4,6 +4,16 @@ This changelog documents internal development changes, refactors, tooling update
 
 ## [Unreleased]
 
+### Changed
+
+- Use TanStack Virtual and a reconnecting fetch-event-source SSE client for the factory dashboard, with stable history cursors and step markers across event-buffer trimming. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+- Bundle the local dashboard with React, TanStack Query, Radix, Markdown/GFM and Tailwind; add browser type checks and lazy artifact endpoints. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
+
+### Added
+- Added workflow/API/MCP regression coverage and a scoped F1 factory lifecycle drive; corrected CLI activity-sink lookup and cancellation of queued factory runners. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+- Documented native Codex command exceptions and the distinction between runner sandbox modes, egress-proxy settings, and writable directories. ([#1521](https://github.com/cyrusagents/cyrus/pull/1521))
+
 ## [0.2.73] - 2026-09-29
 
 ### Changed

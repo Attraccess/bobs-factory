@@ -352,7 +352,36 @@ Users can be specified in three formats:
 
 ---
 
-## Sandbox (Network Egress Control)
+## Sandbox (Filesystem and Network Egress Control)
+
+### `sandbox.additionalWritableDirectories` (array of strings)
+
+Some CLI tools need to create sockets, caches, or state outside the session
+worktree. List those directories explicitly to grant access in Claude, Codex,
+and Cursor sessions. This applies to issue and chat sessions and does not require
+enabling the network egress proxy (`sandbox.enabled`). No extra directories are
+granted by default, and Cyrus does not automatically allow any tool's directory.
+
+```json
+{
+  "sandbox": {
+    "additionalWritableDirectories": [
+      "~/.agent-browser",
+      "~/.cache/my-tool"
+    ]
+  }
+}
+```
+
+`~/` expands to the Cyrus user's home directory. Absolute paths are used directly;
+relative paths resolve against the Cyrus process's working directory, not an issue
+worktree. Writable directories are also readable. Choose the narrow directory
+each tool needs rather than the entire home directory.
+
+Changes are picked up when a new runner is created; an already-running turn keeps
+its current permissions. Set the list to `[]` to remove the extra grants for
+subsequent runners. These grants do not enable disabled command tools or network access,
+and other OS restrictions can still prevent a tool from launching.
 
 ### `sandbox` (object)
 
@@ -524,6 +553,28 @@ Sets default allowed tools for each prompt type across all repositories. Reposit
 Path to a script that runs for all repositories when creating new worktrees. See the main README for details on setup scripts.
 
 ---
+
+### `codexSandboxMode`
+
+Controls Codex command execution for issue and chat sessions. Accepted values:
+
+- `workspace-write` (default): retain the existing sandbox and Cyrus filesystem profile when configured.
+- `read-only`: use Codex's native read-only sandbox.
+- `danger-full-access`: use Codex's native unrestricted mode. Every command in the session can access host files and network; Cyrus filesystem grants and egress sandbox restrictions do not constrain this mode.
+
+```json
+{
+  "codexSandboxMode": "workspace-write"
+}
+```
+
+This is an operator setting, independent of `sandbox.enabled`, which controls the
+egress proxy. It applies only to Codex; other runners and approval policy are
+unchanged. Config reloads affect newly constructed runners, not commands already
+in progress. Removing the field restores `workspace-write` for new runners.
+Selecting `read-only` or full access takes precedence over a generated filesystem
+profile and uses the corresponding native Codex mode.
+
 
 ## Tool Configuration Priority
 

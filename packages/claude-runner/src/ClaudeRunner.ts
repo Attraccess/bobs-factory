@@ -171,6 +171,8 @@ function buildSanitizedQueryOptions(
 	// auto-memory routing in tests.
 	if (o.settings && typeof o.settings === "object") {
 		const settings = o.settings as Record<string, unknown>;
+		if (typeof settings.fastMode === "boolean")
+			out.settingsFastMode = settings.fastMode;
 		if (typeof settings.autoMemoryDirectory === "string") {
 			out.settingsAutoMemoryDirectory = settings.autoMemoryDirectory;
 		}
@@ -654,6 +656,7 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 				prompt: promptForQuery,
 				options: {
 					model: this.config.model || "opus",
+					...(this.config.effort && { effort: this.config.effort }),
 					fallbackModel: this.config.fallbackModel || "sonnet",
 					abortController: this.abortController,
 					// Use Claude Code preset by default to maintain backward compatibility
@@ -709,9 +712,14 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 					...(this.config.sessionStore && {
 						sessionStore: this.config.sessionStore,
 					}),
-					...(this.config.autoMemoryDirectory && {
+					...((this.config.autoMemoryDirectory || this.config.serviceTier) && {
 						settings: {
-							autoMemoryDirectory: this.config.autoMemoryDirectory,
+							...(this.config.autoMemoryDirectory && {
+								autoMemoryDirectory: this.config.autoMemoryDirectory,
+							}),
+							...(this.config.serviceTier && {
+								fastMode: this.config.serviceTier === "fast",
+							}),
 						},
 					}),
 					...(Object.keys(mcpServers).length > 0 && { mcpServers }),
@@ -764,10 +772,16 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 			this.logger.event("claude_query_options", flat);
 
 			// Process messages from the query
+			// Pre-warmed queries were created before per-run settings were known.
+			// Use a fresh query when speed is explicit so it cannot be ignored.
+			if (this.config.warmSession && this.config.serviceTier) {
+				this.config.warmSession.close();
+				this.config.warmSession = undefined;
+			}
 			// Use pre-warmed session if available (eliminates cold-start subprocess spawn cost).
 			// warmSession.query() accepts both string and AsyncIterable<SDKUserMessage>,
 			// so promptForQuery works correctly for both start() and startStreaming().
-			if (this.config.warmSession) {
+			if (this.config.warmSession && !this.config.serviceTier) {
 				this.logger.debug("Using pre-warmed session for first turn");
 				this.activeQuery = this.config.warmSession.query(promptForQuery);
 			} else {

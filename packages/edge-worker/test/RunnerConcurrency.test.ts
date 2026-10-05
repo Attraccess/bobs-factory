@@ -136,6 +136,23 @@ describe("SessionSemaphore", () => {
 });
 
 describe("capRunnerStarts", () => {
+	it("does not launch a terminated factory runner after its queued slot opens", async () => {
+		const semaphore = new SessionSemaphore(1);
+		await semaphore.acquire();
+		const pending = fakeRunner(false);
+		const controller = new AbortController();
+		const wrapped = capRunnerStarts(
+			pending.runner,
+			semaphore,
+			controller.signal,
+		);
+		const done = wrapped.start("stopped task");
+		controller.abort(new Error("Run terminated"));
+		semaphore.release();
+		await expect(done).rejects.toThrow("Run terminated");
+		expect(pending.started).not.toHaveBeenCalled();
+		expect(semaphore.active).toBe(0);
+	});
 	it("holds a slot for the full duration of start()", async () => {
 		const semaphore = new SessionSemaphore(1);
 		const first = fakeRunner(false);

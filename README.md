@@ -1,5 +1,11 @@
 # Cyrus
 
+This fork adds a local software factory MVP. Run `pnpm install`, then
+`pnpm factory --repo /path/to/repository --agent codex --model gpt-6.1-sol`.
+Open **http://127.0.0.1:3457** to start runs, answer clarification questions,
+watch progress, terminate work, and configure workflows and per-step agents/models.
+See [Software factory MVP](docs/FACTORY.md) for setup, workflow examples and limits.
+
 <div>
   <a href="https://github.com/ceedaragents/cyrus/actions">
     <img src="https://github.com/ceedaragents/cyrus/actions/workflows/ci.yml/badge.svg" alt="CI">

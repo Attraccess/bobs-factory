@@ -8,6 +8,7 @@ import { BaseCommand } from "./ICommand.js";
 export class StartCommand extends BaseCommand {
 	async execute(_args: string[]): Promise<void> {
 		try {
+			process.env.CYRUS_FACTORY_PORT ??= "3457";
 			// Load edge configuration
 			const edgeConfig = this.app.config.load();
 			const repositories = edgeConfig.repositories || [];

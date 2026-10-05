@@ -130,6 +130,9 @@ export class CodexConfigBuilder {
 		const { sandbox_workspace_write: _dropped, ...rest } =
 			this.config.configOverrides ?? {};
 		const configOverrides: CodexConfigOverrides = { ...rest };
+		if (this.config.serviceTier)
+			configOverrides.service_tier =
+				this.config.serviceTier === "fast" ? "fast" : "default";
 
 		const mcpServers = buildCodexMcpServersConfig({
 			workingDirectory: this.config.workingDirectory,

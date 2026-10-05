@@ -15,6 +15,7 @@ import type {
 	NormalizedCodexEvent,
 	ResolvedCodexConfig,
 } from "../src/backend/types.js";
+import { CodexConfigBuilder } from "../src/config/CodexConfigBuilder.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -84,6 +85,38 @@ function makeBackend(): { backend: AppServerCodexBackend; client: FakeClient } {
 }
 
 describe("AppServerCodexBackend", () => {
+	it.each([
+		"fast",
+		"standard",
+		undefined,
+	] as const)("passes %s tier independently of model/reasoning into native thread config", async (serviceTier) => {
+		const resolved = await new CodexConfigBuilder({
+			cyrusHome: "/tmp",
+			workingDirectory: "/tmp",
+			model: "gpt-6.1-sol",
+			modelReasoningEffort: "low",
+			serviceTier,
+			configOverrides: {
+				service_tier: "native-tier",
+				mcp_servers: { test: { command: "test-mcp" } },
+			},
+		}).build();
+		const { backend, client } = makeBackend();
+		await backend.open({ ...resolved, codexPath: "/bin/true" });
+		const params = client.lastRequest("thread/start")?.params as {
+			model: string;
+			config: Record<string, unknown>;
+		};
+		expect(params.model).toBe("gpt-6.1-sol");
+		expect(resolved.modelReasoningEffort).toBe("low");
+		expect(params.config.service_tier).toBe(
+			serviceTier === "standard" ? "default" : (serviceTier ?? "native-tier"),
+		);
+		expect(params.config.mcp_servers).toEqual({
+			test: { command: "test-mcp" },
+		});
+		await backend.close();
+	});
 	it("declares steering support", () => {
 		const { backend } = makeBackend();
 		expect(backend.supportsSteer).toBe(true);
@@ -148,14 +181,17 @@ describe("AppServerCodexBackend", () => {
 		});
 	});
 
-	it("omits sandbox_workspace_write for non-workspace-write modes", async () => {
+	it.each([
+		"read-only",
+		"danger-full-access",
+	] as const)("serializes native %s without workspace-write overrides", async (mode) => {
 		const { backend, client } = makeBackend();
 		await backend.open({
 			...baseConfig,
 			codexPath: "/bin/true",
 			sandbox: {
 				kind: "workspace-mode",
-				mode: "read-only",
+				mode,
 				writableRoots: [],
 				networkAccess: false,
 			},
@@ -164,7 +200,7 @@ describe("AppServerCodexBackend", () => {
 			sandbox?: string;
 			config?: { sandbox_workspace_write?: Record<string, unknown> };
 		};
-		expect(params.sandbox).toBe("read-only");
+		expect(params.sandbox).toBe(mode);
 		expect(params.config?.sandbox_workspace_write).toBeUndefined();
 	});
 

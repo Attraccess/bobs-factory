@@ -41,6 +41,16 @@ describe("AgentSessionManager stop-session behavior", () => {
 
 	it("marks session as error when a session stop is requested", async () => {
 		manager.requestSessionStop(sessionId);
+		// A queued init event arriving after the click must not undo the stop.
+		manager.updateAgentSessionWithRunnerSessionId(sessionId, {
+			type: "system",
+			subtype: "init",
+			session_id: "sdk-session",
+		} as any);
+		// Persisting before the runner's result must already record the user stop.
+		expect(manager.serializeState().sessions[sessionId]?.status).toBe(
+			AgentSessionStatus.Error,
+		);
 
 		await manager.completeSession(sessionId, {
 			type: "result",

@@ -496,6 +496,22 @@ export interface AgentRunnerConfig {
 	opencodeStateKey?: string;
 	/** AI model to use (e.g., "opus", "sonnet", "haiku") */
 	model?: string;
+	/** Codex reasoning effort; omitted preserves the runner/model default. */
+	modelReasoningEffort?:
+		| "minimal"
+		| "low"
+		| "medium"
+		| "high"
+		| "xhigh"
+		| "max"
+		| "ultra"
+		| "persistent";
+	/** Claude effort; availability depends on the selected model. */
+	effort?: "low" | "medium" | "high" | "xhigh" | "max";
+	/** OpenCode provider-specific model variant. */
+	modelVariant?: string;
+	/** Codex/Claude speed selection; omitted preserves native configuration. */
+	serviceTier?: "standard" | "fast";
 	/** Fallback model if primary is unavailable */
 	fallbackModel?: string;
 	/** Maximum number of turns before completing session */
