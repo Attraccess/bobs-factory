@@ -25,6 +25,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Review guides open on a dedicated reading page, with a compact entry on Today and saved reading positions and feedback drafts. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59))
+
 - Review the complete PR through feature chapters with before/after cards, processing diagrams, relevant screenshots and expandable code evidence. Reading progress survives updates; guide-only refresh preserves completed work and images. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Keep long runs responsive with SSE updates, paged and virtualized conversations, bounded transcript caches, lazy raw details/images, virtual screenshot galleries and revision-aware artifact caching. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))

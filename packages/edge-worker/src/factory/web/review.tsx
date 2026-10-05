@@ -1,15 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { api } from "./client";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { api, client } from "./client";
 import { LazyImage } from "./media";
+import { useReadingPosition } from "./reading-position";
+import {
+	readProgress,
+	readStored,
+	reviewKey,
+	signature,
+	writeStored,
+} from "./review-state";
 import { Button, External, Markdown } from "./ui";
 
-function signature(value: unknown) {
-	let hash = 2166136261;
-	for (const c of JSON.stringify(value))
-		hash = Math.imul(hash ^ c.charCodeAt(0), 16777619);
-	return (hash >>> 0).toString(36);
-}
 function FileLink({ path, url }: { path: string; url?: string }) {
 	const [anchor, setAnchor] = useState<string>();
 	useEffect(() => {
@@ -70,29 +72,55 @@ function Flow({ diagram }: { diagram: any }) {
 export function GuidedReview({
 	value,
 	run,
-	onDecision,
+	documentPage = false,
+	controls,
 }: {
 	value: any;
 	run: any;
-	onDecision?: (ready: boolean) => void;
+	documentPage?: boolean;
+	controls?: (identity: string, decisionPage: boolean) => ReactNode;
 }) {
 	const version = value?.__artifactHash ?? signature(value),
 		full = useQuery({
 			queryKey: ["guide", run.id, version],
 			enabled: Boolean(value?.__artifactPreview),
-			queryFn: ({ signal }) =>
-				api(`/api/runs/${run.id}/artifacts/guide`, { signal }),
+			queryFn: async ({ signal }) => {
+				const guide = await api(`/api/runs/${run.id}/artifacts/guide`, {
+					signal,
+				});
+				// An artifact endpoint returns the latest value. Refuse to label a
+				// replacement guide with the revision from an older dashboard response.
+				const bytes = await crypto.subtle.digest(
+					"SHA-256",
+					new TextEncoder().encode(JSON.stringify(guide)),
+				);
+				const hash = [...new Uint8Array(bytes)]
+					.map((n) => n.toString(16).padStart(2, "0"))
+					.join("");
+				if (hash !== version) {
+					void client.invalidateQueries({ queryKey: ["run", run.id] });
+					throw new Error(
+						"The guide changed while loading. Loading the current review again.",
+					);
+				}
+				return guide;
+			},
 			staleTime: Infinity,
 		}),
 		guide = value?.__artifactPreview ? full.data : value,
-		key = `factory-review/${run.id}/${run.reviewGate?.headSha ?? run.roleRevisions?.["pipeline/guide"]?.headSha ?? ""}/${guide ? signature(guide) : version}`;
+		key = guide ? reviewKey(run, guide) : "";
 	if (!guide)
 		return (
-			<p role="status">
+			<div role={full.error ? "alert" : "status"}>
 				{full.error
 					? `Could not load review guide: ${full.error.message}`
 					: "Loading review guide…"}
-			</p>
+				{full.error && (
+					<Button variant="secondary" onClick={() => void full.refetch()}>
+						Try again
+					</Button>
+				)}
+			</div>
 		);
 	return (
 		<ReviewReader
@@ -100,11 +128,12 @@ export function GuidedReview({
 			storageKey={key}
 			guide={guide}
 			run={run}
-			onDecision={onDecision}
+			documentPage={documentPage}
+			controls={controls}
 		/>
 	);
 }
-function ReviewReader({ storageKey, guide, run, onDecision }: any) {
+function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 	const chapters = guide.chapters?.length
 			? guide.chapters
 			: (guide.behavior ?? []).map((b: any, i: number) => ({
@@ -126,26 +155,10 @@ function ReviewReader({ storageKey, guide, run, onDecision }: any) {
 			...chapters.map((c: any) => c.title),
 			"Checks & decision",
 		],
-		[progress, setProgress] = useState<{
-			page: number;
-			reviewed: Record<string, boolean>;
-		}>(() => {
-			try {
-				const saved = JSON.parse(localStorage.getItem(storageKey) ?? "null");
-				if (
-					saved &&
-					typeof saved.reviewed === "object" &&
-					saved.reviewed !== null &&
-					Number.isInteger(saved.page) &&
-					saved.page >= 0 &&
-					saved.page < pages.length
-				)
-					return saved;
-			} catch {
-				/* storage may be unavailable */
-			}
-			return { page: 0, reviewed: {} };
-		}),
+		[progress, setProgress] = useState(() =>
+			readProgress(readStored(storageKey, null), pages.length),
+		),
+		explicitNavigation = useRef(false),
 		heading = useRef<HTMLHeadingElement>(null),
 		evidence = useQuery({
 			queryKey: [
@@ -161,17 +174,29 @@ function ReviewReader({ storageKey, guide, run, onDecision }: any) {
 		chapter = chapters[page - 1],
 		final = page === pages.length - 1,
 		url = run.reviewGate?.url ?? run.outputs["draft-pr"]?.url;
+	useReadingPosition(
+		documentPage ? `${storageKey}/position/${page}` : undefined,
+		!explicitNavigation.current,
+	);
 	useEffect(() => {
-		onDecision?.(final);
-	}, [final, onDecision]);
-	useEffect(() => {
-		try {
-			localStorage.setItem(storageKey, JSON.stringify(progress));
-		} catch {
-			/* reading remains available */
-		}
+		writeStored(storageKey, progress);
 	}, [progress, storageKey]);
+	const disclosure = (id: string) => ({
+		open: progress.disclosures?.[`${page}/${id}`] ?? false,
+		onToggle: (event: React.SyntheticEvent<HTMLDetailsElement>) => {
+			const open = event.currentTarget.open;
+			setProgress((p) =>
+				p.disclosures?.[`${page}/${id}`] === open
+					? p
+					: {
+							...p,
+							disclosures: { ...p.disclosures, [`${page}/${id}`]: open },
+						},
+			);
+		},
+	});
 	const go = (next: number) => {
+		explicitNavigation.current = true;
 		setProgress((p) => ({ ...p, page: next }));
 		requestAnimationFrame(() => {
 			heading.current?.focus({ preventScroll: true });
@@ -259,11 +284,11 @@ function ReviewReader({ storageKey, guide, run, onDecision }: any) {
 								<Lines items={guide.risks} />
 							</section>
 						)}
-						<details>
+						<details {...disclosure("verification")}>
 							<summary>Verification evidence ({guide.checks.length})</summary>
 							<Lines items={guide.checks} />
 						</details>
-						<details>
+						<details {...disclosure("criteria")}>
 							<summary>
 								All acceptance criteria ({guide.requirements.length})
 							</summary>
@@ -345,7 +370,7 @@ function ReviewReader({ storageKey, guide, run, onDecision }: any) {
 								<Lines items={chapter.reviewChecks} />
 							</section>
 						)}
-						<details>
+						<details {...disclosure("code")}>
 							<summary>Code & evidence · {chapter.files.length} files</summary>
 							<ul className="guide-files">
 								{chapter.files.map((file: string) => (
@@ -396,6 +421,7 @@ function ReviewReader({ storageKey, guide, run, onDecision }: any) {
 					</Button>
 				)}
 			</footer>
+			{controls?.(storageKey, final)}
 		</article>
 	);
 }
