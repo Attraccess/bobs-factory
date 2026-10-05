@@ -170,6 +170,7 @@ import { resolveAgentSettings } from "./factory/AgentSettings.js";
 import { validateFactoryResult } from "./factory/FactoryResults.js";
 import { FactoryServer } from "./factory/FactoryServer.js";
 import {
+	CaptureReuseError,
 	captureEvidence,
 	executeCommand,
 	FactoryTools,
@@ -5958,8 +5959,27 @@ ${taskSection}`;
 		if (!session || !repository)
 			throw new Error("Run session/repository unavailable");
 		const recovered = await completedAgentResult(context);
-		if (recovered)
-			return this.finalizeFactoryAgentOutput(context, recovered.output);
+		let captureCorrection:
+			| {
+					rejectedOutput: unknown;
+					screenshots: CaptureReuseError["screenshots"];
+			  }
+			| undefined;
+		if (recovered) {
+			try {
+				return await this.finalizeFactoryAgentOutput(context, recovered.output);
+			} catch (error) {
+				if (step.id !== "capture" || !(error instanceof CaptureReuseError))
+					throw error;
+				captureCorrection = {
+					rejectedOutput: recovered.output,
+					screenshots: error.screenshots,
+				};
+				context.log(
+					`Saved capture needs fresh evidence for ${error.screenshots.length} state(s); resuming the existing agent to correct only those images.`,
+				);
+			}
+		}
 		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
@@ -6026,6 +6046,10 @@ ${taskSection}`;
 				agentCheckpoint = {
 					runner: runnerType,
 					sessionId: message.session_id,
+					// Keep the correction inventory durable until a replacement result arrives.
+					...(captureCorrection && context.resumeAgent?.result
+						? { result: context.resumeAgent.result }
+						: {}),
 				};
 				context.checkpointAgent?.(agentCheckpoint);
 			}
@@ -6044,6 +6068,7 @@ ${taskSection}`;
 				? context.input
 				: { input: context.input }),
 			progress: context.progress,
+			...(captureCorrection ? { captureCorrection } : {}),
 		});
 		try {
 			built.config.mcpConfig = {
@@ -6063,7 +6088,7 @@ ${taskSection}`;
 			try {
 				context.signal.throwIfAborted();
 				await runner.start(
-					`${context.resumeAgent ? "This role was interrupted by a process restart. Continue from your existing conversation and worktree. Inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
+					`${captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent ? "This role was interrupted by a process restart. Continue from your existing conversation and worktree. Inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
 				);
 				context.signal.throwIfAborted();
 				const messages = runner.getMessages();

@@ -637,6 +637,18 @@ export function parseAgentOutput(text: string): unknown {
 	}
 }
 
+/** A completed capture needs agent correction, rather than another finalization retry. */
+export class CaptureReuseError extends Error {
+	constructor(
+		readonly screenshots: { path: string; area: string; state?: string }[],
+	) {
+		super(
+			`Screenshot reuse is not verified for ${screenshots.map((shot) => `${shot.area}/${shot.state}`).join(", ")}; capture a fresh image for each rejected state`,
+		);
+		this.name = "CaptureReuseError";
+	}
+}
+
 export function captureEvidence(
 	context: ExecutionContext,
 	output: unknown,
@@ -704,6 +716,7 @@ export function captureEvidence(
 				!nonVisual.has(file) &&
 				!dependencies.some((dependency) => dependencyCovers(file, dependency)),
 		) ?? true;
+	const rejected: CaptureReuseError["screenshots"] = [];
 	for (const shot of capture.screenshots) {
 		if (!existsSync(shot.path))
 			throw new Error(`Screenshot missing: ${shot.path}`);
@@ -744,15 +757,16 @@ export function captureEvidence(
 							item.state === shot.state &&
 							item.imageSha256 === imageSha256,
 					))
-			)
-				throw new Error(
-					`Screenshot reuse is not verified for ${shot.area}/${shot.state}; capture a fresh image`,
-				);
+			) {
+				rejected.push({ path: shot.path, area: shot.area, state: shot.state });
+				continue;
+			}
 			shot.reused = true;
 		} else shot.reused = false;
 		shot.revision = context.progress?.currentRevision?.headSha;
 		shot.imageSha256 = imageSha256;
 		shot.dependencyHashes = hashes;
 	}
+	if (rejected.length) throw new CaptureReuseError(rejected);
 	return capture;
 }
