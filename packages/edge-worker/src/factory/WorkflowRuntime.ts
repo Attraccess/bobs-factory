@@ -8,14 +8,18 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import type { WorkflowTrigger, WorkflowTriggerOrigin } from "cyrus-core";
 import { activityMarkers } from "./ActivityPage.js";
 import type { AgentSettings } from "./AgentSettings.js";
 import { defaultWorkflows, upgradeWorkflows } from "./defaultWorkflows.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
 import {
 	readPath,
+	requireTrigger,
 	validateWorkflows,
 	type Workflow,
+	WorkflowSchema,
 	type WorkflowStep,
 } from "./Workflow.js";
 
@@ -27,11 +31,19 @@ export type RunStatus =
 	| "stopped"
 	| "interrupted";
 export interface RunEvent {
+	call?: WorkflowCall;
 	sequence?: number;
 	source?: "agent" | "workflow";
 	at: string;
 	step: string;
 	message: string;
+}
+export interface WorkflowCall {
+	type: "workflow";
+	callerWorkflowId: string;
+	step: string;
+	key: string;
+	workflowId: string;
 }
 export interface AgentCheckpoint {
 	runner: NonNullable<WorkflowStep["runner"]>;
@@ -46,6 +58,7 @@ export interface GraphCheckpoint {
 		phase: "executing" | "result" | "waiting" | "answered";
 		agent?: AgentCheckpoint;
 		children?: GraphCheckpoint[];
+		call?: WorkflowCall;
 	};
 	// Only fanout branches own separate outputs; nested workflows share their parent's.
 	outputs?: Record<string, unknown>;
@@ -69,6 +82,8 @@ export interface RunViewState {
 	seenAt?: string;
 }
 export interface FactoryRun {
+	triggerOrigin?: WorkflowTriggerOrigin;
+	workflowCalls?: { call: WorkflowCall; at: string }[];
 	id: string;
 	title: string;
 	repositoryId: string;
@@ -104,7 +119,7 @@ export interface FactoryRun {
 	humanDecisions?: HumanDecision[];
 	roleRevisions?: Record<string, RoleRevision>;
 	outputs: Record<string, unknown>;
-	history: { step: string; output: unknown; at: string }[];
+	history: { step: string; output: unknown; at: string; call?: WorkflowCall }[];
 	answers: { questions: string[]; answer: string; at: string }[];
 	questions: string[];
 	events: RunEvent[];
@@ -193,11 +208,18 @@ export class WorkflowRuntime {
 		if (!Array.isArray(stored))
 			this.defaultWorkflow = stored.defaultWorkflow ?? "simple";
 		this.validateDefault(this.workflows, this.defaultWorkflow);
+		const normalized = {
+			workflows: this.workflows,
+			defaultWorkflow: this.defaultWorkflow,
+		};
+		if (!isDeepStrictEqual(stored, normalized))
+			this.atomicWrite(config, normalized);
 		for (const filename of readdirSync(join(this.directory, "runs"))) {
 			if (!filename.endsWith(".json")) continue;
 			const run: FactoryRun = JSON.parse(
 				readFileSync(join(this.directory, "runs", filename), "utf8"),
 			);
+			run.workflow = WorkflowSchema.parse(run.workflow);
 
 			if (
 				run.workflowDefinitions &&
@@ -304,11 +326,7 @@ export class WorkflowRuntime {
 		workflows: Workflow[],
 		defaultWorkflow: string,
 	): void {
-		if (
-			!workflows.some(
-				(workflow) => workflow.id === defaultWorkflow && !workflow.internal,
-			)
-		)
+		if (!workflows.some((workflow) => workflow.id === defaultWorkflow))
 			throw new Error(`Unknown default workflow: ${defaultWorkflow}`);
 	}
 	updateWorkflows(
@@ -326,25 +344,41 @@ export class WorkflowRuntime {
 		this.changed({ config: true });
 		return this.listWorkflows();
 	}
-	selectWorkflow(labels: string[], explicit?: string): Workflow {
+	selectWorkflow(
+		labels: string[],
+		trigger: WorkflowTrigger,
+		explicit?: string,
+	): Workflow {
+		return this.selectLaunch(labels, trigger, explicit).workflow;
+	}
+	selectLaunch(
+		labels: string[],
+		trigger: WorkflowTrigger,
+		explicit?: string,
+	): {
+		workflow: Workflow;
+		workflowDefinitions: Workflow[];
+		selectionMethod: NonNullable<WorkflowTriggerOrigin["selectionMethod"]>;
+	} {
 		const selected = explicit
-			? this.workflows.find(
-					(workflow) => workflow.id === explicit && !workflow.internal,
-				)
-			: this.workflows.find(
-					(workflow) =>
-						!workflow.internal &&
-						workflow.labels.some((label) => labels.includes(label)),
+			? this.workflows.find((workflow) => workflow.id === explicit)
+			: this.workflows.find((workflow) =>
+					workflow.labels.some((label) => labels.includes(label)),
 				);
 		if (explicit && !selected) throw new Error(`Unknown workflow: ${explicit}`);
-		return structuredClone(
+		const workflow =
 			selected ??
-				this.workflows.find(
-					(workflow) => workflow.id === this.defaultWorkflow,
-				)!,
-		);
+			this.workflows.find((workflow) => workflow.id === this.defaultWorkflow)!;
+		requireTrigger(workflow, trigger);
+		return {
+			workflow: structuredClone(workflow),
+			workflowDefinitions: this.listWorkflows(),
+			selectionMethod: explicit ? "explicit" : selected ? "label" : "default",
+		};
 	}
 	create(options: {
+		triggerOrigin: WorkflowTriggerOrigin;
+		workflowDefinitions?: Workflow[];
 		id?: string;
 		title: string;
 		repositoryId: string;
@@ -361,13 +395,25 @@ export class WorkflowRuntime {
 		modelVariant?: string;
 		serviceTier?: AgentSettings["serviceTier"];
 	}): FactoryRun {
+		if (
+			!options.triggerOrigin ||
+			!["manual", "ticket-assignment"].includes(options.triggerOrigin.type)
+		)
+			throw new Error(
+				"A new run requires a manual or ticket-assignment origin",
+			);
+		if (options.triggerOrigin.workflowId !== options.workflow.id)
+			throw new Error("Launch origin does not match the selected workflow");
+		requireTrigger(options.workflow, options.triggerOrigin.type);
 		const id = options.id ?? randomUUID();
 		if (!/^[\w-]+$/.test(id)) throw new Error("Invalid run ID");
 		if (this.runs.has(id)) throw new Error(`Run already exists: ${id}`);
 		const now = new Date().toISOString();
 		const run: FactoryRun = {
 			...structuredClone(options),
-			workflowDefinitions: this.listWorkflows(),
+			workflowDefinitions: structuredClone(
+				options.workflowDefinitions ?? this.listWorkflows(),
+			),
 			id,
 			status: "running",
 			createdAt: now,
@@ -392,6 +438,7 @@ export class WorkflowRuntime {
 		step: string,
 		message: string,
 		source: RunEvent["source"] = "workflow",
+		call?: WorkflowCall,
 	): void {
 		const at = new Date().toISOString();
 		run.activitySteps ??= activityMarkers(run);
@@ -401,6 +448,7 @@ export class WorkflowRuntime {
 		)
 			run.activitySteps.push({ at, step });
 		run.events.push({
+			call,
 			source,
 			sequence: (run.events.at(-1)?.sequence ?? run.events.length - 1) + 1,
 			at,
@@ -456,6 +504,7 @@ export class WorkflowRuntime {
 					controller.signal,
 					"",
 					run.checkpoint,
+					run.workflow.id,
 					run.workflow.chat ?? false,
 				);
 			}
@@ -490,6 +539,7 @@ export class WorkflowRuntime {
 		signal: AbortSignal,
 		prefix: string,
 		checkpoint: GraphCheckpoint,
+		workflowId: string,
 		chat = false,
 	): Promise<Record<string, unknown>> {
 		while (checkpoint.current !== "end") {
@@ -567,6 +617,7 @@ export class WorkflowRuntime {
 								signal,
 								`${key}/${index}/`,
 								state.children![index]!,
+								workflowId,
 								chat,
 							),
 						),
@@ -577,6 +628,31 @@ export class WorkflowRuntime {
 					);
 					if (!definition)
 						throw new Error(`Workflow unavailable: ${step.workflow}`);
+					requireTrigger(definition, "workflow");
+					if (!state.call) {
+						state.call = {
+							type: "workflow",
+							callerWorkflowId: workflowId,
+							step: step.id,
+							key,
+							workflowId: definition.id,
+						};
+						// Call receipts outlive the capped activity buffer, including interrupted calls.
+						run.workflowCalls ??= run.events
+							.filter((event) => event.call)
+							.map((event) => ({ call: event.call!, at: event.at }));
+						run.workflowCalls.push({
+							call: state.call,
+							at: new Date().toISOString(),
+						});
+						this.log(
+							run,
+							key,
+							`Calling ${definition.name} from ${workflowId}/${step.id}`,
+							"workflow",
+							state.call,
+						);
+					}
 					state.children ??= [this.newCheckpoint(definition.steps)];
 					this.save(run);
 					await this.graph(
@@ -586,6 +662,7 @@ export class WorkflowRuntime {
 						signal,
 						`${key}/`,
 						state.children[0]!,
+						definition.id,
 						definition.chat ?? chat,
 					);
 					output = { workflow: definition.id, completed: true };
@@ -594,7 +671,12 @@ export class WorkflowRuntime {
 				}
 				signal.throwIfAborted();
 				outputs[step.id] = output;
-				run.history.push({ step: key, output, at: new Date().toISOString() });
+				run.history.push({
+					step: key,
+					output,
+					at: new Date().toISOString(),
+					...(state.call ? { call: state.call } : {}),
+				});
 				state.phase = "result";
 				this.save(run);
 			}

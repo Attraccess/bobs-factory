@@ -1,8 +1,13 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAction, useConfig } from "./client";
 import { Button, Modal, useToast } from "./ui";
 
+const triggerOptions = [
+	["workflow", "Called by another workflow"],
+	["manual", "Start manually"],
+	["ticket-assignment", "Start from a Linear ticket"],
+];
 const runners = ["claude", "codex", "gemini", "cursor", "opencode"];
 export function AgentSettings({
 	value,
@@ -185,8 +190,10 @@ export function Composer({
 		[values, setValues] = useState<Record<string, string>>({}),
 		[settings, setSettings] = useState({}),
 		[agentOpen, setAgentOpen] = useState(false);
-	const workflows = config.workflows.filter((w: any) => !w.internal),
-		workflow = workflows.find((w: any) => w.id === workflowId) ?? workflows[0],
+	const workflows = config.workflows.filter((w: any) =>
+			w.allowedTriggers.includes("manual"),
+		),
+		workflow = workflows.find((w: any) => w.id === workflowId),
 		fields = workflow?.launchFields ?? [];
 	const previousDefault = useRef(config.defaultWorkflow);
 	useEffect(() => {
@@ -199,7 +206,7 @@ export function Composer({
 		}
 	}, [config.defaultWorkflow]);
 	const submit = async () => {
-		if (action.isPending) return;
+		if (action.isPending || !workflow) return;
 		try {
 			const inputs = Object.fromEntries(
 				fields.map((f: any) => [
@@ -246,6 +253,14 @@ export function Composer({
 					}
 				}}
 			>
+				{!workflow && (
+					<p role="status" className="composer-hint">
+						{workflows.length
+							? "The selected recipe or saved default does not allow manual starts. Choose an eligible recipe below."
+							: "No recipes allow manual starts."}{" "}
+						<Link to="/recipes">Enable Start manually in Recipes</Link>.
+					</p>
+				)}
 				{fields[0] && (
 					<Field
 						main
@@ -293,8 +308,12 @@ export function Composer({
 						onKeyDown={(e) => {
 							if (!["ArrowRight", "ArrowLeft"].includes(e.key)) return;
 							e.preventDefault();
-							const index = workflows.findIndex(
-									(w: any) => w.id === workflow.id,
+							if (!workflows.length) return;
+							const index = Math.max(
+									0,
+									Array.from(e.currentTarget.children).indexOf(
+										e.target as Element,
+									),
 								),
 								next =
 									(index +
@@ -310,8 +329,13 @@ export function Composer({
 							<button
 								type="button"
 								role="radio"
-								aria-checked={w.id === workflow.id}
-								tabIndex={w.id === workflow.id ? 0 : -1}
+								aria-checked={w.id === workflow?.id}
+								tabIndex={
+									w.id === workflow?.id ||
+									(!workflow && w.id === workflows[0]?.id)
+										? 0
+										: -1
+								}
 								key={w.id}
 								onClick={() => setWorkflow(w.id)}
 							>
@@ -350,13 +374,14 @@ export function Composer({
 							aria-label="Start run"
 							busy={action.isPending}
 							disabled={
+								!workflow ||
 								!repo ||
-								!fields[0] ||
-								(
-									values[fields[0].name] ??
-									fields[0].defaultValue ??
-									""
-								).trim() === ""
+								(fields[0]?.required &&
+									(
+										values[fields[0].name] ??
+										fields[0].defaultValue ??
+										""
+									).trim() === "")
 							}
 						>
 							↑
@@ -370,7 +395,7 @@ export function Composer({
 				)}
 			</form>
 			<p className="composer-hint">
-				{workflow.description}
+				{workflow?.description}
 				<span className="keyboard-hint"> · ⏎ start · ⇧⏎ new line</span>
 			</p>
 		</section>
@@ -397,12 +422,15 @@ export function Recipes() {
 	const [editing, setEditing] = useState<any>(),
 		[json, setJson] = useState(""),
 		[role, setRole] = useState<any>(),
-		[error, setError] = useState("");
+		[error, setError] = useState(""),
+		[permissionTarget, setPermissionTarget] = useState<string>();
 	const config = configQuery.data;
 	async function save(
 		definitions: any[],
 		defaultWorkflow = config.defaultWorkflow,
+		permissionId?: string,
 	) {
+		setPermissionTarget(permissionId);
 		try {
 			await action.mutateAsync({
 				path: "/api/workflows",
@@ -420,7 +448,8 @@ export function Recipes() {
 			<h1>Recipes</h1>
 			<p className="intro">
 				How Bob cooks each kind of run. Tune the agent per step; the default
-				recipe is used when nothing else matches.
+				recipe is used when nothing else matches. Launch methods apply to new
+				runs; existing runs retain their definitions.
 			</p>
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (
@@ -446,7 +475,7 @@ export function Recipes() {
 								</h2>
 								<p>{workflow.description}</p>
 							</div>
-							{!workflow.internal && (
+							{
 								<button
 									type="button"
 									className="default-pill"
@@ -463,7 +492,7 @@ export function Recipes() {
 								>
 									{config.defaultWorkflow === workflow.id ? "●" : "○"} Default
 								</button>
-							)}
+							}
 						</header>
 						<label className="recipe-chat">
 							<input
@@ -485,6 +514,65 @@ export function Recipes() {
 								<small>(inherits caller)</small>
 							)}
 						</label>
+						<fieldset className="trigger-permissions">
+							<legend>Launch methods</legend>
+							{triggerOptions.map(([type, label]) => (
+								<label key={type}>
+									<input
+										type="checkbox"
+										checked={workflow.allowedTriggers.includes(type)}
+										disabled={
+											action.isPending ||
+											(workflow.id === "simple" && type === "workflow")
+										}
+										onChange={(event) => {
+											const allowedTriggers = event.target.checked
+												? [...workflow.allowedTriggers, type]
+												: workflow.allowedTriggers.filter(
+														(t: string) => t !== type,
+													);
+											void save(
+												config.workflows.map((w: any) =>
+													w.id === workflow.id ? { ...w, allowedTriggers } : w,
+												),
+												config.defaultWorkflow,
+												workflow.id,
+											).then((ok) => {
+												if (ok) toast({ text: "Launch methods saved" });
+											});
+										}}
+									/>{" "}
+									{label}
+								</label>
+							))}
+							<small>
+								Linear ticket starts cover assignments and @mentions.
+							</small>
+							{workflow.id === "simple" && (
+								<small>
+									Simple has no graph to call. Clone it under another ID with
+									graph steps to customize.
+								</small>
+							)}
+							{config.defaultWorkflow === workflow.id && (
+								<small>
+									Saved default:{" "}
+									{workflow.allowedTriggers.includes("manual")
+										? "manual starts allowed"
+										: "manual starts rejected"}
+									;{" "}
+									{workflow.allowedTriggers.includes("ticket-assignment")
+										? "ticket starts allowed"
+										: "ticket starts rejected"}
+									.
+								</small>
+							)}
+							{permissionTarget === workflow.id && action.error && (
+								<p className="error" role="alert">
+									{action.error.message}
+								</p>
+							)}
+						</fieldset>
 						<div className="recipe-columns">
 							<section>
 								<small>INGREDIENTS</small>
@@ -571,7 +659,7 @@ export function Recipes() {
 					</article>
 				))}
 			</div>
-			{action.error && (
+			{!permissionTarget && action.error && (
 				<p className="error" role="alert">
 					{action.error.message}
 				</p>
@@ -585,6 +673,7 @@ export function Recipes() {
 						name: "New recipe",
 						description: "",
 						labels: [],
+						allowedTriggers: ["workflow", "manual", "ticket-assignment"],
 						steps: [
 							{
 								id: "work",
@@ -669,7 +758,7 @@ export function Recipes() {
 							onChange={(e) => setJson(e.target.value)}
 						/>
 					</label>
-					<p role="alert">{error ?? action.error?.message}</p>
+					<p role="alert">{error || action.error?.message}</p>
 					<Button type="submit" busy={action.isPending}>
 						Save recipe
 					</Button>
@@ -733,6 +822,23 @@ function RecipeEditor({
 	const [text, setText] = useState(JSON.stringify(workflow, null, 2)),
 		[error, setError] = useState(""),
 		[busy, setBusy] = useState(false);
+	const previous = useRef(workflow);
+	useEffect(() => {
+		const saved = previous.current;
+		setText((current) => {
+			try {
+				const draft = JSON.parse(current);
+				for (const key of ["allowedTriggers", "steps"]) {
+					if (JSON.stringify(draft[key]) === JSON.stringify(saved[key]))
+						draft[key] = workflow[key];
+				}
+				return JSON.stringify(draft, null, 2);
+			} catch {
+				return current;
+			}
+		});
+		previous.current = workflow;
+	}, [workflow]);
 	return (
 		<form
 			onSubmit={(e) => {

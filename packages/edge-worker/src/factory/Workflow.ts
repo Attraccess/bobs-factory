@@ -1,3 +1,4 @@
+import type { WorkflowTrigger } from "cyrus-core";
 import { z } from "zod";
 import { agentSettings, resolveAgentSettings } from "./AgentSettings.js";
 
@@ -69,18 +70,61 @@ export const StepSchema: z.ZodType<WorkflowStep> = z.lazy(() =>
 		}),
 	]),
 );
-export const WorkflowSchema = z.object({
-	id,
-	name: z.string().min(1),
-	icon: z.string().max(32).optional(),
-	description: z.string().default(""),
-	labels: z.array(z.string().min(1)).default([]),
-	steps: z.array(StepSchema).max(100),
-	internal: z.boolean().optional(),
-	chat: z.boolean().optional(),
-	launchFields: z.array(LaunchFieldSchema).max(20).optional(),
-});
+export const WorkflowSchema = z
+	.object({
+		id,
+		name: z.string().min(1),
+		icon: z.string().max(32).optional(),
+		description: z.string().default(""),
+		labels: z.array(z.string().min(1)).default([]),
+		steps: z.array(StepSchema).max(100),
+		internal: z.boolean().optional(),
+		chat: z.boolean().optional(),
+		allowedTriggers: z
+			.array(z.enum(["workflow", "manual", "ticket-assignment"]))
+			.refine(
+				(values) => new Set(values).size === values.length,
+				"Duplicate allowed triggers",
+			)
+			.optional(),
+		launchFields: z.array(LaunchFieldSchema).max(20).optional(),
+	})
+	.transform((workflow) => ({
+		...workflow,
+		allowedTriggers: workflow.allowedTriggers ?? legacyTriggers(workflow),
+	}));
 export type Workflow = z.infer<typeof WorkflowSchema>;
+
+function legacyTriggers(workflow: {
+	id: string;
+	internal?: boolean;
+}): WorkflowTrigger[] {
+	return workflow.id === "simple"
+		? ["manual", "ticket-assignment"]
+		: workflow.internal
+			? ["workflow"]
+			: ["workflow", "manual", "ticket-assignment"];
+}
+
+export function supportsTrigger(
+	workflow: Workflow,
+	trigger: WorkflowTrigger,
+): boolean {
+	return (
+		(workflow.allowedTriggers ?? legacyTriggers(workflow)).includes(trigger) &&
+		!(workflow.id === "simple" && trigger === "workflow")
+	);
+}
+
+export function requireTrigger(
+	workflow: Workflow,
+	trigger: WorkflowTrigger,
+): void {
+	if (!supportsTrigger(workflow, trigger))
+		throw new Error(
+			`Workflow "${workflow.name}" (${workflow.id}) does not allow ${trigger} launches. Enable the appropriate permission in Recipes, change the selected workflow/label, or choose an eligible saved default.`,
+		);
+}
 
 export function validateWorkflows(value: unknown): Workflow[] {
 	const workflows = z.array(WorkflowSchema).min(1).max(50).parse(value);
@@ -89,6 +133,13 @@ export function validateWorkflows(value: unknown): Workflow[] {
 		if (ids.has(workflow.id))
 			throw new Error(`Duplicate workflow: ${workflow.id}`);
 		ids.add(workflow.id);
+		if (
+			workflow.id === "simple" &&
+			workflow.allowedTriggers.includes("workflow")
+		)
+			throw new Error(
+				"Simple / Cyrus cannot be called by another workflow; clone it under another ID with graph steps to customize.",
+			);
 		const fields = workflow.launchFields ?? [];
 		if (new Set(fields.map((field) => field.name)).size !== fields.length)
 			throw new Error("Duplicate launch field names");
@@ -161,6 +212,7 @@ export function validateWorkflows(value: unknown): Workflow[] {
 				const target = byId.get(step.workflow!);
 				if (!target || target.id === "simple")
 					throw new Error(`Unknown or uncallable workflow: ${step.workflow}`);
+				requireTrigger(target, "workflow");
 				if (ancestors.includes(target.id))
 					throw new Error(
 						`Recursive workflow call: ${[...ancestors, target.id].join(" → ")}`,
@@ -187,3 +239,6 @@ export function readPath(value: unknown, path: string): unknown {
 			value,
 		);
 }
+
+export const workflowTriggerInstructions =
+	"Workflow selection is separate from repository routing. Stock workflow labels are workflow:factory (or factory), workflow:takeover (or takeover), and workflow:simple; operators can customize labels in Recipes. Selection uses an explicit workflow ID, then the first matching workflow in configured order, then the single saved default. The selected workflow must allow ticket-assignment for assignments or @mentions, manual for new UI/API or follow-up launches, and workflow for nested calls. A disallowed selection is rejected without fallback; enable its permission in Recipes, change the selection/label, or choose an eligible default. Existing runs retain their accepted definitions; replies and resume do not select a new workflow. No workflow message-selector syntax is introduced.";

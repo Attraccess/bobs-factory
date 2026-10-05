@@ -87,9 +87,63 @@ default workflow is used. Agent/model labels still choose the run defaults.
 
 In **Recipes**, choose the **Default** pill on the recipe you want.
 This choice is saved across restarts, applies to new runs without matching
-labels, and is preselected in the composer. You can select any saved non-internal workflow;
+labels, and is preselected in the composer only when it allows manual starts. You can save any existing workflow as the default;
 choose another default before deleting the current one. Existing runs retain
 their workflow.
+
+## Launch permissions and origin
+
+Each saved workflow exposes an `allowedTriggers` array. In **Recipes → Launch
+methods**, edit **Called by another workflow** (`workflow`), **Start manually**
+(`manual`), and **Start from a Linear ticket** (`ticket-assignment`) independently.
+The ticket permission covers both assignments and @mentions. Simple has no graph
+and cannot grant `workflow`; clone it under another ID with steps to customize.
+An empty array disables all new launches. Permission edits are saved atomically;
+a referenced child's call permission cannot be disabled while a parent calls it,
+including in fanout. A failed save leaves the previous configuration intact.
+
+| Stock or legacy definition without permissions | Normalized permissions |
+| --- | --- |
+| Simple / Cyrus | `manual`, `ticket-assignment` |
+| Public stock/custom workflow | `workflow`, `manual`, `ticket-assignment` |
+| Internal/shared workflow | `workflow` |
+
+Explicit arrays (including `[]`) are retained. Legacy arrays and object configs
+are normalized on load and saved idempotently, retaining customized roles and
+the saved default. Old frozen run definitions normalize from their own saved
+flags, independently of current configuration. `internal` remains a shared
+presentation and launch-field default; granting a top-level permission explicitly
+allows that launch, and operators can add launch fields in JSON if desired.
+Factory and Takeover continue calling the same call-only shared pipeline.
+
+Selection is **explicit workflow ID → first matching label in configured workflow
+order → single saved default**, preserving existing label case behavior. Check
+permission *after* selection. For example, a ticket with `workflow:factory` rejects
+if Factory disallows ticket starts even when Simple is eligible. If an unlabeled
+ticket's saved default disallows ticket starts, it rejects even when another
+recipe is eligible. Enable the selected permission in Recipes, change the
+workflow/label, or choose an eligible default; no automatic alternative is used.
+Unknown explicit IDs reject. No workflow message-selector syntax is introduced.
+
+Composer only shows recipes allowing manual starts. An ineligible default or
+invalidated selected recipe requires choosing an eligible recipe; entered inputs
+are retained. With no eligible recipes, Start is disabled and Recipes is linked.
+The API and backend enforce the same permission before execution. New follow-ups
+require `manual` on Takeover when there is a source, or Factory otherwise.
+Answers, feedback, stop, retry and checkpoint resume retain the accepted run;
+later permission edits do not strand human waits or replace frozen definitions.
+
+Runs retain `triggerOrigin`: launch type, selected workflow, selection method,
+receipt timestamp, and manual composer/API versus follow-up context (including
+source run). Ticket receipts retain provider (`linear`, or `cli` for fixtures),
+available assignment/mention subtype, workspace/issue/session/comment/activity
+IDs, source timestamp and issue URL. Delayed routing or blocking replies do not
+replace that original receipt. Original ticket Simple sessions serialize this
+metadata too. Called graphs stay in the parent run, with persisted call-start
+context and completed history naming the caller workflow, step/key and target.
+History and run detail show source links and expandable details across restart.
+Historical records without evidence show **Origin unavailable for this older
+run** rather than guessed origins. Takeover's existing `source` remains separate.
 
 Both **Composer → Agent settings** and each workflow role include reasoning or
 variant controls. Claude/Codex use **Reasoning effort**; OpenCode uses **Model
@@ -302,8 +356,7 @@ Calls execute the child graph, including loops and fanout, then return to the
 parent. They share outputs, original input, launch inputs, human answers and complete history.
 Use distinct output IDs across sequences when results must coexist; executing
 an ID again replaces its latest output but retains every result in history.
-A call returns `{ "workflow": "checks", "completed": true }`. Internal workflows
-are excluded from manual/default/label selection but remain editable. Missing
+A call returns `{ "workflow": "checks", "completed": true }`. Internal workflows default to call-only permissions but remain editable. Declared permissions are authoritative: deliberately enabling manual or ticket starts makes a shared workflow eligible. Missing
 calls, recursion, nesting beyond ten levels and human checkpoints inside fanout
 are rejected. All definitions are frozen in each run, so editing a shared child
 cannot change an active run.

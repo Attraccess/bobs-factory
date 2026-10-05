@@ -23,6 +23,7 @@ interface ServerHooks {
 	subscribe?(listener: (id: string) => void): () => void;
 	repositories(): { id: string; name: string }[];
 	sessions(): {
+		triggerOrigin?: import("cyrus-core").WorkflowTriggerOrigin;
 		id: string;
 		title: string;
 		status: string;
@@ -152,7 +153,12 @@ export class FactoryServer {
 				})
 				.parse(request.body);
 			return {
-				workflows: runtime.updateWorkflows(workflows, defaultWorkflow),
+				workflows: runtime
+					.updateWorkflows(workflows, defaultWorkflow)
+					.map((workflow) => ({
+						...workflow,
+						launchFields: getLaunchFields(workflow),
+					})),
 				defaultWorkflow: runtime.getDefaultWorkflow(),
 			};
 		});
@@ -167,6 +173,7 @@ export class FactoryServer {
 					repositoryId,
 					step,
 					workflow,
+					triggerOrigin,
 					error,
 					reviewGate,
 					outputs,
@@ -180,10 +187,11 @@ export class FactoryServer {
 					repositoryId,
 					step,
 					workflow: workflow.id,
+					triggerOrigin,
 					error,
 					reviewGate,
 					hasGuide: Boolean(outputs.guide),
-					history: history.map(({ step, at }) => ({ step, at })),
+					history: history.map(({ step, at, call }) => ({ step, at, call })),
 				}),
 			);
 			const tracked = new Set(workflowRuns.map((run) => run.id));
@@ -204,7 +212,7 @@ export class FactoryServer {
 		});
 		this.app.post("/api/runs", async (request, reply) => {
 			const input = LaunchRequestSchema.parse(request.body);
-			const workflow = runtime.selectWorkflow([], input.workflow);
+			const workflow = runtime.selectWorkflow([], "manual", input.workflow);
 			return reply
 				.code(202)
 				.send(await hooks.start(resolveLaunchRequest(workflow, input)));
@@ -221,7 +229,9 @@ export class FactoryServer {
 				const detail = {
 					...(run ?? {
 						...session,
-						workflow: runtime.selectWorkflow([], "simple"),
+						workflow: runtime
+							.listWorkflows()
+							.find((item) => item.id === "simple"),
 						events: [],
 						questions: [],
 						outputs: {},
@@ -281,7 +291,11 @@ export class FactoryServer {
 							];
 						}),
 					),
-					history: (run?.history ?? []).map(({ step, at }) => ({ step, at })),
+					history: (run?.history ?? []).map(({ step, at, call }) => ({
+						step,
+						at,
+						call,
+					})),
 					events: (run?.events ?? []).slice(-15).map((event) => ({
 						...event,
 						message: event.message.slice(0, 1000),
