@@ -1,12 +1,21 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
 	AgentSessionStatus,
 	AgentSessionType,
 	type RepositoryConfig,
 	type RunnerType,
 } from "cyrus-core";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { titleSystemPrompt } from "../src/factory/RunTitleGenerator.js";
 import { RunnerConfigBuilder } from "../src/RunnerConfigBuilder.js";
+
+const projects: string[] = [];
+afterEach(() => {
+	for (const project of projects.splice(0))
+		rmSync(project, { recursive: true, force: true });
+});
 
 it.each([
 	"claude",
@@ -15,6 +24,16 @@ it.each([
 	"cursor",
 	"opencode",
 ] as const)("selects %s before building native auxiliary config and preserves authenticated context tools", (runner: RunnerType) => {
+	const project = mkdtempSync(join(tmpdir(), "title-project-mcp-"));
+	projects.push(project);
+	writeFileSync(
+		join(project, ".mcp.json"),
+		JSON.stringify({
+			mcpServers: {
+				ticket: { type: "http", url: "https://tickets.example/mcp" },
+			},
+		}),
+	);
 	const selectors = {
 		getDefaultRunner: () => "claude" as const,
 		getDefaultModelForRunner: (provider: RunnerType) => `${provider}-default`,
@@ -93,13 +112,17 @@ it.each([
 			model: "cheap-title",
 			...(runner === "codex" ? { modelReasoningEffort: "low" as const } : {}),
 		},
+		project,
 	);
 	expect(selectors.determineRunnerSelection).not.toHaveBeenCalled();
 	expect(config.model).toBe("cheap-title");
 	expect(config.workingDirectory).toBe("/home/factory/title-jobs/root");
 	expect(config.appendSystemPrompt).toBe(titleSystemPrompt);
 	expect(config.mcpConfig).toEqual(mcp.buildMcpConfig.mock.results[0].value);
-	expect(config.mcpConfigPath).toBe("/platform/context.json");
+	expect(config.mcpConfigPath).toEqual([
+		join(project, ".mcp.json"),
+		"/platform/context.json",
+	]);
 	expect(config.allowedTools).toEqual(["mcp__context__lookup_ticket"]);
 	expect(config.additionalEnv?.CYRUS_GH_TOKEN).toBe("fixture-token");
 	expect(config.hooks).toBeUndefined();

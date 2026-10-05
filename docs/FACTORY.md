@@ -49,6 +49,12 @@ a message resumes the same native conversation and worktree. Successful submissi
 appear as your chat bubbles and remain available after restart. Failed submissions
 retain the draft. Use ⌘ / Ctrl + Enter to send; Enter adds a newline.
 
+Slack and Zulip sessions listed in the dashboard use the same composer and
+feedback controls. Completed chats continue through their platform handler,
+preserving the native conversation, workspace and title across restart. If a
+chat needs a new workflow instead, its follow-up uses the default repository
+available when the chat was created.
+
 In **Recipes**, enable **Chat steering** for other workflows, or set `"chat": true`
 in their JSON. Chat defaults off for custom workflows. An agent step can set
 `"chat": false` to prevent steering or `"chat": true` to opt in independently.
@@ -281,7 +287,9 @@ changes clear incompatible settings; saved choices apply to subsequent jobs.
 
 Every new root run starts with its exact run ID as its display title. A separate
 agent generates a short title concurrently with execution, using initial task,
-source/ticket context, custom inputs and follow-up feedback. Configured MCP tools
+source/ticket context, custom inputs and follow-up feedback. Project `.mcp.json`
+servers remain available in the isolated title job, with explicit platform or
+repository configuration retaining its normal precedence. Configured MCP tools
 can retrieve missing context, including tasks supplied only as a ticket URL.
 The dashboard updates lists and details live. Generation respects the session
 limit and primary execution has priority; under a one-session cap naming waits

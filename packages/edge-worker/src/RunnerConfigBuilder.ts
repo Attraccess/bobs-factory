@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type {
 	HookCallbackMatcher,
@@ -588,6 +589,7 @@ export class RunnerConfigBuilder {
 	buildTitleConfig(
 		input: IssueRunnerConfigInput,
 		settings: RunTitleJob["settings"],
+		projectWorkingDirectory?: string,
 	): AgentRunnerConfig {
 		const { config } = this.buildIssueConfig({
 			...input,
@@ -612,6 +614,29 @@ export class RunnerConfigBuilder {
 		config.appendSystemPrompt = input.systemPrompt;
 		config.hooks = undefined;
 		config.fallbackModel = undefined;
+		// Moving the auxiliary runner out of the worktree must preserve the
+		// project MCP base config. Explicit platform/repository configs still win,
+		// just as they do during native discovery in the execution runner.
+		if (projectWorkingDirectory) {
+			const projectConfig = join(projectWorkingDirectory, ".mcp.json");
+			if (existsSync(projectConfig)) {
+				try {
+					JSON.parse(readFileSync(projectConfig, "utf8"));
+					config.mcpConfigPath = [
+						projectConfig,
+						...(config.mcpConfigPath
+							? Array.isArray(config.mcpConfigPath)
+								? config.mcpConfigPath
+								: [config.mcpConfigPath]
+							: []),
+					];
+				} catch {
+					input.logger.debug(
+						`Skipping invalid project MCP config at ${projectConfig}`,
+					);
+				}
+			}
+		}
 		const { runner: _runner, ...nativeSettings } = settings;
 		Object.assign(config, nativeSettings);
 		return config;

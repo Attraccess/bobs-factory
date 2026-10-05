@@ -418,6 +418,22 @@ it("cancels pending naming even when a user stop only interrupts a warm turn", a
 	expect(session.titleGeneration.state).toBe("cancelled");
 });
 
+it("accepts standalone chat/view changes without treating the session as a runtime run", () => {
+	const { edge, runtime, home } = setup();
+	const session = edge.agentSessionManager.createChatSession(
+		"standalone-chat",
+		{ path: home, isGitWorktree: false },
+		"slack",
+	);
+	expect(runtime.updateViewState(session.id, { keptOpen: true })).toEqual({
+		keptOpen: true,
+	});
+	expect(
+		runtime.recordChatMessage(session.id, "Check reconnects", "simple").text,
+	).toBe("Check reconnects");
+	expect(runtime.runs.has(session.id)).toBe(false);
+});
+
 it("recovers pending titles for active non-ticket sessions without renaming historical sessions", () => {
 	const { edge, home } = setup();
 	const pending = edge.agentSessionManager.createChatSession(
@@ -441,6 +457,60 @@ it("recovers pending titles for active non-ticket sessions without renaming hist
 	edge.recoverFactoryRuns();
 	expect(start).toHaveBeenCalledOnce();
 	expect(start).toHaveBeenCalledWith(pending.id, pending.titleGeneration);
+});
+
+it.each([
+	"running",
+	"failed",
+])("preserves a historical %s run's title during recovery or retry", async (status) => {
+	const { edge, runtime, home } = setup();
+	runtime.updateWorkflows(
+		defaultWorkflows.map((workflow) =>
+			workflow.id === "factory"
+				? {
+						...workflow,
+						steps: [
+							{ id: "work", name: "Work", type: "script", script: "true" },
+						],
+					}
+				: workflow,
+		),
+	);
+	const workflow = runtime.selectWorkflow([], "manual", "factory");
+	const run = runtime.create({
+		id: `historical-${status}`,
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			selectionMethod: "explicit",
+			at: new Date().toISOString(),
+			manual: { method: "composer-api" },
+		},
+		repositoryId: "repo",
+		workflow,
+		workspace: home,
+		input: "Original task",
+	});
+	run.title = "Original historical title";
+	delete run.titleGeneration;
+	run.status = status;
+	runtime.save(run);
+	const start = vi.fn();
+	edge.titleGenerator = { start, shutdown: async () => {} };
+	if (status === "running") edge.recoverFactoryRuns();
+	else runtime.retry(run.id);
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(start).not.toHaveBeenCalled();
+	expect(run.titleGeneration).toBeUndefined();
+	expect(run.title).toBe("Original historical title");
+	expect(run.sessionSnapshot.displayTitle).toBe(run.title);
+
+	// A second retry must also preserve the saved historical identity.
+	run.status = "failed";
+	runtime.retry(run.id);
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(start).not.toHaveBeenCalled();
+	expect(run.titleGeneration).toBeUndefined();
 });
 
 it.each([

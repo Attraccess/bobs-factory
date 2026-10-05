@@ -880,52 +880,27 @@ export class EdgeWorker extends EventEmitter {
 								?.getSessionEntries(id) ?? []),
 				subscribe: (notify) => {
 					this.agentSessionManager.on("sessionChanged", notify);
-					const unsubscribeChats = this.activeChatSessionHandlers.map(
-						(handler) => handler.subscribe(notify),
-					);
+					// Chat handlers are registered after this listener starts. Use the
+					// worker bridge so later handlers also reach existing SSE clients.
+					this.on("chatSessionChanged", notify);
 					return () => {
 						this.agentSessionManager.off("sessionChanged", notify);
-						for (const unsubscribe of unsubscribeChats) unsubscribe();
+						this.off("chatSessionChanged", notify);
 					};
 				},
 				chat: (id) => this.factoryChatState(id),
 				message: (id, text) => this.sendFactoryChat(id, text),
 				start: (input) => this.startManualFactoryRun(input),
-				followup: async (id, feedback) => {
-					const run = this.getFactoryRuntime().runs.get(id);
-					const session = this.agentSessionManager.getSession(id);
-					const repositoryId =
-						run?.repositoryId ?? this.sessionRepositories.get(id);
-					if (!repositoryId) throw new Error("Run repository unavailable");
-					const source =
-						readFactoryPath(run?.outputs, "draft-pr.url") ??
-						run?.source ??
-						session?.issue?.identifier;
-					const workflow = this.getFactoryRuntime().selectWorkflow(
-						[],
-						"manual",
-						source ? "takeover" : "factory",
-					);
-					return this.startManualFactoryRun(
-						resolveLaunchRequest(workflow, {
-							repositoryId,
-							workflow: workflow.id,
-							inputs: source
-								? { source: String(source), prompt: feedback }
-								: {
-										prompt: feedback,
-									},
-							runner: run?.runner as RunnerType | undefined,
-							model: run?.model,
-						}),
-						id,
-					);
-				},
+				followup: (id, feedback) => this.startFactoryFollowup(id, feedback),
 				stop: (id) => {
 					this.factoryRuntime?.runs.has(id) && this.factoryRuntime.stop(id);
 					this.cancelRunTitle(id);
-					this.agentSessionManager.requestSessionStop(id);
-					this.titleSession(id)?.agentRunner?.stop();
+					const chatHandler = this.chatHandlerForSession(id);
+					if (chatHandler) chatHandler.stopSession(id);
+					else {
+						this.agentSessionManager.requestSessionStop(id);
+						this.titleSession(id)?.agentRunner?.stop();
+					}
 					void this.savePersistedState();
 				},
 			});
@@ -1054,6 +1029,7 @@ export class EdgeWorker extends EventEmitter {
 		this.registerGitLabEventTransport();
 		this.registerSlackEventTransport();
 		this.registerZulipEventTransport();
+		this.restoreChatSessionOwnership();
 
 		// 3. Create and register ConfigUpdater (both platforms)
 		this.configUpdater = new ConfigUpdater(
@@ -1288,6 +1264,7 @@ export class EdgeWorker extends EventEmitter {
 		return {
 			cyrusHome: this.cyrusHome,
 			chatRepositoryProvider,
+			onSessionChange: (id) => this.emit("chatSessionChanged", id),
 			runnerConfigBuilder: this.runnerConfigBuilder,
 			createRunner: (config, chatRunnerType) => {
 				const runnerType =
@@ -6114,8 +6091,8 @@ ${taskSection}`;
 				},
 			});
 			this.factoryRuntime.subscribe(({ id }) => {
-				if (id && this.factoryRuntime?.get(id).status !== "running")
-					this.startRunTitle(id);
+				const run = id ? this.factoryRuntime?.runs.get(id) : undefined;
+				if (run && run.status !== "running") this.startRunTitle(run.id);
 			});
 		}
 		return this.factoryRuntime;
@@ -6129,6 +6106,36 @@ ${taskSection}`;
 				.find((session) => session.id === id)
 		);
 	}
+	private chatHandlerForSession(id: string) {
+		return this.activeChatSessionHandlers.find((handler) =>
+			handler.getAllChatSessions().some((session) => session.id === id),
+		);
+	}
+	private restoreChatSessionOwnership(): void {
+		const state = this.agentSessionManager.serializeState();
+		for (const handler of this.activeChatSessionHandlers) {
+			const sessions = Object.fromEntries(
+				Object.entries(state.sessions).filter(
+					([, session]) =>
+						(session.metadata?.chatPlatform ??
+							session.titleGeneration?.platform) === handler.platformName,
+				),
+			);
+			if (!Object.keys(sessions).length) continue;
+			const current = handler.serializeState();
+			handler.restoreState(
+				{ ...current.sessions, ...sessions },
+				{
+					...current.entries,
+					...Object.fromEntries(
+						Object.keys(sessions).map((id) => [id, state.entries[id] ?? []]),
+					),
+				},
+			);
+			for (const id of Object.keys(sessions))
+				this.agentSessionManager.removeSession(id);
+		}
+	}
 
 	private prepareRunTitle(
 		id: string,
@@ -6141,6 +6148,9 @@ ${taskSection}`;
 		const run = runtime.runs.get(id);
 		const session = this.titleSession(id);
 		const existing = run?.titleGeneration ?? session?.titleGeneration;
+		// Historical runtime runs have no naming job. Recovery/retry must not
+		// enroll them in automatic naming; new runtime runs already own a job.
+		if (run && !run.titleGeneration) return;
 		if (existing && (existing.state !== "pending" || existing.prepared)) return;
 		const packet = buildTitleContext(context);
 		const job: RunTitleJob = {
@@ -6191,9 +6201,9 @@ ${taskSection}`;
 	}
 	private startRunTitle(id: string): void {
 		if (this.stopping) return;
-		const job =
-			this.factoryRuntime?.runs.get(id)?.titleGeneration ??
-			this.titleSession(id)?.titleGeneration;
+		const run = this.factoryRuntime?.runs.get(id);
+		if (run && !run.titleGeneration) return;
+		const job = run?.titleGeneration ?? this.titleSession(id)?.titleGeneration;
 		if (job?.state !== "pending" || !job.prepared || this.titleStarted.has(id))
 			return;
 		this.titleStarted.add(id);
@@ -6280,6 +6290,9 @@ ${taskSection}`;
 							opencodeGlobalStateScope: this.config.opencode?.stateScope,
 						},
 						snapshot.settings,
+						source?.workspace.path ??
+							this.factoryRuntime?.runs.get(jobId)?.workspace ??
+							repository.repositoryPath,
 					);
 				},
 				createRunner: (snapshot, config) =>
@@ -6305,6 +6318,8 @@ ${taskSection}`;
 	}
 
 	private factoryChatState(id: string): ChatState {
+		const chatHandler = this.chatHandlerForSession(id);
+		if (chatHandler) return chatHandler.chatState(id);
 		const runtime = this.getFactoryRuntime();
 		const run = runtime.runs.get(id);
 		const session = this.agentSessionManager.getSession(id);
@@ -6368,6 +6383,12 @@ ${taskSection}`;
 	private sendFactoryChat(id: string, text: string): void {
 		const state = this.factoryChatState(id);
 		if (!state.available) throw new Error(state.reason ?? "Chat unavailable");
+		const chatHandler = this.chatHandlerForSession(id);
+		if (chatHandler) {
+			this.getFactoryRuntime().updateViewState(id, { keptOpen: true });
+			chatHandler.sendMessage(id, text);
+			return;
+		}
 		if (this.askUserQuestionHandler.hasPendingQuestion(id)) {
 			this.askUserQuestionHandler.handleUserResponse(id, text);
 			return;
@@ -6790,6 +6811,44 @@ ${taskSection}`;
 		);
 	}
 
+	private async startFactoryFollowup(
+		id: string,
+		feedback: string,
+	): Promise<FactoryRun> {
+		const runtime = this.getFactoryRuntime();
+		const run = runtime.runs.get(id);
+		const session = this.titleSession(id);
+		const repositoryId =
+			run?.repositoryId ??
+			this.sessionRepositories.get(id) ??
+			session?.repositories[0]?.repositoryId ??
+			session?.metadata?.chatRepositoryId ??
+			session?.titleGeneration?.repositoryId;
+		if (typeof repositoryId !== "string")
+			throw new Error("Run repository unavailable");
+		const source =
+			readFactoryPath(run?.outputs, "draft-pr.url") ??
+			run?.source ??
+			session?.issue?.identifier;
+		const workflow = runtime.selectWorkflow(
+			[],
+			"manual",
+			source ? "takeover" : "factory",
+		);
+		return this.startManualFactoryRun(
+			resolveLaunchRequest(workflow, {
+				repositoryId,
+				workflow: workflow.id,
+				inputs: source
+					? { source: String(source), prompt: feedback }
+					: { prompt: feedback },
+				runner: run?.runner as RunnerType | undefined,
+				model: run?.model,
+			}),
+			id,
+		);
+	}
+
 	private async startManualFactoryRun(
 		input: ResolvedLaunchRequest,
 		sourceRunId?: string,
@@ -7031,6 +7090,7 @@ ${taskSection}`;
 		// The per-run checkpoint may be newer than the global session snapshot.
 		if (run.sessionSnapshot)
 			Object.assign(session, structuredClone(run.sessionSnapshot));
+		session.displayTitle = run.title;
 		this.sessionRepositories.set(run.id, run.repositoryId);
 		const sink = this.getActivitySinkForRepo(run.repositoryId);
 		if (session.externalSessionId && sink)
