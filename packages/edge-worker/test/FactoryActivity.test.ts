@@ -18,6 +18,26 @@ const entry = (type: string, content: string, metadata = {}) => ({
 });
 
 describe("factory conversation history", () => {
+	it("does not display truncated duplicate agent JSON as workflow chat", () => {
+		const result = formatActivities({
+			createdAt: at,
+			step: "review",
+			entries: [entry("assistant", "Checking the current revision.")],
+			events: [
+				{
+					at,
+					step: "review",
+					message: `{"type":"user","message":{"content":"${"x".repeat(3000)}`,
+					activityTruncated: true,
+				},
+				{ at, step: "review", message: "Starting review" },
+			],
+		});
+		expect(result.map((item: { body: string }) => item.body)).toEqual([
+			"Checking the current revision.",
+			"Starting review",
+		]);
+	});
 	it("replaces shared CI polling chunks with one stable status without hiding agent messages", () => {
 		const run = {
 			status: "running",
@@ -155,7 +175,7 @@ describe("factory conversation history", () => {
 			{
 				key: "answer/0",
 				at,
-				step: "Clarification",
+				step: "clarify",
 				type: "user",
 				title: "You",
 				body: "Keep it local.",
@@ -310,5 +330,22 @@ describe("factory conversation history", () => {
 		expect(
 			markdown("[Click](javascript:evil) <svg/onload=evil()>"),
 		).not.toContain("href=");
+	});
+});
+
+it("keeps an old answer under its original shared step after later agent messages", () => {
+	const later = new Date(stamp + 60000).toISOString();
+	const events = [
+		{ at, step: "pipeline/clarify", message: "Starting clarify" },
+		{ at: later, step: "pipeline/plan", message: "Starting plan" },
+	];
+	const items = formatActivities({
+		events,
+		answers: [{ at, answer: "Local UI" }],
+		entries: [entry("text", "Planning", { timestamp: stamp + 70000 })],
+	});
+	expect(items.find((item) => item.type === "user")).toMatchObject({
+		step: "pipeline/clarify",
+		body: "Local UI",
 	});
 });

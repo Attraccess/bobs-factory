@@ -70,6 +70,7 @@ export const StepSchema: z.ZodType<WorkflowStep> = z.lazy(() =>
 export const WorkflowSchema = z.object({
 	id,
 	name: z.string().min(1),
+	icon: z.string().max(32).optional(),
 	description: z.string().default(""),
 	labels: z.array(z.string().min(1)).default([]),
 	steps: z.array(StepSchema).max(100),
@@ -151,7 +152,7 @@ export function validateWorkflows(value: unknown): Workflow[] {
 		parallel = false,
 	): void => {
 		for (const step of steps) {
-			if (parallel && step.askQuestions)
+			if (parallel && (step.askQuestions || step.tool === "human-review"))
 				throw new Error("Human checkpoints belong outside fanout branches");
 			if (step.type === "workflow") {
 				const target = byId.get(step.workflow!);

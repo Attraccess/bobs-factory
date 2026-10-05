@@ -5,12 +5,18 @@ const text = z.string().min(1);
 export const VisualScopeSchema = z
 	.object({
 		changed: z.boolean(),
+		captureBudget: z.number().int().min(1).max(48).default(24),
+		budgetReason: text.optional(),
+		nonVisualFiles: z.array(text).optional(),
 		areas: z.array(
 			z.object({
 				name: text,
 				url: text,
 				states: z.array(text).min(1),
 				instructions: text,
+				rationale: text.optional(),
+				dependencies: z.array(text).optional(),
+				changed: z.boolean().optional(),
 			}),
 		),
 	})
@@ -18,8 +24,37 @@ export const VisualScopeSchema = z
 		(scope) =>
 			scope.changed ? scope.areas.length > 0 : scope.areas.length === 0,
 		"Visual changes require an area inventory",
-	);
+	)
+	.superRefine((scope, context) => {
+		const count = scope.areas.reduce(
+			(total, area) => total + area.states.length,
+			0,
+		);
+		if (count > scope.captureBudget)
+			context.addIssue({
+				code: "custom",
+				message: `Select representative states: ${count} exceeds captureBudget ${scope.captureBudget}`,
+			});
+		if (scope.captureBudget > 24 && !scope.budgetReason)
+			context.addIssue({
+				code: "custom",
+				message: "Capture budgets above 24 require a concrete budgetReason",
+			});
+		const names = scope.areas.map((area) => area.name);
+		if (
+			new Set(names).size !== names.length ||
+			scope.areas.some(
+				(area) => new Set(area.states).size !== area.states.length,
+			)
+		)
+			context.addIssue({
+				code: "custom",
+				message: "Visual areas/states must be unique",
+			});
+	});
 export const GuideSchema = z.object({
+	revisionSummary: z.boolean().optional(),
+	previousHeadSha: text.optional(),
 	goal: text,
 	summary: text,
 	decision: z.object({

@@ -750,3 +750,142 @@ it("does not resume completed, failed or explicitly stopped runs", async () => {
 		expect.arrayContaining(["failed", "stopped", "completed"]),
 	);
 });
+
+it("restores an explicit human gate without approving, repeats rejected work, and binds approval to its SHA", async () => {
+	const order: string[] = [];
+	const hooks = {
+		tool: async (context: ExecutionContext) => {
+			order.push(context.step.id);
+			return context.step.tool === "human-review"
+				? {
+						headSha: context.run.humanDecisions?.length ? "second" : "first",
+						url: "https://github.com/test/repo/pull/1",
+					}
+				: { merged: true };
+		},
+		agent: async (context: ExecutionContext) => {
+			order.push(context.step.id);
+			expect(context.input).toMatchObject({
+				humanDecisions: [{ decision: "reject", feedback: "Fix label" }],
+			});
+			return {};
+		},
+	};
+	const { runtime, home } = create(hooks);
+	const definition = workflow([
+		{
+			id: "human-review",
+			name: "Review",
+			type: "tool",
+			tool: "human-review",
+			branches: [
+				{ when: { path: "decision", equals: "reject" }, next: "human-fix" },
+			],
+			next: "merge",
+		},
+		{
+			id: "human-fix",
+			name: "Fix",
+			type: "agent",
+			prompt: "Fix",
+			next: "human-review",
+		},
+		{ id: "merge", name: "Merge", type: "tool", tool: "merge", next: "end" },
+	]);
+	const run = start(runtime, definition);
+	const launched = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const gate = structuredClone(run.reviewGate!);
+	expect(() =>
+		runtime.decide(run.id, {
+			reviewId: gate.id,
+			headSha: "wrong",
+			decision: "approve",
+		}),
+	).toThrow("revision changed");
+	expect(() =>
+		runtime.decide(run.id, {
+			reviewId: gate.id,
+			headSha: gate.headSha,
+			decision: "reject",
+		}),
+	).toThrow("Explain");
+	await runtime.shutdown();
+	await launched;
+	const restarted = new WorkflowRuntime(home, {
+		script: async () => ({}),
+		...hooks,
+	});
+	restarted.resumeAll();
+	const restored = restarted.get(run.id);
+	await vi.waitFor(() => expect(restored.status).toBe("waiting"));
+	expect(restored.reviewGate).toEqual(gate);
+	expect(order).toEqual(["human-review"]);
+	restarted.decide(run.id, {
+		reviewId: gate.id,
+		headSha: gate.headSha,
+		decision: "reject",
+		feedback: "Fix label",
+	});
+	await vi.waitFor(() => expect(restored.reviewGate?.headSha).toBe("second"));
+	expect(restored.status).toBe("waiting");
+	expect(() =>
+		restarted.decide(run.id, {
+			reviewId: gate.id,
+			headSha: gate.headSha,
+			decision: "approve",
+		}),
+	).toThrow("revision changed");
+	restarted.decide(run.id, {
+		reviewId: restored.reviewGate!.id,
+		headSha: "second",
+		decision: "approve",
+	});
+	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	expect(restored.humanDecisions?.map((x) => x.decision)).toEqual([
+		"reject",
+		"approve",
+	]);
+	expect(order).toEqual(["human-review", "human-fix", "human-review", "merge"]);
+	expect(
+		new WorkflowRuntime(home, { script: async () => ({}), ...hooks }).get(
+			run.id,
+		).humanDecisions,
+	).toEqual(restored.humanDecisions);
+	expect(restarted.viewState(run.id).settledAt).toBeTruthy();
+});
+it("rejects human review gates hidden in shared fanout workflows", () => {
+	expect(() =>
+		validateWorkflows([
+			...defaultWorkflows,
+			{
+				id: "gate",
+				name: "Gate",
+				steps: [
+					{ id: "review", name: "Review", type: "tool", tool: "human-review" },
+				],
+			},
+			{
+				id: "parent",
+				name: "Parent",
+				steps: [
+					{
+						id: "parallel",
+						name: "Parallel",
+						type: "fanout",
+						groups: [
+							[
+								{
+									id: "child",
+									name: "Child",
+									type: "workflow",
+									workflow: "gate",
+								},
+							],
+						],
+					},
+				],
+			},
+		]),
+	).toThrow("outside fanout");
+});

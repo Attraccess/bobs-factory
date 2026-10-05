@@ -8,7 +8,7 @@ hosted login, queue service or separate orchestration platform.
 
 Install Node/pnpm, Bun, Git, `gh` and the agent CLI you want to use. Authenticate
 the agent CLI and run `gh auth login`. The target repository needs an `origin`
-remote you can push to, a base branch, and PR CI checks for the factory pipeline.
+remote you can push to, a base branch, and configured branch/merge rules for the factory pipeline.
 
 ```sh
 pnpm install
@@ -28,23 +28,22 @@ trusted local operator.
 
 ## Run and configure
 
-The **Activity** view displays a chat conversation in time order, using the same
-runner tool formatters as Linear. Human replies appear on the right; agent
-messages remain in the main flow. Consecutive tool calls share a compact summary
-with running/error counts; expand it and a tool row to inspect commands and
-results. CI monitoring appears as one status entry instead of repeated polling
-tables; check results and failures remain available. Workflow updates and **Raw
-data** are also expandable. **Show earlier
-activity** reveals older entries without moving the message you are reading.
-Markdown and structured responses are rendered as readable content.
+The React dashboard uses TanStack Query for cached requests and mutations, Radix for
+accessible dialogs/menus, and Tailwind with the RainbowBob theme. **Today** puts
+launching, questions, stuck runs and human reviews first; running work stays in
+compact rows and finished work moves into **Settled**. Light/Dark/System themes,
+mobile layouts and keyboard shortcuts are available from the sticky header.
 
-Activity follows the latest message when opened. Scroll away from the bottom to
-pause following; a floating **Scroll to latest** button takes you back and resumes
-it. Scrolling to the bottom manually resumes following too. Your reading position
-and expanded artifact/tool panels survive live updates and tab switches,
-separately for each run, until the page is reloaded.
+Open a run for artifacts and step conversations. Human replies appear on the
+right, tools share expandable summaries, and CI polling becomes one status.
+Real Markdown, decision records, diffs, provider discussion, screenshots and
+review recaps render in the artifact inspector; Raw JSON stays available. Large
+artifacts load on demand. Conversations fetch 120 records at a time, virtualize visible rows, and retain a reloadable window of at most 600 records / 2 MiB per open step. Collapsed histories unmount; reading positions and disclosures remain cached. Large raw tool records load only when opened. Screenshot galleries virtualize rows, images load near the viewport, and adjacent small artifacts/images are prefetched unless data saving is enabled. Full JSON remains available explicitly; large Markdown renders in bounded pages. Reading positions, open panels, typed fields and
+selected cards survive live updates. A reconnecting SSE connection sends coalesced run/configuration notifications; the UI fetches only changed visible data and refreshes after reconnect or returning from the background. Scroll away from the latest message to
+pause following; **Scroll to latest** resumes it. Inspector Escape returns focus
+and screenshot Escape returns to the gallery first.
 
-Select a repository and workflow under **New run**, then fill its launch fields.
+Select a repository and workflow in the composer, then fill its launch fields.
 **Simple / Cyrus** retains the existing Cyrus execution path and is the initial
 default. **Software factory** adds the pipeline
 below. Apply `workflow:factory` (or `factory`) to a ticket to select it.
@@ -52,13 +51,13 @@ Custom workflow labels are configurable; explicit UI selection wins, otherwise
 the first matching configured workflow wins. If no label matches, the configured
 default workflow is used. Agent/model labels still choose the run defaults.
 
-In **Workflows**, choose **Default workflow** and click **Save workflows**.
+In **Recipes**, choose the **Default** pill on the recipe you want.
 This choice is saved across restarts, applies to new runs without matching
-labels, and is preselected under **New run**. You can select any saved non-internal workflow;
+labels, and is preselected in the composer. You can select any saved non-internal workflow;
 choose another default before deleting the current one. Existing runs retain
 their workflow.
 
-Both **New run → Agent settings** and each workflow role include reasoning or
+Both **Composer → Agent settings** and each workflow role include reasoning or
 variant controls. Claude/Codex use **Reasoning effort**; OpenCode uses **Model
 variant**, including custom provider-defined names. The controls forward to
 Claude's SDK `effort`, Codex's `modelReasoningEffort`, and OpenCode's
@@ -81,7 +80,7 @@ and OpenCode provider variants remain configurable through **Model variant**.
 Gemini CLI does not expose a separate service-tier switch here. Existing runs
 keep their saved settings.
 
-**Workflows** also exposes an agent and model field for each agent role, plus the
+**Recipes** also exposes an agent and model field for each agent role, plus the
 JSON definition for editing prompts, scripts, tools and graph edges. Empty role
 fields inherit the run settings. Changing agent provider without specifying a
 model uses that provider's default model. Saved definitions apply to new runs;
@@ -97,7 +96,29 @@ scope → screenshots/visual-review/fix loop → human review guide. The impleme
 receives only the accepted plan and its asset references. Reviews retain earlier
 findings and fixer dispositions, use stable finding IDs, discard severity 1,
 and allow evidence-based rejection and review of that rejection. Visual and CI
-fixes return through code review and CI. No step merges or marks a PR ready.
+fixes return through code review and CI. The guide now pauses at an explicit human review gate. **Approve & settle**
+authorizes only its displayed commit; **Open diff** opens the provider in another
+tab; **Request changes** records instructions, runs the fixer and repeats code,
+readiness and visual review before a new guide and fresh approval. Approval marks
+the PR ready, honors required reviews/checks/threads/conflicts/rules, enters a
+required merge queue or merges normally, and completes only after GitHub confirms
+the merge. No administrator bypass is used. Changed/unpublished revisions and
+new provider comments return through fixes and review. Draft status and external
+reviewer approvals remain visible human actions without preventing the guide.
+Human decisions, review IDs, commit IDs and checkpoint state persist on restart.
+
+Repeated agents start with `/progress` through factory-context: their previous
+result, prior/current revision, changed files/diff and new history. Planning and
+reviews preserve decisions, stable findings and dispositions while assessing new
+feedback and affected code. Visual scope keeps the cumulative area/state list.
+Capture can reuse real, previously approved images only when their revision is
+unchanged or declared dependencies are unchanged and all changed files are
+accounted for. Image hashes and dependency provenance are persisted; dirty,
+uncertain, changed or unapproved evidence must be recaptured. Otherwise only the
+changed areas need a dev server/capture, with subagents where supported. Visual
+review retains accepted unchanged evidence; the recap updates changed sections
+and can use a short revision summary for a verified minor correction. Every new
+human review still requires an explicit decision.
 
 Visual capture requires browser/screenshot tools available to the selected
 agent through its CLI or existing Cyrus MCP configuration. Captures must be
@@ -107,9 +128,27 @@ PR. The dashboard displays those images and a guide organized around the goal,
 before/after behavior, requirements, checks, risks and human review instructions,
 inspired by Rocky's visual recap.
 
+## Visual evidence budgets
+
+Visual scope selects individually named representative states, normally 1–2 per
+changed area and at most 24 final screenshots. It must not multiply viewport,
+language, permission and error-state combinations. Distinct changed layouts or
+high-risk rendering justify additional captures; logic/permissions use test
+receipts. An unusually broad change may declare `captureBudget` up to 48 with a
+concrete `budgetReason`. The runtime validates the selected count and rejects
+duplicate states/images in new budgeted inventories.
+
+The visual reviewer returns `acceptedScreenshots` receipts with each inspected
+area/state/image hash. These accepted images can survive a partial visual failure
+when their dependencies and content remain unchanged. Missing or unverified
+critical evidence still blocks the visual gate. Existing in-flight legacy
+inventories are retained for safe recovery; the next visual-scope visit uses the
+compact contract. Demo videos are tracked separately in Taskbot #31 and are not
+implemented in this batch.
+
 ## Take over existing work
 
-Select **Take over existing work** in New run and supply an open GitHub PR URL
+Select **Take over existing work** in the composer and supply an open GitHub PR URL
 or a Linear ticket identifier/URL. That source is all you need: the run title
 and requirements come from the ticket or PR. **Additional instructions** is
 optional. For ticket assignment, use `workflow:takeover` or `takeover`; the assigned
@@ -145,8 +184,8 @@ with the repository's Git hooks and signing configuration still enabled.
 
 ### Launch fields
 
-Edit a workflow's `launchFields` in **Workflows → Workflow JSON** to customize
-the New run form. Only fields belonging to the selected parent workflow appear;
+Edit a workflow's `launchFields` in **Recipes → Edit as JSON** to customize
+the composer. Only fields belonging to the selected parent workflow appear;
 calling a shared workflow does not add its fields. Repository, workflow and
 agent settings are common controls. For example:
 
@@ -314,8 +353,27 @@ Termination cancels active runners and script process groups; retained worktrees
 and draft PRs stay available for inspection.
 
 Factory delivery currently targets one GitHub repository per run using `gh`.
-The Simple path keeps existing multi-repository and platform support. No-check
-repositories cannot be declared CI-green. Loop limits, invalid agent results,
+The Simple path keeps existing multi-repository and platform support. Readiness distinguishes passing CI from a repository with no configured checks;
+GitHub must still permit its merge. Loop limits, invalid agent results,
 missing screenshots and delivery errors stop with an explicit failure. Human
 review remains necessary; an automated green pipeline is evidence, not a
 guarantee of flawless software.
+
+
+## Overnight implementation assumptions (Taskbot #23/#26/#27/#28)
+
+- Use SSE for coalesced progress notifications and TanStack Query for paged,
+  cached requests and mutations. Reconnect and refresh after interruptions;
+  no hosted service or bidirectional websocket protocol is needed for this MVP.
+- GitHub is the merge provider for this MVP. Prefer squash when allowed, then
+  merge commits, then rebase; respect GitHub's queue/rules and never force merge.
+- Shared workflow models are edited only on their owning recipe. Parent recipes
+  show a reference to the shared sequence.
+- Settling is presentation state, not authorization to approve/merge a PR.
+  Previously completed guides can be settled or followed up; only a new pending
+  SHA-bound gate can authorize merge.
+- A follow-up on a previously completed run starts a linked-context task using
+  Takeover when a ticket/PR exists, otherwise Factory, preserving repository and
+  selected agent settings.
+- File dependency and image hashes support screenshot reuse; unknown global
+  effects require fresh evidence. Brief recap updates never waive fresh approval.

@@ -8,8 +8,10 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { activityMarkers } from "./ActivityPage.js";
 import type { AgentSettings } from "./AgentSettings.js";
 import { defaultWorkflows, upgradeWorkflows } from "./defaultWorkflows.js";
+import type { RoleProgress, RoleRevision } from "./Incremental.js";
 import {
 	readPath,
 	validateWorkflows,
@@ -25,6 +27,7 @@ export type RunStatus =
 	| "stopped"
 	| "interrupted";
 export interface RunEvent {
+	sequence?: number;
 	at: string;
 	step: string;
 	message: string;
@@ -43,6 +46,24 @@ export interface GraphCheckpoint {
 	};
 	// Only fanout branches own separate outputs; nested workflows share their parent's.
 	outputs?: Record<string, unknown>;
+}
+export interface HumanDecision {
+	reviewId: string;
+	headSha: string;
+	decision: "approve" | "reject";
+	feedback?: string;
+	at: string;
+}
+export interface ReviewGate {
+	id: string;
+	headSha: string;
+	url: string;
+	status: "pending" | "approve" | "reject";
+}
+export interface RunViewState {
+	settledAt?: string;
+	keptOpen?: boolean;
+	seenAt?: string;
 }
 export interface FactoryRun {
 	id: string;
@@ -75,14 +96,19 @@ export interface FactoryRun {
 	launchRequest?: import("./LaunchFields.js").ResolvedLaunchRequest;
 	setupComplete?: boolean;
 	sessionSnapshot?: import("cyrus-core").SerializedCyrusAgentSession;
+	reviewGate?: ReviewGate;
+	humanDecisions?: HumanDecision[];
+	roleRevisions?: Record<string, RoleRevision>;
 	outputs: Record<string, unknown>;
 	history: { step: string; output: unknown; at: string }[];
 	answers: { questions: string[]; answer: string; at: string }[];
 	questions: string[];
 	events: RunEvent[];
+	activitySteps?: { at: string; step: string }[];
 	error?: string;
 }
 export interface ExecutionContext {
+	progress?: RoleProgress;
 	run: FactoryRun;
 	step: WorkflowStep;
 	input: unknown;
@@ -104,6 +130,20 @@ export interface RuntimeHooks {
 
 export class WorkflowRuntime {
 	readonly runs = new Map<string, FactoryRun>();
+	private listeners = new Set<
+		(change: { id?: string; config?: boolean }) => void
+	>();
+	subscribe(
+		listener: (change: { id?: string; config?: boolean }) => void,
+	): () => void {
+		this.listeners.add(listener);
+		return () => {
+			this.listeners.delete(listener);
+		};
+	}
+	private changed(change: { id?: string; config?: boolean }): void {
+		for (const listener of this.listeners) listener(change);
+	}
 	private controllers = new Map<string, AbortController>();
 	private pendingAnswers = new Map<
 		string,
@@ -113,6 +153,7 @@ export class WorkflowRuntime {
 	private executions = new Map<string, Promise<void>>();
 	private shuttingDown = false;
 	private defaultWorkflow = "simple";
+	private viewStates: Record<string, RunViewState> = {};
 	readonly directory: string;
 
 	constructor(
@@ -121,6 +162,9 @@ export class WorkflowRuntime {
 	) {
 		this.directory = join(home, "factory");
 		mkdirSync(join(this.directory, "runs"), { recursive: true });
+		const views = join(this.directory, "views.json");
+		if (existsSync(views))
+			this.viewStates = JSON.parse(readFileSync(views, "utf8"));
 		const config = join(this.directory, "workflows.json");
 		const stored = existsSync(config)
 			? JSON.parse(readFileSync(config, "utf8"))
@@ -137,10 +181,46 @@ export class WorkflowRuntime {
 				readFileSync(join(this.directory, "runs", filename), "utf8"),
 			);
 
+			if (
+				run.workflowDefinitions &&
+				["running", "waiting", "interrupted", "failed"].includes(run.status)
+			) {
+				run.workflowDefinitions = validateWorkflows(
+					upgradeWorkflows(run.workflowDefinitions),
+				);
+				const updated = run.workflowDefinitions.find(
+					(workflow) => workflow.id === run.workflow.id,
+				);
+				if (updated) {
+					const flat =
+						run.workflow.id === "factory" &&
+						!run.workflow.steps.some((step) => step.type === "workflow") &&
+						run.checkpoint;
+					run.workflow = flat
+						? {
+								...run.workflow,
+								steps: structuredClone(
+									run.workflowDefinitions.find(
+										(item) => item.id === "factory-pipeline",
+									)!.steps,
+								),
+							}
+						: structuredClone(updated);
+				}
+			}
 			this.runs.set(run.id, run);
 		}
 	}
 
+	viewState(id: string): RunViewState {
+		return this.viewStates[id] ?? {};
+	}
+	updateViewState(id: string, state: RunViewState): RunViewState {
+		this.viewStates[id] = state;
+		this.atomicWrite(join(this.directory, "views.json"), this.viewStates);
+		this.changed({ id });
+		return state;
+	}
 	listWorkflows(): Workflow[] {
 		return structuredClone(this.workflows);
 	}
@@ -170,6 +250,7 @@ export class WorkflowRuntime {
 		});
 		this.workflows = workflows;
 		this.defaultWorkflow = defaultWorkflow;
+		this.changed({ config: true });
 		return this.listWorkflows();
 	}
 	selectWorkflow(labels: string[], explicit?: string): Workflow {
@@ -234,8 +315,16 @@ export class WorkflowRuntime {
 		return run;
 	}
 	log(run: FactoryRun, step: string, message: string): void {
+		const at = new Date().toISOString();
+		run.activitySteps ??= activityMarkers(run);
+		if (
+			!["run", "prepare"].includes(step) &&
+			run.activitySteps.at(-1)?.step !== step
+		)
+			run.activitySteps.push({ at, step });
 		run.events.push({
-			at: new Date().toISOString(),
+			sequence: (run.events.at(-1)?.sequence ?? run.events.length - 1) + 1,
+			at,
 			step,
 			message: message.slice(-20000),
 		});
@@ -284,7 +373,9 @@ export class WorkflowRuntime {
 			}
 			controller.signal.throwIfAborted();
 			run.status = "completed";
-			this.log(run, "run", "Workflow complete. Ready for human review.");
+			if (readPath(run.outputs, "merge.merged") === true)
+				this.updateViewState(run.id, { settledAt: new Date().toISOString() });
+			this.log(run, "run", "Workflow complete.");
 		} catch (error) {
 			if (this.shuttingDown && run.status !== "stopped") {
 				this.log(
@@ -337,6 +428,7 @@ export class WorkflowRuntime {
 						outputs: structuredClone(outputs),
 						answers: structuredClone(run.answers),
 						history: structuredClone(run.history),
+						humanDecisions: structuredClone(run.humanDecisions ?? []),
 					};
 			const context: ExecutionContext = {
 				run,
@@ -358,7 +450,9 @@ export class WorkflowRuntime {
 				if (step.type === "fanout") {
 					if (
 						step.groups?.some((group) =>
-							group.some((item) => item.askQuestions),
+							group.some(
+								(item) => item.askQuestions || item.tool === "human-review",
+							),
 						)
 					)
 						throw new Error("Human checkpoints belong outside fanout branches");
@@ -420,6 +514,25 @@ export class WorkflowRuntime {
 					continue;
 				}
 			}
+			if (step.tool === "human-review") {
+				if (state.phase !== "answered")
+					await this.waitForHuman(
+						run,
+						output as { headSha: string; url: string },
+						signal,
+						state,
+					);
+				output = outputs[step.id] = run.humanDecisions!.at(-1)!;
+				if (
+					!run.history.some(
+						(item) =>
+							item.step === key &&
+							(item.output as HumanDecision)?.reviewId ===
+								(output as HumanDecision).reviewId,
+					)
+				)
+					run.history.push({ step: key, output, at: new Date().toISOString() });
+			}
 			checkpoint.current = this.nextStep(steps, step, output);
 			checkpoint.active = undefined;
 			this.log(run, key, `Finished ${step.name}`);
@@ -454,10 +567,78 @@ export class WorkflowRuntime {
 			this.pendingAnswers.delete(run.id);
 		}
 	}
+	private async waitForHuman(
+		run: FactoryRun,
+		result: { headSha: string; url: string },
+		signal: AbortSignal,
+		state: NonNullable<GraphCheckpoint["active"]>,
+	): Promise<void> {
+		if (state.phase !== "waiting")
+			run.reviewGate = {
+				id: randomUUID(),
+				headSha: result.headSha,
+				url: result.url,
+				status: "pending",
+			};
+		state.phase = "waiting";
+		run.status = "waiting";
+		run.questions = [];
+		const waiting = new Promise<void>((resolve, reject) =>
+			this.pendingAnswers.set(run.id, { resolve, reject }),
+		);
+		const abort = () =>
+			this.pendingAnswers.get(run.id)?.reject(new Error("Run terminated"));
+		signal.addEventListener("abort", abort, { once: true });
+		this.log(
+			run,
+			run.step ?? "human-review",
+			"Ready for explicit human review. Approve this revision or request changes in the factory UI.",
+		);
+		try {
+			signal.throwIfAborted();
+			await waiting;
+		} finally {
+			signal.removeEventListener("abort", abort);
+			this.pendingAnswers.delete(run.id);
+		}
+	}
+	decide(id: string, decision: Omit<HumanDecision, "at">): void {
+		const run = this.get(id),
+			pending = this.pendingAnswers.get(id),
+			gate = run.reviewGate;
+		if (run.status !== "waiting" || !pending || gate?.status !== "pending")
+			throw new Error("Run is not waiting for human review");
+		if (gate.id !== decision.reviewId || gate.headSha !== decision.headSha)
+			throw new Error(
+				"The reviewed revision changed. Refresh and review again.",
+			);
+		if (decision.decision === "reject" && !decision.feedback?.trim())
+			throw new Error("Explain what Bob should change");
+		run.humanDecisions ??= [];
+		run.humanDecisions.push({ ...decision, at: new Date().toISOString() });
+		gate.status = decision.decision;
+		const answered = (frame?: GraphCheckpoint): void => {
+			if (frame?.active?.phase === "waiting") frame.active.phase = "answered";
+			frame?.active?.children?.forEach(answered);
+		};
+		answered(run.checkpoint);
+		run.outputs["human-review"] = run.humanDecisions.at(-1)!;
+		run.status = "running";
+		this.log(
+			run,
+			run.step ?? "human-review",
+			`Human ${decision.decision}: ${decision.feedback ?? decision.headSha}`,
+		);
+		pending.resolve();
+	}
 	answer(id: string, answer: string): void {
 		const run = this.get(id);
 		const pending = this.pendingAnswers.get(id);
-		if (run.status !== "waiting" || !pending)
+		if (
+			run.status !== "waiting" ||
+			!pending ||
+			run.reviewGate?.status === "pending"
+		)
 			throw new Error("Run is not waiting for an answer");
 		if (!answer.trim()) throw new Error("Enter an answer");
 		run.answers.push({
@@ -638,6 +819,7 @@ export class WorkflowRuntime {
 	save(run: FactoryRun): void {
 		run.updatedAt = new Date().toISOString();
 		this.atomicWrite(join(this.directory, "runs", `${run.id}.json`), run);
+		this.changed({ id: run.id });
 	}
 	private atomicWrite(path: string, data: unknown): void {
 		const temporary = `${path}.tmp`;

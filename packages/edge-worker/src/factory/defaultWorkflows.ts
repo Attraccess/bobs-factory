@@ -25,6 +25,7 @@ const fix = `Fix all open rating 2/3 findings. You receive ALL past findings and
 const definitions = [
 	{
 		id: "simple",
+		icon: "⚡",
 		name: "Simple / Cyrus",
 		description:
 			"The existing Cyrus run, with its original prompts, skills and runner lifecycle.",
@@ -33,6 +34,7 @@ const definitions = [
 	},
 	{
 		id: "factory",
+		icon: "🏭",
 		name: "Software factory",
 		description:
 			"Clarify → plan → implement → draft PR → review → CI → visual review → human guide.",
@@ -67,25 +69,25 @@ const definitions = [
 			tool("review-gate", "Discard nitpicks / review gate", "review-gate", {
 				branches: back("approved", "code-fix"),
 			}),
-			tool("ci", "Watch pull request CI", "ci", {
-				branches: back("approved", "ci-fix"),
+			tool("ci", "Watch merge readiness", "ci", {
+				branches: [{ when: { path: "fix", equals: true }, next: "ci-fix" }],
 			}),
 			agent(
 				"visual-scope",
 				"Identify visual changes",
-				`Inspect the exact PR diff and decide whether application visuals changed. Return {"changed":false,"areas":[]} for no visual changes, otherwise {"changed":true,"areas":[{"name":"region or element","url":"path/URL or application view","states":["desktop, mobile, relevant interaction states"],"instructions":"how to access and what changed"}]}. Be precise and exhaustive. Do not change code or take screenshots.`,
+				`Inspect the exact PR diff and decide whether application visuals changed. Return {"changed":false,"areas":[]} for no visual changes, otherwise {"changed":true,"areas":[{"name":"region or element","url":"path/URL or application view","states":["mobile EN drawer with long names"],"instructions":"how to access and what changed"}]}. Enumerate every visually changed area, but select a SMALL REPRESENTATIVE evidence set: normally 1–2 concrete states per area and at most 24 screenshots total. Each state must be a single exact capture description, e.g. mobile EN drawer with long names; never list comma-separated alternatives or a Cartesian matrix of sizes × languages × permissions × errors. One screenshot can cover several elements; group co-visible regions. Add desktop+mobile only when both layouts materially differ; capture another language/theme only for distinct changed layout risk. Validate permissions, every error path and numeric edge cases with automated tests instead of extra screenshots unless their visual rendering changed. Prioritize changed happy path and the highest-risk visual edge case. Return captureBudget=24; an unusually broad feature may use up to 48 only with a concrete budgetReason explaining why representative evidence cannot fit. Include per-area rationale/dependencies. Do not change code or take screenshots.`,
 				{ branches: back("changed", "guide") },
 			),
 			agent(
 				"capture",
 				"Capture changed areas",
-				`Start the dev application as needed. Use available browser/screenshot tools to capture EVERY area and relevant state in visual-scope. When subagent tools are available and multiple areas can be captured independently, use up to 3 subagents in parallel to speed up capture. Set up the application once, then give each subagent a disjoint area/state assignment, the exact revision, application URL/access instructions, required assets and evidence directory. Share the dev server; use separate browser pages/contexts where supported. If browser control is shared, serialize interactions to avoid interfering with each other's captures. Each subagent must capture and inspect its assigned areas, use unique filenames, report real image paths and any unavailable states, and leave shared server cleanup to you. If delegation or independent capture is unsupported, capture sequentially yourself. Wait for all subagents, inspect their results, and merge them into one complete inventory without duplicates or missing states. Save image files under the provided evidence directory, with a fresh filename for each revision. Inspect the captures for readability. Return {"screenshots":[{"path":"absolute path","caption":"area/state","area":"name","state":"exact state from the area inventory"}],"unavailable":[{"area":"name","reason":"concrete reason"}]}. Never claim captures that do not exist. Stop any dev server you started only after all captures finish. Do not change product code. Missing capture tooling must be reported in unavailable.`,
+				`Start the dev application as needed. Use available browser/screenshot tools to capture exactly the representative area/state inventory in visual-scope, within its captureBudget (normally 24). Do not expand combined state labels into combinations, invent extra states, or generate intermediate/debug images as review evidence. For a resumed legacy inventory without captureBudget, preserve its selected coverage and existing evidence; do not create an additional combinatorial matrix. The budget applies to the next compact visual-scope plan, not retroactively to an in-flight legacy capture. Do not classify deliberately redundant test combinations as missing critical visual evidence. One final image per selected area/state; replace bad attempts and keep only useful images in the returned inventory. Do not take routine tablet/language/role duplicates unless their layout changed. When subagent tools are available and multiple areas can be captured independently, use up to 3 subagents in parallel to speed up capture. Set up the application once, then give each subagent a disjoint area/state assignment, the exact revision, application URL/access instructions, required assets and evidence directory. Share the dev server; use separate browser pages/contexts where supported. If browser control is shared, serialize interactions to avoid interfering with each other's captures. Each subagent must capture and inspect its assigned areas, use unique filenames, report real image paths and any unavailable states, and leave shared server cleanup to you. If delegation or independent capture is unsupported, capture sequentially yourself. Wait for all subagents, inspect their results, and merge them into one complete inventory without duplicates or missing states. Save image files under the provided evidence directory, with a fresh filename for each revision. Inspect the captures for readability. Return {"screenshots":[{"path":"absolute path","caption":"area/state","area":"name","state":"exact state from the area inventory"}],"unavailable":[{"area":"name","reason":"concrete reason"}]}. Never claim captures that do not exist. Stop any dev server you started only after all captures finish. Do not change product code. Missing capture tooling must be reported in unavailable.`,
 				{ next: "visual-review" },
 			),
 			agent(
 				"visual-review",
 				"Review screenshots",
-				`${review}\nThis is a VISUAL review: open and inspect the actual screenshots, checking each requested area/state against the plan. Include areas with missing/unavailable capture evidence as rating 3 findings. Never approve missing screenshots.`,
+				`${review}\nThis is a VISUAL review: open and inspect the actual screenshots, checking the agreed representative evidence plan and current changed visual risks. Do not demand all combinations of viewport, language, role or error states, or invent a larger screenshot matrix. Use actual test receipts for logic/permissions. Missing a critical selected visual state is a rating 3 finding; a redundant matrix combination or intentionally omitted nonvisual test case is not. Never approve genuinely missing critical evidence. Request the minimum targeted replacement needed for a finding, identifying exact area/state. Return acceptedScreenshots:[{area,state,imageSha256}] for every individually inspected good screenshot, using its supplied exact hash. Exclude any screenshot affected by an unresolved finding. These receipts allow unchanged good evidence to survive a local visual fix. Preserve accepted evidence and do not demand a full recapture after a local correction.`,
 				{ next: "visual-gate" },
 			),
 			tool("visual-gate", "Visual review gate", "visual-gate", {
@@ -96,17 +98,36 @@ const definitions = [
 			agent(
 				"ci-fix",
 				"Fix CI failures",
-				`Diagnose and fix the CI failures in the supplied receipts and full past review history. Run relevant checks, commit and push to the same draft PR. Return {"summary":"...","checks":["..."]}. Do not merge or mark ready.`,
+				`Diagnose and fix CI failures, merge conflicts, stale branches and actionable PR review comments in the supplied merge-readiness receipt and full history. Fetch the base before resolving conflicts. For each supplied unresolved review thread, address it or post an evidence-backed response before resolving it using gh api graphql resolveReviewThread. Do not dismiss reviews or bypass rules. Required reviewer approvals must wait for the reviewer; do not impersonate one. Assess every supplied new PR comment. Act on requested corrections or document why a comment is informational. Record its ID in addressedCommentIds after assessment, and include disposition/reason in the summary. Add <!-- generated-by-cyrus --> to any PR reply you write. Retain all discussion and report addressed comment/thread IDs. Run relevant checks, commit and push to the same draft PR. Return {"summary":"...","checks":["..."],"addressedReviewIds":["review IDs"],"addressedCommentIds":["comment IDs"]}. Do not merge or mark ready.`,
 				{ next: "code-review" },
 			),
 			agent("visual-fix", "Fix visual findings", fix, { next: "code-review" }),
 			agent(
 				"guide",
 				"Prepare human review guide",
-				`Write a Rocky-inspired review recap for the exact current PR revision, grounded in the supplied results/evidence. Return {"goal":"short user goal","summary":"short outcome","decision":{"status":"ready or needs-attention or blocked","summary":"..."},"requirements":[{"criterion":"...","status":"supported or gap or unverified","evidence":["..."]}],"behavior":[{"scenario":"...","before":"...","after":"..."}],"checks":["actual checks and CI results"],"risks":["actual limitations"],"reviewInstructions":["where to look and what to verify"]}. Include decisions, accepted/rejected review complaints, real screenshots where UI changed and remaining human actions. Never invent successful checks, screenshots or coverage. Use plain language. The PR stays draft for the human.`,
+				`Write a Rocky-inspired review recap for the exact current PR revision, grounded in the supplied results/evidence. Return {"goal":"short user goal","summary":"short outcome","decision":{"status":"ready or needs-attention or blocked","summary":"..."},"requirements":[{"criterion":"...","status":"supported or gap or unverified","evidence":["..."]}],"behavior":[{"scenario":"...","before":"...","after":"..."}],"checks":["actual checks and CI results"],"risks":["actual limitations"],"reviewInstructions":["where to look and what to verify"]}. Include decisions, accepted/rejected review complaints, real screenshots where UI changed and remaining human actions. Never invent successful checks, screenshots or coverage. Use plain language. The PR stays draft until explicit human approval. If this is a new review after a human request or merge-readiness correction, inspect the actual diff since the last human-reviewed SHA in humanDecisions. For a verified typo/documentation-only correction of at most 10 changed lines, with no behavior, visual, dependency or configuration changes, retain the previous guide requirements/evidence and provide a concise revision summary in summary with reviewInstructions describing exactly what changed. Set revisionSummary=true and include previousHeadSha. Still include the current revision checks and unresolved human actions, and require fresh explicit approval. For any uncertainty or other change, prepare the complete guide again. Human-only merge blockers (draft status or missing external reviewer approval) are remaining human actions, not unsupported implementation requirements; a complete implementation may be ready for the guide while these approvals wait.`,
 				{ next: "handoff" },
 			),
 			tool("handoff", "Verify revision and hand off", "handoff", {
+				next: "human-review",
+			}),
+			tool("human-review", "Human review", "human-review", {
+				branches: [
+					{ when: { path: "decision", equals: "reject" }, next: "human-fix" },
+				],
+				next: "merge",
+			}),
+			agent(
+				"human-fix",
+				"Address human feedback",
+				`Address the latest human rejection/follow-up instructions in humanDecisions and human-review, preserving the accepted plan, decisions and all past review findings. Commit and push to the existing PR. Return {"summary":"what changed","checks":["commands and outcomes"]}. Do not merge, mark ready or assume approval.`,
+				{ next: "code-review" },
+			),
+			tool("merge", "Merge approved revision", "merge", {
+				branches: [
+					{ when: { path: "rework", equals: true }, next: "code-review" },
+					{ when: { path: "fix", equals: true }, next: "ci-fix" },
+				],
 				next: "end",
 			}),
 		],
@@ -129,6 +150,7 @@ export const defaultWorkflows = validateWorkflows([
 	},
 	{
 		id: "takeover",
+		icon: "🤝",
 		launchFields: takeoverLaunchFields,
 		name: "Take over existing work",
 		description:
@@ -163,6 +185,19 @@ export const defaultWorkflows = validateWorkflows([
 ]);
 
 /** Upgrade the original flat Factory definition without losing customized roles. */
+const legacyVisualPrompts: Record<string, string[]> = {
+	"visual-scope": [
+		'Inspect the exact PR diff and decide whether application visuals changed. Return {"changed":false,"areas":[]} for no visual changes, otherwise {"changed":true,"areas":[{"name":"region or element","url":"path/URL or application view","states":["desktop, mobile, relevant interaction states"],"instructions":"how to access and what changed"}]}. Be precise and exhaustive. Do not change code or take screenshots.',
+	],
+	capture: [
+		'Start the dev application as needed. Use available browser/screenshot tools to capture EVERY area and relevant state in visual-scope. When subagent tools are available and multiple areas can be captured independently, use up to 3 subagents in parallel to speed up capture. Set up the application once, then give each subagent a disjoint area/state assignment, the exact revision, application URL/access instructions, required assets and evidence directory. Share the dev server; use separate browser pages/contexts where supported. If browser control is shared, serialize interactions to avoid interfering with each other\'s captures. Each subagent must capture and inspect its assigned areas, use unique filenames, report real image paths and any unavailable states, and leave shared server cleanup to you. If delegation or independent capture is unsupported, capture sequentially yourself. Wait for all subagents, inspect their results, and merge them into one complete inventory without duplicates or missing states. Save image files under the provided evidence directory, with a fresh filename for each revision. Inspect the captures for readability. Return {"screenshots":[{"path":"absolute path","caption":"area/state","area":"name","state":"exact state from the area inventory"}],"unavailable":[{"area":"name","reason":"concrete reason"}]}. Never claim captures that do not exist. Stop any dev server you started only after all captures finish. Do not change product code. Missing capture tooling must be reported in unavailable.',
+		'Start the dev application as needed. Use available browser/screenshot tools to capture EVERY area and relevant state in visual-scope. Save image files under the provided evidence directory, with a fresh filename for each revision. Inspect the captures for readability. Return {"screenshots":[{"path":"absolute path","caption":"area/state","area":"name","state":"exact state from the area inventory"}],"unavailable":[{"area":"name","reason":"concrete reason"}]}. Never claim captures that do not exist. Stop any dev server you started before finishing. Do not change product code. Missing capture tooling must be reported in unavailable.',
+	],
+	"visual-review": [
+		'Review the current diff against the accepted plan. You receive ALL historical review rounds and fixer responses. Use stable finding IDs; do not reopen resolved findings without fresh evidence. A fixer may reject a complaint with evidence; assess that evidence and either accept or reject the rejection with reasoning. Return {"findings":[{"id":"stable-id","rating":2,"summary":"...","evidence":"file:line and concrete failure","status":"open"}],"summary":"..."}. Ratings: 1 nitpick, 2 should fix, 3 must fix. Include unresolved rating 2/3 findings from earlier rounds. Return no findings only when all consequential complaints are resolved or their rejections accepted. Do not modify code.\\nThis is a VISUAL review: open and inspect the actual screenshots, checking each requested area/state against the plan. Include areas with missing/unavailable capture evidence as rating 3 findings. Never approve missing screenshots.',
+	],
+};
+
 export function upgradeWorkflows(value: unknown): unknown {
 	if (!Array.isArray(value)) return value;
 	const definitions = structuredClone(value) as Record<string, unknown>[];
@@ -181,11 +216,72 @@ export function upgradeWorkflows(value: unknown): unknown {
 				defaultWorkflows.find((item) => item.id === "factory")!.steps,
 			);
 		}
-		definitions.push(shared);
+		definitions.push({ ...shared });
 	}
 	if (!definitions.some((item) => item.id === "takeover"))
 		definitions.push(
 			structuredClone(defaultWorkflows.find((item) => item.id === "takeover")!),
 		);
+	for (const definition of definitions) {
+		if (
+			Array.isArray(definition.launchFields) &&
+			definition.launchFields.length === 2 &&
+			definition.launchFields[0]?.name === "title" &&
+			definition.launchFields[0]?.label === "Title" &&
+			definition.launchFields[1]?.label === "What should we build?"
+		)
+			delete definition.launchFields;
+
+		if (!Array.isArray(definition.steps)) continue;
+		const steps = definition.steps as Record<string, unknown>[];
+		if (!["factory-pipeline", "factory"].includes(String(definition.id)))
+			continue;
+		for (const step of steps) {
+			if (
+				Object.hasOwn(legacyVisualPrompts, String(step.id)) &&
+				legacyVisualPrompts[String(step.id)]!.includes(String(step.prompt))
+			)
+				step.prompt = defaultWorkflows
+					.find((item) => item.id === "factory-pipeline")!
+					.steps.find((item) => item.id === step.id)!.prompt;
+		}
+		const stockFix = steps.find(
+			(step) =>
+				step.id === "ci-fix" &&
+				step.prompt ===
+					`Diagnose and fix the CI failures in the supplied receipts and full past review history. Run relevant checks, commit and push to the same draft PR. Return {"summary":"...","checks":["..."]}. Do not merge or mark ready.`,
+		);
+		if (stockFix)
+			stockFix.prompt = defaultWorkflows
+				.find((item) => item.id === "factory-pipeline")!
+				.steps.find((step) => step.id === "ci-fix")!.prompt;
+		const ci = steps.find((step) => step.tool === "ci");
+		if (ci && Array.isArray(ci.branches))
+			ci.branches = ci.branches.map((branch) =>
+				branch.next === "ci-fix" &&
+				branch.when?.path === "approved" &&
+				branch.when?.equals === false
+					? { ...branch, when: { path: "fix", equals: true } }
+					: branch,
+			);
+		const handoff = steps.find((step) => step.tool === "handoff");
+		if (
+			!handoff ||
+			steps.some((step) => step.id === "human-review") ||
+			(handoff.next && handoff.next !== "end")
+		)
+			continue;
+		handoff.next = "human-review";
+		const shared = defaultWorkflows.find(
+			(item) => item.id === "factory-pipeline",
+		)!;
+		steps.push(
+			...structuredClone(
+				shared.steps.filter((step) =>
+					["human-review", "human-fix", "merge"].includes(step.id),
+				),
+			).map((step) => ({ ...step })),
+		);
+	}
 	return definitions;
 }

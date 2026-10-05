@@ -108,7 +108,7 @@ export function formatActivities(run) {
 	const activities = [],
 		tools = new Map(),
 		events = run.events ?? [];
-	const steps = events.filter(
+	const steps = (run.stepEvents ?? events).filter(
 		(event) => !["run", "prepare"].includes(event.step),
 	);
 	let stepIndex = 0;
@@ -287,7 +287,12 @@ export function formatActivities(run) {
 				entry.createdAt ??
 				run.createdAt;
 			const at = new Date(stamp).toISOString();
-			add(entry, at, stepAt(at), `entry/${index}`);
+			add(
+				entry,
+				at,
+				entry.activityStep ?? stepAt(at),
+				`entry/${entry.activityIndex ?? index}`,
+			);
 		});
 		for (let index = 0; index < events.length; index++) {
 			const event = events[index],
@@ -296,11 +301,14 @@ export function formatActivities(run) {
 			// runtime's size-capped event copy is truncated. Keep only workflow logs.
 			if (
 				["assistant", "user", "result"].includes(message?.type) ||
+				/^\s*\{\s*"type"\s*:\s*"(?:assistant|user|result)"/.test(
+					event.message,
+				) ||
 				event.message.length === 20000
 			)
 				continue;
 			activities.push({
-				key: `event/${event.at}/${index}`,
+				key: `event/${event.at}/${event.activityIndex ?? index}`,
 				at: event.at,
 				step: event.step,
 				type: "system",
@@ -312,10 +320,15 @@ export function formatActivities(run) {
 		events.forEach((event, index) => {
 			const message = parse(event.message);
 			if (message && typeof message === "object" && message.type)
-				add(message, event.at, event.step, `event/${event.at}/${index}`);
+				add(
+					message,
+					event.at,
+					event.step,
+					`event/${event.at}/${event.activityIndex ?? index}`,
+				);
 			else
 				activities.push({
-					key: `event/${event.at}/${index}`,
+					key: `event/${event.at}/${event.activityIndex ?? index}`,
 					at: event.at,
 					step: event.step,
 					type: "system",
@@ -339,7 +352,13 @@ export function formatActivities(run) {
 			activities.push({
 				key: `answer/${index}`,
 				at: answer.at,
-				step: "Clarification",
+				step:
+					steps.findLast(
+						(event) => Date.parse(event.at) <= Date.parse(answer.at),
+					)?.step ??
+					steps[0]?.step ??
+					run.step ??
+					"clarify",
 				type: "user",
 				title: "You",
 				body: answer.answer,

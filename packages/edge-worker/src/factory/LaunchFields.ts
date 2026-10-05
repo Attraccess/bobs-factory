@@ -32,25 +32,25 @@ export const LaunchFieldSchema = z
 export type LaunchField = z.infer<typeof LaunchFieldSchema>;
 export const standardLaunchFields = [
 	{
-		name: "title",
-		label: "Title",
-		required: true,
-		placeholder: "Add a customer dashboard",
-	},
-	{
 		name: "prompt",
-		label: "What should we build?",
+		label: "What should Bob build?",
 		type: "textarea",
 		required: true,
-		placeholder: "Describe the task, requirements and any useful context…",
+		placeholder: "What should Bob build?",
+	},
+	{
+		name: "title",
+		label: "Title",
+		required: false,
+		placeholder: "Optional name for this run",
 	},
 ];
 export const takeoverLaunchFields = [
 	{
 		name: "source",
-		label: "Existing PR or ticket",
+		label: "PR URL or ticket ID",
 		required: true,
-		placeholder: "Linear ticket ID/URL or GitHub PR URL",
+		placeholder: "https://github.com/… or ATT-123",
 		description:
 			"Continue the work described by this source. Existing PRs become draft during factory review.",
 	},
@@ -66,15 +66,21 @@ export function getLaunchFields(
 ): LaunchField[] {
 	return (
 		workflow.launchFields ??
-		z
-			.array(LaunchFieldSchema)
-			.parse(
-				workflow.internal
-					? []
-					: workflow.id === "takeover"
-						? takeoverLaunchFields
-						: standardLaunchFields,
-			)
+		z.array(LaunchFieldSchema).parse(
+			workflow.internal
+				? []
+				: workflow.id === "takeover"
+					? takeoverLaunchFields
+					: standardLaunchFields.map((field) =>
+							workflow.id === "simple" && field.name === "prompt"
+								? {
+										...field,
+										label: "What should Bob do?",
+										placeholder: "What should Bob do?",
+									}
+								: field,
+						),
+		)
 	);
 }
 export const LaunchRequestSchema = z.object({
@@ -130,7 +136,10 @@ export function resolveLaunchRequest(
 		source,
 		title:
 			providedTitle ||
-			(source ? `${workflow.name}: ${source}` : workflow.name).slice(0, 300),
+			(source
+				? `${workflow.name}: ${source}`
+				: inputs.prompt?.split("\n")[0]?.trim() || workflow.name
+			).slice(0, 300),
 		titleProvided: Boolean(providedTitle),
 		prompt: inputs.prompt ?? request.prompt ?? "",
 	};

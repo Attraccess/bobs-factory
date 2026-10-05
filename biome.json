@@ -39,5 +39,10 @@
 		"useIgnoreFile": true,
 		"clientKind": "git",
 		"defaultBranch": "main"
+	},
+	"css": {
+		"parser": {
+			"tailwindDirectives": true
+		}
 	}
 }

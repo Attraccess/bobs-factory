@@ -403,3 +403,138 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 		rmSync(home, { recursive: true, force: true });
 	}
 });
+
+it("loads large artifacts lazily and persists view state without changing a run", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-lazy-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const run = runtime.create({
+		title: "Large evidence",
+		repositoryId: "repo",
+		workspace: home,
+		input: "",
+		workflow: defaultWorkflows[1]!,
+	});
+	run.status = "completed";
+	run.outputs.custom = { summary: "Big evidence", notes: "x".repeat(250000) };
+	run.outputs.other = { summary: "Big evidence", notes: "y".repeat(250000) };
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => run,
+		stop: () => {},
+	});
+	try {
+		const summary = (
+			await server.app.inject({ method: "GET", url: "/api/runs" })
+		).json();
+		expect(summary[0].outputs).toBeUndefined();
+		const detail = (
+			await server.app.inject({
+				method: "GET",
+				url: `/api/runs/${run.id}?view=dashboard`,
+			})
+		).json();
+		expect(detail.outputs.custom).toMatchObject({
+			__artifactPreview: true,
+			summary: "Big evidence",
+		});
+		expect(detail.outputs.custom.notes).toBeUndefined();
+		if (run.outputs.other)
+			expect(detail.outputs.custom.__artifactHash).not.toBe(
+				detail.outputs.other.__artifactHash,
+			);
+		expect(
+			(
+				await server.app.inject({
+					method: "GET",
+					url: `/api/runs/${run.id}/artifacts/custom`,
+				})
+			).json(),
+		).toEqual(run.outputs.custom);
+		const state = { keptOpen: true };
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: `/api/runs/${run.id}/view`,
+					headers: { "x-factory-request": "1" },
+					payload: state,
+				})
+			).statusCode,
+		).toBe(200);
+		expect(
+			new WorkflowRuntime(home, {
+				agent: async () => ({}),
+				script: async () => ({}),
+				tool: async () => ({}),
+			}).viewState(run.id),
+		).toEqual(state);
+		expect(run.status).toBe("completed");
+	} finally {
+		await server.stop();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+it("streams coalesced changes, reconnects with a fresh snapshot, and closes subscriptions", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-sse-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	let notify: ((id: string) => void) | undefined;
+	let unsubscribed = false;
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("unused");
+		},
+		stop: () => {},
+		subscribe: (listener) => {
+			notify = listener;
+			return () => {
+				unsubscribed = true;
+			};
+		},
+	});
+	const controller = new AbortController();
+	try {
+		await server.start(0);
+		const address = server.app.server.address() as { port: number };
+		const response = await fetch(
+			`http://localhost:${address.port}/api/events`,
+			{ signal: controller.signal },
+		);
+		expect(response.headers.get("content-type")).toBe("text/event-stream");
+		const reader = response.body!.getReader();
+		const decoder = new TextDecoder();
+		expect(decoder.decode((await reader.read()).value)).toBe(
+			"event: ready\ndata: {}\n\n",
+		);
+		const next = reader.read();
+		notify!("session-one");
+		notify!("session-one");
+		runtime.updateViewState("session-two", {
+			seenAt: new Date().toISOString(),
+		});
+		const message = decoder.decode((await next).value);
+		expect(message).toBe(
+			'event: change\ndata: {"ids":["session-one","session-two"],"config":false}\n\n',
+		);
+		await reader.cancel();
+		await server.stop();
+		expect(unsubscribed).toBe(true);
+	} finally {
+		controller.abort();
+		await server.stop();
+		rmSync(home, { recursive: true, force: true });
+	}
+});

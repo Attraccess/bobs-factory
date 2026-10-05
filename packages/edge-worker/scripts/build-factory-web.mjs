@@ -1,25 +1,35 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { copyFileSync, mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
 
-// Embed the existing, browser-safe runner formatters as ES modules. Keeping the
-// dashboard in one asset also lets an already-running Cyrus serve UI updates.
-const moduleUrl = (source) =>
-	`data:text/javascript;base64,${Buffer.from(source).toString("base64")}`;
-let activity = readFileSync(
-	new URL("../src/factory/web/activity.js", import.meta.url),
-	"utf8",
+const root = fileURLToPath(new URL("..", import.meta.url));
+const source = `${root}/src/factory/web`,
+	target = `${root}/dist/factory/web`;
+mkdirSync(target, { recursive: true });
+await build({
+	entryPoints: [`${source}/app.tsx`],
+	outfile: `${target}/app.js`,
+	bundle: true,
+	nodePaths: [`${root}/node_modules`],
+	format: "esm",
+	platform: "browser",
+	target: "es2022",
+	jsx: "automatic",
+	minify: true,
+	sourcemap: true,
+});
+execFileSync(
+	"pnpm",
+	[
+		"exec",
+		"tailwindcss",
+		"-i",
+		`${source}/styles.css`,
+		"-o",
+		`${target}/styles.css`,
+		"--minify",
+	],
+	{ cwd: root, stdio: "inherit" },
 );
-for (const runner of ["claude", "codex", "gemini", "cursor", "opencode"]) {
-	const formatter = readFileSync(
-		new URL(`../../${runner}-runner/dist/formatter.js`, import.meta.url),
-		"utf8",
-	);
-	activity = activity.replace(
-		`../../../../${runner}-runner/dist/formatter.js`,
-		moduleUrl(formatter),
-	);
-}
-const app = readFileSync(
-	new URL("../src/factory/web/app.js", import.meta.url),
-	"utf8",
-).replace("./activity.js", moduleUrl(activity));
-writeFileSync(new URL("../dist/factory/web/app.js", import.meta.url), app);
+copyFileSync(`${source}/index.html`, `${target}/index.html`);

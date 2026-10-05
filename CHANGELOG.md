@@ -6,6 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Pause factory delivery for explicit commit-bound human approval or requested changes, then honor GitHub merge rules/queues and confirm the merge; assess PR comments, review threads, conflicts and required approvals alongside CI. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+- Reuse previous role results and revision deltas on repeated workflow steps; reuse verified screenshots for unchanged areas and update review recaps without rebuilding unchanged evidence. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
 - Choose Default, Standard or Fast service tiers for Codex and Claude in run and workflow-role settings, independently of reasoning effort and model selection. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Screenshot capture agents can delegate independent areas to parallel subagents when supported, sharing application setup and combining complete evidence before visual review. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
@@ -17,7 +20,16 @@ All notable changes to this project will be documented in this file.
 - Added the operator-configurable `codexSandboxMode` for issue and chat sessions, retaining `workspace-write` by default and supporting opt-in native read-only or full host access without browser-specific integrations. ([#1521](https://github.com/cyrusagents/cyrus/pull/1521))
 - Configure `sandbox.additionalWritableDirectories` to let CLI tools create sockets, caches, or state outside their session worktree. Applies to issue and chat sessions without requiring the network proxy, with no additional directories allowed by default. ([#1516](https://github.com/cyrusagents/cyrus/pull/1516))
 
+### Changed
+
+- Keep long runs responsive with SSE updates, paged and virtualized conversations, bounded transcript caches, lazy raw details/images, virtual screenshot galleries and revision-aware artifact caching. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+- Select representative visual evidence within a default 24-screenshot budget, with justified exceptions, and retain individually accepted unchanged screenshots after partial review failures. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
+- Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
 ### Fixed
+
+- Save Today-view settling immediately with loading feedback, and load dashboard assets together with the backend so new controls cannot appear before their APIs are available. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Keep repeated CI polling tables and command fragments out of chat; show one meaningful PR-check status while retaining check results and failures. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 

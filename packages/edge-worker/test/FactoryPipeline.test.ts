@@ -12,6 +12,7 @@ import {
 	type ExecutionContext,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { providerReceipt } from "./fixtures/merge-readiness.js";
 
 const directories: string[] = [];
 it("runs commands with oversized input via a cleaned-up file, retaining small-input compatibility", async () => {
@@ -127,7 +128,22 @@ it("returns visual and CI fixes through code review, keeping dispute history", a
 						(context.run.outputs["visual-review"] as { findings: unknown[] })
 							.findings.length === 0,
 				};
-			if (step === "ci") return { approved: ++ci > 1 };
+			if (step === "ci") return { approved: ++ci > 1, fix: ci === 1 };
+			if (step === "human-review") {
+				setTimeout(
+					() =>
+						runtime.decide(context.run.id, {
+							reviewId: context.run.reviewGate!.id,
+							headSha: context.run.reviewGate!.headSha,
+							decision: "approve",
+						}),
+					0,
+				);
+				return {
+					headSha: "test-sha",
+					url: "https://github.com/test/repo/pull/1",
+				};
+			}
 			return {};
 		},
 	});
@@ -176,6 +192,8 @@ it("returns visual and CI fixes through code review, keeping dispute history", a
 		"visual-gate",
 		"guide",
 		"handoff",
+		"human-review",
+		"merge",
 	]);
 });
 
@@ -270,12 +288,24 @@ it("rechecks live CI before handing a draft PR to a human", async () => {
 		postComment,
 		command: async (_context, exe, args) => {
 			if (exe === "git") return args[0] === "status" ? "" : "head";
+			if (args.includes("graphql"))
+				return JSON.stringify(
+					providerReceipt({
+						statusCheckRollup: {
+							contexts: {
+								nodes: [{ name: "test", conclusion: "FAILURE" }],
+								pageInfo: {},
+							},
+						},
+					}),
+				);
+			if (args[0] === "api") return "[[]]";
 			return args[1] === "view"
 				? JSON.stringify({ headRefOid: "head", isDraft: true, state: "OPEN" })
 				: JSON.stringify([{ bucket: "fail" }]);
 		},
 	});
-	await expect(tools.tool(input)).rejects.toThrow("CI is no longer green");
+	await expect(tools.tool(input)).rejects.toThrow("Merge readiness changed");
 	expect(postComment).not.toHaveBeenCalled();
 });
 
@@ -311,6 +341,8 @@ it("publishes a grounded human review guide while keeping the PR draft", async (
 					isDraft: true,
 					state: "OPEN",
 				});
+			if (args.includes("graphql")) return JSON.stringify(providerReceipt());
+			if (args[0] === "api") return "[[]]";
 			if (args[1] === "checks") return JSON.stringify([{ bucket: "pass" }]);
 			return "";
 		},

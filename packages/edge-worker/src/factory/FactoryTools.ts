@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
 	existsSync,
 	mkdtempSync,
@@ -10,6 +11,13 @@ import {
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { z } from "zod";
+import { dependencyHashes } from "./Incremental.js";
+import {
+	assessFeedback,
+	delay,
+	inspectMergeReadiness,
+	reportReadiness,
+} from "./MergeReadiness.js";
 import { inspectPullRequest } from "./Takeover.js";
 import { readPath } from "./Workflow.js";
 
@@ -151,6 +159,15 @@ export function executeCommand(
 }
 
 export const ReviewResultSchema = z.object({
+	acceptedScreenshots: z
+		.array(
+			z.object({
+				area: z.string().min(1),
+				state: z.string().min(1),
+				imageSha256: z.string().regex(/^[a-f0-9]{64}$/),
+			}),
+		)
+		.optional(),
 	findings: z.array(
 		z.object({
 			id: z.string().min(1),
@@ -175,6 +192,10 @@ export function filterReview(
 const screenshotSchema = z.object({
 	path: z.string(),
 	caption: z.string(),
+	revision: z.string().optional(),
+	imageSha256: z.string().optional(),
+	dependencyHashes: z.record(z.string(), z.string()).optional(),
+	reused: z.boolean().optional(),
 	area: z.string(),
 	state: z.string().optional(),
 });
@@ -400,58 +421,85 @@ export class FactoryTools {
 			}
 			case "ci": {
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
-				if (!url) throw new Error("No draft PR to check");
+				if (!url) throw new Error("No PR to check");
+				for (;;) {
+					const snapshot = await inspectMergeReadiness(command, url);
+					assessFeedback(context, snapshot);
+					const headSha = await command("git", ["rev-parse", "HEAD"]);
+					if (snapshot.headSha !== headSha)
+						throw new Error(
+							"PR must match the current pushed worktree revision",
+						);
+					reportReadiness(context, snapshot);
+					if (snapshot.fix || snapshot.reviewReady || snapshot.approved)
+						return snapshot;
+					await delay(context.signal);
+				}
+			}
+			case "human-review": {
 				const headSha = await command("git", ["rev-parse", "HEAD"]);
-				const remote = JSON.parse(
-					await command("gh", [
-						"pr",
-						"view",
-						url,
-						"--json",
-						"headRefOid,isDraft,state",
-					]),
-				);
+				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
+				const snapshot = await inspectMergeReadiness(command, url);
+				assessFeedback(context, snapshot);
 				if (
-					remote.headRefOid !== headSha ||
-					!remote.isDraft ||
-					remote.state !== "OPEN"
+					snapshot.headSha !== headSha ||
+					readPath(run.outputs, "handoff.headSha") !== headSha
 				)
 					throw new Error(
-						"Draft PR must match the current pushed worktree revision",
+						"Review guide revision changed; retry review before approving",
 					);
-				try {
-					const receipt = await command(
-						"gh",
-						["pr", "checks", url, "--watch", "--interval", "10"],
-						30 * 60 * 1000,
-					);
-					const checks = JSON.parse(
+				return { headSha, url };
+			}
+			case "merge": {
+				const approved = run.humanDecisions?.at(-1);
+				if (approved?.decision !== "approve")
+					throw new Error("Explicit human approval required before merge");
+				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
+				let submitted = false;
+				for (;;) {
+					const snapshot = await inspectMergeReadiness(command, url);
+					assessFeedback(context, snapshot);
+					reportReadiness(context, snapshot);
+					if (
+						snapshot.headSha !== approved.headSha ||
+						(await command("git", ["rev-parse", "HEAD"])) !==
+							approved.headSha ||
+						(await command("git", ["status", "--porcelain"]))
+					) {
+						delete run.reviewGate;
+						return {
+							...snapshot,
+							fix: true,
+							rework: false,
+							reason:
+								"Revision changed after human approval; synchronize the local and remote branch without discarding work, commit/push pending changes, then repeat all review gates",
+						};
+					}
+					if (snapshot.state === "MERGED")
+						return { merged: true, url, headSha: snapshot.headSha };
+					if (snapshot.state !== "OPEN")
+						throw new Error("PR closed without merging");
+					if (snapshot.isDraft) {
+						await command("gh", ["pr", "ready", url]);
+						continue;
+					}
+					if (snapshot.fix) return { ...snapshot, fix: true };
+					if (snapshot.approved && !snapshot.queued && !submitted) {
+						// GitHub CLI enters a required merge queue automatically. Never use --admin.
 						await command("gh", [
 							"pr",
-							"checks",
+							"merge",
 							url,
-							"--json",
-							"name,state,bucket,link",
-						]),
-					);
-					return {
-						approved:
-							checks.length > 0 &&
-							checks.every(
-								(check: { bucket: string }) =>
-									check.bucket === "pass" || check.bucket === "skipping",
-							),
-						headSha,
-						checks,
-						receipt,
-					};
-				} catch (error) {
-					context.signal.throwIfAborted();
-					return {
-						approved: false,
-						headSha,
-						error: error instanceof Error ? error.message : String(error),
-					};
+							`--${snapshot.mergeMethod}`,
+							"--match-head-commit",
+							approved.headSha,
+						]);
+						submitted = true;
+						context.log(
+							"Merge requested; waiting for GitHub to confirm merge or queue completion.",
+						);
+					}
+					await delay(context.signal);
 				}
 			}
 			case "handoff": {
@@ -471,21 +519,17 @@ export class FactoryTools {
 				if (
 					pr.headRefOid !== headSha ||
 					readPath(run.outputs, "ci.headSha") !== headSha ||
-					readPath(run.outputs, "ci.approved") !== true ||
-					!pr.isDraft ||
+					(readPath(run.outputs, "ci.reviewReady") !== true &&
+						readPath(run.outputs, "ci.approved") !== true) ||
 					pr.state !== "OPEN"
 				)
 					throw new Error(
 						"PR revision or CI evidence changed; handoff blocked",
 					);
-				const checks: { bucket: string }[] = JSON.parse(
-					await command("gh", ["pr", "checks", url, "--json", "bucket"]),
-				);
-				if (
-					!checks.length ||
-					checks.some((check) => !["pass", "skipping"].includes(check.bucket))
-				)
-					throw new Error("CI is no longer green");
+				const readiness = await inspectMergeReadiness(command, url);
+				assessFeedback(context, readiness);
+				if (!readiness.reviewReady || readiness.headSha !== headSha)
+					throw new Error("Merge readiness changed; handoff blocked");
 				if (readPath(run.outputs, "guide.decision.status") !== "ready")
 					throw new Error(
 						"Review guide reports unresolved gaps; handoff blocked",
@@ -543,6 +587,31 @@ export function captureEvidence(
 ): unknown {
 	const capture = CaptureSchema.parse(output);
 	const areas = readPath(context.run.outputs, "visual-scope.areas");
+	const budget = readPath(context.run.outputs, "visual-scope.captureBudget");
+	// Old persisted inventories remain readable/resumable; new evidence plans are bounded.
+	if (typeof budget === "number") {
+		if (capture.screenshots.length > budget)
+			throw new Error(
+				`Capture exceeds the representative evidence budget of ${budget}`,
+			);
+		const identities = capture.screenshots.map(
+			(shot) => `${shot.area}\0${shot.state}`,
+		);
+		const hashes = capture.screenshots.map((shot) =>
+			createHash("sha256")
+				.update(
+					readFileSync(verifiedScreenshot(shot.path, context.evidenceDir)),
+				)
+				.digest("hex"),
+		);
+		if (
+			new Set(identities).size !== identities.length ||
+			new Set(hashes).size !== hashes.length
+		)
+			throw new Error(
+				"Capture contains duplicate states or identical images; keep one representative image",
+			);
+	}
 	if (Array.isArray(areas)) {
 		for (const area of areas) {
 			for (const state of area.states ?? []) {
@@ -560,10 +629,70 @@ export function captureEvidence(
 			}
 		}
 	}
+	const scope = context.run.outputs["visual-scope"] as
+		| {
+				areas?: { name: string; dependencies?: string[]; changed?: boolean }[];
+				nonVisualFiles?: string[];
+		  }
+		| undefined;
+	const previous = context.progress?.previousOutput as
+		| { screenshots?: z.infer<typeof screenshotSchema>[] }
+		| undefined;
+	const covered = new Set([
+		...(scope?.areas ?? []).flatMap((area) => area.dependencies ?? []),
+		...(scope?.nonVisualFiles ?? []),
+	]);
+	const unexplained =
+		context.progress?.changedFiles.some((file) => !covered.has(file)) ?? true;
 	for (const shot of capture.screenshots) {
 		if (!existsSync(shot.path))
 			throw new Error(`Screenshot missing: ${shot.path}`);
 		verifiedScreenshot(shot.path, context.evidenceDir);
+		const imageSha256 = createHash("sha256")
+			.update(readFileSync(shot.path))
+			.digest("hex");
+		const area = scope?.areas?.find((area) => area.name === shot.area);
+		let hashes: Record<string, string> | undefined;
+		if (area?.dependencies?.length)
+			hashes = dependencyHashes(context.run.workspace, area.dependencies);
+		const old = previous?.screenshots?.find((old) => old.path === shot.path);
+		if (old) {
+			const unchanged =
+				context.progress?.unchangedCode ||
+				(!context.progress?.uncertain &&
+					!unexplained &&
+					area?.changed === false &&
+					hashes &&
+					old.dependencyHashes &&
+					JSON.stringify(hashes) === JSON.stringify(old.dependencyHashes));
+			if (
+				!unchanged ||
+				old.area !== shot.area ||
+				old.state !== shot.state ||
+				old.imageSha256 !== imageSha256 ||
+				(readPath(context.run.outputs, "visual-gate.approved") !== true &&
+					!(
+						readPath(
+							context.run.outputs,
+							"visual-review.acceptedScreenshots",
+						) as
+							| { area: string; state: string; imageSha256: string }[]
+							| undefined
+					)?.some(
+						(item) =>
+							item.area === shot.area &&
+							item.state === shot.state &&
+							item.imageSha256 === imageSha256,
+					))
+			)
+				throw new Error(
+					`Screenshot reuse is not verified for ${shot.area}/${shot.state}; capture a fresh image`,
+				);
+			shot.reused = true;
+		} else shot.reused = false;
+		shot.revision = context.progress?.currentRevision?.headSha;
+		shot.imageSha256 = imageSha256;
+		shot.dependencyHashes = hashes;
 	}
 	return capture;
 }

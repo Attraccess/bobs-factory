@@ -176,13 +176,20 @@ import {
 	parseAgentOutput,
 	toolArguments,
 } from "./factory/FactoryTools.js";
+import {
+	incrementalInstructions,
+	incrementalRoleInstructions,
+	roleProgress,
+} from "./factory/Incremental.js";
 import { issueSnapshot } from "./factory/issueSnapshot.js";
 import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
+import { resolveLaunchRequest } from "./factory/LaunchFields.js";
 import {
 	inspectPullRequest,
 	type TakeoverPullRequest,
 	ticketIdentifier,
 } from "./factory/Takeover.js";
+import { readPath as readFactoryPath } from "./factory/Workflow.js";
 import {
 	type ExecutionContext,
 	type FactoryRun,
@@ -829,7 +836,42 @@ export class EdgeWorker extends EventEmitter {
 						repositoryId: this.sessionRepositories.get(session.id),
 					})),
 				entries: (id) => this.agentSessionManager.getSessionEntries(id),
+				subscribe: (notify) => {
+					this.agentSessionManager.on("sessionChanged", notify);
+					return () => {
+						this.agentSessionManager.off("sessionChanged", notify);
+					};
+				},
 				start: (input) => this.startManualFactoryRun(input),
+				followup: async (id, feedback) => {
+					const run = this.getFactoryRuntime().runs.get(id);
+					const session = this.agentSessionManager.getSession(id);
+					const repositoryId =
+						run?.repositoryId ?? this.sessionRepositories.get(id);
+					if (!repositoryId) throw new Error("Run repository unavailable");
+					const source =
+						readFactoryPath(run?.outputs, "draft-pr.url") ??
+						run?.source ??
+						session?.issue?.identifier;
+					const workflow = this.getFactoryRuntime().selectWorkflow(
+						[],
+						source ? "takeover" : "factory",
+					);
+					return this.startManualFactoryRun(
+						resolveLaunchRequest(workflow, {
+							repositoryId,
+							workflow: workflow.id,
+							inputs: source
+								? { source: String(source), prompt: feedback }
+								: {
+										title: `Follow-up: ${run?.title ?? session?.issue?.title ?? id}`,
+										prompt: feedback,
+									},
+							runner: run?.runner as RunnerType | undefined,
+							model: run?.model,
+						}),
+					);
+				},
 				stop: (id) => {
 					this.factoryRuntime?.runs.has(id) && this.factoryRuntime.stop(id);
 					this.agentSessionManager.requestSessionStop(id);
@@ -5549,7 +5591,10 @@ ${taskSection}`;
 					run.status === "waiting",
 			) ?? this.factoryRuntime?.runs.get(agentSessionId);
 		if (factoryRun) {
-			if (factoryRun.status === "waiting")
+			if (
+				factoryRun.status === "waiting" &&
+				factoryRun.reviewGate?.status !== "pending"
+			)
 				this.factoryRuntime!.answer(factoryRun.id, activityBody);
 			else
 				await this.agentSessionManager.createResponseActivity(
@@ -5909,7 +5954,7 @@ ${taskSection}`;
 		const repository = this.repositories.get(run.repositoryId);
 		if (!session || !repository)
 			throw new Error("Run session/repository unavailable");
-		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
 			repository,
@@ -5985,7 +6030,13 @@ ${taskSection}`;
 			)
 				context.log(JSON.stringify(message));
 		};
-		const factoryContext = prepareFactoryContext(context.input);
+		context.progress = await roleProgress(context);
+		const factoryContext = prepareFactoryContext({
+			...(context.input && typeof context.input === "object"
+				? context.input
+				: { input: context.input }),
+			progress: context.progress,
+		});
 		try {
 			built.config.mcpConfig = {
 				...built.config.mcpConfig,
@@ -6034,6 +6085,12 @@ ${taskSection}`;
 				)
 					output = validateFactoryResult(step.id, output);
 				if (step.id === "capture") output = captureEvidence(context, output);
+				const completed = (await roleProgress(context)).currentRevision;
+				if (completed) {
+					run.roleRevisions ??= {};
+					completed.historyLength = run.history.length + 1;
+					run.roleRevisions[run.step ?? step.id] = completed;
+				}
 				return output;
 			} finally {
 				context.signal.removeEventListener("abort", stop);
