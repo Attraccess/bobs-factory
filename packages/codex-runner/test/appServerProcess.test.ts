@@ -79,7 +79,6 @@ describe("AppServerProcessManager pool", () => {
 				},
 			},
 		});
-		first.release();
 		const resumed = await manager.acquire({
 			...config,
 			resumeSessionId: "saved-thread",
@@ -99,10 +98,49 @@ describe("AppServerProcessManager pool", () => {
 		});
 		expect(clients).toHaveLength(2);
 		expect(clients.map((client) => client.startCalls)).toEqual([1, 1]);
-		resumed.release();
-		equivalent.release();
+		await first.release();
+		await resumed.release();
+		await equivalent.release();
 		await manager.closeAll();
 		expect(clients.map((client) => client.closeCalls)).toEqual([1, 1]);
+	});
+	it("awaits MCP process shutdown after its final lease without interrupting other clients", async () => {
+		const { clients, factory } = recordingFactory();
+		const manager = new AppServerProcessManager(factory, {
+			idleCloseMs: 30000,
+		});
+		const config = {
+			...configWithEnv(),
+			configOverrides: { mcp_servers: { context: { command: "node" } } },
+		};
+		const first = await manager.acquire(config);
+		const second = await manager.acquire(config);
+		await first.release();
+		expect(clients[0]!.closeCalls).toBe(0);
+		let finish!: () => void;
+		const closing = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		vi.spyOn(clients[0]!, "close").mockImplementation(async () => {
+			clients[0]!.closeCalls++;
+			await closing;
+		});
+		let released = false;
+		const release = second.release().then(() => {
+			released = true;
+		});
+		await Promise.resolve();
+		expect(clients[0]!.closeCalls).toBe(1);
+		expect(released).toBe(false);
+		finish();
+		await release;
+		const resumed = await manager.acquire({
+			...config,
+			resumeSessionId: "saved-thread",
+		});
+		expect(clients).toHaveLength(2);
+		await resumed.release();
+		await manager.closeAll();
 	});
 	it("shares one process for identical launch configs", async () => {
 		const { clients, factory } = recordingFactory();

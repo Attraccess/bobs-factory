@@ -20,7 +20,7 @@ export interface AppServerProcessLease {
 	request<T = unknown>(method: string, params: unknown): Promise<T>;
 	registerThread(threadId: string, handler: AppServerThreadHandler): void;
 	unregisterThread(threadId: string, handler: AppServerThreadHandler): void;
-	release(): void;
+	release(): Promise<void>;
 }
 
 interface AppServerProcessManagerOptions {
@@ -79,7 +79,7 @@ class PooledAppServerProcess {
 			await this.ensureStarted();
 		} catch (error) {
 			released = true;
-			this.releaseRef();
+			await this.releaseRef();
 			throw error;
 		}
 
@@ -107,12 +107,12 @@ class PooledAppServerProcess {
 					this.threadHandlers.delete(threadId);
 				}
 			},
-			release: () => {
+			release: async () => {
 				if (released) {
 					return;
 				}
 				released = true;
-				this.releaseRef();
+				await this.releaseRef();
 			},
 		};
 	}
@@ -218,9 +218,13 @@ class PooledAppServerProcess {
 		}
 	}
 
-	private releaseRef(): void {
+	private async releaseRef(): Promise<void> {
 		this.leaseCount = Math.max(0, this.leaseCount - 1);
 		if (this.leaseCount === 0) {
+			if (this.idleCloseMs <= 0) {
+				await this.close();
+				return;
+			}
 			this.scheduleIdleClose();
 		}
 	}
@@ -307,7 +311,9 @@ export class AppServerProcessManager {
 			const created = new PooledAppServerProcess(
 				launchOptions,
 				this.clientFactory,
-				this.idleCloseMs,
+				// MCP endpoints can be ephemeral. Release cached transports and the
+				// thread's writer lock before a later invocation resumes from disk.
+				launchOptions.mcpServers ? 0 : this.idleCloseMs,
 				() => {
 					// Only drop the entry if it still points at this instance — a
 					// replacement may already have taken its place.
