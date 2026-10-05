@@ -196,6 +196,11 @@ it("returns visual and CI fixes through code review, keeping dispute history", a
 		},
 	});
 	const run = runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
 		title: "Dashboard",
 		repositoryId: "repo",
 		workspace: "/tmp",
@@ -254,6 +259,11 @@ function context(): ExecutionContext {
 		tool: async () => ({}),
 	});
 	const run = runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
 		title: "Task",
 		repositoryId: "repo",
 		workspace: directory,
