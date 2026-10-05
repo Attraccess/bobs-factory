@@ -28,6 +28,7 @@ export type RunStatus =
 	| "interrupted";
 export interface RunEvent {
 	sequence?: number;
+	source?: "agent" | "workflow";
 	at: string;
 	step: string;
 	message: string;
@@ -114,7 +115,7 @@ export interface ExecutionContext {
 	input: unknown;
 	outputs?: Record<string, unknown>;
 	signal: AbortSignal;
-	log: (message: string) => void;
+	log: (message: string, source?: RunEvent["source"]) => void;
 	evidenceDir: string;
 	resumeAgent?: AgentCheckpoint;
 	checkpointAgent?: (agent: AgentCheckpoint) => void;
@@ -314,7 +315,12 @@ export class WorkflowRuntime {
 		if (!run) throw new Error("Run not found");
 		return run;
 	}
-	log(run: FactoryRun, step: string, message: string): void {
+	log(
+		run: FactoryRun,
+		step: string,
+		message: string,
+		source: RunEvent["source"] = "workflow",
+	): void {
 		const at = new Date().toISOString();
 		run.activitySteps ??= activityMarkers(run);
 		if (
@@ -323,6 +329,7 @@ export class WorkflowRuntime {
 		)
 			run.activitySteps.push({ at, step });
 		run.events.push({
+			source,
 			sequence: (run.events.at(-1)?.sequence ?? run.events.length - 1) + 1,
 			at,
 			step,
@@ -436,7 +443,7 @@ export class WorkflowRuntime {
 				input,
 				outputs,
 				signal,
-				log: (message) => this.log(run, key, message),
+				log: (message, source) => this.log(run, key, message, source),
 				evidenceDir: join(this.directory, "evidence", run.id),
 				resumeAgent: state.agent,
 				checkpointAgent: (agent) => {

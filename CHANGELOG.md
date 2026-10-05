@@ -29,6 +29,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Keep truncated live agent/tool event copies out of workflow chat, using the complete session transcript and preserving message provenance through pagination and restarts. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
+
 - Save Today-view settling immediately with loading feedback, and load dashboard assets together with the backend so new controls cannot appear before their APIs are available. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 - Keep repeated CI polling tables and command fragments out of chat; show one meaningful PR-check status while retaining check results and failures. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))

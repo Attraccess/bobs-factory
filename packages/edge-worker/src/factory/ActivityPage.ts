@@ -1,7 +1,28 @@
 import { createHash } from "node:crypto";
 
-type Event = { at: string; step: string; message: string; sequence?: number };
+type Event = {
+	at: string;
+	step: string;
+	message: string;
+	sequence?: number;
+	source?: "agent" | "workflow";
+};
 type Cursor = { at: string; key: string };
+function sourceOf(event: Event): "agent" | "workflow" {
+	if (event.source) return event.source;
+	// Legacy agent copies retain only a 20,000-character tail, often invalid JSON.
+	// Classify before the page preview removes this only remaining size marker.
+	if (event.message.length === 20000) return "agent";
+	try {
+		if (
+			["assistant", "user", "result"].includes(JSON.parse(event.message)?.type)
+		)
+			return "agent";
+	} catch {
+		/* Plain workflow log. */
+	}
+	return "workflow";
+}
 function decode(cursor?: string): Cursor | undefined {
 	if (!cursor) return undefined;
 	try {
@@ -56,19 +77,21 @@ export function activityPage(
 				value,
 			};
 		}),
-		...events.map((event) => {
-			const identity =
-				event.sequence ??
-				`${event.at}/${createHash("sha1").update(event.message).digest("hex").slice(0, 12)}`;
-			return {
-				kind: "event",
-				key: `event/${identity}`,
-				index: identity,
-				at: event.at,
-				step: event.step,
-				value: event,
-			};
-		}),
+		...events
+			.filter((event) => !entries.length || sourceOf(event) !== "agent")
+			.map((event) => {
+				const identity =
+					event.sequence ??
+					`${event.at}/${createHash("sha1").update(event.message).digest("hex").slice(0, 12)}`;
+				return {
+					kind: "event",
+					key: `event/${identity}`,
+					index: identity,
+					at: event.at,
+					step: event.step,
+					value: { ...event, source: sourceOf(event) },
+				};
+			}),
 	]
 		.filter((row) => !query.step || row.step === query.step)
 		.sort(

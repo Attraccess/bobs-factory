@@ -56,6 +56,30 @@ function start(runtime: WorkflowRuntime, definition: Workflow) {
 }
 
 describe("workflow runtime", () => {
+	it("persists agent provenance before trimming an oversized event tail", () => {
+		const { runtime, home } = create();
+		const run = start(runtime, workflow([agent("review")]));
+		const message = JSON.stringify({
+			type: "user",
+			content: "Tool output ".repeat(3000),
+		});
+		runtime.log(run, "review", message, "agent");
+		runtime.log(run, "review", "Build output ".repeat(3000));
+		const recovered = new WorkflowRuntime(home, {
+			agent: async () => ({}),
+			tool: async () => ({}),
+			script: async () => ({}),
+		}).get(run.id);
+		expect(
+			recovered.events.slice(-2).map((event) => ({
+				source: event.source,
+				length: event.message.length,
+			})),
+		).toEqual([
+			{ source: "agent", length: 20000 },
+			{ source: "workflow", length: 20000 },
+		]);
+	});
 	it.each([
 		false,
 		true,

@@ -300,11 +300,12 @@ export function formatActivities(run) {
 			// Session entries retain the complete agent conversation, even when the
 			// runtime's size-capped event copy is truncated. Keep only workflow logs.
 			if (
+				event.source === "agent" ||
 				["assistant", "user", "result"].includes(message?.type) ||
 				/^\s*\{\s*"type"\s*:\s*"(?:assistant|user|result)"/.test(
 					event.message,
 				) ||
-				event.message.length === 20000
+				(event.source !== "workflow" && event.message.length === 20000)
 			)
 				continue;
 			activities.push({
@@ -332,11 +333,13 @@ export function formatActivities(run) {
 					at: event.at,
 					step: event.step,
 					type: "system",
-					title: "Workflow",
+					title: event.source === "agent" ? "Agent activity" : "Workflow",
 					body:
-						typeof message === "string" && message.length < 20000
-							? message
-							: "Recorded activity",
+						event.source === "agent"
+							? "Recorded agent activity (details available in Raw data)"
+							: typeof message === "string" && message.length < 20000
+								? message
+								: "Recorded activity",
 					raw: message,
 				});
 		});

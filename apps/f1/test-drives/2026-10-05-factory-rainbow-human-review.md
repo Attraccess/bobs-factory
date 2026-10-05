@@ -103,3 +103,22 @@ the user's Settle failure and chat “Not Found” reports.
 - GitHub branch-rule behavior is covered by provider fixtures and unit tests;
   a real remote merge queue was not exercised. Demo video implementation remains
   explicitly deferred in Taskbot #31.
+
+## Live formatting follow-up (Taskbot #33)
+
+The reported live-update failure was reproduced with a tool message whose JSON
+prefix was removed by the runtime's 20,000-character tail cap and whose length
+sentinel was then removed by the 3,000-character page preview. Its duplicate
+event was mistaken for plain Workflow text. A regression now verifies initial
+and delta page merges, legacy copies, genuine long workflow logs, event-only
+transcripts and provenance persistence; all 50 relevant tests pass.
+
+A new isolated native Codex run,
+`manual-c978a4cd-bd2c-486a-aaf4-868beda1f25f`, executed a large shell-output probe
+in the same F1 worker on 3495/3600. The T3 mobile browser remained open while SSE
+advanced through agent, Bash tool and final response. Only genuine start/finish
+logs rendered as Workflow, with no escaped tool JSON. The native tool result
+contained 61,199 characters and its 20,000-character event tail retained agent
+provenance. The legacy failure is also covered by the deterministic initial/delta
+regression. Explicit source metadata
+is stored before truncation, and complete session entries own chat rendering.

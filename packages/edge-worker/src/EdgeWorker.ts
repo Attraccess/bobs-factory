@@ -6028,7 +6028,7 @@ ${taskSection}`;
 				message.type === "user" ||
 				message.type === "result"
 			)
-				context.log(JSON.stringify(message));
+				context.log(JSON.stringify(message), "agent");
 		};
 		context.progress = await roleProgress(context);
 		const factoryContext = prepareFactoryContext({
