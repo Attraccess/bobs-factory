@@ -370,8 +370,9 @@ function Today({
 		index = deck.indexOf(current),
 		working = available
 			.filter((run) => active(run.status) && !attention(run))
-			.sort((a, b) =>
-				(b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt),
+			.sort(
+				(a, b) =>
+					b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id),
 			);
 	const initial = useRef(true),
 		priorCount = useRef(deck.length),
