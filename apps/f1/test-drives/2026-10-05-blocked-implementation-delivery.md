@@ -1,6 +1,6 @@
 # Blocked implementation and empty PR delivery recovery
 
-Date: 2026-10-05. Tested base: `7b9be55260ea7b09aa04b199276cae43f3c30d7d` plus the fix; code/test/docs diff SHA-256: `d28d1732aa76d9ccc50d18be0ed90588a54a9061e0da82867e2189ae024f07b6`.
+Date: 2026-10-05. [PR #8](https://github.com/Attraccess/bobs-factory/pull/8). Tested base: `7b9be55260ea7b09aa04b199276cae43f3c30d7d` plus the fix; code/test/docs diff SHA-256: `d28d1732aa76d9ccc50d18be0ed90588a54a9061e0da82867e2189ae024f07b6`.
 
 ## Failure and changed behavior
 
@@ -36,7 +36,7 @@ CYRUS_PORT=3614 apps/f1/f1 view-session --session-id session-1 --limit 5 --offse
 ## Verification and limits
 
 `pnpm --filter cyrus-edge-worker test:run`: 1,010 passed, one existing skip.
-Changed-file Biome, edge-worker build/typecheck and `git diff --check` passed.
+Changed-file Biome, full monorepo build/typecheck (repository commit hooks) and `git diff --check` passed.
 Regression coverage includes a real Git empty branch and empty commit, partial
 blocked work, frozen wait/restart/answer recovery, scoped plan/answer input,
 stock/custom recipe migration and continuing the same takeover PR.
