@@ -46,7 +46,7 @@ it.each([
 		override,
 		JSON.stringify({
 			mcpServers: {
-				ticket: { type: "http", url: "https://override.example/mcp" },
+				ticket: { url: "https://override.example/mcp" },
 				context: {
 					type: "http",
 					url: "https://overridden-by-inline.example/mcp",
@@ -63,7 +63,12 @@ it.each([
 		projectConfig,
 		JSON.stringify({
 			mcpServers: {
-				ticket: { type: "http", url: "https://tickets.example/mcp" },
+				ticket: { url: "https://tickets.example/mcp" },
+				remote: {
+					url: "https://project.example/mcp",
+					headers: { Authorization: "Bearer project-fixture" },
+				},
+				legacy: { type: "sse", url: "https://project.example/sse" },
 				local: {
 					command: process.execPath,
 					args: ["ticket.cjs", "ticket-data.txt"],
@@ -159,6 +164,12 @@ it.each([
 	expect(config.appendSystemPrompt).toBe(titleSystemPrompt);
 	expect(config.mcpConfig).toMatchObject({
 		ticket: { type: "http", url: "https://override.example/mcp" },
+		remote: {
+			type: "http",
+			url: "https://project.example/mcp",
+			headers: { Authorization: "Bearer project-fixture" },
+		},
+		legacy: { type: "sse", url: "https://project.example/sse" },
 		context: mcp.buildMcpConfig.mock.results[0].value.context,
 	});
 	expect(config.mcpConfigPath).toBeUndefined();

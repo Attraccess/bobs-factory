@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { normalizeMcpHttpTransport } from "cyrus-claude-runner";
 import type {
 	AgentRunnerConfig,
 	ILogger,
@@ -48,6 +49,9 @@ export function titleMcpConfig(
 				typeof parsed.mcpServers === "object" &&
 				!Array.isArray(parsed.mcpServers)
 			) {
+				// Preserve file-loading defaults before forwarding servers inline;
+				// Claude's SDK otherwise ignores URL-only HTTP configurations.
+				normalizeMcpHttpTransport(parsed.mcpServers);
 				servers = { ...servers, ...parsed.mcpServers };
 			}
 		} catch {
