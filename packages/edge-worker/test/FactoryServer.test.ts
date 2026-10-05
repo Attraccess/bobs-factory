@@ -32,6 +32,11 @@ it("accepts failed-run retries through the protected API and rejects duplicate r
 		stop: (id) => runtime.stop(id),
 	});
 	const run = runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "retry-api",
+			at: new Date().toISOString(),
+		},
 		title: "Task",
 		repositoryId: "repo",
 		workspace: home,
@@ -99,7 +104,13 @@ it("starts, displays, answers and terminates runs through the local API", async 
 				defaultWorkflows.find((item) => item.id === "factory-pipeline")!,
 			);
 			workflow.steps = [workflow.steps[0]!];
+			workflow.allowedTriggers = ["manual"];
 			const run = runtime.create({
+				triggerOrigin: {
+					type: "manual",
+					workflowId: workflow.id,
+					at: new Date().toISOString(),
+				},
 				runner: input.runner,
 				reasoningEffort: input.reasoningEffort,
 				modelVariant: input.modelVariant,
@@ -129,7 +140,17 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		});
 		expect(settings.statusCode).toBe(200);
 		expect(settings.json().defaultWorkflow).toBe("factory");
-		expect(runtime.selectWorkflow([]).id).toBe("factory");
+		const savedConfig = (
+			await server.app.inject({ url: "/api/config", headers })
+		).json();
+		expect(settings.json().workflows).toEqual(savedConfig.workflows);
+		expect(
+			settings
+				.json()
+				.workflows.find((workflow: { id: string }) => workflow.id === "simple")
+				.launchFields,
+		).toMatchObject([{ name: "prompt", required: true }, { name: "title" }]);
+		expect(runtime.selectWorkflow([], "manual").id).toBe("factory");
 		expect(
 			(await server.app.inject({ url: "/api/config", headers })).json()
 				.defaultWorkflow,
@@ -289,13 +310,18 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 	runtime.updateWorkflows([...defaultWorkflows, custom]);
 	const start = vi.fn(async (input: ResolvedLaunchRequest) =>
 		runtime.create({
+			triggerOrigin: {
+				type: "manual",
+				workflowId: input.workflow ?? runtime.getDefaultWorkflow(),
+				at: new Date().toISOString(),
+			},
 			title: input.title,
 			repositoryId: input.repositoryId,
 			workspace: home,
 			input: input.prompt,
 			launchInputs: input.inputs,
 			source: input.source,
-			workflow: runtime.selectWorkflow([], input.workflow),
+			workflow: runtime.selectWorkflow([], "manual", input.workflow),
 		}),
 	);
 	const server = new FactoryServer(runtime, {
@@ -412,6 +438,11 @@ it("loads large artifacts lazily and persists view state without changing a run"
 		tool: async () => ({}),
 	});
 	const run = runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
 		title: "Large evidence",
 		repositoryId: "repo",
 		workspace: home,
@@ -534,6 +565,131 @@ it("streams coalesced changes, reconnects with a fresh snapshot, and closes subs
 		expect(unsubscribed).toBe(true);
 	} finally {
 		controller.abort();
+		await server.stop();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+it("returns normalized permissions and rejects forged manual requests before the start hook, exposing both origins", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-permissions-api-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const origin = {
+		type: "ticket-assignment" as const,
+		workflowId: "simple",
+		at: "2026-10-05T10:00:00Z",
+		ticket: {
+			provider: "linear" as const,
+			subtype: "mention" as const,
+			workspaceId: "workspace",
+			issueId: "issue",
+			identifier: "TEST-1",
+			agentSessionId: "original-simple",
+		},
+	};
+	const start = vi.fn(async (input: ResolvedLaunchRequest) =>
+		runtime.create({
+			title: input.title,
+			repositoryId: input.repositoryId,
+			input: input.prompt,
+			workspace: home,
+			workflow: runtime.selectWorkflow([], "manual", input.workflow),
+			triggerOrigin: {
+				type: "manual",
+				workflowId: input.workflow,
+				at: origin.at,
+			},
+		}),
+	);
+	const server = new FactoryServer(runtime, {
+		repositories: () => [{ id: "repo", name: "Repo" }],
+		sessions: () => [
+			{
+				id: "original-simple",
+				title: "Mention",
+				status: "complete",
+				createdAt: origin.at,
+				workspace: home,
+				triggerOrigin: origin,
+			},
+		],
+		entries: () => [],
+		start,
+		stop: () => {},
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	try {
+		const legacy = defaultWorkflows.map(
+			({ allowedTriggers: _triggers, ...w }) => w,
+		);
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/workflows",
+					headers,
+					payload: legacy,
+				})
+			).statusCode,
+		).toBe(200);
+		expect(
+			(await server.app.inject({ url: "/api/config", headers }))
+				.json()
+				.workflows.every((w: any) => Array.isArray(w.allowedTriggers)),
+		).toBe(true);
+		const definitions = runtime.listWorkflows();
+		definitions.find((w) => w.id === "simple")!.allowedTriggers = [
+			"ticket-assignment",
+		];
+		runtime.updateWorkflows(definitions);
+		const denied = await server.app.inject({
+			method: "POST",
+			url: "/api/runs",
+			headers,
+			payload: {
+				workflow: "simple",
+				repositoryId: "repo",
+				prompt: "Spoof",
+				triggerOrigin: origin,
+				workflowDefinitions: defaultWorkflows,
+			},
+		});
+		expect(denied.statusCode).toBe(409);
+		expect(denied.json().error).toMatch(/simple.*manual.*Recipes/);
+		expect(start).not.toHaveBeenCalled();
+		expect(runtime.runs.size).toBe(0);
+		const accepted = await server.app.inject({
+			method: "POST",
+			url: "/api/runs",
+			headers,
+			payload: {
+				workflow: "factory",
+				repositoryId: "repo",
+				prompt: "Accepted",
+				triggerOrigin: origin,
+			},
+		});
+		expect(accepted.statusCode).toBe(202);
+		expect(start.mock.calls[0]![0]).not.toHaveProperty("triggerOrigin");
+		const graph = accepted.json();
+		const list = (
+			await server.app.inject({ url: "/api/runs", headers })
+		).json();
+		expect(list.find((r: any) => r.id === graph.id).triggerOrigin.type).toBe(
+			"manual",
+		);
+		expect(
+			list.find((r: any) => r.id === "original-simple").triggerOrigin,
+		).toEqual(origin);
+		expect(
+			(
+				await server.app.inject({ url: "/api/runs/original-simple", headers })
+			).json().triggerOrigin,
+		).toEqual(origin);
+	} finally {
 		await server.stop();
 		rmSync(home, { recursive: true, force: true });
 	}

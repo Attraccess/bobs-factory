@@ -28,7 +28,55 @@ export function RunMeta({ run, config }: { run: any; config: any }) {
 			<span className="repo-dot" /> {repo?.name ?? "Workspace"} ·{" "}
 			{workflow.icon ?? "🧩"} {workflow.name} ·{" "}
 			{ago(run.updatedAt ?? run.createdAt)}
+			<span> · {originLabel(run)}</span>
 		</span>
+	);
+}
+export function originLabel(run: any): string {
+	const origin = run.triggerOrigin;
+	if (!origin) return "Origin unavailable for this older run";
+	if (origin.type === "manual")
+		return origin.manual?.method === "follow-up"
+			? "Manual follow-up"
+			: "Manual start";
+	const ticket = origin.ticket;
+	return `${ticket?.provider === "cli" ? "CLI fixture" : "Linear"} ${ticket?.subtype ?? "ticket start"}${ticket?.identifier ? ` · ${ticket.identifier}` : ""}`;
+}
+
+export function RunOrigin({ run }: { run: any }) {
+	const origin = run.triggerOrigin;
+	const calls =
+		run.workflowCalls ?? (run.events ?? []).filter((event: any) => event.call);
+	return (
+		<section className="run-origin" aria-label="Launch origin">
+			<p>
+				{originLabel(run)}{" "}
+				{origin?.ticket?.url && (
+					<External href={origin.ticket.url}>Source ticket ↗</External>
+				)}
+				{origin?.manual?.sourceRunId && (
+					<Link to={`/runs/${origin.manual.sourceRunId}`}>Source run</Link>
+				)}
+			</p>
+			{(origin || calls.length > 0) && (
+				<details>
+					<summary>
+						Launch details
+						{calls.length ? ` and ${calls.length} workflow call(s)` : ""}
+					</summary>
+					<pre>{JSON.stringify(origin, null, 2)}</pre>
+					{calls.map((event: any, index: number) => (
+						<div key={event.sequence ?? index}>
+							<p>
+								Called {event.call.workflowId} from{" "}
+								{event.call.callerWorkflowId}/{event.call.step} · {event.at}
+							</p>
+							<pre>{JSON.stringify(event.call, null, 2)}</pre>
+						</div>
+					))}
+				</details>
+			)}
+		</section>
 	);
 }
 function QuickReplies({ question }: { question: string }) {
