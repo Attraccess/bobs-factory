@@ -139,10 +139,12 @@ export function QuestionForm({ run }: { run: any }) {
 				</legend>
 				{questions.map((q: string, i: number) => (
 					<div className="question" key={`${i}/${q}`}>
-						<label htmlFor={`answer-${run.id}-${i}`}>
+						<div className="question-heading">
 							<Bob mood="alert" size={32} />
-							<span>{q}</span>
-						</label>
+							<div id={`question-${run.id}-${i}`} className="question-content">
+								<Markdown>{q}</Markdown>
+							</div>
+						</div>
 						<div className="answer-controls">
 							<div className="quick-replies">
 								{QuickReplies({ question: q }).map((value) => (
@@ -158,6 +160,7 @@ export function QuestionForm({ run }: { run: any }) {
 							</div>
 							<textarea
 								id={`answer-${run.id}-${i}`}
+								aria-labelledby={`question-${run.id}-${i}`}
 								required
 								rows={2}
 								placeholder="Type your answer…"

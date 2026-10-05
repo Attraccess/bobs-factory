@@ -36,6 +36,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Bob's clarification and implementation-blocker questions now explain the relevant facts, source of the decision and consequences in plain language; optional diagrams and images appear beside the answer box.
+
 - Allow factory planning and review to propose changes to current product capabilities without mistaking capability documentation for a task restriction; retain explicit planning-only and deferred-implementation limits. ([#10](https://github.com/Attraccess/bobs-factory/pull/10))
 - Pause blocked factory implementations for actionable answers, retain those waits across restarts, and prevent empty or unfinished work from being published as a draft PR. ([#8](https://github.com/Attraccess/bobs-factory/pull/8))
 - Keep “Humming along” in newest-created order while progress updates arrive. ([Taskbot #67](https://taskbot.apps.janjaap.de/p/bobs-factory/t/67))

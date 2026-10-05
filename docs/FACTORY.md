@@ -182,6 +182,15 @@ an active run retains its original definition.
 Clarification pauses until you answer in the dashboard or original agent-session
 ticket thread. There is no automatic answer or approval. Decisions and all Q&A
 are saved in run history and posted as a comment when a real ticket exists.
+Questions include their own brief context, the reason a decision is needed and
+the consequences of the choices, so you can answer without reading the step
+transcript. Asking Bob to explain or rephrase keeps the decision pending.
+Question-enabled roles, including saved and custom recipes, receive this guidance
+at execution time. Their question strings support Markdown, small fenced text
+diagrams and optional PNG/JPEG images saved in the run's evidence directory.
+Use `![caption](/api/runs/RUN_ID/question-images/unique-filename.png)` to display
+a local image beside the question; nested paths and external symlink targets
+are rejected. Visuals supplement a question that is understandable on its own.
 
 The factory runs clarification → decisions → planner/plan-review loop →
 implementation → push/draft PR → code-review/fix loop → CI/fix loop → visual
