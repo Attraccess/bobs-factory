@@ -7,6 +7,7 @@ export async function issueSnapshot(
 	tracker?: IIssueTrackerService,
 ): Promise<unknown> {
 	const comments: unknown[] = [];
+	const cursors = new Set<string>();
 	let after: string | undefined;
 	do {
 		const options = {
@@ -28,8 +29,9 @@ export async function issueSnapshot(
 		}
 		if (!page.pageInfo?.hasNextPage) break;
 		const cursor = page.pageInfo.endCursor;
-		if (!cursor || cursor === after)
+		if (!cursor || cursors.has(cursor))
 			throw new Error("Ticket comment pagination did not advance");
+		cursors.add(cursor);
 		after = cursor;
 	} while (after);
 	const [state, assignee, team, project, parent] = await Promise.all([
@@ -41,10 +43,26 @@ export async function issueSnapshot(
 	]);
 	const attachments = tracker
 		? await tracker.fetchIssueAttachments(issue.id)
-		: (await issue.attachments()).nodes.map((item) => ({
-				title: item.title,
-				url: item.url,
-			}));
+		: [];
+	if (!tracker) {
+		let after: string | undefined;
+		const cursors = new Set<string>();
+		do {
+			const page = await issue.attachments({
+				first: 100,
+				...(after ? { after } : {}),
+			});
+			attachments.push(
+				...page.nodes.map((item) => ({ title: item.title, url: item.url })),
+			);
+			if (!page.pageInfo?.hasNextPage) break;
+			const cursor = page.pageInfo.endCursor;
+			if (!cursor || cursors.has(cursor))
+				throw new Error("Ticket attachment pagination did not advance");
+			cursors.add(cursor);
+			after = cursor;
+		} while (after);
+	}
 	return {
 		attachments,
 		id: issue.id,

@@ -576,7 +576,7 @@ export class RepositoryRouter {
 
 				const fullIssue = await issueTracker.fetchIssue(issueId);
 				const project = await fullIssue?.project;
-				if (!project || !project.name) {
+				if (!project?.name) {
 					this.logger.debug(
 						`No project name found for issue ${issueId} in repository ${repo.name}`,
 					);
@@ -762,6 +762,9 @@ export class RepositoryRouter {
 	 */
 	hasPendingSelection(agentSessionId: string): boolean {
 		return this.pendingSelections.has(agentSessionId);
+	}
+	cancelPendingSelection(agentSessionId: string): void {
+		this.pendingSelections.delete(agentSessionId);
 	}
 
 	/**

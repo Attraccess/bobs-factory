@@ -59,6 +59,7 @@ interface V2CyrusAgentSession {
  * v3.0: Nested format - sessions keyed by [repoId][sessionId]
  */
 export interface SerializableEdgeWorkerState {
+	pendingTriggerMessages?: Record<string, string | null>;
 	pendingTriggerOrigins?: Record<
 		string,
 		import("./WorkflowTrigger.js").WorkflowTriggerOrigin

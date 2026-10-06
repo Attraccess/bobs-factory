@@ -182,6 +182,7 @@ export interface RuntimeHooks {
 	question?(run: FactoryRun): Promise<void>;
 	simple?(run: FactoryRun, signal: AbortSignal): Promise<void>;
 	prepare?(run: FactoryRun, signal: AbortSignal): Promise<void>;
+	finished?(run: FactoryRun): Promise<void>;
 }
 
 export class WorkflowRuntime {
@@ -630,6 +631,11 @@ export class WorkflowRuntime {
 			this.controllers.delete(run.id);
 			this.pendingAnswers.delete(run.id);
 			this.save(run);
+			if (
+				!this.shuttingDown &&
+				["completed", "failed", "stopped"].includes(run.status)
+			)
+				await this.hooks.finished?.(run);
 		}
 	}
 	private async graph(
@@ -993,7 +999,8 @@ export class WorkflowRuntime {
 	stop(id: string): void {
 		const run = this.get(id);
 		this.hooks.stopTitle?.(id);
-		if (!["running", "waiting"].includes(run.status)) return;
+		if (!["running", "waiting", "failed", "interrupted"].includes(run.status))
+			return;
 		run.status = "stopped";
 		this.controllers.get(id)?.abort();
 		this.log(run, "run", "Terminated by user");

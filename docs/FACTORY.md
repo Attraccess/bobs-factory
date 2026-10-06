@@ -87,9 +87,11 @@ Select a repository and workflow in the composer, then fill its launch fields.
 **Simple / Cyrus** retains the existing Cyrus execution path and is the initial
 default. **Software factory** adds the pipeline
 below. Apply `workflow:factory` (or `factory`) to a ticket to select it.
-Custom workflow labels are configurable; explicit UI selection wins, otherwise
-the first matching configured workflow wins. If no label matches, the configured
-default workflow is used. Agent/model labels still choose the run defaults.
+Custom workflow labels are configurable. New launches use an explicit manual
+UI/API choice, then a `[workflow=<id>]` selector in the original triggering
+comment, then the issue description, then the first matching workflow in
+configured label order, then the saved default. Agent/model labels still choose
+the run defaults. Workflow selection is independent of repository routing.
 
 In **Recipes**, choose the **Default** pill on the recipe you want.
 This choice is saved across restarts, applies to new runs without matching
@@ -98,6 +100,39 @@ choose another default before deleting the current one. Existing runs retain
 their workflow.
 
 ## Launch permissions and origin
+
+Assign an issue with `[workflow=factory]` in its description to Bob, or mention
+Bob in a new comment containing `[workflow=takeover]` and your additional
+instructions. The original comment overrides the description; historical
+comments never select a workflow. Both plain brackets and escaped brackets
+(`\[workflow=factory\]`) work, with case-insensitive `workflow` keys and exact IDs.
+Selectors in Markdown blockquotes, fenced/indented code, inline code, or paired
+single/double/curly quotation marks are examples and are ignored. Quotes must
+close on the same line and begin outside a word, so apostrophes in normal prose
+are preserved. Repeated identical selectors are allowed. Distinct selectors or
+malformed attempts in the winning source reject visibly; lower-priority conflicts
+cannot invalidate a higher-priority choice. Unknown or disallowed selections do
+not fall back to another workflow. Correct the selector, label, saved default or
+**ticket-assignment** permission in Recipes before starting a new session.
+
+Only one launch may own a provider/workspace/issue identity at a time, including
+repository-choice, dependency, clarification, review and recovery waits. New
+mentions on active issues reject with the active run ID. This is a temporary
+policy until [#36](https://taskbot.apps.janjaap.de/p/bobs-factory/t/36) adds
+configurable parallelism and fallback routing. Native session/activity receipts
+survive restart and completion, so webhook redelivery cannot create another run.
+A later distinct session can launch after completion or explicit stop. Interrupted
+startup without a saved session retains ownership; send stop to settle it before
+launching again. Repository and runner/model selection keep their existing rules.
+
+Replies, blocker answers, stop and resume use the accepted workflow and origin;
+reply selectors do not launch replacement work. Replies target their native
+session. Ambiguous issue-only replies require the specific run's UI. Chat uses
+the accepted recipe settings and streaming runner capabilities; ordinary replies
+cannot approve human review. Delivery without native source identity or to an
+unsupported checkpoint explains the limitation in Linear. An interrupted reply
+receipt is retained to avoid applying an answer twice; inspect the run and resend
+as a new reply if needed. Comments and attachment manifests include every page.
 
 Each saved workflow exposes an `allowedTriggers` array. In **Recipes → Launch
 methods**, edit **Called by another workflow** (`workflow`), **Start manually**

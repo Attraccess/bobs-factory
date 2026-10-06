@@ -1,4 +1,6 @@
+import { rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import { ClaudeRunner } from "cyrus-claude-runner";
 import { CodexRunner } from "cyrus-codex-runner";
@@ -109,6 +111,9 @@ describe("EdgeWorker - Runner Selection Based on Labels", () => {
 	}
 
 	beforeEach(() => {
+		rmSync(join(TEST_CYRUS_HOME, "factory", "ticket-deliveries.json"), {
+			force: true,
+		});
 		vi.clearAllMocks();
 		capturedRunnerType = null;
 		capturedRunnerConfig = null;
@@ -229,6 +234,7 @@ describe("EdgeWorker - Runner Selection Based on Labels", () => {
 		// Mock AgentSessionManager
 		mockAgentSessionManager = {
 			createCyrusAgentSession: vi.fn(),
+			getSessionsByIssueId: vi.fn().mockReturnValue([]),
 			getSession: vi.fn().mockReturnValue({
 				issueId: "issue-123",
 				workspace: { path: "/test/workspaces/TEST-123" },
@@ -298,6 +304,10 @@ Issue: {{issue_identifier}}`;
 
 		// Inject mock issue tracker
 		const mockIssueTracker = {
+			fetchComments: vi
+				.fn()
+				.mockResolvedValue({ nodes: [], pageInfo: { hasNextPage: false } }),
+			fetchIssueAttachments: vi.fn().mockResolvedValue([]),
 			fetchIssue: vi.fn().mockImplementation(async (issueId: string) => {
 				return mockLinearClient.issue(issueId);
 			}),
@@ -655,6 +665,10 @@ Issue: {{issue_identifier}}`;
 			};
 			const opencodeEdgeWorker = new EdgeWorker(opencodeConfig);
 			const mockIssueTracker = {
+				fetchComments: vi
+					.fn()
+					.mockResolvedValue({ nodes: [], pageInfo: { hasNextPage: false } }),
+				fetchIssueAttachments: vi.fn().mockResolvedValue([]),
 				fetchIssue: vi.fn().mockImplementation(async (issueId: string) => {
 					return mockLinearClient.issue(issueId);
 				}),
@@ -1056,6 +1070,10 @@ Issue: {{issue_identifier}}`;
 			const codexEdgeWorker = new EdgeWorker(codexConfig);
 			// Inject mock issue tracker
 			const mockIssueTracker = {
+				fetchComments: vi
+					.fn()
+					.mockResolvedValue({ nodes: [], pageInfo: { hasNextPage: false } }),
+				fetchIssueAttachments: vi.fn().mockResolvedValue([]),
 				fetchIssue: vi.fn().mockImplementation(async (issueId: string) => {
 					return mockLinearClient.issue(issueId);
 				}),
@@ -1105,6 +1123,10 @@ Issue: {{issue_identifier}}`;
 			const geminiEdgeWorker = new EdgeWorker(geminiConfig);
 			// Inject mock issue tracker
 			const mockIssueTracker = {
+				fetchComments: vi
+					.fn()
+					.mockResolvedValue({ nodes: [], pageInfo: { hasNextPage: false } }),
+				fetchIssueAttachments: vi.fn().mockResolvedValue([]),
 				fetchIssue: vi.fn().mockImplementation(async (issueId: string) => {
 					return mockLinearClient.issue(issueId);
 				}),
@@ -1154,6 +1176,10 @@ Issue: {{issue_identifier}}`;
 			};
 			const codexEdgeWorker = new EdgeWorker(codexConfig);
 			const mockIssueTracker = {
+				fetchComments: vi
+					.fn()
+					.mockResolvedValue({ nodes: [], pageInfo: { hasNextPage: false } }),
+				fetchIssueAttachments: vi.fn().mockResolvedValue([]),
 				fetchIssue: vi.fn().mockImplementation(async (issueId: string) => {
 					return mockLinearClient.issue(issueId);
 				}),
