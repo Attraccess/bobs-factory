@@ -804,3 +804,51 @@ new admission with a visible error; they are not reclaimed by heartbeat expiry.
 Reconcile the external execution before repairing its coordinator record. Never delete
 coordinator state while participating execution may still be running. Corrupt state,
 failed storage writes and unknown process state prevent ungated execution.
+### Guided human review
+
+The shared reader opens **Overview → one page per chapter → Changed files → Decide**.
+The retained run header, PR links and revision notices stay available. Segments,
+Back/Next, the page selector and Up/k or Down/j navigate the guide. Page links use
+`?page=overview`, `chapter:<id>`, `files` or `decide` in the hash route. Page,
+visited steps, reviewed markers, disclosures and individual checks stay local to
+this browser and this exact guide revision. Moving forward marks a chapter read;
+jumping or moving back does not. A replacement guide resets progress. Reading
+markers never gate approval, and navigation never submits a human decision.
+
+New guide results require purpose-written `tldr` (90 characters maximum) and
+`decision.summaryShort` (160). Every chapter requires `tldr` (70), `beforeShort`
+and `afterShort` (50 each), `risk: {level: "low" | "medium" | "high", text}` (70),
+and 1–3 `keyChecks: [{do, expect}]` pairs (60 characters per field). Fields must
+be nonblank; do not truncate full prose into short fields. Existing full summary,
+before/after, checks, risks, files, diagrams and evidence remain in More detail.
+Incomplete new output is rejected and sent back to the same guide role for bounded
+correction. Older saved guides remain readable without migration or invented
+compact text or risk levels.
+
+Optional `flow: {title, steps: [{label, detail}]}` reveals one of 2–8 stages at a
+time. Optional `system: {lanes, parts, before, after}` supplies an overview lane
+map. Lanes use `{id, name}`; parts use `{id, label, laneId, status}` with status
+`new`, `changed`, `unchanged` or `legacy`. Connections use `{source, target,
+label?, weak?}` and are identified by directed endpoints. Chapter
+`systemPartIds` must reference existing parts. Before/After toggles work
+independently; route hover or focus highlights relevant parts. Screenshot
+references retain accepted area/state/caption, with optional known `device`
+(`Desktop`, `Mobile`, `Email`, `Reader`) and `language`. Mixed chapters show
+one visual mode at a time. Image and diff dialogs support arrows and Escape.
+
+Changed files loads a runtime-owned, immutable snapshot of the guide’s complete
+PR merge-base/head pair. The file inventory and bounded per-file patches live
+under run evidence, outside dashboard payloads. Later commits, guide refreshes
+or completed runs cannot replace that saved diff. Binary or patches over 2 MB
+show an explanation and PR link. Chapter claims group real files; shared files
+appear in each group but overall counts include them once. Unassigned files are
+shown defensively for old/incomplete guides; new guide coverage still rejects
+omitted files. Trees distinguish tests, renames and line counts. Split and unified
+diffs preserve hunk numbers, empty lines and no-final-newline markers; long diffs
+initially display 500 rows and can reveal the rest.
+
+Historical guides without snapshots reconstruct only from retained CI/readiness
+and handoff receipts establishing the original revision. The reconstructed
+reference is saved separately from the guide. If exact revisions or patches are
+unavailable, the reader says so and offers the PR link. File/image loading errors
+remain local to their sections and never alter decision availability.

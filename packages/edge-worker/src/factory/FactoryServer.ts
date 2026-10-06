@@ -16,6 +16,11 @@ import {
 	type ResolvedLaunchRequest,
 	resolveLaunchRequest,
 } from "./LaunchFields.js";
+import {
+	readReviewManifest,
+	readReviewPatch,
+	resolveGuideSnapshot,
+} from "./ReviewFiles.js";
 import type { ChatState } from "./SessionChat.js";
 import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
@@ -425,6 +430,36 @@ export class FactoryServer {
 					.send({ error: "Artifact changed; refresh this run" });
 			return value;
 		});
+		this.app.get<{ Params: { id: string }; Querystring: { guide: string } }>(
+			"/api/runs/:id/review-files",
+			async (request) => {
+				const run = runtime.get(request.params.id);
+				const guide = z
+					.string()
+					.regex(/^[a-f0-9]{64}$/)
+					.parse(request.query.guide);
+				const evidence = join(runtime.directory, "evidence", run.id);
+				const ref = await resolveGuideSnapshot(run, evidence, guide);
+				return readReviewManifest(evidence, run.id, ref);
+			},
+		);
+		this.app.get<{
+			Params: { id: string; snapshot: string; file: string };
+			Querystring: { guide: string };
+		}>("/api/runs/:id/review-files/:snapshot/:file", async (request) => {
+			const run = runtime.get(request.params.id);
+			const guide = z
+				.string()
+				.regex(/^[a-f0-9]{64}$/)
+				.parse(request.query.guide);
+			const evidence = join(runtime.directory, "evidence", run.id);
+			const ref = await resolveGuideSnapshot(run, evidence, guide);
+			if (ref.snapshotId !== request.params.snapshot)
+				throw new Error("Snapshot is not the requested guide revision");
+			const manifest = await readReviewManifest(evidence, run.id, ref);
+			return readReviewPatch(evidence, manifest, request.params.file);
+		});
+
 		this.app.get<{
 			Params: { id: string };
 			Querystring: {

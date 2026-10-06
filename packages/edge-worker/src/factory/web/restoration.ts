@@ -108,7 +108,10 @@ function validDraft(key: string, value: any): boolean {
 			Number.isInteger(value.page) &&
 			value.page >= 0 &&
 			values(value.reviewed, "boolean") &&
-			(value.disclosures === undefined || values(value.disclosures, "boolean"))
+			(value.disclosures === undefined ||
+				values(value.disclosures, "boolean")) &&
+			(value.checked === undefined || values(value.checked, "boolean")) &&
+			(value.visited === undefined || values(value.visited, "boolean"))
 		);
 	if (key.startsWith("reading/"))
 		return (
@@ -151,7 +154,10 @@ export function decodeSnapshot(
 			typeof data.target !== "string" ||
 			!/^[a-f0-9]{24}$/.test(data.target) ||
 			typeof data.route !== "string" ||
-			!/^#\/(?:$|recipes$|runs\/[^/]+(?:\/review)?$)/.test(data.route) ||
+			data.route.length > 2048 ||
+			!/^#\/(?:$|recipes$|runs\/[^/?#]+(?:\/review(?:\?[^#\s]*)?)?$)/.test(
+				data.route,
+			) ||
 			!data.drafts ||
 			Array.isArray(data.drafts) ||
 			typeof data.drafts !== "object" ||
@@ -270,11 +276,15 @@ function pristineDraft(key: string, value: any): boolean {
 			typeof value === "object" &&
 			Object.keys(value).length === 0
 		);
+	// False entries and visited pages still describe this tab's choices; shared
+	// storage may contain different progress written by another tab.
 	if (key.startsWith("review/progress/"))
 		return (
 			value?.page === 0 &&
 			Object.keys(value.reviewed ?? {}).length === 0 &&
-			!Object.values(value.disclosures ?? {}).some(Boolean)
+			Object.keys(value.disclosures ?? {}).length === 0 &&
+			Object.keys(value.checked ?? {}).length === 0 &&
+			Object.keys(value.visited ?? {}).length === 0
 		);
 	if (key.startsWith("reading/"))
 		return (

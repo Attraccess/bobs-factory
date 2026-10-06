@@ -434,9 +434,11 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });
-it("preserves dedicated review routes, disclosures and revision-scoped feedback during updates", () => {
+it("preserves dedicated review routes, checked steps and revision-scoped feedback during updates", () => {
 	browserState();
-	vi.stubGlobal("location", { hash: "#/runs/r/review" });
+	vi.stubGlobal("location", {
+		hash: "#/runs/r/review?page=overview&rev=current",
+	});
 	const saved = storage();
 	const progressKey = "review/progress/factory-review/r/head/guide";
 	const positionKey = "position/factory-review/r/head/guide/position/0";
@@ -444,14 +446,16 @@ it("preserves dedicated review routes, disclosures and revision-scoped feedback 
 	const progress = {
 		page: 0,
 		reviewed: {},
-		disclosures: { "0/evidence": true },
+		disclosures: {},
+		checked: { "feature-0/0": true },
+		visited: { overview: true, "chapter:feature-0": true },
 	};
 	rememberDraft(progressKey, progress);
 	rememberDraft(positionKey, 700);
 	rememberDraft(feedbackKey, "Keep this feedback with this revision", "gate");
 	preserveForUpdate(build, saved);
 	const snapshot = decodeSnapshot([...saved.values.values()][0]);
-	expect(snapshot?.route).toBe("#/runs/r/review");
+	expect(snapshot?.route).toBe("#/runs/r/review?page=overview&rev=current");
 	expect(snapshot?.drafts[progressKey]?.value).toEqual(progress);
 	expect(snapshot?.drafts[positionKey]?.value).toBe(700);
 	expect(snapshot?.drafts[feedbackKey]).toEqual({
@@ -465,6 +469,34 @@ it("preserves dedicated review routes, disclosures and revision-scoped feedback 
 		"Keep this feedback with this revision",
 	);
 	completeRestoration();
+});
+it.each([
+	{ checked: { "feature-0/0": false } },
+	{ disclosures: { "feature-0": false } },
+	{ visited: { "chapter:feature-0": true, overview: true } },
+])("preserves explicit Overview progress through updates: %j", (changes) => {
+	browserState();
+	const saved = storage();
+	const key = "review/progress/factory-review/r/head/guide";
+	const progress = {
+		page: 0,
+		reviewed: {},
+		checked: {},
+		disclosures: {},
+		visited: {},
+		...changes,
+	};
+	rememberDraft(key, progress);
+	preserveForUpdate(build, saved);
+	expect(
+		decodeSnapshot([...saved.values.values()][0])?.drafts[key]?.value,
+	).toEqual(progress);
+	// Simulate a fresh app's in-memory state before consuming this tab's snapshot.
+	forgetDraft(key);
+	loadRestoration(build, saved);
+	expect(restoredDraft(key)).toEqual(progress);
+	completeRestoration();
+	forgetDraft(key);
 });
 it("retains a tab's document position at zero rather than falling back to shared storage", () => {
 	browserState();
@@ -488,6 +520,13 @@ it("keeps browsing defaults out of update snapshots while preserving edits and e
 		rememberDraft(`chat/visited-${i}`, "");
 		rememberDraft(`answers/visited-${i}`, {});
 		rememberDraft(`feedback/open/visited-${i}`, false);
+		rememberDraft(`review/progress/visited-${i}`, {
+			page: 0,
+			reviewed: {},
+			checked: {},
+			disclosures: {},
+			visited: {},
+		});
 		rememberDraft(`reading/visited-${i}/all`, {
 			following: true,
 			expanded: [],

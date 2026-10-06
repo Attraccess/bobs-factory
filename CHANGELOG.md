@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 
 - Share a durable machine-wide pool across workers, agents and intensive workflow steps, with four slots by default, live capacity settings, separate queue states and cancellable queued work. Recipes can classify scripts and tools, including fanout branches. Preserve unsaved capacity settings through app updates and keep passive handoff polling outside the pool. Managed conversations resume through admission after each completed turn. ([Taskbot #37](https://taskbot.apps.janjaap.de/p/bobs-factory/t/37), [#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
+- Guided PR review now offers concise chapter steps, system maps, image viewers,
+  browser-local reading checks and Changed files with diffs pinned to the reviewed
+  revision. Incomplete new guides return to the guide agent for correction; older
+  guides remain readable. Browser history restores the matching page, map highlights
+  follow chapter colours, long map labels fit their boxes and connections without
+  overlap, and file diffs stay limited to the selected file. Item comments and collected
+  feedback remain available in compact steps and expanded evidence. ([Taskbot #75](https://taskbot.apps.janjaap.de/p/bobs-factory/t/75), [#17](https://github.com/Attraccess/bobs-factory/pull/17))
 
 - Install Bob’s Factory with branded app icons and concise browser-only guidance; keep mobile form text readable without focus zoom and wide content from scrolling the page sideways; open its static shell while disconnected and explicitly update while preserving drafts, panels and each tab’s reading position, including older SDK activity and dedicated review pages. Keep item comments and additional review feedback scoped to their revision through updates; isolate restored legacy text drafts from other tabs’ unsent comments. Browsing untouched runs does not fill the draft snapshot. Pause unsafe actions until authoritative state reconnects; reject conflicting settings saves even when requests overlap. Push notifications are tracked separately in Taskbot #69. (Taskbot bobs-factory #41, [#12](https://github.com/Attraccess/bobs-factory/pull/12))
 - Long-press review-guide items to comment in a popover, see a small count badge on commented items, retain drafts across navigation and reloads, and submit them together with additional feedback from any guide page. Keep pending submissions locked when returning to the guide and preserve unsent edits when a request succeeds. ([Taskbot #70](https://taskbot.apps.janjaap.de/p/bobs-factory/t/70), [#15](https://github.com/Attraccess/bobs-factory/pull/15))
@@ -49,6 +56,9 @@ All notable changes to this project will be documented in this file.
 - Upgrade saved intensive handoff recipes to passive polling before startup validation, so worker restarts recover existing runs without changing their accepted definitions. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
 - Keep concurrent Codex executions isolated, gate and cancel integration setup, recover queued chat and PR work after restart, reclaim abandoned coordinator locks, retain unverified remote title capacity, and prevent recipe classification edits from overwriting one another. PR recovery preserves provider sandbox settings, GitHub serialization and stops during configuration loading, and removes failed recovery requests from capacity queues. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
+- Preserve compact review pages, checked and explicitly unchecked steps, visited pages and item feedback through explicit app updates, including stale feedback warnings when the guide changes. ([#17](https://github.com/Attraccess/bobs-factory/pull/17))
+
+- Make review-map Before/After pills visibly checked in red/green, and connect changed-file area legends and shared-step tags to their matching colours. ([#17](https://github.com/Attraccess/bobs-factory/pull/17))
 
 - Preserve this tab’s unsent review comments and additional feedback when the PR revision, guide or review gate changes; require acknowledgment before sending the recovered draft. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
 

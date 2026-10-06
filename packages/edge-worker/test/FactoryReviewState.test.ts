@@ -114,3 +114,23 @@ it("carries the reviewed run into Today through direct links and run-story navig
 	});
 	expect(() => todayContext("/runs/%/review", null)).not.toThrow();
 });
+
+it("restores independent check/visited state and ignores malformed boolean entries", () => {
+	expect(
+		readProgress(
+			{
+				page: 2,
+				reviewed: { step: false },
+				checked: { "step/0": true, "step/1": "true" },
+				visited: { overview: true, files: 1 },
+			},
+			5,
+		),
+	).toEqual({
+		page: 2,
+		reviewed: { step: false },
+		checked: { "step/0": true },
+		visited: { overview: true },
+		disclosures: {},
+	});
+});
