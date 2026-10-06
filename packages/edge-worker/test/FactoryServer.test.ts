@@ -5,6 +5,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -1149,6 +1150,101 @@ it("protects and persists global title settings independently of workflow config
 			).statusCode,
 		).toBe(409);
 	} finally {
+		await server.stop();
+		await runtime.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+it("rejects title saves overtaken during body parsing and simultaneous saves", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-title-save-race-"));
+	const hooks = {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	};
+	const runtime = new WorkflowRuntime(home, hooks);
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("unused");
+		},
+		stop: () => {},
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	const revision = async () =>
+		(await server.app.inject({ url: "/api/config", headers })).json()
+			.configRevision;
+	let headersReceived!: () => void;
+	const received = new Promise<void>((resolve) => {
+		headersReceived = resolve;
+	});
+	server.app.addHook("onRequest", async (request) => {
+		if (request.headers["x-test-delayed"]) headersReceived();
+	});
+	let delayed: ReturnType<typeof httpRequest> | undefined;
+	try {
+		const address = await server.app.listen({ port: 0, host: "127.0.0.1" });
+		const originalRevision = await revision();
+		const staleSettings = { runner: "codex", model: "delayed-tab" };
+		const body = JSON.stringify(staleSettings);
+		const completed = new Promise<number | undefined>((resolve, reject) => {
+			delayed = httpRequest(
+				`${address}/api/title-settings?source=delayed`,
+				{
+					method: "PUT",
+					headers: {
+						...headers,
+						"x-factory-config": originalRevision,
+						"x-test-delayed": "1",
+						"content-type": "application/json",
+						"content-length": Buffer.byteLength(body),
+					},
+				},
+				(response) => {
+					response.resume();
+					response.on("end", () => resolve(response.statusCode));
+				},
+			);
+			delayed.on("error", reject);
+			delayed.write(body.slice(0, 10));
+		});
+		await received;
+		const newerSettings = { runner: "codex", model: "newer-tab" };
+		const save = (configRevision: string, model: string) =>
+			server.app.inject({
+				method: "PUT",
+				url: "/api/title-settings",
+				headers: { ...headers, "x-factory-config": configRevision },
+				payload: { runner: "codex", model },
+			});
+		expect((await save(originalRevision, newerSettings.model)).statusCode).toBe(
+			200,
+		);
+		delayed!.end(body.slice(10));
+		expect(await completed).toBe(409);
+		expect(runtime.getTitleSettings()).toEqual(newerSettings);
+		expect(new WorkflowRuntime(home, hooks).getTitleSettings()).toEqual(
+			newerSettings,
+		);
+
+		const currentRevision = await revision();
+		const concurrent = await Promise.all([
+			save(currentRevision, "tab-a"),
+			save(currentRevision, "tab-b"),
+		]);
+		expect(concurrent.map((response) => response.statusCode).sort()).toEqual([
+			200, 409,
+		]);
+		const winner = concurrent
+			.find((response) => response.statusCode === 200)!
+			.json().titleGeneration;
+		expect(runtime.getTitleSettings()).toEqual(winner);
+		expect(new WorkflowRuntime(home, hooks).getTitleSettings()).toEqual(winner);
+	} finally {
+		delayed?.destroy();
 		await server.stop();
 		await runtime.shutdown();
 		rmSync(home, { recursive: true, force: true });

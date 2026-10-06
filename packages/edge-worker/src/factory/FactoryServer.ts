@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { activityMarkers, activityPage } from "./ActivityPage.js";
 import { reasoningLevels, serviceTierRunners } from "./AgentSettings.js";
@@ -93,6 +93,13 @@ export class FactoryServer {
 					]),
 				)
 				.digest("hex");
+		const checkConfigRevision = (request: FastifyRequest) => {
+			const config = request.headers["x-factory-config"];
+			if (config !== undefined && config !== configRevision())
+				throw new Error(
+					"Recipe settings changed. Refresh and review your draft before sending.",
+				);
+		};
 		this.app.addHook("onSend", async (request, reply) => {
 			if (request.url.startsWith("/api/")) {
 				reply.header("Cache-Control", "no-store");
@@ -119,18 +126,6 @@ export class FactoryServer {
 						error:
 							"Factory updated. Preserve your drafts and update before trying again.",
 						code: "FACTORY_VERSION_MISMATCH",
-					});
-				const config = request.headers["x-factory-config"];
-				if (
-					["/api/workflows", "/api/title-settings", "/api/runs"].includes(
-						request.url.split("?")[0]!,
-					) &&
-					config !== undefined &&
-					config !== configRevision()
-				)
-					return reply.code(409).send({
-						error:
-							"Recipe settings changed. Refresh and review your draft before sending.",
 					});
 			}
 		});
@@ -187,12 +182,17 @@ export class FactoryServer {
 			reasoningLevels,
 			serviceTierRunners,
 		}));
-		this.app.put("/api/title-settings", (request) => ({
-			titleGeneration: runtime.updateTitleSettings(request.body),
-			configRevision: configRevision(),
-		}));
+		this.app.put("/api/title-settings", (request) => {
+			// Check after body parsing, in the same synchronous turn as the write.
+			checkConfigRevision(request);
+			return {
+				titleGeneration: runtime.updateTitleSettings(request.body),
+				configRevision: configRevision(),
+			};
+		});
 
 		this.app.put("/api/workflows", (request) => {
+			checkConfigRevision(request);
 			// Retain the original array API for existing local clients.
 			if (Array.isArray(request.body))
 				return runtime.updateWorkflows(request.body);
@@ -262,6 +262,7 @@ export class FactoryServer {
 			].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 		});
 		this.app.post("/api/runs", async (request, reply) => {
+			checkConfigRevision(request);
 			const input = LaunchRequestSchema.parse(request.body);
 			const workflow = runtime.selectWorkflow([], "manual", input.workflow);
 			return reply
