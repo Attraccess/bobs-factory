@@ -424,6 +424,15 @@ export class FactoryServer {
 			},
 		);
 		this.app.post<{ Params: { id: string } }>(
+			"/api/runs/:id/ticket-sync",
+			async (request, reply) => {
+				await runtime.retryTracking(request.params.id);
+				return reply.send({
+					ticketSync: runtime.get(request.params.id).ticketSync,
+				});
+			},
+		);
+		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/review",
 			(request, reply) => {
 				const decision = z

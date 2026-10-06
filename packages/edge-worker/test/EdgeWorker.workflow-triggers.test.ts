@@ -56,7 +56,10 @@ function setup() {
 	vi.spyOn(edge, "postRoutingActivity").mockResolvedValue(undefined);
 	vi.spyOn(edge, "postInstantAcknowledgment").mockResolvedValue(undefined);
 	const activity = vi.fn(async () => ({ success: true }));
-	edge.issueTrackers.set("cli-workspace", { createAgentActivity: activity });
+	edge.issueTrackers.set("cli-workspace", {
+		createAgentActivity: activity,
+		getPlatformType: () => "cli",
+	});
 	cleanups.push(async () => {
 		await runtime.shutdown();
 		await edge.stateSaveQueue;
@@ -990,6 +993,8 @@ it("returns a manual launch immediately, preserves source naming data and mirror
 		path: home,
 		isGitWorktree: false,
 	});
+	// Naming is independent of origin transport; ticket access is covered separately.
+	vi.spyOn(edge, "resolveFactoryTicket").mockResolvedValue(undefined);
 	const titleStart = vi.fn();
 	edge.titleGenerator = {
 		start: titleStart,

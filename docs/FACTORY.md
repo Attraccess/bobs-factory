@@ -613,3 +613,43 @@ guarantee of flawless software.
   selected agent settings.
 - File dependency and image hashes support screenshot reuse; unknown global
   effects require fresh evidence. Brief recap updates never waive fresh approval.
+
+## Originating tickets and synchronization
+
+For Factory, put a Linear or Taskbot ticket URL on its own line in the manual
+prompt, or use `Ticket: https://taskbot.example/p/project/t/77`. Takeover also
+accepts Taskbot ticket URLs. An explicit source wins; conflicting source URLs
+require clarification. Links inside quotes, code samples, fetched ticket bodies
+and historical discussion do not select an origin. Plain prompts still work.
+
+Factory reads the complete ticket before agent work. Registered native trackers
+use the ticket's own team states. Taskbot requires one configured HTTP/SSE MCP
+transport whose URL matches the ticket instance, with `get_ticket`, `set_status`,
+`comment` and `add_attachment` allowed. Project discovery follows the selected
+runner: Cursor uses `.cursor/mcp.json`; other runners use `.mcp.json`, then the
+configured MCP files and inline servers. An inaccessible explicit source fails
+setup visibly instead of silently dropping tracking. Transport credentials stay
+in existing configuration; persisted references contain no secrets.
+
+The runtime owns progress comments, PR attachments and lifecycle status. Agents
+supply summaries and precise blockers. Work starts In Progress, handoff and human
+or provider waits remain In Review, and a coding ticket becomes Done only when
+GitHub confirms the PR merged. Run completion, approval, green CI or a merge
+queue request alone cannot close it. Closed-unmerged PRs and stopped work remain
+open. Simple keeps its native lifecycle. A missing native Review state retains a
+nonterminal status and records the limitation in a comment.
+
+Synchronization receipts live on the run as `ticketReference` and `ticketSync`.
+Failures appear in run activity and retain pending work across restart. Access
+failures retry every 30 seconds while the worker runs; Taskbot status conflicts
+require reassessment and do not blindly retry. After restoring configuration or
+checking a conflict, call the protected `POST /api/runs/:id/ticket-sync` endpoint.
+It retries tracking without replaying implementation, PR publication or merge.
+Inspect `ticketSync.error` and receipt limitations in its response. Comments use
+stable run/milestone markers; attachments deduplicate by PR URL. Ambiguous writes
+are reread before retrying; providers without idempotency cannot guarantee
+exactly-once delivery. Terminal tickets are retained for ownership review.
+
+Taskbot comments and status mutations identify `bobs-factory` as author. Its
+attachment tool has no author field; the accompanying milestone comment records
+attribution using the supported provider contract.

@@ -32,6 +32,7 @@ import type {
  * All relationships are stored as IDs, and getters return promises.
  */
 export interface CLIIssueData {
+	attachments?: { title: string; url: string }[];
 	id: string;
 	identifier: string;
 	title: string;

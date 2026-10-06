@@ -258,6 +258,9 @@ export interface IIssueTrackerService {
 	 * @remarks
 	 * Attachments are typically external links (Sentry, Datadog, etc.)
 	 */
+	/** Attach a pull request using the provider’s native issue-link mechanism. */
+	linkPullRequest?(issueId: string, url: string, title: string): Promise<void>;
+
 	fetchIssueAttachments(
 		issueId: string,
 	): Promise<Array<{ title: string; url: string }>>;
