@@ -436,6 +436,17 @@ export class TicketTracking {
 							["completed", "canceled"].includes(
 								String((snapshot.state as { type?: string } | undefined)?.type),
 							);
+						if (terminal && !receipt.merged && !reassess) {
+							// Late progress from an older attempt is obsolete once the
+							// ticket is closed. Persist that decision to keep restarts quiet.
+							// Confirmed merges still deliver their evidence and PR link.
+							receipt.superseded = true;
+							receipt.limitation =
+								"Terminal ticket retained; stale progress omitted.";
+							delete receipt.error;
+							delete receipt.conflict;
+							continue;
+						}
 						if (
 							applyStage &&
 							!reassess &&

@@ -1480,3 +1480,79 @@ it("reconstructs missing legacy merged receipts during tracking-only retry after
 	);
 	expect(await f.tracker.fetchIssueAttachments(f.issue.id)).toHaveLength(1);
 });
+
+it.each([
+	"failed",
+	"stopped",
+	"completed",
+	"interrupted",
+] as const)("does not manufacture restart comments for historical %s runs", async (status) => {
+	const f = await nativeManualFixture();
+	await f.tracker.updateIssue(f.issue.id, { stateId: "state-done" });
+	const run = f.runtime.create({
+		repositoryId: "repo",
+		workflow: f.workflow,
+		workspace: join(f.home, "removed-worktree"),
+		input: f.issue.url,
+		triggerOrigin: {
+			type: "manual",
+			workflowId: f.workflow.id,
+			at: new Date().toISOString(),
+		},
+	});
+	run.status = status;
+	run.step = "assess-existing";
+	run.error =
+		"Saved worktree is unavailable; recovery cannot recreate unfinished work";
+	f.runtime.save(run);
+	const fetch = vi.spyOn(f.tracker, "fetchIssue");
+	await f.edge.recoverFactoryTicketTracking(run);
+	await f.edge.recoverFactoryTicketTracking(run);
+	expect((await f.tracker.fetchComments(f.issue.id)).nodes).toHaveLength(0);
+	fetch.mockClear();
+	await f.edge.recoverFactoryTicketTracking(run);
+	expect(fetch).not.toHaveBeenCalled();
+	expect(run.ticketSync).toBeUndefined();
+	expect((await (await f.tracker.fetchIssue(f.issue.id)).state)?.type).toBe(
+		"completed",
+	);
+	expect(f.worktree).not.toHaveBeenCalled();
+});
+
+it.each([
+	"state-done",
+	"state-canceled",
+])("suppresses pending native progress on %s tickets and leaves subsequent recovery idle", async (stateId) => {
+	const f = await nativeManualFixture();
+	await f.tracker.updateIssue(f.issue.id, { stateId });
+	const run = f.runtime.create({
+		repositoryId: "repo",
+		workflow: f.workflow,
+		workspace: f.home,
+		input: f.issue.url,
+		triggerOrigin: {
+			type: "manual",
+			workflowId: f.workflow.id,
+			at: new Date().toISOString(),
+		},
+	});
+	run.status = "failed";
+	run.ticketSync = {
+		receipts: [
+			{
+				key: "legacy-current:1",
+				body: "Recovered ticket tracking",
+				stage: "in_progress",
+			},
+		],
+	};
+	await f.edge.recoverFactoryTicketTracking(run);
+	expect((await f.tracker.fetchComments(f.issue.id)).nodes).toHaveLength(0);
+	expect((await (await f.tracker.fetchIssue(f.issue.id)).state)?.id).toBe(
+		stateId,
+	);
+	expect(run.ticketSync.receipts[0].superseded).toBe(true);
+	const fetch = vi.spyOn(f.tracker, "fetchIssue");
+	await f.edge.recoverFactoryTicketTracking(run);
+	expect(fetch).not.toHaveBeenCalled();
+});
