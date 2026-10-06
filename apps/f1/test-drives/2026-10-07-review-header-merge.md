@@ -39,4 +39,8 @@ Evidence directory: `/Users/jappy/.cyrus/factory/evidence/manual-443dc98d-6c88-4
 
 Provider metadata, denied/deferred writes and guide content are fixtures. Successful native write arguments were recorded; independent clipboard readback, provider command execution and physical-device behavior were not checked. The fixture repository has no origin and used local main. Its tracker retains the missing `in_review` state synchronization gap; no production ticket synchronization is claimed. This manual task has no originating ticket.
 
-Synthetic ticket metadata was cleared. Session-1 stopped without a human decision, the named browser closed and the worker received SIGTERM. No approval, merge or ready transition was performed. Prior evidence and decisions remain intact.
+Synthetic ticket metadata was cleared. Session-1 stopped without a human decision, the named browser closed and the worker received SIGTERM. No provider approval, PR merge or ready transition was performed. Prior evidence and decisions remain intact.
+
+## Concurrent base update
+
+After pushing the validated merge, main advanced to `03eb2365` (marketing website PR #29). A fresh fetch and second merge applied that update cleanly. Its separate `website/` and Pages workflow do not change the tested Review Guide runtime or web sources. The only new task-owned delta is this report clarification; the integration results above remain applicable. Required commit hooks run again on the final merge.
