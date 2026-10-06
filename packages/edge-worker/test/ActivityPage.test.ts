@@ -100,6 +100,52 @@ it("retains event-only agent messages and explicitly marked long workflow logs",
 		)?.body,
 	).toMatch(/^Build output/);
 });
+it("can refetch an older SDK reading anchor after formatting event-only history", () => {
+	const events = Array.from({ length: 400 }, (_, sequence) => ({
+		at: new Date(stamp + sequence).toISOString(),
+		step: "review",
+		source: "agent" as const,
+		sequence,
+		message: JSON.stringify({
+			type: "assistant",
+			message: {
+				content: [
+					{ type: "text", text: `Message ${sequence}` },
+					{ type: "thinking", thinking: `Thinking ${sequence}` },
+					{
+						type: "tool_use",
+						id: `tool-${sequence}`,
+						name: "Read",
+						input: { file_path: "README.md" },
+					},
+				],
+			},
+		}),
+	}));
+	const latest = activityPage([], events, { limit: 120 });
+	const older = activityPage([], events, { limit: 120, before: latest.before });
+	const formatted = formatActivities({ ...older, createdAt: events[0].at });
+	const anchor = formatted.find((row: any) => row.body === "Message 170");
+	expect(anchor.cursor).toBe(
+		older.events.find((event) => event.sequence === 170)?.activityCursor,
+	);
+	expect(anchor.cursor).toEqual(expect.any(String));
+	expect(
+		formatted
+			.filter((row: any) => row.key.startsWith(anchor.key.slice(0, -1)))
+			.map((row: any) => row.cursor),
+	).toEqual([anchor.cursor, anchor.cursor, anchor.cursor]);
+	const restored = activityPage([], events, {
+		limit: 120,
+		after: anchor.cursor,
+	});
+	expect(
+		formatActivities({ ...restored, createdAt: events[0].at }).find(
+			(row: any) => row.key === anchor.key,
+		),
+	).toMatchObject({ body: "Message 170", cursor: anchor.cursor });
+	expect(latest.events.some((event) => event.sequence === 170)).toBe(false);
+});
 it("loads bounded step pages with stable indexes and advancing small cursors", () => {
 	const markers = [
 		{ at: new Date(stamp).toISOString(), step: "plan" },
