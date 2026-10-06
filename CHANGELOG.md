@@ -45,6 +45,10 @@ All notable changes to this project will be documented in this file.
 
 - Keep Factory ticket progress and PR links synchronized for native and Taskbot launches, retain the originating ticket through follow-ups, and recover pending tracking after provider failures. Use configured base branches for new native-ticket work, respect the selected runner’s MCP configuration, and mark coding tickets Done only after confirmed merge. ([Taskbot #77](https://taskbot.apps.janjaap.de/p/bobs-factory/t/77), [#19](https://github.com/Attraccess/bobs-factory/pull/19))
 
+- Wait through temporary GitHub mergeability calculations and pending checks during factory handoff, and route actionable conflicts, check failures and feedback through the existing fix/review cycle. Saved runs retain completed work and show the current blocker instead of repeatedly failing handoff. ([#18](https://github.com/Attraccess/bobs-factory/pull/18))
+
+- Confirm approved factory PR merges after issue cleanup removes the worktree, and recover the saved final merge step without recreating unfinished work or repeating review. ([#18](https://github.com/Attraccess/bobs-factory/pull/18))
+
 - Retry automatic run-title timeouts once with a longer deadline, show naming failures, and let operators retry naming with current settings without rerunning the workflow.
 
 - Missing visual evidence now waits for capture assistance and retries capture/review in the same run, retaining verified accepted screenshots and completed work across restarts. Retry also recovers existing runs stuck at this gate. ([#14](https://github.com/Attraccess/bobs-factory/pull/14))
