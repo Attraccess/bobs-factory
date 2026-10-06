@@ -199,9 +199,8 @@ it("falls back to final assistant text, and ignores failed/completed jobs", asyn
 it.each([
 	"provider-error",
 	"invalid",
-	"timeout",
 ])("retains fallback state and stops auxiliary work on %s", async (mode) => {
-	const test = setup(mode === "timeout" ? 10 : 1000);
+	const test = setup();
 	test.generator.start("run", job());
 	await vi.waitFor(() => expect(test.start).toHaveBeenCalledOnce());
 	if (mode === "provider-error")
@@ -220,6 +219,57 @@ it.each([
 	expect(test.slots.active).toBe(0);
 	await test.generator.shutdown();
 	test.completion.resolve();
+});
+it("retries a timeout once with a longer deadline and accepts the second result", async () => {
+	vi.useFakeTimers();
+	const test = setup(100);
+	try {
+		test.generator.start("run", job());
+		await vi.advanceTimersByTimeAsync(100);
+		expect(test.start).toHaveBeenCalledTimes(2);
+		expect(test.stop).toHaveBeenCalledOnce();
+		expect(test.update).toHaveBeenCalledExactlyOnceWith("run", {
+			...job(),
+			retries: 1,
+		});
+		await vi.advanceTimersByTimeAsync(150);
+		expect(test.slots.active).toBe(1);
+		test.emit({ type: "result", result: '{"title":"Name recovered task"}' });
+		test.completion.resolve();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(test.update).toHaveBeenLastCalledWith(
+			"run",
+			{ ...job(), retries: 1, state: "completed" },
+			"Name recovered task",
+		);
+		expect(test.stop).toHaveBeenCalledTimes(2);
+		expect(test.slots.active).toBe(0);
+	} finally {
+		await test.generator.shutdown();
+		vi.useRealTimers();
+	}
+});
+it.each([
+	0, 1,
+])("bounds timeouts across restarts with %s saved retries", async (retries) => {
+	vi.useFakeTimers();
+	const test = setup(100);
+	try {
+		test.generator.start("run", { ...job(), retries });
+		await vi.advanceTimersByTimeAsync(300);
+		expect(test.start).toHaveBeenCalledTimes(2 - retries);
+		expect(test.update).toHaveBeenLastCalledWith("run", {
+			...job(),
+			retries: 1,
+			state: "failed",
+			error: "Title generation timed out",
+		});
+		expect(test.slots.active).toBe(0);
+	} finally {
+		await test.generator.shutdown();
+		test.completion.resolve();
+		vi.useRealTimers();
+	}
 });
 it("cancels queued work immediately while primary execution holds the only slot", async () => {
 	const slots = new SessionSemaphore(1);
@@ -278,7 +328,7 @@ it("does not create a runner when slow configuration resolves after timeout", as
 		{ buildConfig: () => config.promise, createRunner: create, update },
 		10,
 	);
-	generator.start("run", job());
+	generator.start("run", { ...job(), retries: 1 });
 	await vi.waitFor(() =>
 		expect(update).toHaveBeenCalledWith(
 			"run",

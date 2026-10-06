@@ -1031,6 +1031,54 @@ it("returns a manual launch immediately, preserves source naming data and mirror
 	expect(run.sessionSnapshot.titleGeneration.state).toBe("completed");
 });
 
+it("retries only failed naming with current settings without restarting execution", () => {
+	const { edge, runtime, home } = setup();
+	const session = edge.agentSessionManager.createChatSession(
+		"retry-title",
+		{ path: home, isGitWorktree: false },
+		"slack",
+	);
+	const primary = { isRunning: () => true, stop: vi.fn() };
+	session.agentRunner = primary;
+	session.titleGeneration = {
+		state: "failed",
+		prepared: true,
+		retries: 1,
+		error: "Title generation timed out",
+		context: "Original task",
+		platform: "slack",
+		settings: { runner: "claude" },
+	};
+	edge.titleStarted.add(session.id);
+	const start = vi.fn();
+	edge.titleGenerator = { start, shutdown: async () => {} };
+	runtime.updateTitleSettings({
+		runner: "codex",
+		model: "current-title-model",
+		reasoningEffort: "low",
+	});
+	edge.retryRunTitle(session.id);
+	expect(start).toHaveBeenCalledExactlyOnceWith(session.id, {
+		state: "pending",
+		prepared: true,
+		retries: 0,
+		error: undefined,
+		context: "Original task",
+		platform: "slack",
+		settings: {
+			runner: "codex",
+			model: "current-title-model",
+			modelReasoningEffort: "low",
+		},
+	});
+	expect(session.agentRunner).toBe(primary);
+	expect(primary.stop).not.toHaveBeenCalled();
+	expect(() => edge.retryRunTitle(session.id)).toThrow(
+		"Only failed title generation",
+	);
+	expect(start).toHaveBeenCalledOnce();
+});
+
 it("cancels pending naming even when a user stop only interrupts a warm turn", async () => {
 	const { edge, home } = setup();
 	const session = edge.agentSessionManager.createCyrusAgentSession(

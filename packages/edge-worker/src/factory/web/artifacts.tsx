@@ -21,6 +21,7 @@ export function artifactType(v: any) {
 		...Object.keys(v),
 		...(Array.isArray(v.keys) ? v.keys : []),
 	]);
+	if (keys.has("qaContract") && keys.has("results")) return "qa";
 	if (
 		Array.isArray(v.screenshots) ||
 		(v.__artifactPreview && keys.has("screenshots"))
@@ -43,6 +44,7 @@ export function artifactType(v: any) {
 	return "structure";
 }
 const typeIcons: Record<string, string> = {
+	qa: "🧪",
 	screenshots: "🖼️",
 	guide: "📖",
 	decisions: "📌",
@@ -62,6 +64,13 @@ const typeIcons: Record<string, string> = {
 export function artifactSummary(v: any): string {
 	if (v?.__artifactPreview)
 		return `${Math.ceil(v.size / 1024)} KB · open to inspect`;
+	if (v?.qaBlocked) return "QA assistance needed";
+	if (v?.qaContract && v?.results) {
+		const criteria = v.results.flatMap((r: any) => r.criteria ?? []);
+		return `${criteria.filter((c: any) => c.outcome === "passed").length}/${criteria.length} criteria passed · ${v.screenshots?.length ?? 0} screenshots`;
+	}
+	if (v?.qaContract && v?.stories)
+		return `${v.stories.length} QA stories · ${v.stories.reduce((n: number, story: any) => n + story.criteria.length, 0)} criteria · ${v.areas?.length ?? 0} visual areas`;
 	if (v?.captureBlocked) return "Capture assistance needed";
 	if (v?.screenshots) return `${v.screenshots.length} screenshots`;
 	if (v?.decisions) return `${v.decisions.length} decisions`;
@@ -114,7 +123,7 @@ export function ArtifactCard({
 			<span className="artifact-copy">
 				<strong>{artifact.title}</strong>
 				<span>{artifactSummary(artifact.value)}</span>
-				{kind === "screenshots" && (
+				{(kind === "screenshots" || kind === "qa") && (
 					<span className="artifact-thumbs">
 						{(artifact.value.screenshots ?? [])
 							.slice(0, 3)
@@ -183,6 +192,18 @@ function Findings({ items = [] }: { items?: any[] }) {
 					</div>
 					<strong>{f.summary}</strong>
 					<pre>{f.evidence}</pre>
+					{f.reproduction && (
+						<details>
+							<summary>Reproduce and compare</summary>
+							<p>
+								<strong>Expected:</strong> {f.expected}
+							</p>
+							<p>
+								<strong>Actual:</strong> {f.actual}
+							</p>
+							<List items={f.reproduction} />
+						</details>
+					)}
 					{f.reason && <Markdown>{f.reason}</Markdown>}
 				</article>
 			))}
@@ -356,7 +377,7 @@ function ScreenshotGallery({ shots, run, name, onImage }: any) {
 		</section>
 	);
 }
-function RenderArtifact({
+export function RenderArtifact({
 	name,
 	v,
 	run,
@@ -368,6 +389,82 @@ function RenderArtifact({
 	onImage: (i: number) => void;
 }) {
 	switch (artifactType(v)) {
+		case "qa":
+			return (
+				<>
+					<h3>QA execution</h3>
+					<p>{artifactSummary(v)}</p>
+					{v.coverage && (
+						<p>
+							Coverage: {v.coverage.reportedCriteria}/
+							{v.coverage.plannedCriteria} required criteria reported across{" "}
+							{v.coverage.plannedStories} stories.
+						</p>
+					)}
+					{!v.results?.length && (
+						<p>
+							{v.notApplicableReason ??
+								"No executable stories selected; see the QA scope rationale."}
+						</p>
+					)}
+					{(v.results ?? []).map((story: any) => (
+						<article className="scope-card" key={story.storyId}>
+							<strong>
+								{story.goal ?? story.storyId} · {story.outcome}
+							</strong>
+							{(story.criteria ?? []).map((criterion: any) => (
+								<section key={criterion.criterionId}>
+									<h4>
+										{criterion.criterionId} · {criterion.outcome}
+									</h4>
+									<p>
+										<strong>Expected:</strong> {criterion.expected}
+									</p>
+									<p>
+										<strong>Observed:</strong> {criterion.observed}
+									</p>
+									{criterion.blockedReason && (
+										<p className="warning">{criterion.blockedReason}</p>
+									)}
+									<details>
+										<summary>Executed checks and evidence</summary>
+										<List items={criterion.evidence} />
+									</details>
+								</section>
+							))}
+						</article>
+					))}
+					<h3>Consequential findings</h3>
+					{v.findings?.length ? (
+						<Findings items={v.findings} />
+					) : (
+						<p>No reported consequential findings.</p>
+					)}
+					{v.observations?.length > 0 && (
+						<>
+							<h3>Optional improvements</h3>
+							<List items={v.observations} />
+						</>
+					)}
+					{v.unavailable?.length > 0 && (
+						<>
+							<h3>Capture assistance needed</h3>
+							<List
+								items={v.unavailable.map((x: any) => `${x.area}: ${x.reason}`)}
+							/>
+						</>
+					)}
+					{v.screenshots?.length > 0 && (
+						<ScreenshotGallery
+							shots={v.screenshots}
+							run={run}
+							name={name}
+							onImage={onImage}
+						/>
+					)}
+				</>
+			);
+
 		case "screenshots":
 			return (
 				<>
@@ -547,15 +644,23 @@ function RenderArtifact({
 			return (
 				<>
 					<p
-						className={`chip ${v.captureBlocked ? "orange" : v.approved ? "green" : "red"}`}
+						className={`chip ${v.qaBlocked || v.captureBlocked ? "orange" : v.approved ? "green" : "red"}`}
 					>
-						{v.captureBlocked
-							? "⏸ Capture assistance needed"
-							: v.approved
-								? "✅ Approved"
-								: "⛔ Changes needed"}
+						{v.qaBlocked
+							? "⏸ QA assistance needed"
+							: v.captureBlocked
+								? "⏸ Capture assistance needed"
+								: v.approved
+									? "✅ Approved"
+									: "⛔ Changes needed"}
 					</p>
-					{v.captureBlocked && <List items={v.questions} />}
+					{(v.qaBlocked || v.captureBlocked) && <List items={v.questions} />}
+					{v.observations?.length > 0 && (
+						<>
+							<h3>Optional improvements</h3>
+							<List items={v.observations} />
+						</>
+					)}
 					<List items={v.feedback} />
 					{v.findings && (!v.captureBlocked || v.findings.length > 0) && (
 						<Findings items={v.findings} />
@@ -563,6 +668,20 @@ function RenderArtifact({
 				</>
 			);
 		case "scope":
+			if (v.qaContract)
+				return (
+					<>
+						<h3>QA stories</h3>
+						<List items={v.stories} />
+						<h3>Screenshot plan</h3>
+						<List items={v.areas} />
+						<h3>Coverage exclusions</h3>
+						<List items={v.exclusions} />
+						{v.notApplicableReason && (
+							<Markdown>{v.notApplicableReason}</Markdown>
+						)}
+					</>
+				);
 			return v.changed === false ? (
 				<p>No visual changes</p>
 			) : (

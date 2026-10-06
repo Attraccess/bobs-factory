@@ -347,15 +347,15 @@ a local image beside the question; nested paths and external symlink targets
 are rejected. Visuals supplement a question that is understandable on its own.
 
 The factory runs clarification → decisions → planner/plan-review loop →
-implementation → push/draft PR → code-review/fix loop → CI/fix loop → visual
-scope → screenshots/visual-review/fix loop → human review guide. The implementer
+implementation → push/draft PR → code-review/fix loop → CI/fix loop → QA story and screenshot
+plan → QA execution/screenshot review/fix loop → human review guide. The implementer
 receives only the accepted plan and its asset references. Reviews retain earlier
 findings and fixer dispositions, use stable finding IDs, discard severity 1,
 and allow evidence-based rejection and review of that rejection. Visual and CI
 fixes return through code review and CI. A CI assessment that leaves the accepted code and base unchanged returns directly to readiness, verified by Git and saved review provenance. New complaints/rejections still receive review; skipping a comment-only round requires an explicit informational-only assessment. Transient provider transport errors retry in the watcher; recognizable link/build notices do not trigger a fixer, and edited feedback is assessed again. The guide now pauses at an explicit human review gate. **Approve & settle**
 authorizes only its displayed commit; **Open diff** opens the provider in another
 tab; **Request changes** records instructions, runs the fixer and repeats code,
-readiness and visual review before a new guide and fresh approval. Approval marks
+readiness and QA/screenshot review before a new guide and fresh approval. Approval marks
 the PR ready, honors required reviews/checks/threads/conflicts/rules, enters a
 required merge queue or merges normally, and completes only after GitHub confirms
 the merge. No administrator bypass is used. Changed/unpublished revisions and
@@ -366,7 +366,7 @@ Human decisions, review IDs, commit IDs and checkpoint state persist on restart.
 Repeated agents start with `/progress` through factory-context: their previous
 result, prior/current revision, changed files/diff and new history. Planning and
 reviews preserve decisions, stable findings and dispositions while assessing new
-feedback and affected code. Visual scope keeps the cumulative area/state list.
+feedback and affected code. QA scope keeps the cumulative story/criterion and area/state lists.
 Capture can reuse real, previously approved images only when their revision is
 unchanged or declared dependencies are unchanged and all changed files are
 accounted for. Image hashes and dependency provenance are persisted; dirty,
@@ -388,6 +388,48 @@ answer; an answer never waives missing evidence or approves the PR. This checkpo
 survives restart. The dashboard displays those images and a guide organized around the goal,
 before/after behavior, requirements, checks, risks and human review instructions,
 inspired by Rocky's visual recap.
+
+## QA and screenshot roles
+
+New stock Factory and Takeover recipes use the versioned `qa-v1` contract while
+keeping the existing scope/capture/review/gate/fix step IDs and screenshot URLs.
+QA runs for all changed behavior, including API and CLI changes with zero images.
+The scope role plans stable stories traced to accepted requirements, decisions
+and recorded expectations. Each story has fixtures, ordered actions, observable
+criteria, execution instructions and explicit representative screenshot tasks.
+A change without executable behavior needs a concrete not-applicable rationale.
+
+The QA role executes the stories with browser, HTTP, CLI or relevant tests and
+records expected/observed outcomes and actual check receipts per criterion.
+It assesses applicable navigation, feedback, readability and error recovery,
+and captures selected states while navigating those flows. It cannot repair
+product code. Consequential failures become stable severity 2/3 findings;
+optional improvement observations remain visible and nonblocking.
+
+The reviewer checks coverage and real executed evidence, then opens the actual
+selected images. The gate independently rejects failed, missing, blocked or
+stale criteria even if the reviewer reports no findings. Product failures return
+through fixes, code review, CI, QA planning, execution and review. Failed criteria
+must be retested before the human guide. QA execution is conservative: every
+criterion is freshly executed on repeats; permission to reuse an image never
+establishes a behavioral pass.
+
+Missing access, fixtures, tooling or required images waits for assistance at the
+same durable checkpoint. Answers retry QA and screenshot review, including after
+restart, retaining completed work, findings and provenance-eligible images.
+Answers cannot waive testing or approve the PR. Custom recipes need the supported
+`capture → visual-review → visual-gate` recovery path; unsupported graphs fail
+with a configuration error instead of routing access failures into product edits.
+The dashboard shows criterion outcomes, execution receipts, blocked reasons,
+findings and optional observations alongside the gallery. The complete human
+guide maps actual story evidence to requirements and discloses limitations.
+
+Recognized stock saved recipes upgrade coherently and idempotently, preserving
+runner/model choices. Customized affected prompts or routes remain unchanged.
+To opt a custom recipe into QA, copy the stock QA roles, `qaContract` markers and
+routes together, then reapply custom instructions without removing contract
+fields. Already-running recipes stay frozen; legacy screenshot-only evidence
+remains readable and resumable and is never presented as completed QA.
 
 ## Visual evidence budgets
 

@@ -200,6 +200,7 @@ import {
 	OutputValidationError,
 	outputValidationError,
 } from "./factory/OutputValidation.js";
+import { type QaScope, qaDigest, qaRequirementIssues } from "./factory/Qa.js";
 import { questionInstructions } from "./factory/Questions.js";
 import {
 	buildTitleContext,
@@ -870,6 +871,7 @@ export class EdgeWorker extends EventEmitter {
 					this.getAllKnownSessions().map((session) => ({
 						id: session.id,
 						title: session.displayTitle ?? session.issue?.title ?? session.id,
+						titleGeneration: session.titleGeneration,
 						status: session.agentRunner?.isRunning()
 							? "running"
 							: session.status,
@@ -902,6 +904,7 @@ export class EdgeWorker extends EventEmitter {
 				message: (id, text) => this.sendFactoryChat(id, text),
 				start: (input) => this.startManualFactoryRun(input),
 				followup: (id, feedback) => this.startFactoryFollowup(id, feedback),
+				retryTitle: (id) => this.retryRunTitle(id),
 				stop: (id) => {
 					this.settleTicketLaunch(id);
 					this.factoryRuntime?.runs.has(id) && this.factoryRuntime.stop(id);
@@ -6776,6 +6779,26 @@ ${taskSection}`;
 			this.logger.warn(`Run title generation failed for ${id}: ${job.error}`);
 		void this.savePersistedState();
 	}
+	private retryRunTitle(id: string): void {
+		const runtime = this.getFactoryRuntime();
+		const previous =
+			runtime.runs.get(id)?.titleGeneration ??
+			this.titleSession(id)?.titleGeneration;
+		if (previous?.state !== "failed")
+			throw new Error("Only failed title generation can be retried");
+		const fresh = runtime.createTitleJob(previous.context);
+		if (fresh.state !== "pending") throw new Error(fresh.error);
+		const job: RunTitleJob = {
+			...previous,
+			...fresh,
+			prepared: true,
+			error: undefined,
+			retries: 0,
+		};
+		this.titleStarted.delete(id);
+		this.updateRunTitle(id, job);
+		this.startRunTitle(id);
+	}
 	private cancelRunTitle(id: string): void {
 		const job =
 			this.factoryRuntime?.runs.get(id)?.titleGeneration ??
@@ -7322,12 +7345,21 @@ ${taskSection}`;
 		try {
 			let output = value;
 			if (
+				step.qaContract ||
 				["factory", "takeover"].includes(run.workflow.id) ||
 				run.workflowDefinitions
 					?.find((item) => item.id === "factory-pipeline")
 					?.steps.includes(step)
 			)
-				output = validateFactoryResult(step.id, output);
+				output = validateFactoryResult(step.id, output, step.qaContract);
+			if (step.id === "visual-scope" && step.qaContract) {
+				const issues = qaRequirementIssues(
+					output as QaScope,
+					run.outputs,
+					run.answers,
+				);
+				if (issues.length) throw new Error(issues.join("; "));
+			}
 			if (step.id === "guide") validateGuideCoverage(context, output);
 			return output;
 		} catch (error) {
@@ -7345,6 +7377,17 @@ ${taskSection}`;
 		if (step.id === "ci-fix")
 			output = recordFeedbackAssessment(context, output);
 		const completed = (await roleProgress(context)).currentRevision;
+		if (completed && step.id === "visual-review" && step.qaContract) {
+			output = {
+				...(output as Record<string, unknown>),
+				qaReviewStamp: {
+					headSha: completed.headSha,
+					dirty: completed.dirty,
+					captureHash: qaDigest(run.outputs.capture),
+					scopeHash: qaDigest(run.outputs["visual-scope"]),
+				},
+			};
+		}
 		if (completed) {
 			run.roleRevisions ??= {};
 			completed.historyLength = run.history.length + 1;

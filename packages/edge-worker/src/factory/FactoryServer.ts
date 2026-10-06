@@ -30,12 +30,14 @@ interface ServerHooks {
 		title: string;
 		status: string;
 		createdAt: string;
+		titleGeneration?: import("cyrus-core").RunTitleJob;
 		workspace: string;
 		repositoryId?: string;
 	}[];
 	entries(id: string): unknown[];
 	start(input: ResolvedLaunchRequest): Promise<FactoryRun>;
 	followup?(id: string, feedback: string): Promise<FactoryRun>;
+	retryTitle?(id: string): void;
 	stop(id: string): void;
 }
 
@@ -368,6 +370,20 @@ export class FactoryServer {
 						};
 					}),
 				};
+			},
+		);
+		this.app.post<{ Params: { id: string } }>(
+			"/api/runs/:id/retry-title",
+			(request, reply) => {
+				const id = request.params.id;
+				if (
+					!runtime.runs.has(id) &&
+					!hooks.sessions().some((session) => session.id === id)
+				)
+					return reply.code(404).send({ error: "Run not found" });
+				if (!hooks.retryTitle) throw new Error("Title retry unavailable");
+				hooks.retryTitle(id);
+				return reply.code(202).send({ accepted: true });
 			},
 		);
 		this.app.get<{

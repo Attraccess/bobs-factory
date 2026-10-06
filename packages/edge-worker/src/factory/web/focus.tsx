@@ -18,11 +18,12 @@ import { DraftNotice } from "./pwa-ui";
 import { revisionOf, useRestorableState } from "./restoration";
 import { GuidedReview } from "./review";
 import {
-	guideMatchesGate,
-	readStored,
-	signature,
-	writeStored,
-} from "./review-state";
+	type FeedbackController,
+	useFeedbackController,
+	useReviewFeedback,
+} from "./review-comments";
+import { feedbackKey, hasFeedback, serializeFeedback } from "./review-feedback";
+import { guideMatchesGate, reviewRevision, signature } from "./review-state";
 import { Bob, Button, ConfirmStop, External, Markdown, useToast } from "./ui";
 export const labels: Record<string, string> = {
 	question: "💬 Question",
@@ -71,6 +72,42 @@ function selectionLabel(origin: any): string {
 		: origin?.selectionMethod === "default"
 			? "saved default"
 			: "selection source unavailable for this older run";
+}
+
+export function RunTitleStatus({ run }: { run: any }) {
+	const action = useAction();
+	const job = run.titleGeneration;
+	if (job?.state === "pending")
+		return (
+			<p className="run-title-status" role="status">
+				{job.retries ? "Retrying title…" : "Generating title…"}
+			</p>
+		);
+	if (job?.state !== "failed") return null;
+	return (
+		<div className="run-title-status">
+			<p>Title generation failed: {job.error ?? "Unknown error"}</p>
+			<Button
+				variant="ghost"
+				requiresConnection
+				busy={action.isPending}
+				onClick={() =>
+					void action
+						.mutateAsync({
+							path: `/api/runs/${encodeURIComponent(run.id)}/retry-title`,
+						})
+						.catch(() => {})
+				}
+			>
+				Retry title
+			</Button>
+			{action.error && (
+				<p className="error" role="alert">
+					{action.error.message}
+				</p>
+			)}
+		</div>
+	);
 }
 
 export function RunOrigin({ run }: { run: any }) {
@@ -324,46 +361,80 @@ export function FullReview({
 	);
 }
 
-function DecisionActions({
-	run,
-	identity = `factory-review/${run.id}/finished`,
-	decisionPage = true,
-	onSettled,
-	settling,
-}: {
+type DecisionProps = {
 	run: any;
 	identity?: string;
 	decisionPage?: boolean;
 	onSettled: () => void;
 	settling?: boolean;
-}) {
+};
+function DecisionActions(props: DecisionProps) {
+	const controller = useReviewFeedback();
+	return controller ? (
+		<ReviewDecisions {...props} controller={controller} />
+	) : (
+		<LocalDecisions {...props} />
+	);
+}
+function LocalDecisions(props: DecisionProps) {
+	const controller = useFeedbackController(
+		feedbackKey(
+			props.identity ?? `factory-review/${props.run.id}/finished`,
+			props.run.reviewGate?.id,
+		),
+		revisionOf([props.run.reviewGate, props.run.status, props.run.chat?.mode]),
+	);
+	return <ReviewDecisions {...props} controller={controller} />;
+}
+function ReviewDecisions({
+	run,
+	identity = `factory-review/${run.id}/finished`,
+	decisionPage = true,
+	onSettled,
+	settling,
+	controller,
+}: DecisionProps & { controller: FeedbackController }) {
 	const toast = useToast(),
 		navigate = useNavigate(),
 		action = useAction(),
-		draftKey = `${identity}/feedback/${run.reviewGate?.id ?? "finished"}`,
-		[feedbackOpen, setFeedbackOpen] = useRestorableState(
-			`feedback/open/${draftKey}`,
-			() => readStored<any>(draftKey, {}).open === true,
-		),
-		[feedback, setFeedback, staleFeedback] = useRestorableState(
-			`feedback/text/${draftKey}`,
-			() => {
-				const saved = readStored<any>(draftKey, {});
-				return typeof saved.feedback === "string" ? saved.feedback : "";
-			},
-			revisionOf([run.reviewGate, run.status, run.chat?.mode]),
-		);
-	useEffect(() => {
-		writeStored(draftKey, { feedback, open: feedbackOpen });
-	}, [draftKey, feedback, feedbackOpen]);
+		[validationError, setValidationError] = useState("");
+	const { draft, update, busy, staleFeedback, draftKey } = controller;
+	const feedback = draft.feedback,
+		feedbackOpen = draft.open;
+	const setFeedback = (feedback: string) => update((d) => ({ ...d, feedback }));
+	const setFeedbackOpen = (open: boolean) => update((d) => ({ ...d, open }));
 	const guide = run.outputs?.guide,
 		gate = run.reviewGate,
 		waiting = gate?.status === "pending",
 		matching = !waiting || (run.status === "waiting" && guideMatchesGate(run)),
 		url = run.outputs?.["draft-pr"]?.url ?? gate?.url;
 	const reject = async () => {
-		if (!feedback.trim() || staleFeedback || action.isPending || !matching)
+		if (
+			!hasFeedback(draft) ||
+			staleFeedback ||
+			busy ||
+			action.isPending ||
+			!matching
+		)
 			return;
+		let feedback: string;
+		try {
+			feedback = serializeFeedback(
+				draft,
+				guide
+					? {
+							revision: reviewRevision(run) || "historical",
+							goal: guide.goal ?? guide.summary ?? "Review guide",
+							identity,
+						}
+					: undefined,
+			);
+			setValidationError("");
+		} catch (error) {
+			setValidationError((error as Error).message);
+			return;
+		}
+		if (!controller.lock()) return;
 		try {
 			if (waiting) {
 				await action.mutateAsync({
@@ -389,19 +460,16 @@ function DecisionActions({
 				navigate(`/runs/${next.id}`);
 			}
 			toast({ text: "Feedback sent — Bob is on it" });
-			writeStored(draftKey, { feedback: "", open: false });
-			setFeedbackOpen(false);
-			setFeedback("");
+			controller.clear(draft);
 		} catch {
-			/* error stays visible */
+			/* error stays visible; the submitted draft is retained. */
+		} finally {
+			controller.unlock();
 		}
 	};
 	return (
 		<>
-			<DraftNotice
-				conflict={staleFeedback}
-				draftKey={`feedback/text/${draftKey}`}
-			/>
+			<DraftNotice conflict={staleFeedback} draftKey={draftKey} />
 			{waiting && !matching && (
 				<p className="notice" role="status">
 					The pending revision changed. Decisions are unavailable until its
@@ -418,7 +486,7 @@ function DecisionActions({
 					</Markdown>
 				</div>
 			)}
-			{feedbackOpen ? (
+			{(guide || feedbackOpen) && (
 				<form
 					className="feedback-form"
 					onSubmit={(e) => {
@@ -426,46 +494,72 @@ function DecisionActions({
 						void reject();
 					}}
 				>
-					<label>
-						What should Bob change?
-						<textarea
-							rows={3}
-							placeholder="e.g. Keep the old receipt layout for non-metered resources"
-							value={feedback}
-							onChange={(e) => setFeedback(e.target.value)}
-						/>
-					</label>
+					{(!guide || decisionPage || feedbackOpen) && (
+						<label>
+							{guide ? "Additional feedback" : "What should Bob change?"}
+							<textarea
+								rows={guide ? 6 : 3}
+								disabled={busy}
+								placeholder="What else should Bob change?"
+								value={feedback}
+								onChange={(e) => setFeedback(e.target.value)}
+							/>
+						</label>
+					)}
 					<div className="actions">
 						<Button
 							type="submit"
+							busy={busy || action.isPending}
 							requiresConnection
-							busy={action.isPending}
-							disabled={!feedback.trim() || staleFeedback || !matching}
+							disabled={!hasFeedback(draft) || staleFeedback || !matching}
 						>
-							Send to Bob
+							Submit feedback to Bob
 						</Button>
-						<Button
-							variant="ghost"
-							disabled={action.isPending || action.isBlocked}
-							onClick={() => setFeedbackOpen(false)}
-						>
-							Cancel
-						</Button>
+						{!decisionPage && (
+							<Button
+								variant="ghost"
+								disabled={busy}
+								onClick={() => setFeedbackOpen(!feedbackOpen)}
+							>
+								{feedbackOpen
+									? "Hide additional feedback"
+									: "Add additional feedback"}
+							</Button>
+						)}
+						{!guide && (
+							<Button
+								variant="ghost"
+								disabled={busy}
+								onClick={() => setFeedbackOpen(false)}
+							>
+								Cancel
+							</Button>
+						)}
 					</div>
+					{validationError && (
+						<p className="error" role="alert">
+							{validationError}
+						</p>
+					)}
 				</form>
-			) : (
+			)}
+			{(guide || !feedbackOpen) && (
 				<div className="actions">
 					{(!guide || decisionPage) &&
 						!["running", "interrupted"].includes(run.status) && (
 							<Button
 								variant={guide ? "rainbow" : "primary"}
 								requiresConnection
-								busy={action.isPending || settling}
-								disabled={!matching || (!waiting && !finished(run.status))}
+								busy={busy || action.isPending || settling}
+								disabled={
+									busy || !matching || (!waiting && !finished(run.status))
+								}
 								onClick={() => {
-									if (!matching || action.isPending) return;
+									if (!matching || action.isPending || !controller.lock())
+										return;
 									if (!waiting) {
 										onSettled();
+										controller.unlock();
 										return;
 									}
 									void action
@@ -482,7 +576,8 @@ function DecisionActions({
 												text: "Approved — Bob is checking merge criteria",
 											}),
 										)
-										.catch(() => {});
+										.catch(() => {})
+										.finally(() => controller.unlock());
 								}}
 							>
 								{waiting
@@ -496,8 +591,9 @@ function DecisionActions({
 						<Button
 							variant="ghost"
 							requiresConnection
-							busy={action.isPending}
+							busy={busy || action.isPending}
 							onClick={() => {
+								if (!controller.lock()) return;
 								void action
 									.mutateAsync({
 										path: `/api/runs/${run.id}/guide/refresh`,
@@ -508,7 +604,8 @@ function DecisionActions({
 											text: "Refreshing the guide — existing reviews and images are retained",
 										}),
 									)
-									.catch(() => {});
+									.catch(() => {})
+									.finally(() => controller.unlock());
 							}}
 						>
 							Refresh guide
@@ -524,9 +621,15 @@ function DecisionActions({
 							Open PR #{url.split("/").at(-1)} ↗
 						</External>
 					)}
-					<Button variant="ghost" onClick={() => setFeedbackOpen(true)}>
-						{guide ? "Request changes" : "Ask a follow-up"}
-					</Button>
+					{!guide && (
+						<Button
+							variant="ghost"
+							disabled={busy}
+							onClick={() => setFeedbackOpen(true)}
+						>
+							Ask a follow-up
+						</Button>
+					)}
 					{!guide && (
 						<Link className="button ghost" to={`/runs/${run.id}`}>
 							Open run
@@ -534,6 +637,7 @@ function DecisionActions({
 					)}
 				</div>
 			)}
+
 			{waiting && (
 				<small className="muted">
 					Approval applies to {gate.headSha.slice(0, 8)}. Settles after GitHub

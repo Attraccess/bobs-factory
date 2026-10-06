@@ -35,6 +35,11 @@ import {
 	revisionOf,
 	useRestorableState,
 } from "../src/factory/web/restoration.js";
+import {
+	emptyFeedback,
+	loadFeedback,
+} from "../src/factory/web/review-feedback.js";
+import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
 
 const build = "b".repeat(24),
 	oldBuild = "a".repeat(24),
@@ -636,4 +641,92 @@ it("marks changed questions/gates/recipes as stale drafts instead of accepting t
 	);
 	acknowledgeDraft("answers/conflict");
 	expect(window.dispatchEvent).toHaveBeenCalledOnce();
+});
+
+it("preserves collected feedback per tab through updates and migrates earlier text snapshots", () => {
+	browserState();
+	const local = storage(),
+		saved = storage();
+	vi.stubGlobal("localStorage", local);
+	const key = "factory-review/update/feedback/gate",
+		snapshotKey = `feedback/draft/${key}`;
+	const session = feedbackSession(key);
+	const item = {
+		text: "Keep my item comment",
+		target: {
+			path: "/summary",
+			page: 0,
+			pageTitle: "Summary",
+			kind: "Text block",
+			label: "Summary",
+			context: "Original guide",
+			order: [0, 0],
+		},
+	};
+	session.update((d) => ({
+		...d,
+		feedback: "Keep additional feedback",
+		open: true,
+		collectedOpen: true,
+		editing: "/summary",
+		items: [item],
+	}));
+	const draft = session.getSnapshot().draft;
+	rememberDraft(snapshotKey, draft, "old-gate-state");
+	try {
+		preserveForUpdate(build, saved);
+		const snapshot = decodeSnapshot([...saved.values.values()][0])!;
+		expect(snapshot.drafts[snapshotKey]).toEqual({
+			value: draft,
+			revision: "old-gate-state",
+		});
+		forgetDraft(snapshotKey);
+		local.setItem(
+			key,
+			JSON.stringify({ ...emptyFeedback(), feedback: "Another tab" }),
+		);
+		loadRestoration(build, saved);
+		expect(feedbackSession(key).getSnapshot().draft).toEqual(draft);
+		let stale = false;
+		function Probe() {
+			const [, , conflict] = useRestorableState(
+				snapshotKey,
+				emptyFeedback(),
+				"new-gate-state",
+			);
+			stale = conflict;
+			return null;
+		}
+		renderToStaticMarkup(createElement(Probe));
+		expect(stale).toBe(true);
+		const invalid = structuredClone(snapshot);
+		invalid.drafts[snapshotKey].value.items[0].target.order = [-1];
+		expect(decodeSnapshot(JSON.stringify(invalid))).toBeUndefined();
+		completeRestoration();
+		forgetDraft(snapshotKey);
+		rememberDraft(
+			`feedback/text/${key}`,
+			"Original tab text",
+			"legacy-gate-state",
+		);
+		rememberDraft(`feedback/open/${key}`, true);
+		expect(loadFeedback(key).feedback).toBe("Original tab text");
+		expect(loadFeedback(key).open).toBe(true);
+		expect(restoredDraft(snapshotKey)).toEqual({
+			...emptyFeedback(),
+			feedback: "Original tab text",
+			open: true,
+			collectedOpen: false,
+			editing: undefined,
+		});
+		rememberDraft(snapshotKey, emptyFeedback());
+		expect(restoredDraft(snapshotKey)).toBeUndefined();
+	} finally {
+		for (const surface of [
+			snapshotKey,
+			`feedback/text/${key}`,
+			`feedback/open/${key}`,
+		])
+			forgetDraft(surface);
+	}
 });

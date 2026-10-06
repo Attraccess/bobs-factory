@@ -28,6 +28,33 @@ function validDraft(key: string, value: any): boolean {
 		Array.isArray(v) && v.every((item) => typeof item === "string");
 	const values = (v: any, type: string) =>
 		record(v) && Object.values(v).every((item) => typeof item === type);
+	if (key.startsWith("feedback/draft/"))
+		return (
+			record(value) &&
+			typeof value.feedback === "string" &&
+			typeof value.open === "boolean" &&
+			(value.collectedOpen === undefined ||
+				typeof value.collectedOpen === "boolean") &&
+			(value.editing === undefined || typeof value.editing === "string") &&
+			Array.isArray(value.items) &&
+			value.items.every((item: any) => {
+				const target = item?.target;
+				return (
+					record(item) &&
+					typeof item.text === "string" &&
+					record(target) &&
+					["path", "pageTitle", "kind", "label", "context"].every(
+						(k) => typeof target[k] === "string",
+					) &&
+					target.path.startsWith("/") &&
+					Number.isInteger(target.page) &&
+					target.page >= 0 &&
+					Array.isArray(target.order) &&
+					target.order.length > 0 &&
+					target.order.every((n: any) => Number.isInteger(n) && n >= 0)
+				);
+			})
+		);
 	if (key.startsWith("position/"))
 		return typeof value === "number" && Number.isFinite(value) && value >= 0;
 	if (
@@ -195,8 +222,19 @@ export function restorationNotice() {
 export function restoredDraft<T>(key: string): T | undefined {
 	return drafts.get(key)?.value;
 }
+export function draftRevision(key: string): string | undefined {
+	return drafts.get(key)?.revision;
+}
 function pristineDraft(key: string, value: any): boolean {
 	if (value === undefined) return true;
+	if (key.startsWith("feedback/draft/"))
+		return (
+			!value.feedback &&
+			!value.open &&
+			!value.collectedOpen &&
+			!value.editing &&
+			!value.items?.length
+		);
 	// Only discard known defaults. A blank recipe editor or an explicit panel
 	// collapse is still an edit and must survive an update.
 	if (/^(chat\/|feedback\/text\/|recipe\/modal-json$)/.test(key))

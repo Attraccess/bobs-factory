@@ -19,6 +19,13 @@ import {
 	reportReadiness,
 } from "./MergeReadiness.js";
 import { OutputValidationError } from "./OutputValidation.js";
+import {
+	QA_CONTRACT,
+	QaExecutionFields,
+	qaCoverage,
+	qaDigest,
+	qaRequirementIssues,
+} from "./Qa.js";
 import { inspectPullRequest } from "./Takeover.js";
 import { readPath } from "./Workflow.js";
 
@@ -161,6 +168,15 @@ export function executeCommand(
 }
 
 export const ReviewResultSchema = z.object({
+	qaContract: z.literal(QA_CONTRACT).optional(),
+	qaReviewStamp: z
+		.object({
+			headSha: z.string(),
+			dirty: z.boolean(),
+			captureHash: z.string(),
+			scopeHash: z.string(),
+		})
+		.optional(),
 	acceptedScreenshots: z
 		.array(
 			z.object({
@@ -203,14 +219,25 @@ const screenshotSchema = z.object({
 	area: z.string(),
 	state: z.string().optional(),
 });
-export const CaptureSchema = z.object({
+const CaptureFields = {
 	screenshots: z.array(screenshotSchema),
 	dependencyManifests: z
 		.record(z.string(), z.record(z.string(), z.string()))
 		.optional(),
 	unavailable: z
-		.array(z.object({ area: z.string(), reason: z.string() }))
+		.array(
+			z.object({
+				area: z.string(),
+				reason: z.string(),
+				cause: z.enum(["access", "product"]).optional(),
+			}),
+		)
 		.default([]),
+};
+export const CaptureSchema = z.object(CaptureFields);
+export const QaCaptureSchema = z.object({
+	...CaptureFields,
+	...QaExecutionFields,
 });
 function captureGaps(capture: z.infer<typeof CaptureSchema>, areas: unknown) {
 	const gaps = [...capture.unavailable];
@@ -261,6 +288,136 @@ export interface FactoryToolHooks {
 }
 export class FactoryTools {
 	constructor(private hooks: FactoryToolHooks) {}
+	private async qaGate(
+		context: ExecutionContext,
+		command: (exe: string, args: string[]) => Promise<string>,
+	) {
+		const { run } = context;
+		// Import at execution time to share the scope safeguards without a schema initialization cycle.
+		const { QaScopeSchema } = await import("./FactoryResults.js");
+		const scope = QaScopeSchema.parse(run.outputs["visual-scope"]);
+		const capture = QaCaptureSchema.parse(run.outputs.capture);
+		const review = filterReview(run.outputs["visual-review"]);
+		const headSha = (await command("git", ["rev-parse", "HEAD"])).trim();
+		const dirty = Boolean(
+			(await command("git", ["status", "--porcelain"])).trim(),
+		);
+		const scopeHash = qaDigest(scope),
+			captureHash = qaDigest(capture),
+			reviewHash = qaDigest(review);
+		const stamp = capture.testedRevision,
+			reviewed = review.qaReviewStamp;
+		const prefix = (run.step ?? context.step.id).replace(/[^/]+$/, "");
+		const provenance = ["capture", "visual-review"].every((id) => {
+			const revision = run.roleRevisions?.[`${prefix}${id}`];
+			return revision && !revision.dirty && revision.headSha === headSha;
+		});
+		const coverage = qaCoverage(scope, capture);
+		coverage.blocked.push(
+			...qaRequirementIssues(scope, run.outputs, run.answers),
+		);
+		if (
+			dirty ||
+			!provenance ||
+			!stamp ||
+			stamp.dirty ||
+			stamp.headSha !== headSha ||
+			stamp.scopeHash !== scopeHash ||
+			!reviewed ||
+			reviewed.dirty ||
+			review.qaContract !== QA_CONTRACT ||
+			reviewed.headSha !== headSha ||
+			reviewed.scopeHash !== scopeHash ||
+			reviewed.captureHash !== captureHash
+		)
+			coverage.blocked.push(
+				"QA execution or review has missing, dirty or stale revision/scope provenance. Retry QA and review on the current clean revision.",
+			);
+		const gaps = captureGaps(capture, scope.areas);
+		const assistanceGaps = gaps.filter(
+			(g) =>
+				!(
+					g.cause === "product" &&
+					scope.stories.some(
+						(s) =>
+							s.screenshotTasks.some((t) => t.area === g.area) &&
+							capture.results.some(
+								(r) =>
+									r.storyId === s.id &&
+									r.criteria.some((c) => c.outcome === "failed"),
+							),
+					)
+				),
+		);
+		coverage.blocked.push(
+			...assistanceGaps.map((g) => `${g.area}: ${g.reason}`),
+		);
+		for (const shot of capture.screenshots) {
+			if (
+				!scope.areas.some(
+					(a) => a.name === shot.area && a.states.includes(shot.state ?? ""),
+				)
+			)
+				coverage.blocked.push(
+					`Unknown screenshot task ${shot.area}/${shot.state}`,
+				);
+			const bytes = readFileSync(
+				verifiedScreenshot(shot.path, context.evidenceDir),
+			);
+			if (createHash("sha256").update(bytes).digest("hex") !== shot.imageSha256)
+				coverage.blocked.push(
+					`${shot.area}/${shot.state}: screenshot bytes changed after capture`,
+				);
+		}
+		const findings = [...review.findings.filter((f) => f.status === "open")];
+		for (const finding of capture.findings.filter((f) => f.status === "open"))
+			if (!findings.some((f) => f.id === finding.id)) findings.push(finding);
+		for (const failure of coverage.failed) {
+			const reported = capture.findings.some(
+				(f) =>
+					f.status === "open" &&
+					f.storyId === failure.storyId &&
+					f.criterionId === failure.criterionId,
+			);
+			if (!reported && !findings.some((f) => f.id === failure.id))
+				findings.push(failure);
+		}
+
+		const receipts = review.acceptedScreenshots ?? [];
+		for (const shot of capture.screenshots)
+			if (
+				!receipts.some(
+					(r) =>
+						r.area === shot.area &&
+						r.state === shot.state &&
+						r.imageSha256 === shot.imageSha256,
+				) &&
+				!findings.length
+			)
+				coverage.blocked.push(
+					`${shot.area}/${shot.state}: no exact inspected-image acceptance receipt`,
+				);
+		return {
+			qaContract: QA_CONTRACT,
+			approved: !findings.length && !coverage.blocked.length,
+			findings,
+			observations: capture.observations,
+			headSha,
+			scopeHash,
+			captureHash,
+			reviewHash,
+			...(coverage.blocked.length
+				? {
+						qaBlocked: true,
+						captureBlocked: assistanceGaps.length > 0,
+						questions: [
+							`QA evidence is incomplete. ${coverage.blocked.join("\n\n")}\n\nResolve the missing access, fixtures, tooling or evidence above and explain how to run the blocked checks. Your answer retries QA and screenshot review in this run. It does not approve the PR or waive required testing.`,
+						],
+					}
+				: {}),
+		};
+	}
+
 	async script(context: ExecutionContext): Promise<unknown> {
 		const stdout = await executeCommand(context, "/bin/sh", [
 			"-c",
@@ -460,6 +617,9 @@ export class FactoryTools {
 				const open = review.findings.filter(
 					(finding) => finding.status === "open",
 				);
+				if (source === "visual-review" && context.step.qaContract) {
+					return this.qaGate(context, command);
+				}
 				if (source === "visual-review") {
 					const capture = CaptureSchema.parse(run.outputs.capture);
 					const gaps = captureGaps(
@@ -646,6 +806,20 @@ export class FactoryTools {
 					throw new Error(
 						"Review guide reports unresolved gaps; handoff blocked",
 					);
+				if (context.step.qaContract) {
+					const gate = await this.qaGate(context, command);
+					const accepted = run.outputs["visual-gate"];
+					if (
+						!gate.approved ||
+						readPath(accepted, "headSha") !== headSha ||
+						readPath(accepted, "captureHash") !== gate.captureHash ||
+						readPath(accepted, "scopeHash") !== gate.scopeHash ||
+						readPath(accepted, "reviewHash") !== gate.reviewHash
+					)
+						throw new Error(
+							"QA evidence changed or is incomplete; handoff blocked",
+						);
+				}
 				const guide = reviewGuideMarkdown(run.outputs.guide, headSha);
 				await command("gh", ["pr", "edit", url, "--body", guide]);
 				await this.hooks.postComment(
@@ -709,8 +883,46 @@ export function captureEvidence(
 	context: ExecutionContext,
 	output: unknown,
 ): unknown {
-	const capture = CaptureSchema.parse(output);
+	const capture: z.infer<typeof CaptureSchema> &
+		Partial<z.infer<typeof QaCaptureSchema>> = context.step.qaContract
+		? QaCaptureSchema.parse(output)
+		: CaptureSchema.parse(output);
 	const areas = readPath(context.run.outputs, "visual-scope.areas");
+	if (context.step.qaContract) {
+		const scope = context.run.outputs["visual-scope"] as {
+			stories: { id: string; goal: string; criteria: unknown[] }[];
+			notApplicableReason?: string;
+		};
+		capture.coverage = {
+			plannedStories: scope.stories.length,
+			plannedCriteria: scope.stories.reduce((n, s) => n + s.criteria.length, 0),
+			reportedStories: capture.results!.length,
+			reportedCriteria: capture.results!.reduce(
+				(n, s) => n + s.criteria.length,
+				0,
+			),
+		};
+		for (const result of capture.results!)
+			result.goal = scope.stories.find((s) => s.id === result.storyId)?.goal;
+		if (scope.notApplicableReason)
+			capture.notApplicableReason = scope.notApplicableReason;
+		else delete capture.notApplicableReason;
+		const current = context.progress?.currentRevision;
+		if (!current) throw new Error("QA requires runtime revision provenance");
+		capture.testedRevision = {
+			headSha: current.headSha,
+			dirty: current.dirty,
+			scopeHash: qaDigest(scope),
+		};
+		for (const shot of capture.screenshots)
+			if (
+				!Array.isArray(areas) ||
+				!areas.some(
+					(a) => a.name === shot.area && a.states.includes(shot.state),
+				)
+			)
+				throw new Error(`Unknown screenshot task ${shot.area}/${shot.state}`);
+	}
 	const budget = readPath(context.run.outputs, "visual-scope.captureBudget");
 	// Old persisted inventories remain readable/resumable; new evidence plans are bounded.
 	if (typeof budget === "number") {

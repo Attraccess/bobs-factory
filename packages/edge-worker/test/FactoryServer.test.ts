@@ -1036,6 +1036,72 @@ it("serves a coherent installable shell with protected versioned writes and expl
 	}
 });
 
+it("protects title retries and accepts existing standalone sessions", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-title-retry-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const retryTitle = vi.fn();
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [
+			{
+				id: "chat",
+				title: "chat",
+				status: "running",
+				createdAt: new Date().toISOString(),
+				workspace: home,
+				titleGeneration: {
+					state: "failed",
+					settings: { runner: "codex" },
+					context: "Task",
+					error: "Timed out",
+				},
+			},
+		],
+		entries: () => [],
+		start: async () => {
+			throw new Error("unused");
+		},
+		stop: () => {},
+		retryTitle,
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	const send = (id: string, requestHeaders = headers) =>
+		server.app.inject({
+			method: "POST",
+			url: `/api/runs/${id}/retry-title`,
+			headers: requestHeaders,
+		});
+	try {
+		expect(
+			(await send("chat", { host: "localhost" } as typeof headers)).statusCode,
+		).toBe(403);
+		expect((await send("missing")).statusCode).toBe(404);
+		expect(retryTitle).not.toHaveBeenCalled();
+		expect((await send("chat")).statusCode).toBe(202);
+		expect(retryTitle).toHaveBeenCalledExactlyOnceWith("chat");
+		retryTitle.mockImplementation(() => {
+			throw new Error("Only failed title generation can be retried");
+		});
+		expect((await send("chat")).statusCode).toBe(409);
+		expect(
+			(
+				await server.app.inject({
+					url: "/api/runs/chat?view=dashboard",
+					headers,
+				})
+			).json().titleGeneration.state,
+		).toBe("failed");
+	} finally {
+		await server.stop();
+		await runtime.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
 it("protects and persists global title settings independently of workflow configuration", async () => {
 	const home = mkdtempSync(join(tmpdir(), "factory-title-settings-"));
 	const hooks = {

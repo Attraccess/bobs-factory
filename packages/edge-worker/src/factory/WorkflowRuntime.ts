@@ -678,7 +678,9 @@ export class WorkflowRuntime {
 						),
 						...(step.askQuestions ||
 						(step.id === "capture" &&
-							readPath(outputs, "visual-gate.captureBlocked") === true)
+							(step.qaContract === "qa-v1" ||
+								readPath(outputs, "visual-gate.captureBlocked") === true ||
+								readPath(outputs, "visual-gate.qaBlocked") === true))
 							? { answers: structuredClone(run.answers) }
 							: {}),
 					}
@@ -800,7 +802,8 @@ export class WorkflowRuntime {
 			}
 			if (
 				step.tool === "visual-gate" &&
-				readPath(output, "captureBlocked") === true
+				(readPath(output, "captureBlocked") === true ||
+					readPath(output, "qaBlocked") === true)
 			) {
 				// Existing runs keep their frozen graph. Recover inside that graph rather
 				// than replacing its recipe or rerunning implementation/code fixes.
@@ -819,7 +822,7 @@ export class WorkflowRuntime {
 					this.nextStep(steps, review, {}) !== step.id
 				)
 					throw new Error(
-						"Visual evidence is incomplete and this recipe has no capture → visual-review → visual-gate recovery path. Configure that path for a new run; missing evidence cannot be approved.",
+						"QA or visual evidence is incomplete and this recipe has no capture → visual-review → visual-gate recovery path. Configure that path for a new run; missing evidence cannot be approved.",
 					);
 				const questions = readPath(output, "questions");
 				if (
@@ -827,7 +830,7 @@ export class WorkflowRuntime {
 					!questions.length ||
 					questions.some((item) => typeof item !== "string" || !item.trim())
 				)
-					throw new Error("Capture assistance requires a question");
+					throw new Error("QA/capture assistance requires a question");
 				if (state.phase !== "answered")
 					await this.waitForAnswers(run, questions, signal, state);
 				checkpoint.current = capture.id;
@@ -835,7 +838,7 @@ export class WorkflowRuntime {
 				this.log(
 					run,
 					key,
-					"Capture assistance received; retrying capture and visual review with prior evidence retained.",
+					"QA/capture assistance received; retrying testing and screenshot review with prior evidence retained.",
 				);
 				continue;
 			}

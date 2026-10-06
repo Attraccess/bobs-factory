@@ -6,7 +6,9 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Install Bob’s Factory with branded app icons and concise browser-only guidance; keep mobile form text readable without focus zoom and wide content from scrolling the page sideways; open its static shell while disconnected and explicitly update while preserving drafts, panels and each tab’s reading position, including older SDK activity and dedicated review pages. Keep review feedback scoped to its revision. Browsing untouched runs does not fill the draft snapshot. Pause unsafe actions until authoritative state reconnects; reject conflicting settings saves even when requests overlap. Push notifications are tracked separately in Taskbot #69. (Taskbot bobs-factory #41, [#12](https://github.com/Attraccess/bobs-factory/pull/12))
+- Install Bob’s Factory with branded app icons and concise browser-only guidance; keep mobile form text readable without focus zoom and wide content from scrolling the page sideways; open its static shell while disconnected and explicitly update while preserving drafts, panels and each tab’s reading position, including older SDK activity and dedicated review pages. Keep item comments and additional review feedback scoped to their revision through updates. Browsing untouched runs does not fill the draft snapshot. Pause unsafe actions until authoritative state reconnects; reject conflicting settings saves even when requests overlap. Push notifications are tracked separately in Taskbot #69. (Taskbot bobs-factory #41, [#12](https://github.com/Attraccess/bobs-factory/pull/12))
+- Long-press review-guide items to comment in a popover, see a small count badge on commented items, retain drafts across navigation and reloads, and submit them together with additional feedback from any guide page. Keep pending submissions locked when returning to the guide and preserve unsent edits when a request succeeds. ([Taskbot #70](https://taskbot.apps.janjaap.de/p/bobs-factory/t/70), [#15](https://github.com/Attraccess/bobs-factory/pull/15))
+
 - Select workflows from Linear assignments and mentions using `[workflow=<id>]`, retain readable selection/source history, and protect active issues against competing or redelivered launches. Replies respect the accepted run and runner steering capabilities; interrupted startup retains recovery ownership, unassignment releases it and cancels pending runner startup, and native stop redelivery cannot escalate to a full kill. Ticket context includes every comment and attachment page. ([Taskbot #55](https://taskbot.apps.janjaap.de/p/bobs-factory/t/55), [#13](https://github.com/Attraccess/bobs-factory/pull/13))
 - Automatically name new runs in the background with a globally configurable title agent and project context tools, including Cursor, Claude's URL-only HTTP servers, Gemini's URL-only SSE servers and relative server scripts. Show the run ID while naming, update titles live, preserve historical titles during recovery, and keep dashboard feedback usable for Slack/Zulip sessions across restarts and concurrent platform replies. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68), [#11](https://github.com/Attraccess/bobs-factory/pull/11))
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
@@ -28,6 +30,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Factory QA now tests agreed user stories across UI, API and CLI changes, captures representative screenshots during those flows, and requires fixes and retesting for consequential failures. QA evidence and optional improvements remain visible for human review. ([Taskbot #74](https://taskbot.apps.janjaap.de/p/bobs-factory/t/74))
+
 - Review guides open on a dedicated reading page, with a compact entry on Today, saved reading positions and feedback drafts, and a clear empty state when no guide is available. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59), [#9](https://github.com/Attraccess/bobs-factory/pull/9))
 
 - Review the complete PR through feature chapters with before/after cards, processing diagrams, relevant screenshots and expandable code evidence. Reading progress survives updates; guide-only refresh preserves completed work and images. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
@@ -40,6 +44,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Reject stale run-title settings saves so another tab’s changes are preserved, while keeping the unsaved draft available for review. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
+- Retry automatic run-title timeouts once with a longer deadline, show naming failures, and let operators retry naming with current settings without rerunning the workflow.
 
 - Missing visual evidence now waits for capture assistance and retries capture/review in the same run, retaining verified accepted screenshots and completed work across restarts. Retry also recovers existing runs stuck at this gate. ([#14](https://github.com/Attraccess/bobs-factory/pull/14))
 - Acknowledge chat resume requests without reporting that the conversation has resumed while setup is still pending. ([#11](https://github.com/Attraccess/bobs-factory/pull/11))
