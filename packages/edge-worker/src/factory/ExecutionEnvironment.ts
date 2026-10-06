@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { inspectCodexNativeLogin } from "cyrus-codex-runner";
 import type {
 	AgentRunnerConfig,
 	McpServerConfig,
@@ -19,6 +20,10 @@ import type {
 } from "cyrus-core";
 import { ProjectArtifactLease, resolvePath } from "cyrus-core";
 import { codexSystemMcp } from "./CodexSystemSources.js";
+import {
+	executionCapabilities,
+	validateProfileRunner,
+} from "./ExecutionCapabilities.js";
 import type {
 	CredentialReference,
 	ExecutionSnapshot,
@@ -257,6 +262,8 @@ export class ExecutionEnvironmentResolver {
 			throw new Error(
 				`Private ${runner} tools require an explicit API credential binding. Native login-cache relocation is unsupported; select an identity profile with an explicit credential reference.`,
 			);
+		validateProfileRunner({ cyrusHome: this.directory }, snapshot, runner);
+		const native = auth?.kind === "native-login";
 		const root = join(this.directory, "execution-private", id);
 		const owned = ["cursor", "gemini"].includes(runner)
 			? ProjectArtifactLease.recoverOwnedArtifacts(
@@ -303,17 +310,16 @@ export class ExecutionEnvironmentResolver {
 				["AUTHOR", identity.author],
 				["COMMITTER", identity.committer],
 			] as const) {
-				const value =
+				const effectiveIdentity =
 					setting.mode === "share"
-						? {
-								name:
-									this.host[`GIT_${kind}_NAME`] ??
-									run("git", ["config", "user.name"], cwd, this.host),
-								email:
-									this.host[`GIT_${kind}_EMAIL`] ??
-									run("git", ["config", "user.email"], cwd, this.host),
-							}
-						: setting.value!;
+						? run("git", ["var", `GIT_${kind}_IDENT`], cwd, this.host)
+						: undefined;
+				const match = effectiveIdentity?.match(/^(.*) <([^<>]*)> \d+ [+-]\d+$/);
+				if (effectiveIdentity && !match)
+					throw new Error("Cannot resolve the effective shared Git identity");
+				const value = match
+					? { name: match[1]!, email: match[2]! }
+					: setting.value!;
 				env[`GIT_${kind}_NAME`] = value.name;
 				env[`GIT_${kind}_EMAIL`] = value.email;
 			}
@@ -649,15 +655,30 @@ export class ExecutionEnvironmentResolver {
 					try {
 						overrides.push([
 							key,
-							execFileSync("git", ["config", "--get", key], {
-								env: this.host,
-								cwd,
-								encoding: "utf8",
-								stdio: ["ignore", "pipe", "pipe"],
-							}).trim(),
+							execFileSync(
+								"git",
+								[
+									"config",
+									...(["commit.gpgsign", "tag.gpgsign"].includes(key)
+										? ["--bool"]
+										: []),
+									"--get",
+									key,
+								],
+								{
+									env: this.host,
+									cwd,
+									encoding: "utf8",
+									stdio: ["ignore", "pipe", "pipe"],
+								},
+							).trim(),
 						]);
-					} catch {
-						/* Unset host policy. */
+					} catch (error) {
+						if ((error as { status?: number }).status !== 1)
+							throw new Error(
+								"Invalid or unreadable shared Git signing policy",
+							);
+						// Git exits 1 only when this policy is unset.
 					}
 				}
 			} else {
@@ -795,45 +816,96 @@ export class ExecutionEnvironmentResolver {
 				throw new Error(
 					`Identity profile has no ${runner} authentication binding. Add one before selecting this runner.`,
 				);
-			const key = credential(auth.credential);
-			const variables = {
-				claude: "ANTHROPIC_API_KEY",
-				codex: "OPENAI_API_KEY",
-				gemini: "GEMINI_API_KEY",
-				cursor: "CURSOR_API_KEY",
-				opencode:
-					auth.provider === "anthropic"
-						? "ANTHROPIC_API_KEY"
-						: auth.provider === "google"
-							? "GOOGLE_GENERATIVE_AI_API_KEY"
-							: "OPENAI_API_KEY",
-			};
-			env[
-				runner === "claude" && auth.kind === "setup-token"
-					? "CLAUDE_CODE_OAUTH_TOKEN"
-					: variables[runner]
-			] = key;
-			if (runner === "claude") {
-				env.CLAUDE_CONFIG_DIR = join(home, ".claude");
-				mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true, mode: 0o700 });
-			}
-			if (runner === "codex") {
-				env.CODEX_HOME = join(home, ".codex");
-				privateFile(
-					join(env.CODEX_HOME, "auth.json"),
-					JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: key }),
-				);
-				privateFile(
-					join(env.CODEX_HOME, "config.toml"),
-					'cli_auth_credentials_store = "file"\nmcp_oauth_credentials_store = "file"\nmodel_provider = "openai"\n',
-				);
+			if (native) {
+				const directory = resolvePath(auth.configDirectory!);
+				if (!existsSync(directory) || !statSync(directory).isDirectory())
+					throw new Error(
+						"Native Share configuration directory is missing; restore the accepted login root",
+					);
+				// Native OS credential stores use the logged-in user's namespace.
+				for (const key of ["USER", "LOGNAME", "SHELL"])
+					if (this.host[key]) env[key] = this.host[key]!;
+				let account: string;
+				if (runner === "claude") {
+					// Default Claude login metadata lives beside ~/.claude in ~/.claude.json.
+					// Share must retain that native namespace as well as its keychain/store.
+					env.HOME = this.hostHome;
+					if (directory !== join(this.hostHome, ".claude"))
+						env.CLAUDE_CONFIG_DIR = directory;
+					try {
+						const status = JSON.parse(
+							run(
+								executionCapabilities("claude").binary,
+								["auth", "status"],
+								cwd,
+								env,
+							),
+						);
+						if (
+							!status.loggedIn ||
+							status.authMethod !== "claude.ai" ||
+							!status.email
+						)
+							throw new Error("Missing native login");
+						account = status.email;
+					} catch {
+						throw new Error(
+							"Native Claude Share needs an existing claude.ai login in the selected root; unlock its keychain or use an API binding",
+						);
+					}
+				} else {
+					env.CODEX_HOME = directory;
+					const status = await inspectCodexNativeLogin(env);
+					account = status.account;
+					disabledMcp.push(
+						...status.mcp.filter((name) => !disabledMcp.includes(name)),
+					);
+				}
+				if (account !== auth.account)
+					throw new Error(
+						"Native login account differs from the accepted account. Restore it or launch with a revised profile",
+					);
+			} else {
+				const key = credential(auth.credential!);
+				const variables = {
+					claude: "ANTHROPIC_API_KEY",
+					codex: "OPENAI_API_KEY",
+					gemini: "GEMINI_API_KEY",
+					cursor: "CURSOR_API_KEY",
+					opencode:
+						auth.provider === "anthropic"
+							? "ANTHROPIC_API_KEY"
+							: auth.provider === "google"
+								? "GOOGLE_GENERATIVE_AI_API_KEY"
+								: "OPENAI_API_KEY",
+				};
+				env[
+					runner === "claude" && auth.kind === "setup-token"
+						? "CLAUDE_CODE_OAUTH_TOKEN"
+						: variables[runner]
+				] = key;
+				if (runner === "claude") {
+					env.CLAUDE_CONFIG_DIR = join(home, ".claude");
+					mkdirSync(env.CLAUDE_CONFIG_DIR, { recursive: true, mode: 0o700 });
+				}
+				if (runner === "codex") {
+					env.CODEX_HOME = join(home, ".codex");
+					privateFile(
+						join(env.CODEX_HOME, "auth.json"),
+						JSON.stringify({ auth_mode: "apikey", OPENAI_API_KEY: key }),
+					);
+					privateFile(
+						join(env.CODEX_HOME, "config.toml"),
+						'cli_auth_credentials_store = "file"\nmcp_oauth_credentials_store = "file"\nmodel_provider = "openai"\n',
+					);
+				}
 			}
 			if (runner === "opencode") env.OPENCODE_DISABLE_PROJECT_CONFIG = "true";
 			const mcp = this.servers(tools, root, credential, secrets);
 			validateServers(mcp, runner, tools?.denyTools ?? []);
 			if (disabledMcp.some((name) => Object.hasOwn(mcp, name)))
 				throw new Error(
-					"Selected MCP name collides with a system Codex registration. Rename the materialized server to prevent native fields surviving a merge",
+					"Selected MCP name collides with a native Codex registration. Rename the materialized server to prevent native fields surviving a merge",
 				);
 			return {
 				root,
@@ -860,7 +932,12 @@ export class ExecutionEnvironmentResolver {
 								)
 								.join("\n\n")
 						: undefined,
-				settings: executionSettings(tools!, runner, root),
+				settings: {
+					...executionSettings(tools!, runner, root),
+					...(native && runner === "codex"
+						? { model_provider: "openai", forced_login_method: "chatgpt" }
+						: {}),
+				},
 				environment: env,
 				mcp,
 				accounts,

@@ -30,9 +30,9 @@ trusted local operator.
 
 Recipes contains **Execution profiles and defaults**. Create an identity with separate Git author/committer, repository account, signing policy and per-runner API references. Create a tool profile with declared MCP sources/definitions, per-server credential references, removals, denials and supported ordinary settings. Enter credential names or protected-file paths, never token values.
 
-The composer selects identity and tools independently and offers an effective preview. Manual choices override repository defaults, which override factory defaults. No selection/default keeps Legacy behavior. Explicit profiles require both concerns and an API binding for every workflow provider and the title agent. Unsupported native sources fail before worktree setup. Saved runs keep their accepted definitions even when defaults change or profiles are deleted.
+The composer selects identity and tools independently and offers an effective preview. Manual choices override repository defaults, which override factory defaults. No selection/default keeps Legacy behavior. Explicit profiles require both concerns and an authentication binding for every workflow provider and the title agent. Unsupported native sources fail before worktree setup. Saved runs keep their accepted definitions even when defaults change or profiles are deleted.
 
-See [execution profiles](FACTORY-EXECUTION.md) for supported CLI versions, clean-project restrictions, API authentication and recovery limits. Profiles do not replace OS sandbox controls. Native subscription login remains available through Legacy.
+See [execution profiles](FACTORY-EXECUTION.md) for supported CLI versions, clean-project restrictions, API authentication and recovery limits. Profiles do not replace OS sandbox controls. Native subscription login remains available through Legacy and eligible explicit Claude/Codex native-login Share profiles with Share tools.
 
 ## Install Bob’s Factory
 

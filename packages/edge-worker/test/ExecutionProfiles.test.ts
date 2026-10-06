@@ -196,6 +196,118 @@ describe("Private execution materialization", () => {
 			),
 		).toBe("Author <author@example.test>|Committer <committer@example.test>");
 	});
+	it("preserves Git's distinct effective shared attribution and environment precedence", async () => {
+		const { directory, host } = setup();
+		const global = join(directory, "host.gitconfig");
+		writeFileSync(
+			global,
+			"[user]\n name = User\n email = user@example.test\n[author]\n name = Writer\n email = writer@example.test\n[committer]\n name = Integrator\n email = integrator@example.test\n",
+		);
+		const resolver = new ExecutionEnvironmentResolver(
+			join(directory, "factory"),
+			{ ...host, GIT_CONFIG_GLOBAL: global },
+		);
+		const input = snapshot();
+		input.identity.author = { mode: "share" };
+		input.identity.committer = { mode: "share" };
+		const resolved = await resolver.resolve(
+			input,
+			"shared-ident",
+			directory,
+			"claude",
+		);
+		expect(resolved.git).toMatchObject({
+			author: "Writer <writer@example.test>",
+			committer: "Integrator <integrator@example.test>",
+		});
+		git(
+			directory,
+			["commit", "--allow-empty", "-m", "shared"],
+			resolved.environment,
+		);
+		expect(
+			git(
+				directory,
+				["show", "-s", "--format=%an <%ae>|%cn <%ce>"],
+				resolved.environment,
+			),
+		).toBe("Writer <writer@example.test>|Integrator <integrator@example.test>");
+		const override = new ExecutionEnvironmentResolver(
+			join(directory, "factory"),
+			{
+				...host,
+				GIT_CONFIG_GLOBAL: global,
+				GIT_AUTHOR_NAME: "Environment writer",
+				GIT_COMMITTER_EMAIL: "environment@example.test",
+			},
+		);
+		expect(
+			(await override.resolve(input, "shared-env", directory, "claude")).git,
+		).toMatchObject({
+			author: "Environment writer <writer@example.test>",
+			committer: "Integrator <environment@example.test>",
+		});
+	});
+	it.each([
+		"yes",
+		"on",
+		"1",
+		"true",
+		"YES",
+	])("rejects enabled shared signing without a key before admission: %s", async (value) => {
+		const { directory, host } = setup();
+		const global = join(directory, "host.gitconfig");
+		writeFileSync(global, `[commit]\n gpgsign = ${value}\n`);
+		const input = snapshot();
+		input.identity.signing = { format: "share" };
+		await expect(
+			new ExecutionEnvironmentResolver(join(directory, "factory"), {
+				...host,
+				GIT_CONFIG_GLOBAL: global,
+			}).resolve(input, "shared-sign", directory, "claude"),
+		).rejects.toThrow("explicit selected key");
+	});
+	it.each([
+		"no",
+		"off",
+		"0",
+		"false",
+		"",
+	])("reports disabled shared signing with Git boolean semantics: %s", async (value) => {
+		const { directory, host } = setup();
+		const global = join(directory, "host.gitconfig");
+		writeFileSync(
+			global,
+			`[commit]\n gpgsign = ${value}\n[tag]\n gpgsign = ${value}\n`,
+		);
+		const input = snapshot();
+		input.identity.signing = { format: "share" };
+		const result = await new ExecutionEnvironmentResolver(
+			join(directory, "factory"),
+			{ ...host, GIT_CONFIG_GLOBAL: global },
+		).resolve(input, "shared-sign", directory, "claude");
+		expect(result.git).toMatchObject({ commits: false, tags: false });
+		expect(
+			git(
+				directory,
+				["config", "--bool", "commit.gpgsign"],
+				result.environment,
+			),
+		).toBe("false");
+	});
+	it("rejects invalid shared signing booleans instead of treating them as unset", async () => {
+		const { directory, host } = setup();
+		const global = join(directory, "host.gitconfig");
+		writeFileSync(global, "[tag]\n gpgsign = invalid\n");
+		const input = snapshot();
+		input.identity.signing = { format: "share" };
+		await expect(
+			new ExecutionEnvironmentResolver(join(directory, "factory"), {
+				...host,
+				GIT_CONFIG_GLOBAL: global,
+			}).resolve(input, "invalid-sign", directory, "claude"),
+		).rejects.toThrow("Invalid or unreadable");
+	});
 	it("signs and verifies a real commit and tag with a separately selected SSH key", async () => {
 		const { directory, resolver } = setup();
 		const key = join(directory, "signing-key");

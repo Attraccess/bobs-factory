@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import {
 	existsSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
@@ -93,4 +94,43 @@ it("queues jobs using the same workspace journal and lets cancellation end the w
 	const second = await waiting;
 	second.release();
 	rmSync(directory, { recursive: true, force: true });
+});
+
+it.each([
+	true,
+	false,
+])("cleans partial owned temporaries after interruption before rename (original=%s)", (original) => {
+	const { root, privateDirectory } = fixture();
+	const file = join(root, "settings.json");
+	if (original) writeFileSync(file, "original", { mode: 0o640 });
+	const source = new URL("../dist/ProjectArtifactLease.js", import.meta.url)
+		.href;
+	execFileSync(
+		process.execPath,
+		[
+			"--input-type=module",
+			"-e",
+			`
+		import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
+		const rename=fs.renameSync;fs.renameSync=(from,to)=>{if(String(to).endsWith("/settings.json"))process.exit(0);return rename(from,to)};syncBuiltinESMExports();
+		const {ProjectArtifactLease}=await import(${JSON.stringify(source)});
+		new ProjectArtifactLease(${JSON.stringify(root)},'runner',${JSON.stringify(privateDirectory)}).write('settings.json','interrupted-canary-secret');
+	`,
+		],
+		{ stdio: "pipe" },
+	);
+	const foreign = `${file}.another-owner.tmp`;
+	writeFileSync(foreign, "other writer");
+	const before = readdirSync(root).filter((name) => name.endsWith(".tmp"));
+	expect(before).toHaveLength(2);
+	ProjectArtifactLease.recoverOwnedArtifacts(root, "runner", privateDirectory);
+	expect(readdirSync(root).filter((name) => name.endsWith(".tmp"))).toEqual([
+		"settings.json.another-owner.tmp",
+	]);
+	expect(readFileSync(foreign, "utf8")).toBe("other writer");
+	expect(existsSync(file)).toBe(original);
+	if (original) {
+		expect(readFileSync(file, "utf8")).toBe("original");
+		expect(statSync(file).mode & 0o777).toBe(0o640);
+	}
 });

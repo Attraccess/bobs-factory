@@ -102,6 +102,15 @@ export function validateProfileRunner(
 		throw new Error(
 			`${runner} requires its matching explicit API credential binding`,
 		);
+	if (
+		auth.kind === "native-login" &&
+		(!["claude", "codex"].includes(runner) ||
+			auth.mode !== "share" ||
+			snapshot.tools?.mode !== "share")
+	)
+		throw new Error(
+			"Native login Share is supported only for Claude/Codex with Share tools. Select an API binding for private tools",
+		);
 	if (runner === "opencode" && auth.provider === "cursor")
 		throw new Error(
 			"OpenCode profiles require a first-party Anthropic, OpenAI or Google API binding",

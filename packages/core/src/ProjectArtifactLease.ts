@@ -231,8 +231,20 @@ export class ProjectArtifactLease {
 		renameSync(generated, file);
 	}
 	private restore(journal: Journal): void {
+		if (
+			journal.workspace !== this.journal.workspace ||
+			!/^[\w-]+$/.test(journal.owner)
+		)
+			throw new Error("Artifact journal ownership mismatch");
+		// Intent is durable before a temporary is written. Its owner-specific path
+		// may hold a partial secret even when the final file is still original.
+		rmSync(`${this.file}.${journal.owner}.tmp`, { force: true });
 		for (const artifact of journal.artifacts) {
 			this.safePath(artifact.path);
+			for (const suffix of ["tmp", "restore"])
+				rmSync(this.safePath(`${artifact.path}.${journal.owner}.${suffix}`), {
+					force: true,
+				});
 			const current = existsSync(artifact.path)
 				? readFileSync(artifact.path)
 				: null;

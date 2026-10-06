@@ -429,7 +429,7 @@ function IdentityFields({
 									set("runners", next);
 								}}
 							/>
-							Enable API binding
+							Enable authentication binding
 						</label>
 						{value.runners[runner] && (
 							<>
@@ -444,15 +444,33 @@ function IdentityFields({
 										})
 									}
 								/>
-								{runner === "claude" && (
+								{["claude", "codex"].includes(runner) && (
 									<Choice
 										label="Credential kind"
 										value={value.runners[runner].kind ?? "api-key"}
-										choices={["api-key", "setup-token"]}
+										choices={
+											runner === "claude"
+												? ["api-key", "setup-token", "native-login"]
+												: ["api-key", "native-login"]
+										}
 										change={(kind) =>
 											set("runners", {
 												...value.runners,
-												[runner]: { ...value.runners[runner], kind },
+												[runner]:
+													kind === "native-login"
+														? {
+																mode: "share",
+																provider: value.runners[runner].provider,
+																kind,
+																configDirectory: "",
+																account: "",
+															}
+														: {
+																mode: value.runners[runner].mode,
+																provider: value.runners[runner].provider,
+																kind,
+																credential: newCredential(),
+															},
 											})
 										}
 									/>
@@ -470,15 +488,48 @@ function IdentityFields({
 										}
 									/>
 								)}
-								<Credential
-									value={value.runners[runner].credential}
-									change={(credential) =>
-										set("runners", {
-											...value.runners,
-											[runner]: { ...value.runners[runner], credential },
-										})
-									}
-								/>
+								{value.runners[runner].kind === "native-login" ? (
+									<>
+										<Text
+											label="Existing login configuration directory"
+											value={value.runners[runner].configDirectory}
+											change={(configDirectory) =>
+												set("runners", {
+													...value.runners,
+													[runner]: {
+														...value.runners[runner],
+														configDirectory,
+													},
+												})
+											}
+										/>
+										<Text
+											label="Expected native account email"
+											value={value.runners[runner].account}
+											change={(account) =>
+												set("runners", {
+													...value.runners,
+													[runner]: { ...value.runners[runner], account },
+												})
+											}
+										/>
+										<small>
+											Requires Share tools. Reuses the existing login store;
+											native credentials stay there. Codex roots with automatic
+											hooks, enabled plugins or app connectors are unsupported.
+										</small>
+									</>
+								) : (
+									<Credential
+										value={value.runners[runner].credential}
+										change={(credential) =>
+											set("runners", {
+												...value.runners,
+												[runner]: { ...value.runners[runner], credential },
+											})
+										}
+									/>
+								)}
 							</>
 						)}
 					</fieldset>
@@ -1130,7 +1181,14 @@ export function ExecutionDetails({ run }: { run: any }) {
 			{binding && (
 				<p>
 					Runner authentication: {binding.provider}, {binding.mode}. Declared
-					API owner: {binding.credential.owner} (unverified).
+					{binding.kind === "native-login" ? (
+						<>
+							native account: {binding.account}, existing root:{" "}
+							{binding.configDirectory}.
+						</>
+					) : (
+						<>API owner: {binding.credential.owner} (unverified).</>
+					)}
 				</p>
 			)}
 			<p>

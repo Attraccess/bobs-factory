@@ -138,11 +138,32 @@ export const IdentityProfileSchema = z
 			z
 				.object({
 					mode,
-					credential: CredentialReferenceSchema,
+					credential: CredentialReferenceSchema.optional(),
+					configDirectory: path.optional(),
+					account: z.string().email().optional(),
 					provider: z.enum(["anthropic", "openai", "google", "cursor"]),
-					kind: z.enum(["api-key", "setup-token"]).optional(),
+					kind: z.enum(["api-key", "setup-token", "native-login"]).optional(),
 				})
-				.strict(),
+				.strict()
+				.superRefine((auth, context) => {
+					if (auth.kind === "native-login") {
+						if (
+							auth.mode !== "share" ||
+							!auth.configDirectory ||
+							!auth.account ||
+							auth.credential
+						)
+							context.addIssue({
+								code: "custom",
+								message:
+									"Native login requires Share mode, an existing configuration directory and account email; no credential copying",
+							});
+					} else if (!auth.credential || auth.configDirectory || auth.account)
+						context.addIssue({
+							code: "custom",
+							message: "API authentication requires a credential reference",
+						});
+				}),
 		),
 	})
 	.strict();

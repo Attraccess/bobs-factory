@@ -7997,6 +7997,7 @@ ${taskSection}`;
 				repositoryId: repository.id,
 				workspace: "",
 				runner: input.runner,
+				model: input.model,
 				executionSnapshot,
 			} as FactoryRun;
 			await this.preflightExecution(temporary, workflow, workflowDefinitions);
