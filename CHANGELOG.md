@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Automatically name new runs in the background with a globally configurable title agent and project context tools, including Cursor, Claude's URL-only HTTP servers, Gemini's URL-only SSE servers and relative server scripts. Show the run ID while naming, update titles live, preserve historical titles during recovery, and keep dashboard feedback usable for Slack/Zulip sessions across restarts and concurrent platform replies. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68), [#11](https://github.com/Attraccess/bobs-factory/pull/11))
+
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
 - Configure workflow launch methods independently in Recipes, preserve saved permissions even when a configuration refresh fails, filter manual choices, reject disallowed workflow selections with actionable feedback, and retain launch/source and nested caller context across restarts. (Taskbot bobs-factory #35, [#2](https://github.com/Attraccess/bobs-factory/pull/2))
 
@@ -37,6 +39,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Missing visual evidence now waits for capture assistance and retries capture/review in the same run, retaining verified accepted screenshots and completed work across restarts. Retry also recovers existing runs stuck at this gate. ([#14](https://github.com/Attraccess/bobs-factory/pull/14))
+- Acknowledge chat resume requests without reporting that the conversation has resumed while setup is still pending. ([#11](https://github.com/Attraccess/bobs-factory/pull/11))
 
 - Bob's clarification and implementation-blocker questions now explain the relevant facts, source of the decision and consequences in plain language; optional diagrams and images appear beside the answer box.
 

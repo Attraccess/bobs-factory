@@ -49,6 +49,12 @@ a message resumes the same native conversation and worktree. Successful submissi
 appear as your chat bubbles and remain available after restart. Failed submissions
 retain the draft. Use ⌘ / Ctrl + Enter to send; Enter adds a newline.
 
+Slack and Zulip sessions listed in the dashboard use the same composer and
+feedback controls. Completed chats continue through their platform handler,
+preserving the native conversation, workspace and title across restart. If a
+chat needs a new workflow instead, its follow-up uses the default repository
+available when the chat was created.
+
 In **Recipes**, enable **Chat steering** for other workflows, or set `"chat": true`
 in their JSON. Chat defaults off for custom workflows. An agent step can set
 `"chat": false` to prevent steering or `"chat": true` to opt in independently.
@@ -256,8 +262,9 @@ implemented in this batch.
 ## Take over existing work
 
 Select **Take over existing work** in the composer and supply an open GitHub PR URL
-or a Linear ticket identifier/URL. That source is all you need: the run title
-and requirements come from the ticket or PR. **Additional instructions** is
+or a Linear ticket identifier/URL. That source is all you need: requirements
+come from the ticket or PR, and the title agent uses that context to name the run.
+**Additional instructions** is
 optional. For ticket assignment, use `workflow:takeover` or `takeover`; the assigned
 ticket is the source. Manual ticket takeover needs that repository's configured
 ticket integration (the standalone launcher only has its local test tracker).
@@ -293,6 +300,36 @@ Completed or explicitly terminated runs cannot be retried. Publication uses a
 short conventional commit message (`chore: …`) derived from the ticket title,
 with the repository's Git hooks and signing configuration still enabled.
 
+## Automatic run titles
+
+**Recipes → Run titles** configures one global title agent using the existing
+provider authentication. Choose a fast, inexpensive provider/model independently
+of run, repository and recipe execution settings. Leaving the agent or model
+empty uses the global runner or that provider's global default model. Provider
+changes clear incompatible settings; saved choices apply to subsequent jobs.
+
+Every new root run starts with its exact run ID as its display title. A separate
+agent generates a short title concurrently with execution, using initial task,
+source/ticket context, custom inputs and follow-up feedback. Project `.mcp.json`
+servers (or `.cursor/mcp.json` for Cursor) remain available in the isolated title
+job. Stdio servers keep the source worktree as their working directory, so
+relative scripts and data paths work. Explicit platform or repository
+configuration retains its normal precedence. Configured MCP tools
+can retrieve missing context, including tasks supplied only as a ticket URL.
+The dashboard updates lists and details live. Generation respects the session
+limit and primary execution has priority; under a one-session cap naming waits
+for capacity. A completed run can still receive its title.
+
+Naming failures or a 60-second generation deadline retain the run ID without
+failing execution. Explicit stop cancels naming; shutdown preserves pending jobs
+for restart. Successful titles survive restart. Historical runs retain their
+names, and retrying, answering or continuing a run does not regenerate its title.
+New follow-up runs receive their own titles and explicitly reference their source
+run. Equal titles do not imply that unrelated runs replace one another.
+
+Custom title fields have been removed from launch forms. Legacy request titles
+are ignored, and title editing is deferred to future work.
+
 ## Workflow definition
 
 ### Launch fields
@@ -314,10 +351,11 @@ Supported types are `text` (default), `textarea` and `select`. Fields are option
 unless `required: true`; labels, placeholders, descriptions and defaults are
 configurable. Names must be unique and start with a letter; runner/repository
 control names are reserved. The API validates required values and choices before
-starting any work. `title`, `prompt` and `source` map to the run title, task
-instructions and Takeover source; other names become custom inputs. Takeover
+starting any work. `prompt` and `source` map to task instructions and Takeover
+source; `title` is reserved for automatic naming and cannot be a launch field;
+other names become custom inputs. Takeover
 always needs a source even if you remove its field. Simple and Factory use the
-title/task form when `launchFields` is omitted; old Takeover definitions receive
+task form when `launchFields` is omitted; old Takeover definitions receive
 the source/optional-instructions form. Use `[]` for no workflow-specific fields.
 
 Values are saved as `run.launchInputs` and supplied to ordinary agent, script

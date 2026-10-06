@@ -5,6 +5,7 @@ import type { CyrusAgentSession, Issue, Workspace } from "cyrus-core";
  * Events emitted by EdgeWorker
  */
 export interface EdgeWorkerEvents {
+	chatSessionChanged: (id: string) => void;
 	// Connection events (now includes token to identify which connection)
 	connected: (token: string) => void;
 	disconnected: (token: string, reason?: string) => void;

@@ -18,8 +18,10 @@ import type {
 	OpenCodeConfigOverrides,
 	RepositoryConfig,
 	RunnerType,
+	RunTitleJob,
 } from "cyrus-core";
 import { resolvePath } from "cyrus-core";
+import { titleMcpConfig } from "./factory/TitleMcpConfig.js";
 import { buildIntentToAddHook } from "./hooks/IntentToAddHook.js";
 import { buildPrMarkerHook } from "./hooks/PrMarkerHook.js";
 import { appendBrowserUseAddendum } from "./prompts/browserUsePromptAddendum.js";
@@ -125,6 +127,9 @@ export interface ChatRunnerConfigInput {
  * Input for building an issue session runner config.
  */
 export interface IssueRunnerConfigInput {
+	/** Explicit provider selection for isolated auxiliary tasks. */
+	runnerSelection?: { runnerType: RunnerType; modelOverride?: string };
+	auxiliary?: boolean;
 	session: CyrusAgentSession;
 	repository: RepositoryConfig;
 	sessionId: string;
@@ -358,10 +363,12 @@ export class RunnerConfigBuilder {
 
 		// Configure hooks: PostToolUse for screenshot tools + PR-marker enforcement,
 		// plus the Stop hook that blocks the session when work is unshipped.
-		const screenshotHooks = this.buildScreenshotHooks(log);
-		const prMarkerHook = buildPrMarkerHook(log);
-		const intentToAddHook = buildIntentToAddHook(log);
-		const stopHook = this.buildStopHook(log);
+		const screenshotHooks = input.auxiliary
+			? {}
+			: this.buildScreenshotHooks(log);
+		const prMarkerHook = input.auxiliary ? {} : buildPrMarkerHook(log);
+		const intentToAddHook = input.auxiliary ? {} : buildIntentToAddHook(log);
+		const stopHook = input.auxiliary ? {} : this.buildStopHook(log);
 		const hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
 			...stopHook,
 			PostToolUse: [
@@ -372,10 +379,16 @@ export class RunnerConfigBuilder {
 		};
 
 		// Determine runner type and model override from selectors
-		const runnerSelection = this.runnerSelector.determineRunnerSelection(
-			input.labels || [],
-			input.issueDescription,
-		);
+		const runnerSelection: {
+			runnerType: RunnerType;
+			modelOverride?: string;
+			fallbackModelOverride?: string;
+		} =
+			input.runnerSelection ??
+			this.runnerSelector.determineRunnerSelection(
+				input.labels || [],
+				input.issueDescription,
+			);
 		let runnerType = runnerSelection.runnerType;
 		let modelOverride = runnerSelection.modelOverride;
 		let fallbackModelOverride = runnerSelection.fallbackModelOverride;
@@ -571,6 +584,50 @@ export class RunnerConfigBuilder {
 		}
 
 		return { config, runnerType };
+	}
+
+	buildTitleConfig(
+		input: IssueRunnerConfigInput,
+		settings: RunTitleJob["settings"],
+		projectWorkingDirectory?: string,
+	): AgentRunnerConfig {
+		const { config } = this.buildIssueConfig({
+			...input,
+			auxiliary: true,
+			runnerSelection: {
+				runnerType: settings.runner,
+				modelOverride: settings.model,
+			},
+			repository: {
+				...input.repository,
+				model: undefined,
+				fallbackModel: undefined,
+			},
+			labels: [],
+			issueDescription: undefined,
+			resumeSessionId: undefined,
+			plugins: undefined,
+			skills: [],
+			createAskUserQuestionCallback: undefined,
+			maxTurns: 4,
+		});
+		config.appendSystemPrompt = input.systemPrompt;
+		config.hooks = undefined;
+		config.fallbackModel = undefined;
+		// Materialize the complete MCP set inline: Cursor consumes only inline
+		// config, and stdio servers must retain the source worktree as their cwd.
+		if (projectWorkingDirectory) {
+			config.mcpConfig = titleMcpConfig(
+				config,
+				settings.runner,
+				projectWorkingDirectory,
+				input.logger,
+			);
+			config.mcpConfigPath = undefined;
+		}
+		const { runner: _runner, ...nativeSettings } = settings;
+		Object.assign(config, nativeSettings);
+		return config;
 	}
 
 	/**

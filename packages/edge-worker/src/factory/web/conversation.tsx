@@ -241,7 +241,7 @@ function ChatComposer({ run }: { run: any }) {
 			chatDrafts.delete(run.id);
 			setNotice(
 				sent.mode === "continue"
-					? "Conversation resumed."
+					? "Request to resume the conversation sent."
 					: "Message sent to the agent.",
 			);
 			void cache.invalidateQueries({ queryKey: ["transcript", run.id] });

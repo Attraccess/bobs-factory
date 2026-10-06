@@ -84,3 +84,20 @@ capture returned a preview-client error, so no pixel-level screenshot evidence
 is claimed. The original failed run and deployed service were not mutated.
 After loading the updated service, Retry opens capture assistance for that run;
 the Attractap login/setup issue still needs to be resolved to supply its images.
+
+## Current-main integration check
+
+Before merging PR #14, integrated main at
+`23d5578016175e6794e6150fbbaaceffe707cf2a`. The changelog conflict was
+resolved by retaining both PR entries; the newer title-generation and chat
+continuation behavior remains intact. Monorepo build and typecheck passed,
+and the integrated edge-worker suite passed 1,066 tests with one existing skip
+across 97 files.
+
+The isolated compiled worker repeated the native scoped-capture recovery as
+DEF-3/session-3: missing Reader evidence waited, the Factory answer endpoint
+accepted “Reader access is ready”, and the same run completed with an approved
+gate and delivery receipt. Assertions confirmed identical frozen definitions,
+preserved history prefix and the accepted Web image's exact hash with
+`reused:true`; Reader had `reused:false`. Snapshots are
+`integrated-waiting.json` and `integrated-completed.json` in the fixture folder.

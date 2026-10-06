@@ -252,14 +252,10 @@ export function upgradeWorkflows(value: unknown): unknown {
 	for (const definition of definitions) {
 		if (definition.id === "simple" && definition.chat === undefined)
 			definition.chat = true;
-		if (
-			Array.isArray(definition.launchFields) &&
-			definition.launchFields.length === 2 &&
-			definition.launchFields[0]?.name === "title" &&
-			definition.launchFields[0]?.label === "Title" &&
-			definition.launchFields[1]?.label === "What should we build?"
-		)
-			delete definition.launchFields;
+		if (Array.isArray(definition.launchFields))
+			definition.launchFields = definition.launchFields.filter(
+				(field: { name?: string }) => field.name !== "title",
+			);
 
 		if (!Array.isArray(definition.steps)) continue;
 		const steps = definition.steps as Record<string, unknown>[];
