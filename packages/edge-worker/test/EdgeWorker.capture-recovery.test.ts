@@ -217,9 +217,14 @@ async function guideFixture() {
 		}).trim(),
 	};
 	const guide = {
+		tldr: "Complete guide overview",
 		goal: "Feature",
 		summary: "Feature",
-		decision: { status: "ready", summary: "Ready" },
+		decision: {
+			summaryShort: "Ready for review",
+			status: "ready",
+			summary: "Ready",
+		},
 		requirements: [
 			{
 				criterion: "Support feature",
@@ -233,6 +238,13 @@ async function guideFixture() {
 		reviewInstructions: ["Inspect"],
 		chapters: [
 			{
+				tldr: "Review the whole feature",
+				beforeShort: "Old behavior",
+				afterShort: "New behavior",
+				risk: { level: "low", text: "Fixture only" },
+				keyChecks: [
+					{ do: "Open the feature", expect: "Read the complete evidence" },
+				],
 				id: "feature",
 				title: "Feature",
 				summary: "Feature",
@@ -260,7 +272,11 @@ async function guideFixture() {
 it("validates recovered guide coverage and resumes the same conversation with exact issues", async () => {
 	const f = await guideFixture();
 	const output = await f.worker.executeFactoryAgent(f.ctx);
-	expect(output).toEqual(f.guide);
+	expect(output).toMatchObject(f.guide);
+	expect(output.reviewFiles).toMatchObject({
+		headSha: f.ctx.progress!.reviewScope!.headSha,
+		baseSha: f.ctx.progress!.reviewScope!.baseSha,
+	});
 	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
 	expect(f.getInput().outputCorrection).toMatchObject({
 		output: f.invalid,
@@ -294,7 +310,9 @@ it("corrects fresh malformed JSON and missing PR files through the same boundary
 						: JSON.stringify(f.guide),
 		},
 	];
-	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toEqual(f.guide);
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		f.guide,
+	);
 	expect(f.runner.start).toHaveBeenCalledTimes(3);
 	expect(f.getInput().outputCorrection).toMatchObject({
 		attempts: 2,
@@ -332,7 +350,9 @@ it("persists correction across interruption and bounds repeated validation rejec
 it("applies schema validation to recovered malformed guides before accepting them", async () => {
 	const f = await guideFixture();
 	f.ctx.resumeAgent!.result!.output = { chapters: [] };
-	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toEqual(f.guide);
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		f.guide,
+	);
 	expect(f.getInput().outputCorrection).toMatchObject({
 		output: { chapters: [] },
 		attempts: 1,

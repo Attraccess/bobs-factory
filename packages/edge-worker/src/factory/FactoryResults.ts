@@ -52,13 +52,73 @@ export const VisualScopeSchema = z
 				message: "Visual areas/states must be unique",
 			});
 	});
+const short = (max: number) => z.string().trim().min(1).max(max);
+const compactChapter = {
+	tldr: short(70),
+	beforeShort: short(50),
+	afterShort: short(50),
+	risk: z.object({ level: z.enum(["low", "medium", "high"]), text: short(70) }),
+	keyChecks: z
+		.array(z.object({ do: short(60), expect: short(60) }))
+		.min(1)
+		.max(3),
+};
+export const FlowSchema = z.object({
+	title: short(100),
+	steps: z
+		.array(z.object({ label: short(60), detail: short(300) }))
+		.min(2)
+		.max(8),
+});
+const connection = z.object({
+	source: short(80),
+	target: short(80),
+	label: short(50).optional(),
+	weak: z.boolean().optional(),
+});
+export const SystemSchema = z.object({
+	lanes: z
+		.array(z.object({ id: short(80), name: short(60) }))
+		.min(1)
+		.max(8),
+	parts: z
+		.array(
+			z.object({
+				id: short(80),
+				label: short(60),
+				laneId: short(80),
+				status: z.enum(["new", "changed", "unchanged", "legacy"]),
+			}),
+		)
+		.min(1)
+		.max(48),
+	before: z.array(connection).max(96),
+	after: z.array(connection).max(96),
+});
+export type GuideSystem = z.infer<typeof SystemSchema>;
+export type GuideFlow = z.infer<typeof FlowSchema>;
+export const ReviewFilesReferenceSchema = z.object({
+	snapshotId: text,
+	baseSha: text,
+	headSha: text,
+});
 export const GuideSchema = z.object({
+	tldr: short(90).optional(),
+	system: SystemSchema.optional(),
+	reviewFiles: ReviewFilesReferenceSchema.optional(),
 	revisionSummary: z.boolean().optional(),
 	revisionNote: text.max(600).optional(),
 	previousHeadSha: text.optional(),
 	chapters: z
 		.array(
 			z.object({
+				tldr: compactChapter.tldr.optional(),
+				beforeShort: compactChapter.beforeShort.optional(),
+				afterShort: compactChapter.afterShort.optional(),
+				risk: compactChapter.risk.optional(),
+				keyChecks: compactChapter.keyChecks.optional(),
+				systemPartIds: z.array(short(80)).optional(),
+				flow: FlowSchema.optional(),
 				id: text.max(80),
 				title: text.max(120),
 				summary: text.max(600),
@@ -67,7 +127,13 @@ export const GuideSchema = z.object({
 				requirementIndexes: z.array(z.number().int().nonnegative()).min(1),
 				files: z.array(text),
 				screenshots: z.array(
-					z.object({ area: text, state: text, caption: text }),
+					z.object({
+						area: text,
+						state: text,
+						caption: text,
+						device: z.enum(["Desktop", "Mobile", "Email", "Reader"]).optional(),
+						language: short(50).optional(),
+					}),
 				),
 				diagrams: z
 					.array(
@@ -93,6 +159,7 @@ export const GuideSchema = z.object({
 	goal: text,
 	summary: text,
 	decision: z.object({
+		summaryShort: short(160).optional(),
 		status: z.enum(["ready", "needs-attention", "blocked"]),
 		summary: text,
 	}),
@@ -110,6 +177,66 @@ export const GuideSchema = z.object({
 	risks: z.array(text),
 	reviewInstructions: z.array(text).min(1),
 });
+/** Reading remains additive; all newly authored guides require the compact contract. */
+export const GeneratedGuideSchema = GuideSchema.extend({
+	tldr: short(90),
+	decision: GuideSchema.shape.decision.extend({ summaryShort: short(160) }),
+	chapters: z
+		.array(GuideSchema.shape.chapters.unwrap().element.extend(compactChapter))
+		.min(1)
+		.max(20),
+}).superRefine((guide, ctx) => {
+	const fail = (path: (string | number)[], message: string) =>
+		ctx.addIssue({ code: "custom", path, message });
+	const unique = (items: { id: string }[], path: string[]) => {
+		const ids = new Set<string>();
+		items.forEach((item, i) => {
+			if (ids.has(item.id)) fail([...path, i, "id"], "IDs must be unique");
+			ids.add(item.id);
+		});
+		return ids;
+	};
+	unique(guide.chapters, ["chapters"]);
+	const system = guide.system;
+	const partIds = system
+		? unique(system.parts, ["system", "parts"])
+		: new Set<string>();
+	if (system) {
+		const lanes = unique(system.lanes, ["system", "lanes"]);
+		system.parts.forEach((part, i) => {
+			if (!lanes.has(part.laneId))
+				fail(["system", "parts", i, "laneId"], "Unknown lane ID");
+		});
+		for (const mode of ["before", "after"] as const) {
+			const edges = new Set<string>();
+			system[mode].forEach((edge, i) => {
+				for (const endpoint of ["source", "target"] as const)
+					if (!partIds.has(edge[endpoint]))
+						fail(["system", mode, i, endpoint], "Unknown part ID");
+				const key = JSON.stringify([edge.source, edge.target]);
+				if (edges.has(key))
+					fail(
+						["system", mode, i],
+						"Directed endpoint pairs must be unique; combine labels for the same connection",
+					);
+				edges.add(key);
+			});
+		}
+	}
+	guide.chapters.forEach((chapter, i) => {
+		const seen = new Set<string>();
+		chapter.systemPartIds?.forEach((id, j) => {
+			if (!partIds.has(id) || seen.has(id))
+				fail(
+					["chapters", i, "systemPartIds", j],
+					"Part ID must exist in system and appear only once",
+				);
+			seen.add(id);
+		});
+	});
+});
+export type Guide = z.infer<typeof GuideSchema>;
+export type GuideChapter = NonNullable<Guide["chapters"]>[number];
 export function validateFactoryResult(step: string, output: unknown): unknown {
 	switch (step) {
 		case "clarify":

@@ -57,7 +57,12 @@ export interface WorkflowCall {
 export interface AgentCheckpoint {
 	runner: NonNullable<WorkflowStep["runner"]>;
 	sessionId: string;
-	result?: { output: unknown; revision: RoleRevision; finalizing?: boolean };
+	result?: {
+		output: unknown;
+		revision: RoleRevision;
+		finalizing?: boolean;
+		reviewScope?: RoleProgress["reviewScope"];
+	};
 	rejected?: {
 		output: unknown;
 		issues: {
