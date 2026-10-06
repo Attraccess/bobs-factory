@@ -51,7 +51,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Factory backend calls to HTTP MCP servers now reuse the selected Codex runner's OAuth login and token refresh, allowing Taskbot workflows and pending ticket updates to recover after restarts.
+- Factory backend calls to HTTP MCP servers now reuse the selected Codex runner's OAuth login and token refresh, allowing Taskbot workflows and pending ticket updates to recover after restarts. ([#22](https://github.com/Attraccess/bobs-factory/pull/22))
 
 - Keep completed and canceled tickets quiet on restart: skip historical attempts without pending tracking or confirmed merge evidence, and discard obsolete progress updates while retaining genuine pending merge delivery. ([#21](https://github.com/Attraccess/bobs-factory/pull/21))
 
