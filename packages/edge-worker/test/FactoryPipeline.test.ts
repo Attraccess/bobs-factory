@@ -12,10 +12,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { validateFactoryResult } from "../src/factory/FactoryResults.js";
 import {
+	captureEvidence,
 	executeCommand,
 	FactoryTools,
 	filterReview,
 } from "../src/factory/FactoryTools.js";
+import { roleProgress } from "../src/factory/Incremental.js";
 import {
 	type ExecutionContext,
 	WorkflowRuntime,
@@ -522,6 +524,269 @@ it("waits on blocked implementation across restart and supplies the answer witho
 	expect(resumedAgent).toHaveBeenCalledTimes(1);
 	expect(published).toHaveBeenCalledExactlyOnceWith("draft-pr");
 	expect(restored.history.slice(0, retained.length)).toEqual(retained);
+});
+
+it.each([
+	false,
+	true,
+])("recovers missing visual evidence across restart and legacy Retry (legacy=%s)", async (legacy) => {
+	const directory = home();
+	const workspace = join(directory, "repo");
+	mkdirSync(workspace);
+	const git = (...args: string[]) =>
+		execFileSync("git", args, { cwd: workspace, encoding: "utf8" }).trim();
+	git("init", "-b", "main");
+	git("config", "user.name", "Fixture");
+	git("config", "user.email", "fixture@example.test");
+	git("config", "commit.gpgsign", "false");
+	writeFileSync(join(workspace, "view.txt"), "Unchanged view");
+	git("add", ".");
+	git("commit", "-m", "chore: fixture");
+	const tools = new FactoryTools({ postComment: vi.fn() });
+	const questionPosted = vi.fn();
+	const agents = vi.fn(async (ctx: ExecutionContext) => {
+		if (ctx.step.id === "visual-review") {
+			const capture = ctx.run.outputs.capture as { screenshots: unknown[] };
+			// Even an incorrectly approving reviewer cannot bypass missing captures.
+			return {
+				findings: [],
+				summary: "Web accepted",
+				acceptedScreenshots: capture.screenshots,
+			};
+		}
+		ctx.progress = await roleProgress(ctx);
+		const previous = ctx.progress.previousOutput as
+			| { screenshots: { path: string; area: string; state: string }[] }
+			| undefined;
+		const image = (name: string, area: string, byte: number) => {
+			const path = join(ctx.evidenceDir, name);
+			writeFileSync(path, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, byte]));
+			return { path, caption: area, area, state: "desktop" };
+		};
+		const answered = ctx.run.answers.length > 0;
+		const output = captureEvidence(ctx, {
+			screenshots: previous?.screenshots ?? [image("web.png", "Web", 1)],
+			unavailable: [{ area: "Reader", reason: "Test-card login timed out" }],
+		});
+		if (answered) {
+			expect((ctx.input as { answers: unknown[] }).answers).toHaveLength(1);
+			const prior = previous!.screenshots;
+			const complete = captureEvidence(ctx, {
+				screenshots: [...prior, image("reader.png", "Reader", 2)],
+				unavailable: [],
+			});
+			ctx.run.roleRevisions![ctx.run.step!] = ctx.progress.currentRevision!;
+			return complete;
+		}
+		ctx.run.roleRevisions ??= {};
+		ctx.run.roleRevisions[ctx.run.step!] = ctx.progress.currentRevision!;
+		return output;
+	});
+	const hooks = {
+		agent: agents,
+		script: async () => ({}),
+		tool: (ctx: ExecutionContext) => tools.tool(ctx),
+		question: questionPosted,
+	};
+	const runtime = new WorkflowRuntime(directory, hooks);
+	const definitions = runtime.listWorkflows();
+	const pipeline = definitions.find((w) => w.id === "factory-pipeline")!;
+	pipeline.steps = pipeline.steps.filter((s) =>
+		["capture", "visual-review", "visual-gate"].includes(s.id),
+	);
+	pipeline.steps.at(-1)!.next = "end";
+	pipeline.steps.at(-1)!.branches = [];
+	pipeline.steps[0]!.inputs = ["visual-scope"];
+	const run = runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
+		title: "Recover reader captures",
+		repositoryId: "repo",
+		workspace,
+		workflow: definitions.find((w) => w.id === "factory")!,
+		workflowDefinitions: definitions,
+		input: "Capture fixture",
+	});
+	run.outputs["visual-scope"] = {
+		changed: true,
+		areas: ["Web", "Reader"].map((name) => ({
+			name,
+			states: ["desktop"],
+			dependencies: ["view.txt"],
+		})),
+	};
+	const first = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(run.step).toBe("pipeline/visual-gate");
+	expect(run.questions.join("\n")).toContain("Test-card login timed out");
+	expect(questionPosted).toHaveBeenCalledTimes(1);
+	expect(agents).toHaveBeenCalledTimes(2);
+	const frozen = structuredClone(run.workflowDefinitions);
+	await runtime.shutdown();
+	await first;
+	if (legacy) {
+		run.status = "failed";
+		run.error =
+			"Visual evidence is incomplete. Supply capture tools/access and start a new run; screenshots cannot be approved without evidence.";
+		run.questions = [];
+		run.history.pop(); // The old gate threw before producing a receipt.
+		delete run.outputs["visual-gate"];
+		run.checkpoint!.active!.children![0]!.active = { phase: "executing" };
+		runtime.save(run);
+		questionPosted.mockClear();
+	}
+	const restarted = new WorkflowRuntime(directory, hooks);
+	if (legacy) restarted.retry(run.id);
+	else restarted.resumeAll();
+	const restored = restarted.get(run.id);
+	await vi.waitFor(() => expect(restored.status).toBe("waiting"));
+	expect(agents).toHaveBeenCalledTimes(2);
+	expect(questionPosted).toHaveBeenCalledTimes(1);
+	expect(restored.error).toBeUndefined();
+	const retained = structuredClone(restored.history);
+	restarted.answer(run.id, "The test card now works; capture Reader desktop.");
+	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	expect(restored.history.slice(0, retained.length)).toEqual(retained);
+	expect(restored.workflowDefinitions).toEqual(frozen);
+	expect(restored.history.slice(retained.length).map((h) => h.step)).toEqual([
+		"pipeline/capture",
+		"pipeline/visual-review",
+		"pipeline/visual-gate",
+		"pipeline",
+	]);
+	expect(restored.outputs.capture).toMatchObject({
+		screenshots: [
+			{ area: "Web", reused: true },
+			{ area: "Reader", reused: false },
+		],
+		unavailable: [],
+	});
+	expect(restored.outputs["visual-gate"]).toMatchObject({ approved: true });
+});
+
+it("offers capture assistance when selected states are missing even without an unavailable report", async () => {
+	const ctx = context();
+	ctx.step.tool = "visual-gate";
+	ctx.run.outputs["visual-review"] = { findings: [], summary: "No findings" };
+	const path = join(ctx.evidenceDir, "web.png");
+	writeFileSync(path, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]));
+	ctx.run.outputs.capture = {
+		screenshots: [{ path, caption: "Web", area: "Web", state: "desktop" }],
+		unavailable: [],
+	};
+	ctx.run.outputs["visual-scope"] = {
+		areas: [{ name: "Reader", states: ["owner", "meters"] }],
+	};
+	await expect(
+		new FactoryTools({ postComment: vi.fn() }).tool(ctx),
+	).resolves.toMatchObject({
+		approved: false,
+		captureBlocked: true,
+		questions: [
+			expect.stringContaining(
+				"Reader: No screenshot supplied for states: owner; meters",
+			),
+		],
+	});
+});
+
+it("waits again when capture remains blocked after an answer, and stops without handoff", async () => {
+	const directory = home();
+	const tools = new FactoryTools({ postComment: vi.fn() });
+	const handoff = vi.fn();
+	const runtime = new WorkflowRuntime(directory, {
+		agent: async (ctx) =>
+			ctx.step.id === "capture"
+				? {
+						screenshots: [],
+						unavailable: [{ area: "Reader", reason: "Login still fails" }],
+					}
+				: { findings: [], summary: "No screenshots" },
+		script: async () => {
+			handoff();
+			return {};
+		},
+		tool: (ctx) => tools.tool(ctx),
+	});
+	const definitions = runtime.listWorkflows();
+	const pipeline = definitions.find((w) => w.id === "factory-pipeline")!;
+	pipeline.steps = pipeline.steps.filter((s) =>
+		["capture", "visual-review", "visual-gate"].includes(s.id),
+	);
+	pipeline.steps.at(-1)!.branches = [];
+	pipeline.steps.at(-1)!.next = "delivery";
+	pipeline.steps.push({
+		id: "delivery",
+		name: "Handoff must not happen",
+		type: "script",
+		script: "exit 1",
+		maxVisits: 1,
+		branches: [],
+	});
+	const run = runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
+		title: "Repeated blocker",
+		repositoryId: "repo",
+		workspace: directory,
+		workflow: definitions.find((w) => w.id === "factory")!,
+		workflowDefinitions: definitions,
+		input: "Fixture",
+	});
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	runtime.answer(run.id, "Approve it anyway.");
+	await vi.waitFor(() => {
+		expect(run.status).toBe("waiting");
+		expect(
+			run.history.filter((h) => h.step === "pipeline/capture"),
+		).toHaveLength(2);
+	});
+	expect(run.outputs["visual-gate"]).toMatchObject({
+		approved: false,
+		captureBlocked: true,
+	});
+	expect(run.questions.join("\n")).toContain("Login still fails");
+	runtime.stop(run.id);
+	await execution;
+	expect(run.status).toBe("stopped");
+	expect(handoff).not.toHaveBeenCalled();
+});
+
+it("fails safely when a custom visual gate has no capture recovery path", async () => {
+	const ctx = context();
+	const gate = {
+		...ctx.step,
+		id: "visual-gate",
+		tool: "visual-gate",
+		next: "end",
+	};
+	ctx.run.workflow.steps = [gate];
+	ctx.run.outputs.capture = { screenshots: [], unavailable: [] };
+	ctx.run.outputs["visual-review"] = {
+		findings: [],
+		summary: "No screenshots",
+	};
+	const tools = new FactoryTools({ postComment: vi.fn() });
+	const question = vi.fn();
+	const runtime = new WorkflowRuntime(ctx.evidenceDir, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: (input) => tools.tool(input),
+		question,
+	});
+	await runtime.launch(ctx.run);
+	expect(ctx.run.status).toBe("failed");
+	expect(ctx.run.error).toContain(
+		"no capture → visual-review → visual-gate recovery path",
+	);
+	expect(question).not.toHaveBeenCalled();
 });
 
 it("rejects implementation reports that cannot distinguish completion from a blocker", () => {

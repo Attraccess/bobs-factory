@@ -189,6 +189,10 @@ import {
 	roleProgress,
 } from "./factory/Incremental.js";
 import { issueSnapshot } from "./factory/issueSnapshot.js";
+import {
+	LaunchAdmission,
+	type TicketLaunchReceipt,
+} from "./factory/LaunchAdmission.js";
 import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
 import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
@@ -222,6 +226,7 @@ import {
 	type FactoryRun,
 	WorkflowRuntime,
 } from "./factory/WorkflowRuntime.js";
+import { resolveWorkflowSelector } from "./factory/WorkflowSelector.js";
 import { GitService } from "./GitService.js";
 import { GlobalSessionRegistry } from "./GlobalSessionRegistry.js";
 import { McpConfigService } from "./McpConfigService.js";
@@ -377,6 +382,9 @@ export class EdgeWorker extends EventEmitter {
 	 * Value: All data needed to replay initializeAgentRunner when unblocked
 	 */
 	private pendingTriggerOrigins = new Map<string, WorkflowTriggerOrigin>();
+	private pendingTriggerMessages = new Map<string, string | null>();
+	private launchAdmission?: LaunchAdmission;
+	private inFlightTicketStarts = new Set<string>();
 
 	private parkedSessions = new Map<
 		string,
@@ -841,6 +849,7 @@ export class EdgeWorker extends EventEmitter {
 		// Start shared application server (this also starts Cloudflare tunnel if CLOUDFLARE_TOKEN is set)
 		await this.sharedApplicationServer.start();
 		this.recoverFactoryRuns();
+		this.recoverPendingTicketLaunches();
 	}
 
 	/**
@@ -894,6 +903,7 @@ export class EdgeWorker extends EventEmitter {
 				start: (input) => this.startManualFactoryRun(input),
 				followup: (id, feedback) => this.startFactoryFollowup(id, feedback),
 				stop: (id) => {
+					this.settleTicketLaunch(id);
 					this.factoryRuntime?.runs.has(id) && this.factoryRuntime.stop(id);
 					this.cancelRunTitle(id);
 					const chatHandler = this.chatHandlerForSession(id);
@@ -3858,6 +3868,14 @@ ${taskSection}`;
 		);
 
 		const issueId = message.workItemId;
+		const issueKey = LaunchAdmission.issueKey(
+			this.config.platform === "cli" ? "cli" : "linear",
+			message.organizationId,
+			issueId,
+		);
+		for (const receipt of this.getLaunchAdmission().values())
+			if (receipt.issueKey === issueKey)
+				this.settleTicketLaunch(receipt.sessionId);
 
 		// Stop all active sessions for this issue
 		const sessions = this.agentSessionManager.getSessionsByIssueId(issueId);
@@ -4579,9 +4597,10 @@ ${taskSection}`;
 
 		let launch: ReturnType<WorkflowRuntime["selectLaunch"]>;
 		try {
-			launch = this.getFactoryRuntime().selectLaunch(
-				await this.fetchIssueLabels(fullIssue),
-				"ticket-assignment",
+			launch = await this.selectTicketLaunch(
+				sessionId,
+				fullIssue,
+				linearWorkspaceId,
 			);
 			if (launch.workflow.id !== "simple" && repositories.length !== 1)
 				throw new Error(
@@ -4607,6 +4626,7 @@ ${taskSection}`;
 			throw error;
 		}
 		const takeover = launch.workflow.id === "takeover";
+		this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 		if (takeover && fullIssue.branchName) {
 			baseBranchOverrides = new Map(baseBranchOverrides);
 			for (const repo of repositories)
@@ -4656,6 +4676,7 @@ ${taskSection}`;
 				"Another run is using this worktree; terminate it before taking over",
 			);
 		this.logger.debug(`Workspace created at: ${workspace.path}`);
+		this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 
 		const issueMinimal = this.convertLinearIssueToCore(fullIssue);
 
@@ -4693,6 +4714,7 @@ ${taskSection}`;
 			},
 		};
 		const createdSession = agentSessionManager.getSession(sessionId)!;
+		createdSession.workflowChat = launch.workflow.chat ?? false;
 		createdSession.triggerOrigin = {
 			...origin,
 			workflowId: launch.workflow.id,
@@ -4704,6 +4726,12 @@ ${taskSection}`;
 			},
 		};
 		this.pendingTriggerOrigins.delete(sessionId);
+		this.pendingTriggerMessages.delete(sessionId);
+		const receipt = this.getLaunchAdmission().get(linearWorkspaceId, sessionId);
+		if (receipt)
+			this.getLaunchAdmission().update(receipt, {
+				origin: createdSession.triggerOrigin,
+			});
 
 		// Register session-to-repo mapping and activity sink (use primary repo)
 		this.sessionRepositories.set(sessionId, primaryRepo.id);
@@ -4815,6 +4843,187 @@ ${taskSection}`;
 	 * @param webhook The agent session created webhook
 	 * @param repos All available repositories for routing
 	 */
+	private getLaunchAdmission(): LaunchAdmission {
+		this.launchAdmission ??= new LaunchAdmission(this.cyrusHome);
+		return this.launchAdmission;
+	}
+
+	private ticketReceiptIsActive(receipt: TicketLaunchReceipt): boolean {
+		if (receipt.phase === "settled") return false;
+		if (["pending", "starting", "recovery"].includes(receipt.phase))
+			return true;
+		const run = this.getFactoryRuntime().runs.get(receipt.sessionId);
+		if (run) return !["completed", "stopped"].includes(run.status);
+		const session = this.agentSessionManager.getSession(receipt.sessionId);
+		if (session) return this.ticketSessionIsActive(session);
+		return true; // Reserved setup, repository/blocker wait or interrupted startup.
+	}
+	private ticketSessionIsActive(session: CyrusAgentSession): boolean {
+		const graphRun = this.getFactoryRuntime().runs.get(session.id);
+		if (graphRun && graphRun.workflow.id !== "simple")
+			return !["completed", "stopped"].includes(graphRun.status);
+		if (session.status !== AgentSessionStatus.Complete) return true;
+		const work = session.agentRunner?.getPendingWork?.();
+		return Boolean(
+			work && (work.sessionCrons.length || work.backgroundTasks.length),
+		);
+	}
+
+	private ticketStartupIsIncomplete(session: CyrusAgentSession): boolean {
+		if (this.factoryRuntime?.runs.has(session.id)) return false;
+		const receipt = this.launchAdmission
+			?.values()
+			.find((item) => item.sessionId === session.id);
+		return (
+			receipt?.phase === "recovery" ||
+			Boolean(
+				session.triggerOrigin?.workflowId &&
+					session.triggerOrigin.workflowId !== "simple",
+			)
+		);
+	}
+
+	private activeTicketRun(
+		workspace: string,
+		issue: string,
+		except: string,
+	): string | undefined {
+		const run = [...this.getFactoryRuntime().runs.values()].find(
+			(item) =>
+				item.id !== except &&
+				item.workspaceId === workspace &&
+				item.issueId === issue &&
+				!["completed", "stopped"].includes(item.status),
+		);
+		if (run) return run.id;
+		return this.agentSessionManager
+			.getSessionsByIssueId(issue)
+			.find(
+				(session) =>
+					session.id !== except &&
+					(session.issueContext?.issueId ?? session.issueId) === issue &&
+					(session.triggerOrigin?.ticket?.workspaceId ??
+						this.repositories.get(
+							this.sessionRepositories.get(session.id) ??
+								session.repositories?.[0]?.repositoryId ??
+								"",
+						)?.linearWorkspaceId) === workspace &&
+					this.ticketSessionIsActive(session) &&
+					this.getLaunchAdmission().get(workspace, session.id)?.phase !==
+						"settled",
+			)?.id;
+	}
+
+	private async ticketLaunchFeedback(
+		webhook: Pick<AgentSessionCreatedWebhook, "organizationId"> & {
+			agentSession: { id: string };
+		},
+		body: string,
+	): Promise<void> {
+		const tracker = this.issueTrackers.get(webhook.organizationId);
+		if (tracker)
+			await this.activityPoster.postActivityDirect(
+				tracker,
+				{
+					agentSessionId: webhook.agentSession.id,
+					content: { type: "response", body },
+				},
+				"workflow launch feedback",
+			);
+	}
+
+	private async selectTicketLaunch(
+		sessionId: string,
+		issue: Issue,
+		workspace: string,
+	): Promise<ReturnType<WorkflowRuntime["selectLaunch"]>> {
+		const admission = this.getLaunchAdmission();
+		const receipt = admission.get(workspace, sessionId);
+		if (receipt?.launch) return structuredClone(receipt.launch);
+		const origin = receipt?.origin ?? this.pendingTriggerOrigins.get(sessionId);
+		let comment = receipt
+			? receipt.commentBody
+			: this.pendingTriggerMessages.get(sessionId);
+		const source = receipt?.webhook.agentSession.sourceCommentId;
+		if (
+			receipt &&
+			origin?.ticket?.commentId &&
+			((source && source !== receipt.webhook.agentSession.comment?.id) ||
+				(comment === undefined && origin.ticket.provider === "linear"))
+		) {
+			const tracker = this.issueTrackers.get(workspace);
+			if (!tracker)
+				throw new Error("Original triggering comment is unavailable");
+			comment = (await tracker.fetchComment(origin.ticket.commentId)).body;
+			admission.update(receipt, { commentBody: comment });
+		}
+		const selector = resolveWorkflowSelector({
+			comment: origin?.ticket?.subtype === "assignment" ? undefined : comment,
+			description: issue.description,
+		});
+		const labels = await this.fetchIssueLabels(issue);
+		const launch = this.getFactoryRuntime().selectLaunch(
+			labels,
+			"ticket-assignment",
+			selector.workflowId,
+		);
+		if (origin)
+			origin.selection =
+				selector.selection ??
+				(launch.selectionMethod === "label"
+					? {
+							source: "label",
+							label: launch.workflow.labels.find((label) =>
+								labels.includes(label),
+							),
+						}
+					: { source: "default" });
+		if (receipt) admission.update(receipt, { launch, origin: origin! });
+		return launch;
+	}
+
+	private settleTicketLaunch(sessionId: string): void {
+		for (const receipt of this.getLaunchAdmission().values()) {
+			if (receipt.sessionId !== sessionId) continue;
+			this.getLaunchAdmission().update(receipt, { phase: "settled" });
+			const issue = receipt.origin.ticket!.issueId;
+			if (this.parkedSessions.get(issue)?.agentSession.id === sessionId)
+				this.parkedSessions.delete(issue);
+			this.repositoryRouter.cancelPendingSelection(sessionId);
+		}
+	}
+	private ensureTicketLaunchOpen(workspace: string, session: string): void {
+		if (this.getLaunchAdmission().get(workspace, session)?.phase === "settled")
+			throw new Error("This ticket launch was stopped");
+	}
+
+	private recoverPendingTicketLaunches(): void {
+		for (const receipt of this.getLaunchAdmission().values()) {
+			if (receipt.phase === "pending") {
+				void this.startAcceptedTicketLaunch(receipt, [
+					...this.repositories.values(),
+				]);
+				continue;
+			}
+			const session = this.agentSessionManager.getSession(receipt.sessionId);
+			if (
+				receipt.phase !== "settled" &&
+				!this.getFactoryRuntime().runs.has(receipt.sessionId) &&
+				(receipt.phase === "recovery" ||
+					(["starting", "started"].includes(receipt.phase) &&
+						(!session || this.ticketStartupIsIncomplete(session))))
+			) {
+				this.getLaunchAdmission().update(receipt, { phase: "recovery" });
+				if (session) session.status = AgentSessionStatus.Error;
+				void this.savePersistedState();
+				void this.ticketLaunchFeedback(
+					receipt.webhook,
+					"Startup was interrupted before the accepted workflow was ready. Ownership is retained to prevent duplicate work. Send stop to settle this launch, then start a new session.",
+				);
+			}
+		}
+	}
+
 	private captureTicketOrigin(
 		webhook: AgentSessionCreatedWebhook,
 		created: boolean,
@@ -4823,6 +5032,7 @@ ${taskSection}`;
 		if (!agentSession.issue || this.pendingTriggerOrigins.has(agentSession.id))
 			return;
 		const body = agentSession.comment?.body;
+		this.pendingTriggerMessages.set(agentSession.id, body ?? null);
 		this.pendingTriggerOrigins.set(agentSession.id, {
 			type: "ticket-assignment",
 			workflowId: "",
@@ -4868,6 +5078,125 @@ ${taskSection}`;
 		repos: RepositoryConfig[],
 	): Promise<void> {
 		this.captureTicketOrigin(webhook, true);
+		const issue = webhook.agentSession.issue;
+		if (!issue) return;
+		const origin = this.pendingTriggerOrigins.get(webhook.agentSession.id)!;
+		const admission = this.getLaunchAdmission();
+		const issueKey = LaunchAdmission.issueKey(
+			origin.ticket!.provider,
+			webhook.organizationId,
+			issue.id,
+		);
+		const existing = this.activeTicketRun(
+			webhook.organizationId,
+			issue.id,
+			webhook.agentSession.id,
+		);
+		const result = admission.reserve(
+			{
+				issueKey,
+				sessionId: webhook.agentSession.id,
+				webhook,
+				origin,
+				commentBody: webhook.agentSession.comment?.body,
+			},
+			(receipt) => this.ticketReceiptIsActive(receipt),
+		);
+		if (result.type === "duplicate") {
+			this.pendingTriggerOrigins.delete(webhook.agentSession.id);
+			return;
+		}
+		if (existing && result.type === "accepted") {
+			admission.update(result.receipt, { phase: "settled" });
+			await this.ticketLaunchFeedback(
+				webhook,
+				`Workflow launch rejected: this issue already has active run ${existing}. Reply to that session or stop it before starting another run. This temporary restriction will be replaced by #36.`,
+			);
+			this.pendingTriggerOrigins.delete(webhook.agentSession.id);
+			return;
+		}
+		if (result.type === "busy") {
+			await this.ticketLaunchFeedback(
+				webhook,
+				`Workflow launch rejected: this issue already has active run ${result.sessionId}. Reply to that session or stop it before starting another run. This temporary restriction will be replaced by #36.`,
+			);
+			this.pendingTriggerOrigins.delete(webhook.agentSession.id);
+			return;
+		}
+		// Adopt receipts for pre-journal sessions too; completion is not permission
+		// to replay their original created event.
+		if (
+			this.agentSessionManager.getSession(webhook.agentSession.id)?.id ===
+				webhook.agentSession.id ||
+			this.getFactoryRuntime().runs.has(webhook.agentSession.id)
+		) {
+			admission.update(result.receipt, { phase: "started" });
+			this.pendingTriggerOrigins.delete(webhook.agentSession.id);
+			return;
+		}
+		await this.startAcceptedTicketLaunch(result.receipt, repos);
+	}
+
+	private async startAcceptedTicketLaunch(
+		receipt: TicketLaunchReceipt,
+		repos: RepositoryConfig[],
+	): Promise<void> {
+		if (
+			this.inFlightTicketStarts.has(receipt.key) ||
+			receipt.phase === "settled"
+		)
+			return;
+		this.inFlightTicketStarts.add(receipt.key);
+		const { webhook } = receipt;
+		this.pendingTriggerOrigins.set(receipt.sessionId, receipt.origin);
+		try {
+			await this.preflightTicketLaunch(receipt);
+			if (
+				this.getLaunchAdmission().get(webhook.organizationId, receipt.sessionId)
+					?.phase === "settled"
+			)
+				return; // Stop during preflight.
+			await this.routeAcceptedTicketLaunch(webhook, repos);
+		} catch (error) {
+			const phase =
+				this.getLaunchAdmission().get(webhook.organizationId, receipt.sessionId)
+					?.phase === "settled"
+					? "settled"
+					: receipt.phase === "starting" ||
+							this.agentSessionManager.getSession(receipt.sessionId)
+						? "recovery"
+						: "settled";
+			this.getLaunchAdmission().update(receipt, { phase });
+			await this.ticketLaunchFeedback(
+				webhook,
+				`${error instanceof Error ? error.message : String(error)}${phase === "recovery" ? " Startup was interrupted; ownership is retained to prevent duplicate work. Inspect the existing session, or send stop before launching a new session." : " Check the workflow ID, labels, default and ticket-assignment permission in Recipes; no fallback was launched."}`,
+			);
+		} finally {
+			this.inFlightTicketStarts.delete(receipt.key);
+			await this.savePersistedState();
+		}
+	}
+
+	private async preflightTicketLaunch(
+		receipt: TicketLaunchReceipt,
+	): Promise<void> {
+		const fullIssue = await this.fetchFullIssueDetails(
+			receipt.origin.ticket!.issueId,
+			receipt.webhook.organizationId,
+		);
+		if (!fullIssue)
+			throw new Error("Ticket details unavailable; no workflow launched");
+		await this.selectTicketLaunch(
+			receipt.sessionId,
+			fullIssue,
+			receipt.webhook.organizationId,
+		);
+	}
+
+	private async routeAcceptedTicketLaunch(
+		webhook: AgentSessionCreatedWebhook,
+		repos: RepositoryConfig[],
+	): Promise<void> {
 		const issueId = webhook.agentSession?.issue?.id;
 
 		// Check the cache first, as the agentSessionCreated webhook may have been triggered by an @mention
@@ -4894,6 +5223,7 @@ ${taskSection}`;
 				);
 
 			if (routingResult.type === "none") {
+				this.settleTicketLaunch(webhook.agentSession.id);
 				if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
 					this.logger.info(
 						`No repository configured for webhook from workspace ${webhook.organizationId}`,
@@ -4950,6 +5280,7 @@ ${taskSection}`;
 				`User ${accessResult.userName} blocked from delegating: ${accessResult.reason}`,
 			);
 			await this.handleBlockedUser(webhook, primaryRepo, accessResult.reason);
+			this.settleTicketLaunch(webhook.agentSession.id);
 			return;
 		}
 
@@ -5022,8 +5353,6 @@ ${taskSection}`;
 	}
 
 	/**
-
-	/**
 	 * Initialize and start agent runner for an agent session
 	 * This method contains the shared logic for creating an agent runner that both
 	 * handleAgentSessionCreatedWebhook and handleUserPromptedAgentActivity use.
@@ -5045,6 +5374,14 @@ ${taskSection}`;
 		routingMethod?: string,
 	): Promise<void> {
 		const sessionId = agentSession.id;
+		const receipt = this.getLaunchAdmission().get(linearWorkspaceId, sessionId);
+		if (receipt?.phase === "settled") return;
+		if (receipt) {
+			commentBody = receipt.commentBody;
+			this.getLaunchAdmission().update(receipt, { phase: "starting" });
+		} else if (this.pendingTriggerMessages.has(sessionId)) {
+			commentBody = this.pendingTriggerMessages.get(sessionId);
+		}
 		const { issue } = agentSession;
 
 		if (!issue) {
@@ -5145,6 +5482,12 @@ ${taskSection}`;
 
 			// Use unified prompt assembly
 			const assembly = await this.assemblePrompt(input);
+			const ticket = await issueSnapshot(
+				fullIssue,
+				labels,
+				this.issueTrackers.get(linearWorkspaceId),
+			);
+			assembly.userPrompt += `\n\nComplete ticket snapshot:\n${JSON.stringify(ticket, null, 2)}`;
 
 			// Get systemPromptVersion for tracking (TODO: add to PromptAssembly metadata)
 			let systemPromptVersion: string | undefined;
@@ -5195,6 +5538,7 @@ ${taskSection}`;
 
 			// Create agent runner with system prompt from assembly
 			const { workflow, workflowDefinitions } = sessionData.launch;
+			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 			if (workflow.id !== "simple") {
 				if (repositories.length !== 1)
 					throw new Error(
@@ -5214,11 +5558,7 @@ ${taskSection}`;
 					undefined,
 					linearWorkspaceId,
 				);
-				const ticket = await issueSnapshot(
-					fullIssue,
-					labels,
-					this.issueTrackers.get(linearWorkspaceId),
-				);
+				this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 				const run = this.getFactoryRuntime().create({
 					id: sessionId,
 					title: fullIssue.title,
@@ -5227,7 +5567,7 @@ ${taskSection}`;
 					workflowDefinitions,
 					triggerOrigin: session.triggerOrigin!,
 					workspace: session.workspace.path,
-					input: `${assembly.userPrompt}\n\nComplete ticket snapshot:\n${JSON.stringify(ticket, null, 2)}`,
+					input: assembly.userPrompt,
 					issueId: fullIssue.id,
 					workspaceId: linearWorkspaceId,
 				});
@@ -5243,6 +5583,10 @@ ${taskSection}`;
 				run.outputs.ticket = ticket;
 				run.runner = selectedRunner.runnerType;
 				run.model = selectedRunner.config.model;
+				this.saveFactorySession(run);
+				this.getFactoryRuntime().save(run);
+				if (receipt)
+					this.getLaunchAdmission().update(receipt, { phase: "started" });
 				this.emit("session:started", fullIssue.id, fullIssue, primaryRepo.id);
 				this.config.handlers?.onSessionStart?.(
 					fullIssue.id,
@@ -5277,9 +5621,12 @@ ${taskSection}`;
 			);
 
 			const runner = this.createRunnerForType(runnerType, runnerConfig);
+			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 
 			// Store runner by comment ID
 			agentSessionManager.addAgentRunner(sessionId, runner);
+			if (receipt)
+				this.getLaunchAdmission().update(receipt, { phase: "started" });
 
 			// Save state after mapping changes
 			await this.savePersistedState();
@@ -5310,6 +5657,8 @@ ${taskSection}`;
 			);
 
 			// Start session - use streaming mode if supported for ability to add messages later
+			// Unassignment or stop can settle ownership while persistence is awaiting.
+			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 			if (runner.supportsStreamingInput && runner.startStreaming) {
 				log.debug(`Starting streaming session`);
 				const sessionInfo = await runner.startStreaming(assembly.userPrompt);
@@ -5339,7 +5688,24 @@ ${taskSection}`;
 		webhook: AgentSessionPromptedWebhook,
 	): Promise<void> {
 		const agentSessionId = webhook.agentSession.id;
+		const receipt = this.getLaunchAdmission().get(
+			webhook.organizationId,
+			agentSessionId,
+		);
+		if (
+			receipt &&
+			!this.agentSessionManager.getSession(agentSessionId) &&
+			!this.getFactoryRuntime().runs.has(agentSessionId)
+		) {
+			this.settleTicketLaunch(agentSessionId);
+			await this.ticketLaunchFeedback(
+				webhook,
+				"Stopped the pending ticket launch. Its ownership is settled; a new assignment or mention can start a new run.",
+			);
+			return;
+		}
 		if (this.factoryRuntime?.runs.has(agentSessionId)) {
+			this.settleTicketLaunch(agentSessionId);
 			this.factoryRuntime.stop(agentSessionId);
 			this.agentSessionManager.getAgentRunner(agentSessionId)?.stop();
 			return;
@@ -5355,6 +5721,7 @@ ${taskSection}`;
 		const foundSession = this.agentSessionManager.getSession(agentSessionId);
 
 		if (!foundSession) {
+			this.settleTicketLaunch(agentSessionId);
 			// Legacy recovery: session lost after restart/migration
 			// Post acknowledgment so the user doesn't see a hanging state
 			log.info(
@@ -5389,6 +5756,7 @@ ${taskSection}`;
 		);
 
 		if (isDoubleStop || !supportsInterrupt) {
+			this.settleTicketLaunch(agentSessionId);
 			// Either a second stop within window, or a non-warm runner — full kill
 			this.agentSessionManager.requestSessionStop(agentSessionId);
 			if (existingRunner) {
@@ -5575,15 +5943,9 @@ ${taskSection}`;
 		const isNewSession = false;
 
 		if (!session) {
-			this.captureTicketOrigin(webhook, false);
-			await this.initializeAgentRunner(
-				agentSession,
-				repositories,
-				linearWorkspaceId,
-				webhook.guidance,
-				webhook.agentActivity.content?.body ?? "",
+			throw new Error(
+				"Accepted session context disappeared during reply delivery; no replacement workflow was launched",
 			);
-			return;
 		} else {
 			this.logger.debug(
 				`Found existing session ${sessionId} for new user prompt`,
@@ -5688,8 +6050,19 @@ ${taskSection}`;
 
 		const promptBody = webhook.agentActivity.content.body;
 
-		// Use centralized streaming check and routing logic
+		// Recheck after attachment IO. A rejected steer must never interrupt
+		// active work by falling through to the legacy stop/resume path.
 		try {
+			const chat = this.factoryChatState(sessionId);
+			if (!chat.available) throw new Error(chat.reason ?? "Chat unavailable");
+			if (chat.mode === "steer") {
+				session.agentRunner!.addStreamMessage!(
+					attachmentManifest
+						? `${promptBody}\n\n${attachmentManifest}`
+						: promptBody,
+				);
+				return;
+			}
 			await this.handlePromptWithStreamingCheck(
 				session,
 				repository,
@@ -5706,6 +6079,7 @@ ${taskSection}`;
 			);
 		} catch (error) {
 			this.logger.error("Failed to handle prompted webhook:", error);
+			throw error;
 		}
 	}
 
@@ -5721,41 +6095,152 @@ ${taskSection}`;
 	private async handleUserPromptedAgentActivity(
 		webhook: AgentSessionPromptedWebhook,
 	): Promise<void> {
-		const agentSessionId = webhook.agentSession.id;
-		const activityBody = webhook.agentActivity?.content?.body || "";
-		const signal = (webhook.agentActivity as any)?.signal;
-		const isTextStopRequest = /^\s*stop(\s+session|\s+working)?[\s.!?]*$/i.test(
-			activityBody,
-		);
-
-		// Branch 1: Handle stop signal (checked FIRST, before any routing work)
-		// Per CLAUDE.md: "an agentSession MUST already exist" for stop signals
-		// IMPORTANT: Stop signals do NOT require repository lookup
-		if (signal === "stop" || isTextStopRequest) {
-			await this.handleStopSignal(webhook);
+		const body = webhook.agentActivity?.content?.body ?? "";
+		const isStop =
+			webhook.agentActivity?.signal === "stop" ||
+			/^\s*stop(\s+session|\s+working)?[\s.!?]*$/i.test(body);
+		const { organizationId: workspace, agentSession } = webhook;
+		const receipt = this.getLaunchAdmission().get(workspace, agentSession.id);
+		if (receipt && receipt.origin.ticket!.issueId !== agentSession.issue?.id) {
+			await this.ticketLaunchFeedback(
+				webhook,
+				"Reply rejected: the session and issue identities do not match.",
+			);
 			return;
 		}
+		const id =
+			webhook.agentActivity?.id ?? webhook.agentActivity?.sourceCommentId;
+		if (!id && !isStop && this.config.platform !== "cli") {
+			await this.ticketLaunchFeedback(
+				webhook,
+				"Reply cannot be delivered safely: no native activity or source comment identity was supplied. Send a new reply in the original Linear session.",
+			);
+			return;
+		}
+		if (id) {
+			const status = this.getLaunchAdmission().beginPrompt(
+				workspace,
+				agentSession.id,
+				id,
+			);
+			if (status !== "new") {
+				if (status === "pending")
+					await this.ticketLaunchFeedback(
+						webhook,
+						"This reply is already being delivered, or delivery was interrupted. Inspect the existing session; if no answer arrived, send a new reply. It will not be applied twice.",
+					);
+				return;
+			}
+		}
+		let resuming = false;
+		try {
+			// Native redeliveries are one stop. Distinct activities still retain
+			// the warm runner's interrupt-then-double-stop behavior.
+			if (isStop) {
+				await this.handleStopSignal(webhook);
+				if (id)
+					this.getLaunchAdmission().finishPrompt(
+						workspace,
+						agentSession.id,
+						id,
+					);
+				return;
+			}
+			const session = this.agentSessionManager.getSession(agentSession.id);
+			if (receipt && session?.status === AgentSessionStatus.Complete) {
+				const owner =
+					this.activeTicketRun(
+						workspace,
+						receipt.origin.ticket!.issueId,
+						agentSession.id,
+					) ??
+					this.getLaunchAdmission()
+						.values()
+						.find(
+							(item) =>
+								item.key !== receipt.key &&
+								item.issueKey === receipt.issueKey &&
+								this.ticketReceiptIsActive(item),
+						)?.sessionId;
+				if (owner)
+					throw new Error(
+						`This issue is owned by active run ${owner}; reply there instead`,
+					);
+				if (receipt.phase === "starting")
+					throw new Error("The existing conversation is already resuming");
+				this.getLaunchAdmission().update(receipt, { phase: "starting" });
+				resuming = true;
+			}
+			await this.deliverUserPromptedAgentActivity(webhook);
+			if (
+				receipt &&
+				this.getLaunchAdmission().get(workspace, agentSession.id)?.phase !==
+					"settled" &&
+				session
+			)
+				this.getLaunchAdmission().update(receipt, { phase: "started" });
+			if (id)
+				this.getLaunchAdmission().finishPrompt(workspace, agentSession.id, id);
+		} catch (error) {
+			if (resuming && receipt && receipt.phase !== "settled") {
+				// A rejected reply must not turn a completed conversation into a
+				// permanently reserved launch. Retain recovery ownership only if
+				// delivery actually moved the session out of its completed state.
+				this.getLaunchAdmission().update(receipt, {
+					phase:
+						this.agentSessionManager.getSession(agentSession.id)?.status ===
+						AgentSessionStatus.Complete
+							? "started"
+							: "recovery",
+				});
+			}
+			await this.ticketLaunchFeedback(
+				webhook,
+				`Reply delivery failed: ${error instanceof Error ? error.message : String(error)}. Inspect the existing run and resend as a new reply after recovery; no replacement workflow was launched.`,
+			);
+		}
+	}
 
+	private async deliverUserPromptedAgentActivity(
+		webhook: AgentSessionPromptedWebhook,
+	): Promise<void> {
+		const agentSessionId = webhook.agentSession.id;
+		const activityBody = webhook.agentActivity?.content?.body || "";
 		// Branch 1.5: Handle re-prompt for parked (blocked-by) sessions
-		const factoryRun =
-			[...(this.factoryRuntime?.runs.values() ?? [])].find(
-				(run) =>
-					run.id.startsWith("manual-") &&
-					run.issueId === webhook.agentSession.issue?.id &&
-					run.workspaceId === webhook.organizationId &&
-					run.status === "waiting",
-			) ?? this.factoryRuntime?.runs.get(agentSessionId);
+		const direct = this.getFactoryRuntime().runs.get(agentSessionId);
+		if (
+			direct &&
+			(direct.workspaceId !== webhook.organizationId ||
+				direct.issueId !== webhook.agentSession.issue?.id)
+		)
+			throw new Error("Session belongs to another workspace or issue");
+		const candidates = direct
+			? [direct]
+			: [...this.getFactoryRuntime().runs.values()].filter(
+					(run) =>
+						run.id.startsWith("manual-") &&
+						run.issueId === webhook.agentSession.issue?.id &&
+						run.workspaceId === webhook.organizationId &&
+						run.status === "waiting",
+				);
+		if (candidates.length > 1)
+			throw new Error(
+				"More than one run is waiting on this issue. Answer the specific run in the Factory UI",
+			);
+		const factoryRun = candidates[0];
 		if (factoryRun) {
 			if (
 				factoryRun.status === "waiting" &&
 				factoryRun.reviewGate?.status !== "pending"
 			)
 				this.factoryRuntime!.answer(factoryRun.id, activityBody);
-			else
-				await this.agentSessionManager.createResponseActivity(
-					agentSessionId,
-					"This workflow is not waiting for clarification. Use the factory UI to inspect or terminate the run.",
-				);
+			else {
+				if (factoryRun.reviewGate?.status === "pending")
+					throw new Error(
+						"This run needs explicit human review in the Factory UI; a reply cannot approve it",
+					);
+				this.sendFactoryChat(factoryRun.id, activityBody);
+			}
 			return;
 		}
 		// When a user re-prompts and the session is parked, re-check blocking status.
@@ -5763,7 +6248,10 @@ ${taskSection}`;
 		const issueIdForParkedCheck = webhook.agentSession?.issue?.id;
 		if (
 			issueIdForParkedCheck &&
-			this.parkedSessions.has(issueIdForParkedCheck)
+			this.parkedSessions.get(issueIdForParkedCheck)?.agentSession.id ===
+				agentSessionId &&
+			this.parkedSessions.get(issueIdForParkedCheck)?.linearWorkspaceId ===
+				webhook.organizationId
 		) {
 			await this.handleParkedSessionReprompt(webhook, issueIdForParkedCheck);
 			return;
@@ -5785,6 +6273,63 @@ ${taskSection}`;
 			await this.handleAskUserQuestionResponse(webhook);
 			return;
 		}
+		if (!this.agentSessionManager.getSession(agentSessionId)) {
+			const receipt = this.getLaunchAdmission().get(
+				webhook.organizationId,
+				agentSessionId,
+			);
+			throw new Error(
+				receipt
+					? "The accepted launch is waiting for setup or needs startup recovery. Send stop to settle an interrupted launch before starting a new session"
+					: "No accepted session is associated with this reply. Start a new assignment or mention on an inactive issue",
+			);
+		}
+		const acceptedSession =
+			this.agentSessionManager.getSession(agentSessionId)!;
+		const acceptedWorkspace =
+			acceptedSession.triggerOrigin?.ticket?.workspaceId ??
+			this.repositories.get(
+				this.sessionRepositories.get(agentSessionId) ??
+					acceptedSession.repositories?.[0]?.repositoryId ??
+					"",
+			)?.linearWorkspaceId;
+		if (
+			(acceptedSession.issueContext?.issueId ?? acceptedSession.issueId) !==
+				webhook.agentSession.issue?.id ||
+			(acceptedWorkspace && acceptedWorkspace !== webhook.organizationId)
+		)
+			throw new Error("Session belongs to another workspace or issue");
+		const chat = this.factoryChatState(agentSessionId);
+		if (!chat.available)
+			throw new Error(
+				chat.reason ??
+					(acceptedSession.workflowChat === false
+						? "Chat was disabled in this session's accepted recipe. Use the existing run's question or recovery controls"
+						: "Chat unavailable"),
+			);
+		const otherRun =
+			this.activeTicketRun(
+				webhook.organizationId,
+				webhook.agentSession.issue?.id ?? "",
+				agentSessionId,
+			) ??
+			this.getLaunchAdmission()
+				.values()
+				.find(
+					(item) =>
+						item.sessionId !== agentSessionId &&
+						item.issueKey ===
+							LaunchAdmission.issueKey(
+								this.config.platform === "cli" ? "cli" : "linear",
+								webhook.organizationId,
+								webhook.agentSession.issue?.id ?? "",
+							) &&
+						this.ticketReceiptIsActive(item),
+				)?.sessionId;
+		if (otherRun)
+			throw new Error(
+				`This issue is owned by active run ${otherRun}; reply there instead`,
+			);
 
 		// Branch 3: Handle normal prompted activity (existing session continuation)
 		// Per CLAUDE.md: "an agentSession MUST exist and a repository MUST already
@@ -5892,6 +6437,15 @@ ${taskSection}`;
 		const sessions = this.agentSessionManager.getSessionsByIssueId(issue.id);
 		const activeThreadCount = sessions.length;
 
+		// Settle reservations too: unassignment can arrive during repository
+		// selection, a blocker wait, or asynchronous startup without a session.
+		for (const receipt of this.getLaunchAdmission().values()) {
+			if (
+				receipt.origin.ticket?.workspaceId === linearWorkspaceId &&
+				receipt.origin.ticket.issueId === issue.id
+			)
+				this.settleTicketLaunch(receipt.sessionId);
+		}
 		// Stop all agent runners for this issue
 		for (const session of sessions) {
 			this.logger.info(`Stopping agent runner for issue ${issue.identifier}`);
@@ -5901,6 +6455,8 @@ ${taskSection}`;
 			this.agentSessionManager.requestSessionStop(session.id);
 			session.agentRunner?.stop();
 		}
+
+		await this.savePersistedState();
 
 		// Post ONE farewell comment on the issue (not in any thread) if there were active sessions
 		if (activeThreadCount > 0) {
@@ -5928,6 +6484,13 @@ ${taskSection}`;
 	): Promise<void> {
 		if (this.stopping && message.type === "result") return;
 		await this.agentSessionManager.handleClaudeMessage(sessionId, message);
+		const session = this.agentSessionManager.getSession(sessionId);
+		const workspaceId = session?.triggerOrigin?.ticket?.workspaceId;
+		if (workspaceId && message.type === "result") {
+			const receipt = this.getLaunchAdmission().get(workspaceId, sessionId);
+			if (receipt && receipt.phase !== "settled")
+				this.getLaunchAdmission().update(receipt, { phase: "started" });
+		}
 		const run = this.factoryRuntime?.runs.get(sessionId);
 		if (run) {
 			this.saveFactorySession(run);
@@ -6076,6 +6639,21 @@ ${taskSection}`;
 					this.executeFactoryMcpTool(context, server, tool),
 			});
 			this.factoryRuntime = new WorkflowRuntime(this.cyrusHome, {
+				finished: async (run) => {
+					if (!run.triggerOrigin?.ticket || run.workflow.id === "simple")
+						return;
+					const body =
+						run.status === "completed"
+							? `Workflow ${run.workflow.name} completed. Inspect its results in the Factory UI.`
+							: `Workflow ${run.workflow.name} ${run.status}: ${run.error ?? "stopped by user"}. Inspect the existing run in the Factory UI before retrying.`;
+					await this.ticketLaunchFeedback(
+						{
+							organizationId: run.triggerOrigin.ticket.workspaceId,
+							agentSession: { id: run.triggerOrigin.ticket.agentSessionId },
+						},
+						body,
+					);
+				},
 				titleDefaults: (
 					runner = this.runnerSelectionService.getDefaultRunner(),
 				) => ({ runner, model: this.getDefaultModelForRunner(runner) }),
@@ -6346,11 +6924,20 @@ ${taskSection}`;
 				};
 			return this.factoryChat.state(id, run.workflow.chat ?? false);
 		}
+		if (this.ticketStartupIsIncomplete(session))
+			return {
+				enabled: session.workflowChat ?? false,
+				available: false,
+				reason:
+					"Startup was interrupted before the accepted workflow was ready. Send stop to settle this launch, then start a new session.",
+			};
 		const enabled =
+			session.workflowChat ??
 			(
 				run?.workflow ??
 				runtime.listWorkflows().find((item) => item.id === "simple")
-			)?.chat ?? false;
+			)?.chat ??
+			false;
 		if (!enabled) return { enabled: false, available: false };
 		if (
 			(run && !["running", "completed"].includes(run.status)) ||
@@ -6886,6 +7473,7 @@ ${taskSection}`;
 				type: "manual",
 				workflowId: workflow.id,
 				selectionMethod,
+				selection: { source: "manual" },
 				at: new Date().toISOString(),
 				manual: {
 					method: sourceRunId ? "follow-up" : "composer-api",
@@ -7129,12 +7717,20 @@ ${taskSection}`;
 
 	private recoverFactoryRuns(): void {
 		const runtime = this.getFactoryRuntime();
+		const admission = this.getLaunchAdmission();
 		const resumingSessions = new Set<string>();
 		// Original Simple issue sessions retain Cyrus's continuation path and timeline.
 		// Factory/manual Simple runs use their own checkpoint below.
 		for (const session of this.agentSessionManager.getActiveSessions()) {
 			if (
 				runtime.runs.has(session.id) ||
+				this.ticketStartupIsIncomplete(session) ||
+				admission
+					.values()
+					.some(
+						(receipt) =>
+							receipt.sessionId === session.id && receipt.phase === "settled",
+					) ||
 				!session.issue ||
 				!session.workspace?.path ||
 				(session.issueContext?.trackerId &&
@@ -8960,6 +9556,7 @@ ${input.userComment}
 		);
 
 		return {
+			pendingTriggerMessages: Object.fromEntries(this.pendingTriggerMessages),
 			pendingTriggerOrigins: Object.fromEntries(this.pendingTriggerOrigins),
 			agentSessions: serializedState.sessions,
 			agentSessionEntries: serializedState.entries,
@@ -8972,6 +9569,9 @@ ${input.userComment}
 	 * Restore EdgeWorker mappings from serialized state (v4.0 flat format)
 	 */
 	public restoreMappings(state: SerializableEdgeWorkerState): void {
+		this.pendingTriggerMessages = new Map(
+			Object.entries(state.pendingTriggerMessages ?? {}),
+		);
 		this.pendingTriggerOrigins = new Map(
 			Object.entries(state.pendingTriggerOrigins ?? {}),
 		);

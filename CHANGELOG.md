@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Long-press review-guide items to comment in a popover, see a small count badge on commented items, retain drafts across navigation and reloads, and submit them together with additional feedback from any guide page. Keep pending submissions locked when returning to the guide and preserve unsent edits when a request succeeds. ([Taskbot #70](https://taskbot.apps.janjaap.de/p/bobs-factory/t/70), [#15](https://github.com/Attraccess/bobs-factory/pull/15))
 
+- Select workflows from Linear assignments and mentions using `[workflow=<id>]`, retain readable selection/source history, and protect active issues against competing or redelivered launches. Replies respect the accepted run and runner steering capabilities; interrupted startup retains recovery ownership, unassignment releases it and cancels pending runner startup, and native stop redelivery cannot escalate to a full kill. Ticket context includes every comment and attachment page. ([Taskbot #55](https://taskbot.apps.janjaap.de/p/bobs-factory/t/55), [#13](https://github.com/Attraccess/bobs-factory/pull/13))
 - Automatically name new runs in the background with a globally configurable title agent and project context tools, including Cursor, Claude's URL-only HTTP servers, Gemini's URL-only SSE servers and relative server scripts. Show the run ID while naming, update titles live, preserve historical titles during recovery, and keep dashboard feedback usable for Slack/Zulip sessions across restarts and concurrent platform replies. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68), [#11](https://github.com/Attraccess/bobs-factory/pull/11))
 
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
@@ -40,6 +41,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Missing visual evidence now waits for capture assistance and retries capture/review in the same run, retaining verified accepted screenshots and completed work across restarts. Retry also recovers existing runs stuck at this gate. ([#14](https://github.com/Attraccess/bobs-factory/pull/14))
 - Acknowledge chat resume requests without reporting that the conversation has resumed while setup is still pending. ([#11](https://github.com/Attraccess/bobs-factory/pull/11))
 
 - Bob's clarification and implementation-blocker questions now explain the relevant facts, source of the decision and consequences in plain language; optional diagrams and images appear beside the answer box.

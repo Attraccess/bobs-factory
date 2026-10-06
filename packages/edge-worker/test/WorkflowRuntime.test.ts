@@ -1234,6 +1234,57 @@ it("rejects human review gates hidden in shared fanout workflows", () => {
 	).toThrow("outside fanout");
 });
 
+it("fails a capture-assistance checkpoint inside a frozen nested fanout without waiting", async () => {
+	const question = vi.fn();
+	const { runtime } = create({
+		question,
+		tool: async () => ({
+			captureBlocked: true,
+			approved: false,
+			questions: ["Supply capture access"],
+		}),
+	});
+	const captureFlow = {
+		id: "capture-flow",
+		name: "Capture flow",
+		steps: [
+			agent("capture"),
+			agent("visual-review"),
+			{ id: "gate", name: "Gate", type: "tool", tool: "visual-gate" },
+		],
+	};
+	const run = start(
+		runtime,
+		workflow(
+			[
+				{
+					id: "parallel",
+					name: "Parallel",
+					type: "fanout",
+					groups: [
+						[
+							{
+								id: "child",
+								name: "Child",
+								type: "workflow",
+								workflow: "capture-flow",
+							},
+						],
+					],
+				},
+			],
+			[captureFlow],
+		),
+	);
+	run.workflowDefinitions!.push(
+		validateWorkflows([...defaultWorkflows, captureFlow]).at(-1)!,
+	);
+	await runtime.launch(run);
+	expect(run.status).toBe("failed");
+	expect(run.error).toBe("Human checkpoints belong outside fanout branches");
+	expect(question).not.toHaveBeenCalled();
+});
+
 it("grants a bounded persisted retry budget only to the exhausted nested step", async () => {
 	let approve = false;
 	const hooks = {
