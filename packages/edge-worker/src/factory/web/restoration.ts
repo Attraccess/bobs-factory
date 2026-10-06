@@ -6,6 +6,7 @@ import {
 	useRef,
 	useState,
 } from "react";
+import { onAccessLost } from "./auth-state";
 
 const snapshotKey = "bobs-factory-update-v1";
 const maxBytes = 512000,
@@ -415,3 +416,9 @@ export function completeRestoration() {
 	}
 	restored = undefined;
 }
+
+onAccessLost(() => {
+	drafts.clear();
+	collectors.clear();
+	restored = undefined;
+});

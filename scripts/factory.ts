@@ -10,6 +10,8 @@ const { values } = parseArgs({
 	options: {
 		repo: { type: "string", default: process.cwd() },
 		port: { type: "string", default: "3457" },
+		origin: { type: "string" },
+		"session-hours": { type: "string", default: "12" },
 		agent: { type: "string", default: "claude" },
 		model: { type: "string" },
 		home: { type: "string", default: join(homedir(), ".bobs-factory") },
@@ -42,6 +44,8 @@ try {
 if (!baseBranch)
 	throw new Error("Check out a branch before starting the factory");
 process.env.CYRUS_FACTORY_PORT = String(port);
+if (values.origin) process.env.CYRUS_FACTORY_ORIGIN = values.origin;
+process.env.CYRUS_FACTORY_SESSION_HOURS = values["session-hours"];
 const worker = new EdgeWorker({
 	platform: "cli",
 	cyrusHome: home,

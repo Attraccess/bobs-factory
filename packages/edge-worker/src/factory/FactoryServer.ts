@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -7,6 +7,11 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { activityMarkers, activityPage } from "./ActivityPage.js";
 import { reasoningLevels, serviceTierRunners } from "./AgentSettings.js";
+import {
+	type FactoryAccess,
+	FactoryAuth,
+	factoryAccess,
+} from "./FactoryAuth.js";
 import { CaptureSchema, verifiedScreenshot } from "./FactoryTools.js";
 import { factoryWebAssets } from "./FactoryWebAssets.js";
 import {
@@ -49,7 +54,22 @@ interface ServerHooks {
 export class FactoryServer {
 	readonly app: FastifyInstance;
 	private streams = new Set<ServerResponse>();
-	constructor(runtime: WorkflowRuntime, hooks: ServerHooks) {
+	readonly auth: FactoryAuth;
+	private streamSessions = new Map<
+		ServerResponse,
+		{ token: string; origin: string }
+	>();
+	constructor(
+		runtime: WorkflowRuntime,
+		hooks: ServerHooks,
+		access: FactoryAccess = factoryAccess(
+			Number(process.env.CYRUS_FACTORY_PORT ?? 3457),
+			process.env.CYRUS_FACTORY_ORIGIN,
+			Number(process.env.CYRUS_FACTORY_SESSION_HOURS ?? 12),
+		),
+	) {
+		const shell = factoryWebAssets();
+		this.auth = new FactoryAuth(runtime.directory, access);
 		this.app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
 		this.app.setErrorHandler((error, _request, reply) =>
 			reply.code(error instanceof z.ZodError ? 400 : 409).send({
@@ -61,6 +81,10 @@ export class FactoryServer {
 							: "Request failed",
 			}),
 		);
+		const unsubscribeAuth = this.auth.subscribe(() => {
+			for (const [stream, session] of this.streamSessions)
+				if (!this.auth.session(session.token, session.origin)) stream.end();
+		});
 		const pendingIds = new Set<string>();
 		let configChanged = false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -75,7 +99,11 @@ export class FactoryServer {
 				pendingIds.clear();
 				configChanged = false;
 				for (const stream of this.streams) {
-					if (stream.destroyed) this.streams.delete(stream);
+					const session = this.streamSessions.get(stream);
+					if (!session || !this.auth.session(session.token, session.origin))
+						stream.end();
+					else if (stream.destroyed || stream.writableEnded)
+						this.streams.delete(stream);
 					else if (!stream.write(data)) stream.destroy(); // Slow readers reconnect and refresh, never queue unlimited events.
 				}
 			}, 500);
@@ -83,13 +111,14 @@ export class FactoryServer {
 		const unsubscribeRuntime = runtime.subscribe(broadcast);
 		const unsubscribeSessions = hooks.subscribe?.((id) => broadcast({ id }));
 		this.app.addHook("preClose", async () => {
+			unsubscribeAuth();
+			this.auth.close();
 			unsubscribeRuntime();
 			unsubscribeSessions?.();
 			if (timer) clearTimeout(timer);
 			for (const stream of this.streams) stream.end();
 			this.streams.clear();
 		});
-		const shell = factoryWebAssets();
 		const configRevision = () =>
 			createHash("sha256")
 				.update(
@@ -113,21 +142,58 @@ export class FactoryServer {
 				reply.header("X-Factory-Build", shell.build);
 			}
 		});
-		// This separate listener is loopback-only and never registered on Cyrus's webhook tunnel.
+		const originFor = (request: FastifyRequest) =>
+			access.origins.find(
+				(origin) => new URL(origin).host === request.headers.host,
+			);
+		const cookieName = (origin: string) =>
+			origin.startsWith("https:")
+				? "__Host-factory-session"
+				: "factory-local-session";
+		const cookie = (request: FastifyRequest, name: string) =>
+			request.headers.cookie
+				?.split(";")
+				.map((c) => c.trim())
+				.find((c) => c.startsWith(`${name}=`))
+				?.slice(name.length + 1);
+		const tokenFor = (request: FastifyRequest) =>
+			cookie(request, cookieName(originFor(request)!));
+		const setCookie = (
+			reply: import("fastify").FastifyReply,
+			origin: string,
+			token: string,
+			expires: number,
+		) =>
+			reply.header(
+				"Set-Cookie",
+				`${cookieName(origin)}=${token}; Path=/; HttpOnly; SameSite=Strict; ${origin.startsWith("https:") ? "Secure; " : ""}Expires=${new Date(expires).toUTCString()}`,
+			);
+		const publicPaths = new Set([
+			"/api/version",
+			"/api/auth/status",
+			"/api/auth/login/options",
+			"/api/auth/login/verify",
+			"/api/auth/register/options",
+			"/api/auth/register/verify",
+			...shell.assets.map((asset) => asset.path),
+		]);
 		this.app.addHook("onRequest", async (request, reply) => {
-			const host = request.headers.host ?? "";
-			if (!/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host))
-				return reply.code(403).send({ error: "Local UI only" });
+			this.auth.checkRecovery();
+			const origin = originFor(request);
+			if (!origin)
+				return reply.code(403).send({ error: "Invalid Factory authority" });
+			if (request.headers.origin && request.headers.origin !== origin)
+				return reply.code(403).send({ error: "Invalid origin" });
 			if (!["GET", "HEAD"].includes(request.method)) {
-				const origin = request.headers.origin;
-				if (origin && origin !== `http://${host}`)
-					return reply.code(403).send({ error: "Invalid origin" });
+				if (request.headers.origin !== origin)
+					return reply
+						.code(403)
+						.send({ error: "Exact Factory origin required" });
 				if (request.headers["x-factory-request"] !== "1")
 					return reply
 						.code(403)
 						.send({ error: "Factory request header required" });
 				const version = request.headers["x-factory-build"];
-				// Header-less local automation remains compatible; the versioned UI always sends it.
 				if (version !== undefined && version !== shell.build)
 					return reply.code(409).send({
 						error:
@@ -135,10 +201,119 @@ export class FactoryServer {
 						code: "FACTORY_VERSION_MISMATCH",
 					});
 			}
+			if (
+				!publicPaths.has(request.url.split("?")[0]!) &&
+				!this.auth.session(tokenFor(request), origin)
+			)
+				return reply.code(401).send({
+					error: "Sign in with a passkey",
+					code: "FACTORY_AUTH_REQUIRED",
+				});
 		});
+		this.app.addHook("preHandler", async (request, reply) => {
+			if (
+				!publicPaths.has(request.url.split("?")[0]!) &&
+				!this.auth.session(tokenFor(request), originFor(request)!)
+			)
+				return reply.code(401).send({
+					error: "Sign in with a passkey",
+					code: "FACTORY_AUTH_REQUIRED",
+				});
+		});
+		// Never let an individual media handler override sensitive response policy.
+		this.app.addHook("onSend", async (request, reply) => {
+			if (
+				!shell.assets.some((asset) => asset.path === request.url.split("?")[0])
+			)
+				reply.header("Cache-Control", "no-store");
+		});
+		this.app.get("/api/auth/status", (request) => {
+			const origin = originFor(request)!;
+			const session = this.auth.session(tokenFor(request), origin);
+			return {
+				authenticated: Boolean(session),
+				expires: session?.expires,
+				setupRequired: !this.auth.store.state.credentials.some(
+					(c) => c.origin === origin,
+				),
+				origin,
+			};
+		});
+		for (const purpose of ["login", "register"] as const) {
+			this.app.post(`/api/auth/${purpose}/options`, async (request, reply) => {
+				const body = z
+					.object({
+						grant: z.string().max(100).optional(),
+						label: z.string().max(80).optional(),
+					})
+					.parse(request.body);
+				const binding = randomBytes(32).toString("base64url");
+				const origin = originFor(request)!;
+				const result = await this.auth.options(
+					purpose,
+					origin,
+					binding,
+					tokenFor(request),
+					body.grant,
+					body.label,
+				);
+				reply.header(
+					"Set-Cookie",
+					`factory-transaction=${binding}; Path=/; HttpOnly; SameSite=Strict; ${origin.startsWith("https:") ? "Secure; " : ""}Max-Age=300`,
+				);
+				return result;
+			});
+			this.app.post(`/api/auth/${purpose}/verify`, async (request, reply) => {
+				const body = z
+					.object({ transaction: z.string().max(100), response: z.any() })
+					.parse(request.body);
+				const origin = originFor(request)!;
+				const previous = tokenFor(request);
+				const result = await this.auth.verify(
+					purpose,
+					body.transaction,
+					origin,
+					cookie(request, "factory-transaction") ?? "",
+					body.response,
+				);
+				this.auth.logout(previous, origin);
+				setCookie(reply, origin, result.token, result.expires);
+				return { authenticated: true, expires: result.expires };
+			});
+		}
+		this.app.post("/api/auth/logout", (request, reply) => {
+			const origin = originFor(request)!;
+			this.auth.logout(tokenFor(request), origin);
+			setCookie(reply, origin, "", 0);
+			return { authenticated: false };
+		});
+		this.app.get("/api/auth/credentials", (request) =>
+			this.auth.credentials(tokenFor(request), originFor(request)!),
+		);
+		this.app.delete<{ Params: { id: string } }>(
+			"/api/auth/credentials/:id",
+			(request) => {
+				this.auth.remove(
+					tokenFor(request),
+					originFor(request)!,
+					request.params.id,
+				);
+				return { removed: true };
+			},
+		);
 		for (const asset of shell.assets) {
-			this.app.get(asset.path, (_request, reply) =>
-				reply
+			this.app.get(asset.path, (request, reply) => {
+				const url = new URL(originFor(request)!);
+				if (
+					asset.path === "/" &&
+					url.protocol === "http:" &&
+					url.hostname === "127.0.0.1"
+				) {
+					const local = `http://localhost${url.port ? `:${url.port}` : ""}`;
+					if (access.origins.includes(local))
+						return reply.header("Cache-Control", "no-store").redirect(local);
+				}
+				return reply
 					.header(
 						"Cache-Control",
 						asset.immutable
@@ -148,14 +323,14 @@ export class FactoryServer {
 					.header("X-Factory-Build", shell.build)
 					.header("X-Content-Type-Options", "nosniff")
 					.type(asset.type)
-					.send(asset.bytes),
-			);
+					.send(asset.bytes);
+			});
 		}
 		this.app.get("/api/version", () => ({
 			build: shell.build,
 			protocol: shell.protocol,
 		}));
-		this.app.get("/api/events", (_request, reply) => {
+		this.app.get("/api/events", (request, reply) => {
 			reply.hijack();
 			const stream = reply.raw;
 			stream.writeHead(200, {
@@ -166,13 +341,23 @@ export class FactoryServer {
 				"X-Accel-Buffering": "no",
 			});
 			this.streams.add(stream);
-			stream.write("event: ready\ndata: {}\n\n");
-			const heartbeat = setInterval(
-				() => stream.write(": heartbeat\n\n"),
-				15000,
+			const origin = originFor(request)!,
+				token = tokenFor(request)!;
+			const session = this.auth.session(token, origin)!;
+			this.streamSessions.set(stream, { token, origin });
+			const expiry = setTimeout(
+				() => stream.end(),
+				Math.max(0, session.expires - Date.now()),
 			);
+			stream.write("event: ready\ndata: {}\n\n");
+			const heartbeat = setInterval(() => {
+				if (!this.auth.session(token, origin)) stream.end();
+				else stream.write(": heartbeat\n\n");
+			}, 15000);
 			stream.on("close", () => {
 				clearInterval(heartbeat);
+				clearTimeout(expiry);
+				this.streamSessions.delete(stream);
 				this.streams.delete(stream);
 			});
 		});
@@ -716,7 +901,12 @@ export class FactoryServer {
 	async start(port: number): Promise<void> {
 		if (!Number.isInteger(port) || port < 0 || port > 65535)
 			throw new Error("Invalid factory UI port");
-		await this.app.listen({ port, host: "127.0.0.1" });
+		try {
+			await this.app.listen({ port, host: "127.0.0.1" });
+		} catch (error) {
+			await this.app.close();
+			throw error;
+		}
 	}
 	async stop(): Promise<void> {
 		await this.app.close();

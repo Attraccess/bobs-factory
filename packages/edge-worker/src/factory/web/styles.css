@@ -4104,3 +4104,10 @@ kbd {
 	max-width: 65ch;
 	line-height: 1.65;
 }
+
+.auth-screen { min-height: 100dvh; display: grid; place-items: center; padding: 1.25rem; }
+.auth-card { width: min(100%, 32rem); padding: 1.5rem; border: 1px solid var(--border, #d1d5db); border-radius: 1rem; background: var(--surface, Canvas); color: CanvasText; }
+.auth-card label { display: grid; gap: .5rem; margin-block: 1rem; }
+.auth-card input { width: 100%; min-height: 2.75rem; padding: .6rem; border: 1px solid #888; border-radius: .5rem; }
+.auth-card button { margin: .4rem .4rem .4rem 0; }
+.auth-controls { padding: .5rem 1rem; }

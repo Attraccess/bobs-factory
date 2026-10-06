@@ -14,8 +14,9 @@ import { runInNewContext } from "node:vm";
 import { buildSync } from "esbuild";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { factoryWebAssets } from "../src/factory/FactoryWebAssets.js";
+import { checkAccess } from "../src/factory/web/auth-state.js";
 import {
 	installApp,
 	pwaState,
@@ -46,6 +47,13 @@ import {
 import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
 import { reviewKey } from "../src/factory/web/review-state.js";
 
+beforeEach(async () => {
+	const previous = globalThis.fetch;
+	globalThis.fetch = async () =>
+		Response.json({ authenticated: true, expires: Date.now() + 3600000 });
+	await checkAccess();
+	globalThis.fetch = previous;
+});
 const build = "b".repeat(24),
 	oldBuild = "a".repeat(24),
 	prefix = "bobs-factory-shell-";

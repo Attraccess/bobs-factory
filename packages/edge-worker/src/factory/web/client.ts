@@ -7,6 +7,13 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
+	accessGeneration,
+	accessRequired,
+	accessSignal,
+	accessState,
+	onAccessLost,
+} from "./auth-state";
+import {
 	authoritativeReady,
 	beginWrite,
 	checkVersion,
@@ -18,8 +25,16 @@ import {
 } from "./pwa";
 export const client = new QueryClient({
 	defaultOptions: {
-		queries: { retry: 2, refetchOnWindowFocus: true, staleTime: 1000 },
+		queries: {
+			retry: (count) => accessState().status === "authenticated" && count < 2,
+			refetchOnWindowFocus: true,
+			staleTime: 1000,
+		},
 	},
+});
+onAccessLost(() => {
+	void client.cancelQueries();
+	client.clear();
 });
 export function useLiveUpdates() {
 	const cache = useQueryClient();
@@ -52,7 +67,11 @@ export function useLiveUpdates() {
 				throw new Error("Live connection closed");
 			},
 			onerror(cause) {
-				if (pwaState().status === "mismatch") throw cause; // Await an explicit update; do not accumulate rejected SSE streams.
+				if (
+					accessState().status !== "authenticated" ||
+					pwaState().status === "mismatch"
+				)
+					throw cause; // Await an explicit update; do not accumulate rejected SSE streams.
 				disconnected();
 				if (!controller.signal.aborted)
 					setError(
@@ -73,6 +92,10 @@ export function useLiveUpdates() {
 }
 export async function validateLiveConnection(response: Response) {
 	try {
+		if (response.status === 401) {
+			accessRequired("Your session expired. Sign in again.");
+			throw new Error("Sign in required");
+		}
 		if (
 			!response.ok ||
 			!response.headers.get("content-type")?.includes("text/event-stream")
@@ -89,6 +112,10 @@ export async function api<T = any>(
 	path: string,
 	options: RequestInit = {},
 ): Promise<T> {
+	const epoch = accessGeneration();
+	const authSignal = accessSignal();
+	if (accessState().status !== "authenticated")
+		throw new Error("Sign in required");
 	const write = !["GET", "HEAD"].includes(
 		(options.method ?? "GET").toUpperCase(),
 	);
@@ -106,6 +133,9 @@ export async function api<T = any>(
 			);
 		const response = await fetch(path, {
 			...options,
+			signal: options.signal
+				? AbortSignal.any([options.signal, authSignal])
+				: authSignal,
 			cache: "no-store",
 			headers: {
 				"Content-Type": "application/json",
@@ -115,11 +145,17 @@ export async function api<T = any>(
 				"X-Factory-Build": uiBuild,
 			},
 		});
+		if (response.status === 401) {
+			accessRequired("Your session expired. Sign in again.");
+			throw new Error("Sign in required");
+		}
+		if (epoch !== accessGeneration()) throw new Error("Session changed");
 		if (response.headers.get("X-Factory-Build") !== uiBuild) {
 			versionMismatch(response.headers.get("X-Factory-Build") ?? undefined);
 			throw new Error("Factory version changed. Update before continuing.");
 		}
 		const body = await response.json();
+		if (epoch !== accessGeneration()) throw new Error("Session changed");
 		if (!response.ok) {
 			if (response.status >= 500) disconnected();
 			throw new Error(body.error ?? `Request failed (${response.status})`);
@@ -134,6 +170,7 @@ export async function api<T = any>(
 }
 let refreshing: Promise<void> | undefined;
 export function refreshFactory() {
+	if (accessState().status !== "authenticated") return Promise.resolve();
 	refreshing ??= refreshFactoryData().finally(() => {
 		refreshing = undefined;
 	});

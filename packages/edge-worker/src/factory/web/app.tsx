@@ -12,6 +12,7 @@ import {
 	useParams,
 } from "react-router-dom";
 import { ArtifactCard, Inspector } from "./artifacts";
+import { AccessBoundary, PasskeyControls } from "./auth";
 import {
 	active,
 	ago,
@@ -1185,7 +1186,10 @@ createRoot(document.getElementById("root")!).render(
 	<QueryClientProvider client={client}>
 		<HashRouter>
 			<ToastProvider>
-				<App />
+				<AccessBoundary>
+					<PasskeyControls />
+					<App />
+				</AccessBoundary>
 			</ToastProvider>
 		</HashRouter>
 	</QueryClientProvider>,
