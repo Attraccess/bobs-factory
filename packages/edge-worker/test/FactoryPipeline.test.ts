@@ -388,6 +388,197 @@ it("rechecks live CI before handing a draft PR to a human", async () => {
 	expect(postComment).not.toHaveBeenCalled();
 });
 
+it.each([
+	"conflicts",
+	"checks",
+	"feedback",
+])("routes actionable handoff %s through the configured fixer", async (kind) => {
+	const input = context();
+	input.run.outputs.ci = { approved: true, headSha: "head" };
+	input.step.branches = [
+		{ when: { path: "fix", equals: true }, next: "ci-fix" },
+	];
+	const publish = vi.fn();
+	const tools = new FactoryTools({
+		postComment: publish,
+		command: async (_ctx, exe, args) => {
+			if (exe === "git") return args[0] === "status" ? "" : "head";
+			if (args.includes("graphql"))
+				return JSON.stringify(
+					providerReceipt(
+						kind === "conflicts"
+							? { mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" }
+							: kind === "checks"
+								? {
+										statusCheckRollup: {
+											contexts: {
+												nodes: [{ name: "test", conclusion: "FAILURE" }],
+												pageInfo: {},
+											},
+										},
+									}
+								: {},
+					),
+				);
+			if (args[0] === "api")
+				return kind === "feedback"
+					? JSON.stringify([[{ id: 42, body: "Please fix the bug" }]])
+					: "[[]]";
+			return JSON.stringify({ headRefOid: "head", state: "OPEN" });
+		},
+	});
+	const result = await tools.tool(input);
+	expect(result).toMatchObject({
+		fix: true,
+		reviewReady: false,
+		headSha: "head",
+	});
+	expect(input.run.outputs.ci).toEqual(result);
+	expect(publish).not.toHaveBeenCalled();
+});
+
+it.each([
+	"unknown",
+	"pending-check",
+])("waits for temporary handoff readiness (%s) without publishing early", async (state) => {
+	vi.useFakeTimers();
+	try {
+		const input = context();
+		input.run.outputs.ci = { approved: true, headSha: "head" };
+		input.run.outputs.guide = {
+			goal: "Task",
+			summary: "Built",
+			decision: { status: "ready", summary: "Reviewed" },
+			behavior: [],
+			requirements: [],
+			checks: [],
+			risks: [],
+			reviewInstructions: [],
+		};
+		input.log = vi.fn();
+		let polls = 0;
+		const publish = vi.fn();
+		const tools = new FactoryTools({
+			postComment: publish,
+			command: async (_context, exe, args) => {
+				if (exe === "git") return args[0] === "status" ? "" : "head";
+				if (args.includes("graphql")) {
+					polls++;
+					const extra =
+						polls > 1
+							? {}
+							: state === "unknown"
+								? { mergeable: "UNKNOWN", mergeStateStatus: "UNKNOWN" }
+								: {
+										statusCheckRollup: {
+											contexts: {
+												nodes: [{ name: "test", status: "IN_PROGRESS" }],
+												pageInfo: {},
+											},
+										},
+									};
+					return JSON.stringify(providerReceipt(extra));
+				}
+				if (args[0] === "api") return "[[]]";
+				if (args[1] === "view")
+					return JSON.stringify({ headRefOid: "head", state: "OPEN" });
+				return "";
+			},
+		});
+		const execution = tools.tool(input);
+		void execution.catch(() => {});
+		await vi.advanceTimersByTimeAsync(1);
+		expect(polls).toBe(1);
+		expect(publish).not.toHaveBeenCalled();
+		expect(input.run.outputs["merge-readiness"]).toMatchObject({
+			reviewReady: false,
+		});
+		await vi.advanceTimersByTimeAsync(10000);
+		await expect(execution).resolves.toMatchObject({
+			ready: true,
+			headSha: "head",
+		});
+		expect(polls).toBe(2);
+		expect(publish).toHaveBeenCalledOnce();
+		expect(input.run.outputs["merge-readiness"]).toMatchObject({
+			reviewReady: true,
+		});
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+it.each([
+	"revision",
+	"dirty",
+	"feedback",
+	"abort",
+])("stops a waiting handoff when %s changes", async (change) => {
+	vi.useFakeTimers();
+	try {
+		const input = context();
+		input.run.outputs.ci = { approved: true, headSha: "head" };
+		const controller = new AbortController();
+		input.signal = controller.signal;
+		let polls = 0;
+		const publish = vi.fn();
+		const tools = new FactoryTools({
+			postComment: publish,
+			command: async (_ctx, exe, args) => {
+				if (exe === "git")
+					return args[0] === "status"
+						? polls > 1 && change === "dirty"
+							? " M changed.ts"
+							: ""
+						: "head";
+				if (args.includes("graphql")) {
+					polls++;
+					return JSON.stringify(
+						providerReceipt(
+							polls === 1
+								? { mergeable: "UNKNOWN" }
+								: change === "revision"
+									? { headRefOid: "new" }
+									: {},
+						),
+					);
+				}
+				if (args[0] === "api")
+					return polls > 1 && change === "feedback"
+						? JSON.stringify([[{ id: 42, body: "Please fix the bug" }]])
+						: "[[]]";
+				return JSON.stringify({ headRefOid: "head", state: "OPEN" });
+			},
+		});
+		const execution = tools.tool(input);
+		void execution.catch(() => {});
+		await vi.advanceTimersByTimeAsync(1);
+		if (change === "abort") controller.abort();
+		else await vi.advanceTimersByTimeAsync(10000);
+		await expect(execution).rejects.toThrow(
+			change === "abort"
+				? "Run terminated"
+				: change === "dirty"
+					? "Worktree changed"
+					: "Merge readiness changed",
+		);
+		expect(publish).not.toHaveBeenCalled();
+		if (change === "feedback")
+			expect(input.run.outputs["merge-readiness"]).toMatchObject({
+				fix: true,
+				blockers: expect.arrayContaining([
+					{
+						kind: "comments",
+						action: "fix",
+						message: "1 PR comment(s) need assessment",
+					},
+				]),
+			});
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
 it("publishes a grounded human review guide while keeping the PR draft", async () => {
 	const input = context();
 	input.run.outputs.ci = { approved: true, headSha: "head" };

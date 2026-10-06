@@ -20,7 +20,11 @@ import {
 	AgentSettingsSchema,
 	resolveAgentSettings,
 } from "./AgentSettings.js";
-import { defaultWorkflows, upgradeWorkflows } from "./defaultWorkflows.js";
+import {
+	defaultWorkflows,
+	upgradeHandoffReadiness,
+	upgradeWorkflows,
+} from "./defaultWorkflows.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
@@ -576,6 +580,20 @@ export class WorkflowRuntime {
 		task?: (signal: AbortSignal) => Promise<void>,
 	): Promise<void> {
 		try {
+			for (const definition of [
+				run.workflow,
+				...(run.workflowDefinitions ?? []),
+			]) {
+				if (
+					["factory", "factory-pipeline"].includes(definition.id) &&
+					upgradeHandoffReadiness(definition.steps)
+				)
+					this.log(
+						run,
+						"run",
+						"Enabled handoff recovery through the existing CI fixer; saved checkpoint, roles and completed work retained.",
+					);
+			}
 			if (run.contractVersion !== 2) {
 				if (run.contractVersion !== undefined && run.contractVersion !== 1)
 					throw new Error(

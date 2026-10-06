@@ -43,6 +43,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Wait through temporary GitHub mergeability calculations and pending checks during factory handoff, and route actionable conflicts, check failures and feedback through the existing fix/review cycle. Saved runs retain completed work and show the current blocker instead of repeatedly failing handoff.
+
+- Confirm approved factory PR merges after issue cleanup removes the worktree, and recover the saved final merge step without recreating unfinished work or repeating review.
+
 - Retry automatic run-title timeouts once with a longer deadline, show naming failures, and let operators retry naming with current settings without rerunning the workflow.
 
 - Missing visual evidence now waits for capture assistance and retries capture/review in the same run, retaining verified accepted screenshots and completed work across restarts. Retry also recovers existing runs stuck at this gate. ([#14](https://github.com/Attraccess/bobs-factory/pull/14))
