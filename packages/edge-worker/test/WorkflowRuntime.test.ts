@@ -1003,7 +1003,12 @@ it.each([
 ])("restores unanswered questions without reasking, and waits for a human (legacy=%s)", async (legacy) => {
 	const question = vi.fn(async () => {});
 	const { runtime, home } = create({
-		agent: async () => ({ questions: ["Which provider?"] }),
+		agent: async () => ({
+			questions: ["Which provider?"],
+			questionRecommendations: [
+				{ questionIndex: 0, answer: "Codex", reason: "Existing runner" },
+			],
+		}),
 		question,
 	});
 	const run = start(
@@ -1017,8 +1022,12 @@ it.each([
 	await vi.waitFor(() => expect(question).toHaveBeenCalledTimes(1));
 	await runtime.shutdown();
 	expect(run.status).toBe("waiting");
+	const batch = run.questionBatchId;
+	expect(batch).toEqual(expect.any(String));
+	expect(run.answers).toEqual([]);
 	if (legacy) {
 		delete run.checkpoint;
+		delete run.questionBatchId;
 		runtime.save(run);
 	}
 	const agentHook = vi.fn(async (context: ExecutionContext) => {
@@ -1033,6 +1042,13 @@ it.each([
 		),
 	);
 	expect(restarted.get(run.id).status).toBe("waiting");
+	expect(restarted.get(run.id).questionRecommendations).toEqual([
+		{ questionIndex: 0, answer: "Codex", reason: "Existing runner" },
+	]);
+	if (!legacy) expect(restarted.get(run.id).questionBatchId).toBe(batch);
+	const restoredBatch = restarted.get(run.id).questionBatchId;
+	expect(restarted.get(run.id).questionBatchId).toBe(restoredBatch);
+	expect(restarted.get(run.id).answers).toEqual([]);
 	expect(question).toHaveBeenCalledTimes(1);
 	expect(agentHook).not.toHaveBeenCalled();
 	restarted.answer(run.id, "Codex");
@@ -1044,6 +1060,8 @@ it.each([
 		"implement",
 	]);
 	expect(restarted.get(run.id).history).toHaveLength(3);
+	expect(restarted.get(run.id).questionRecommendations).toBeUndefined();
+	expect(restarted.get(run.id).questionBatchId).toBeUndefined();
 });
 it("keeps an accepted answer across a crash before the clarifier continues", async () => {
 	const { runtime, home } = create({
@@ -2231,4 +2249,45 @@ it("preserves a screenshot recipe with customized result handling or nonvisual r
 			updated.steps.find((s) => s.id === "capture")!.qaContract,
 		).toBeUndefined();
 	}
+});
+
+it("assigns new identities to repeated question batches and labels ticket suggestions", async () => {
+	const track = vi.fn<NonNullable<RuntimeHooks["track"]>>(async () => {});
+	const recommendation = {
+		questionIndex: 0,
+		answer: "Wait",
+		reason: "Approval needed",
+	};
+	const { runtime } = create({
+		agent: async () => ({
+			questions: ["Proceed?"],
+			questionRecommendations: [recommendation],
+		}),
+		track,
+	});
+	const run = start(
+		runtime,
+		workflow([agent("clarify", { askQuestions: true })]),
+	);
+	run.ticketReference = {
+		provider: "taskbot",
+		instance: "https://taskbot.test",
+		project: "test",
+		id: 1,
+		url: "https://taskbot.test/1",
+		server: "taskbot",
+	};
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const batch = run.questionBatchId;
+	expect(run.answers).toEqual([]);
+	expect(track.mock.calls.at(-1)?.[1].body).toContain("Suggested answer: Wait");
+	expect(track.mock.calls.at(-1)?.[1].body).toContain(
+		"explicit reply or Send answers",
+	);
+	runtime.answer(run.id, "Wait");
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(run.questionBatchId).not.toBe(batch);
+	expect(run.answers).toHaveLength(1);
+	runtime.stop(run.id);
 });

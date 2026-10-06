@@ -454,3 +454,45 @@ it("retries IO failures during correction by revalidating the completed candidat
 	expect(f.runner.start).toHaveBeenCalledOnce();
 	expect(f.ctx.resumeAgent!.rejected).toBeUndefined();
 });
+
+it("corrects invalid recommendation indices from a custom question-enabled role", async () => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "custom-questions",
+		name: "Questions",
+		type: "agent",
+		prompt: "Ask a question",
+		askQuestions: true,
+	};
+	f.ctx.run.step = "custom-questions";
+	const valid = {
+		questions: ["Proceed?"],
+		questionRecommendations: [
+			{ questionIndex: 0, answer: "Wait", reason: "Approval needed" },
+		],
+		customField: true,
+	};
+	const invalid = {
+		...valid,
+		questionRecommendations: [
+			{ ...valid.questionRecommendations[0], questionIndex: 2 },
+		],
+	};
+	f.ctx.resumeAgent!.result!.output = invalid;
+	f.runner.getMessages = () => [
+		{ type: "result", result: JSON.stringify(valid) },
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toEqual(valid);
+	expect(f.getInput().outputCorrection).toMatchObject({
+		attempts: 1,
+		output: invalid,
+	});
+	expect(f.getInput().outputCorrection.issues).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				path: "/questionRecommendations/0/questionIndex",
+			}),
+		]),
+	);
+	expect(f.runner.start).toHaveBeenCalledOnce();
+});
