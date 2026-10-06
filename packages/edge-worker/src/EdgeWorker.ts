@@ -1393,7 +1393,7 @@ export class EdgeWorker extends EventEmitter {
 				this.activeWebhookCount--;
 			},
 			onStateChange: () => this.savePersistedState(),
-			persistMessage: () => this.savePersistedState(true),
+			persistMessage: (update) => this.savePersistedState(true, update),
 			isShuttingDown: () => this.stopping,
 			onClaudeError: (error) => this.handleClaudeError(error),
 		};
@@ -9958,8 +9958,12 @@ ${input.userComment}
 	/**
 	 * Save current EdgeWorker state for all repositories
 	 */
-	private savePersistedState(requireSuccess = false): Promise<void> {
+	private savePersistedState(
+		requireSuccess = false,
+		update?: () => () => void,
+	): Promise<void> {
 		const save = this.stateSaveQueue.then(async () => {
+			const rollback = update?.();
 			try {
 				const state = this.serializeMappings();
 				await this.persistenceManager.saveEdgeWorkerState(state);
@@ -9967,6 +9971,8 @@ ${input.userComment}
 					`✅ Saved EdgeWorker state for ${Object.keys(state.agentSessions || {}).length} sessions`,
 				);
 			} catch (error) {
+				// Roll back before the next queued mutation or lifecycle snapshot.
+				rollback?.();
 				this.logger.error(`Failed to save persisted EdgeWorker state:`, error);
 				if (requireSuccess) throw error;
 			}

@@ -1,9 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentSessionStatus } from "cyrus-core";
+import { AgentSessionStatus, PersistenceManager } from "cyrus-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { ChatSessionHandler } from "../src/ChatSessionHandler.js";
+import { EdgeWorker } from "../src/EdgeWorker.js";
 import { capRunnerStarts, SessionSemaphore } from "../src/RunnerConcurrency.js";
 
 const homes: string[] = [];
@@ -33,7 +34,22 @@ async function fixture(
 	let threadReads = 0;
 	const notifyBusy = vi.fn(async () => {});
 	const onNewSession = vi.fn();
-	const persistMessage = vi.fn(async () => {});
+	const persistence = new PersistenceManager(join(home, "state"));
+	const persistMessage = vi.fn(
+		persistence.saveEdgeWorkerState.bind(persistence),
+	);
+	const worker: any = Object.assign(Object.create(EdgeWorker.prototype), {
+		stateSaveQueue: Promise.resolve(),
+		persistenceManager: { saveEdgeWorkerState: persistMessage },
+		logger: { debug: () => {}, error: () => {} },
+		serializeMappings: () => {
+			const saved = handler.serializeState();
+			return {
+				agentSessions: saved.sessions,
+				agentSessionEntries: saved.entries,
+			};
+		},
+	});
 	const handler = new ChatSessionHandler<{ text: string }>(
 		{
 			platformName: platform,
@@ -118,7 +134,7 @@ async function fixture(
 			onWebhookStart: () => {},
 			onWebhookEnd: () => {},
 			onStateChange: async () => {},
-			persistMessage,
+			persistMessage: (update) => worker.savePersistedState(true, update),
 			onClaudeError: () => {},
 		},
 	);
@@ -136,6 +152,8 @@ async function fixture(
 		notifyBusy,
 		onNewSession,
 		persistMessage,
+		persistence,
+		worker,
 	};
 }
 
@@ -307,4 +325,83 @@ it("does not deliver an unpersisted message when the current turn completes", as
 	await rejected;
 	expect(f.session.metadata?.pendingChatMessages).toEqual([]);
 	expect(f.starts).toHaveLength(2);
+});
+
+it("does not recover a rejected concurrent submission saved by another request", async () => {
+	const f = await fixture("slack", "config");
+	await f.handler.sendMessage(f.session.id, "First continuation", "first");
+	await f.reached.promise;
+	const saving = deferred();
+	const save = deferred();
+	let firstSavedMessages: unknown;
+	f.persistMessage
+		.mockImplementationOnce(async (state) => {
+			saving.resolve();
+			await save.promise;
+			await f.persistence.saveEdgeWorkerState(state);
+			firstSavedMessages = (await f.persistence.loadEdgeWorkerState())!
+				.agentSessions![f.session.id].metadata?.pendingChatMessages;
+		})
+		.mockRejectedValueOnce(new Error("Disk full"));
+	const accepted = f.handler.sendMessage(
+		f.session.id,
+		"Accepted input",
+		"accepted",
+	);
+	await saving.promise;
+	const rejected = f.handler.sendMessage(
+		f.session.id,
+		"Rejected input",
+		"rejected",
+	);
+	const rejection = expect(rejected).rejects.toThrow("Disk full");
+	await new Promise(setImmediate);
+	// Lifecycle saves use the same state file and must observe rollback too.
+	const lifecycle = f.worker.savePersistedState();
+	save.resolve();
+	await accepted;
+	await rejection;
+	await lifecycle;
+	expect(firstSavedMessages).toEqual([
+		{ id: "accepted", text: "Accepted input" },
+	]);
+	const saved = await f.persistence.loadEdgeWorkerState();
+	expect(
+		saved!.agentSessions![f.session.id].metadata?.pendingChatMessages,
+	).toEqual([{ id: "accepted", text: "Accepted input" }]);
+	expect(f.session.metadata?.pendingChatMessages).toEqual([
+		{ id: "accepted", text: "Accepted input" },
+	]);
+
+	// A later retry can succeed; neither it nor recovery resurrects rejected input.
+	await f.handler.sendMessage(f.session.id, "Retried input", "retry");
+	const retrySaved = await f.persistence.loadEdgeWorkerState();
+	f.handler.stopSession(f.session.id);
+	f.gate.resolve();
+	await new Promise(setImmediate);
+	const restored = new ChatSessionHandler(
+		(f.handler as any).adapter,
+		(f.handler as any).deps,
+	);
+	f.worker.serializeMappings = () => {
+		const state = restored.serializeState();
+		return {
+			agentSessions: state.sessions,
+			agentSessionEntries: state.entries,
+		};
+	};
+	restored.restoreState(
+		retrySaved!.agentSessions!,
+		retrySaved!.agentSessionEntries!,
+	);
+	await restored.recoverQueuedSessions();
+	await vi.waitFor(() => expect(f.starts).toHaveLength(2));
+	await f.runners[1].finish();
+	await vi.waitFor(() => expect(f.starts).toHaveLength(3));
+	expect(f.starts).toEqual([
+		"Initial task",
+		"First continuation",
+		"Accepted input\n\nRetried input",
+	]);
+	await f.runners[2].finish();
 });

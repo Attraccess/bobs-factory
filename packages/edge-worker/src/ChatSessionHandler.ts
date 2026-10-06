@@ -148,8 +148,11 @@ export interface ChatSessionHandlerDeps {
 	onWebhookStart: () => void;
 	onWebhookEnd: () => void;
 	onStateChange: () => Promise<void>;
-	/** Persist dashboard input and propagate storage failures to the sender. */
-	persistMessage?: () => Promise<void>;
+	/**
+	 * Apply an input update inside the worker's state-save queue. On storage
+	 * failure, run its returned rollback before allowing another update/save.
+	 */
+	persistMessage?: (update?: () => () => void) => Promise<void>;
 	onClaudeError: (error: Error) => void;
 }
 
@@ -192,6 +195,7 @@ export class ChatSessionHandler<TEvent> {
 	private pendingFollowups: Map<string, TEvent[]> = new Map();
 	private continuationStarts = new Map<string, AbortController>();
 	private pendingMessageSaves = new Map<string, number>();
+	private messageSaveQueue = Promise.resolve();
 
 	constructor(
 		adapter: ChatPlatformAdapter<TEvent>,
@@ -524,7 +528,13 @@ export class ChatSessionHandler<TEvent> {
 					: []),
 				...queued,
 			];
-			if (!capacityQueued && steer.available && !queued.length) return steer;
+			if (
+				!capacityQueued &&
+				steer.available &&
+				!queued.length &&
+				!this.pendingMessageSaves.has(id)
+			)
+				return steer;
 			return {
 				enabled: true,
 				available: true,
@@ -566,32 +576,51 @@ export class ChatSessionHandler<TEvent> {
 			session.agentRunner!.addStreamMessage!(text);
 			return Promise.resolve();
 		}
-		session.metadata ??= {};
-		session.metadata.pendingChatMessages ??= [];
-		const queue = session.metadata.pendingChatMessages;
-		const message = { id: messageId, text };
 		this.pendingMessageSaves.set(
 			id,
 			(this.pendingMessageSaves.get(id) ?? 0) + 1,
 		);
-		queue.push(message);
-		this.sessionManager.emit("sessionChanged", id);
-		// A successful HTTP response means the input is durable, even when
-		// capacity admission or conversation setup has not finished yet.
-		return Promise.resolve()
-			.then(() => (this.deps.persistMessage ?? this.deps.onStateChange)())
-			.catch((error: unknown) => {
+		// Mutation, save and rollback share the worker's persistence queue. A
+		// concurrent input or lifecycle save must never snapshot rejected input.
+		return this.persistMessage(() => {
+			if (
+				session.status === AgentSessionStatus.Error ||
+				this.deps.isShuttingDown?.()
+			)
+				throw new Error("The chat session has stopped.");
+			session.metadata ??= {};
+			session.metadata.pendingChatMessages ??= [];
+			const queue = session.metadata.pendingChatMessages;
+			const message = { id: messageId, text };
+			queue.push(message);
+			return () => {
 				const index = queue.indexOf(message);
 				if (index >= 0) queue.splice(index, 1);
-				this.sessionManager.emit("sessionChanged", id);
+			};
+		}).finally(() => {
+			const remaining = this.pendingMessageSaves.get(id)! - 1;
+			if (remaining) this.pendingMessageSaves.set(id, remaining);
+			else this.pendingMessageSaves.delete(id);
+			this.sessionManager.emit("sessionChanged", id);
+			this.drainDashboardMessages(id);
+		});
+	}
+
+	private persistMessage(update?: () => () => void): Promise<void> {
+		if (this.deps.persistMessage) return this.deps.persistMessage(update);
+		// Standalone handlers without worker persistence still serialize input
+		// updates through their lifecycle callback.
+		const save = this.messageSaveQueue.then(async () => {
+			const rollback = update?.();
+			try {
+				await this.deps.onStateChange();
+			} catch (error) {
+				rollback?.();
 				throw error;
-			})
-			.finally(() => {
-				const remaining = this.pendingMessageSaves.get(id)! - 1;
-				if (remaining) this.pendingMessageSaves.set(id, remaining);
-				else this.pendingMessageSaves.delete(id);
-				this.drainDashboardMessages(id);
-			});
+			}
+		});
+		this.messageSaveQueue = save.catch(() => {});
+		return save;
 	}
 
 	private drainDashboardMessages(id: string): void {
@@ -865,7 +894,7 @@ export class ChatSessionHandler<TEvent> {
 					0,
 					dashboardMessages.length,
 				);
-				await (this.deps.persistMessage ?? this.deps.onStateChange)();
+				await this.persistMessage();
 				if (isCancelled()) return;
 			}
 
