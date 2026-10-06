@@ -50,7 +50,7 @@ const git = async (
 	maxBuffer = 32 * 1024 * 1024,
 ) =>
 	(
-		await exec("git", ["--literal-pathspecs", ...args], {
+		await exec("git", args, {
 			cwd: workspace,
 			timeout: 30000,
 			maxBuffer,
@@ -232,8 +232,11 @@ export async function createReviewSnapshot(
 						baseSha,
 						headSha,
 						"--",
-						...(file.oldPath ? [file.oldPath] : []),
-						file.path,
+						...[...(file.oldPath ? [file.oldPath] : []), file.path].map(
+							// Escaped glob patterns match the entire pathname. Literal
+							// pathspecs also match descendants when a file became a folder.
+							(path) => `:(top,glob)${path.replace(/[^/]/gu, "\\$&")}`,
+						),
 					],
 					patchLimit,
 				);

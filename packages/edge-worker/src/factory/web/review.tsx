@@ -151,9 +151,10 @@ function ReviewReader({
 						: resolvePage(params.get("page"), tokens, saved.page),
 			};
 		}),
-		[highlight, setHighlight] = useState<string[]>([]),
+		[highlight, setHighlight] = useState<number | null>(null),
 		heading = useRef<HTMLHeadingElement>(null),
 		explicit = useRef(false),
+		lastLocation = useRef(location.key),
 		initialReset = useRef(revisionChanged),
 		page = progress.page,
 		chapter =
@@ -232,6 +233,8 @@ function ReviewReader({
 	useEffect(() => {
 		const search = new URLSearchParams(location.search),
 			stale = search.has("rev") && search.get("rev") !== revision;
+		const locationChanged = lastLocation.current !== location.key;
+		lastLocation.current = location.key;
 		if (initialReset.current || stale) {
 			initialReset.current = false;
 			search.set("page", "overview");
@@ -242,7 +245,7 @@ function ReviewReader({
 			);
 			return;
 		}
-		if (search.has("page")) {
+		if (search.has("page") || locationChanged) {
 			const next = resolvePage(search.get("page"), tokens, 0);
 			setProgress((p) =>
 				p.page === next
@@ -256,6 +259,7 @@ function ReviewReader({
 			if (next !== page) focusPage();
 		}
 	}, [
+		location.key,
 		location.search,
 		location.pathname,
 		revision,
@@ -410,7 +414,23 @@ function ReviewReader({
 							)}
 						</div>
 						{guide.system ? (
-							<SystemMap system={guide.system} highlighted={highlight} />
+							<div
+								style={
+									{
+										"--chapter":
+											highlight === null
+												? "var(--muted)"
+												: chapterColor(highlight),
+									} as React.CSSProperties
+								}
+							>
+								<SystemMap
+									system={guide.system}
+									highlighted={
+										highlight === null ? [] : chapters[highlight]?.systemPartIds
+									}
+								/>
+							</div>
 						) : shots.length > 0 ? (
 							<Screens
 								strip
@@ -433,10 +453,10 @@ function ReviewReader({
 									<button
 										type="button"
 										onClick={() => go(i + 1)}
-										onMouseEnter={() => setHighlight(c.systemPartIds ?? [])}
-										onMouseLeave={() => setHighlight([])}
-										onFocus={() => setHighlight(c.systemPartIds ?? [])}
-										onBlur={() => setHighlight([])}
+										onMouseEnter={() => setHighlight(i)}
+										onMouseLeave={() => setHighlight(null)}
+										onFocus={() => setHighlight(i)}
+										onBlur={() => setHighlight(null)}
 									>
 										<span className="step-badge">
 											{progress.reviewed[c.id] ? "✓" : i + 1}

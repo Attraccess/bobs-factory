@@ -5,12 +5,22 @@ import { LazyImage } from "./media";
 import { mapConnections } from "./review-model";
 import { Button, Modal } from "./ui";
 
-function wrapLabel(value: string, max: number): string[] {
+function wrapLabel(
+	value: string,
+	max: number,
+	measure = (text: string) => text.length,
+): string[] {
 	const result: string[] = [];
 	let remaining = value;
-	while (remaining.length > max) {
-		const space = remaining.lastIndexOf(" ", max),
-			cut = space > 0 ? space : max;
+	while (measure(remaining) > max) {
+		let fitting = 0;
+		for (const character of remaining) {
+			const next = fitting + character.length;
+			if (fitting && measure(remaining.slice(0, next)) > max) break;
+			fitting = next;
+		}
+		const space = remaining.lastIndexOf(" ", fitting),
+			cut = space > 0 ? space : fitting;
 		result.push(remaining.slice(0, cut));
 		remaining = remaining.slice(cut).trimStart();
 	}
@@ -31,21 +41,34 @@ export function SystemMap({
 		id = useId().replace(/:/g, "");
 	const edges = mapConnections(system, before, after),
 		width = system.lanes.length * 260;
-	const maxRows = Math.max(
-		...system.lanes.map(
-			(l) => system.parts.filter((p) => p.laneId === l.id).length,
-		),
-	);
-	const bottom = 60 + maxRows * 100;
-	const positions = new Map(
-		system.parts.map((part) => {
-			const lane = system.lanes.findIndex((l) => l.id === part.laneId),
-				row = system.parts
-					.filter((p) => p.laneId === part.laneId)
-					.findIndex((p) => p.id === part.id);
-			return [part.id, { x: lane * 260 + 24, y: 52 + row * 100, lane }];
-		}),
-	);
+	const context = document.createElement("canvas").getContext("2d")!,
+		font = getComputedStyle(document.body).fontFamily;
+	const labelsFor = (
+		value: string,
+		max: number,
+		size: number,
+		weight: number,
+	) => {
+		context.font = `${weight} ${size}px ${font}`;
+		return wrapLabel(value, max, (text) => context.measureText(text).width);
+	};
+	const lanes = system.lanes.map((lane) => labelsFor(lane.name, 216, 12, 800)),
+		top = Math.max(52, ...lanes.map((lines) => 45 + (lines.length - 1) * 14));
+	const positions = new Map<
+		string,
+		{ x: number; y: number; lane: number; height: number; labels: string[] }
+	>();
+	let bottom = top;
+	system.lanes.forEach((lane, i) => {
+		let y = top;
+		for (const part of system.parts.filter((p) => p.laneId === lane.id)) {
+			const labels = labelsFor(part.label, 142, 13, 700),
+				height = Math.max(66, labels.length * 15 + 30);
+			positions.set(part.id, { x: i * 260 + 24, y, lane: i, height, labels });
+			bottom = Math.max(bottom, y + height + 20);
+			y += height + 34;
+		}
+	});
 	const tracks: { x: number; y: number; height: number }[] = [];
 	let lower = bottom;
 	const layout = edges.map((edge) => {
@@ -60,22 +83,31 @@ export function SystemMap({
 					: (edge.label ?? "");
 		const oldLines =
 				edge.kind === "changed"
-					? wrapLabel(edge.oldLabel ?? "unlabelled", adjacent ? 12 : 30)
+					? labelsFor(
+							edge.oldLabel ?? "unlabelled",
+							adjacent ? 72 : 220,
+							12,
+							400,
+						)
 					: [],
 			labels =
 				edge.kind === "changed"
 					? [
 							...oldLines,
-							...wrapLabel(
+							...labelsFor(
 								`→ ${edge.newLabel ?? "unlabelled"}`,
-								adjacent ? 12 : 30,
+								adjacent ? 72 : 220,
+								12,
+								400,
 							),
 						]
-					: wrapLabel(label, adjacent ? 12 : 30),
+					: labelsFor(label, adjacent ? 72 : 220, 12, 400),
 			labelHeight = Math.max(1, labels.length) * 15;
 		const x = adjacent ? source.x + 213 : (source.x + target.x) / 2 + 83;
+		const sourceMiddle = source.y + source.height / 2,
+			targetMiddle = target.y + target.height / 2;
 		let y = adjacent
-			? (source.y + target.y) / 2 + 33
+			? (sourceMiddle + targetMiddle) / 2
 			: lower + labelHeight + 12;
 		while (
 			tracks.some(
@@ -88,8 +120,8 @@ export function SystemMap({
 		tracks.push({ x, y, height: labelHeight });
 		if (!adjacent) lower = y + 26;
 		const path = adjacent
-			? `M${source.x + 166},${source.y + 33} C${source.x + 194},${source.y + 33} ${x - 20},${y} ${x},${y} C${x + 20},${y} ${target.x - 28},${target.y + 33} ${target.x},${target.y + 33}`
-			: `M${source.x + 83},${source.y + 66} C${source.x + 83},${y + 12} ${source.x + 83},${y + 12} ${source.x + 83},${y + 12} L${target.x + 83},${y + 12} C${target.x + 83},${y + 12} ${target.x + 83},${y + 12} ${target.x + 83},${target.y + 66}`;
+			? `M${source.x + 166},${sourceMiddle} C${source.x + 194},${sourceMiddle} ${x - 20},${y} ${x},${y} C${x + 20},${y} ${target.x - 28},${targetMiddle} ${target.x},${targetMiddle}`
+			: `M${source.x + 83},${source.y + source.height} C${source.x + 83},${y + 12} ${source.x + 83},${y + 12} ${source.x + 83},${y + 12} L${target.x + 83},${y + 12} C${target.x + 83},${y + 12} ${target.x + 83},${y + 12} ${target.x + 83},${target.y + target.height}`;
 		return { path, x, y, labels, labelHeight, oldCount: oldLines.length };
 	});
 	const height =
@@ -164,7 +196,7 @@ export function SystemMap({
 							textAnchor="middle"
 							className="map-lane"
 						>
-							{wrapLabel(lane.name, 30).map((line, j) => (
+							{lanes[i]!.map((line, j) => (
 								<tspan key={j} x={i * 260 + 107} dy={j ? 14 : 0}>
 									{line}
 								</tspan>
@@ -222,18 +254,20 @@ export function SystemMap({
 								(before && !after && part.status === "new") ||
 								(after && !before && part.status === "legacy"),
 							selected = highlighted.includes(part.id),
-							labels = wrapLabel(part.label, 22);
+							labels = pos.labels;
 						return (
 							<g
 								key={part.id}
 								className={`map-part ${part.status} ${ghost ? "ghost" : ""} ${selected ? "highlight" : ""}`}
 							>
-								<rect x={pos.x} y={pos.y} width={166} height={66} rx={12} />
-								<text
-									x={pos.x + 83}
-									y={pos.y + 36 - (labels.length - 1) * 7}
-									textAnchor="middle"
-								>
+								<rect
+									x={pos.x}
+									y={pos.y}
+									width={166}
+									height={pos.height}
+									rx={12}
+								/>
+								<text x={pos.x + 83} y={pos.y + 32} textAnchor="middle">
 									{labels.map((line, j) => (
 										<tspan key={j} x={pos.x + 83} dy={j ? 15 : 0}>
 											{line}

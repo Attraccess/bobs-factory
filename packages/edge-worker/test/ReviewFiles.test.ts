@@ -158,6 +158,51 @@ it("captures complete immutable files, statistics, renames, binary, mode and bou
 		"integrity",
 	);
 });
+it("keeps patches file-local across file/folder replacements and descendant renames with literal filenames", async () => {
+	const f = fixture();
+	const names = ["foo", "literal[?]*.ts", "ü😀", "-^!].ts"];
+	for (const name of names) f.put(name, `old ${name}\n`);
+	mkdirSync(join(f.repo, "inverse"));
+	f.put("inverse/child.ts", "old child\n");
+	f.put("rename", "rename contents\n");
+	f.git("add", ".");
+	f.git("commit", "-qm", "Replacement base");
+	const base = f.git("rev-parse", "HEAD");
+	for (const name of names) {
+		rmSync(join(f.repo, name));
+		mkdirSync(join(f.repo, name));
+		f.put(`${name}/child.ts`, `new ${name}\n`);
+	}
+	rmSync(join(f.repo, "inverse"), { recursive: true });
+	f.put("inverse", "new parent\n");
+	renameSync(join(f.repo, "rename"), join(f.repo, "moved"));
+	mkdirSync(join(f.repo, "rename"));
+	renameSync(join(f.repo, "moved"), join(f.repo, "rename/child.ts"));
+	f.git("add", ".");
+	f.git("commit", "-qm", "Replace files and folders");
+	const ref = await createReviewSnapshot(
+		f.evidence,
+		"run",
+		f.repo,
+		base,
+		f.git("rev-parse", "HEAD"),
+	);
+	const manifest = await readReviewManifest(f.evidence, "run", ref);
+	expect(manifest.files).toHaveLength(names.length * 2 + 3);
+	for (const file of manifest.files) {
+		const { patch } = await readReviewPatch(f.evidence, manifest, file.id);
+		expect(patch!.split(/^diff --git /m)).toHaveLength(2);
+		if (names.includes(file.path)) {
+			expect(file.status).toBe("D");
+			expect(patch).toContain(`-old ${file.path}\n`);
+			expect(patch).not.toContain(`+new ${file.path}\n`);
+		}
+		if (file.path === "rename/child.ts") {
+			expect(file).toMatchObject({ status: "R", oldPath: "rename" });
+			expect(patch).toContain("rename from rename\nrename to rename/child.ts");
+		}
+	}
+});
 it("ignores partial staging writes, binds runtime-owned revision data and refuses dirty or changed finalization", async () => {
 	const f = fixture();
 	mkdirSync(join(f.evidence, "review-files", ".staging-interrupted"), {
