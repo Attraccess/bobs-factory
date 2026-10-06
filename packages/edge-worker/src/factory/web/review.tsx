@@ -4,6 +4,14 @@ import { api, client } from "./client";
 import { LazyImage } from "./media";
 import { useReadingPosition } from "./reading-position";
 import {
+	CollectedFeedback,
+	Commentable,
+	FeedbackContext,
+	useFeedbackController,
+	useReviewFeedback,
+} from "./review-comments";
+import { type FeedbackTarget, feedbackKey } from "./review-feedback";
+import {
 	readProgress,
 	readStored,
 	reviewKey,
@@ -39,28 +47,81 @@ function FileLink({ path, url }: { path: string; url?: string }) {
 		<code>{path}</code>
 	);
 }
-function Lines({ items }: { items: string[] }) {
+type Annotate = (
+	path: string,
+	label: string,
+	kind: string,
+	context: string,
+	order: number[],
+	children: ReactNode,
+) => ReactNode;
+function Lines({
+	items,
+	path,
+	order,
+	annotate,
+}: {
+	items: string[];
+	path: string;
+	order: number[];
+	annotate: Annotate;
+}) {
 	return (
 		<ul className="guide-lines">
 			{items.map((item, i) => (
 				<li key={i}>
-					<Markdown>{item}</Markdown>
+					{annotate(
+						`${path}/${i}`,
+						item,
+						"Text item",
+						item,
+						[...order, i],
+						<Markdown>{item}</Markdown>,
+					)}
 				</li>
 			))}
 		</ul>
 	);
 }
-function Flow({ diagram }: { diagram: any }) {
+function Flow({
+	diagram,
+	path,
+	order,
+	annotate,
+}: {
+	diagram: any;
+	path: string;
+	order: number[];
+	annotate: Annotate;
+}) {
 	return (
 		<figure className="guide-flow">
-			<figcaption>{diagram.title}</figcaption>
+			<figcaption>
+				{annotate(
+					`${path}/title`,
+					diagram.title,
+					"Diagram",
+					diagram.title,
+					[...order, 0],
+					diagram.title,
+				)}
+			</figcaption>
 			<ol>
 				{diagram.steps.map((step: any, i: number) => (
 					<li key={i}>
 						<span className="flow-number">{i + 1}</span>
 						<div>
-							<strong>{step.label}</strong>
-							<p>{step.detail}</p>
+							{annotate(
+								`${path}/steps/${i}`,
+								step.label,
+								"Diagram step",
+								`${step.label}: ${step.detail}`,
+								[...order, 1, i],
+								<>
+									<strong>{step.label}</strong>
+									<p>{step.detail}</p>
+								</>,
+							)}
 						</div>
 					</li>
 				))}
@@ -123,8 +184,8 @@ export function GuidedReview({
 			</div>
 		);
 	return (
-		<ReviewReader
-			key={key}
+		<ReviewSession
+			key={`${key}/${run.reviewGate?.id ?? "finished"}`}
 			storageKey={key}
 			guide={guide}
 			run={run}
@@ -133,7 +194,18 @@ export function GuidedReview({
 		/>
 	);
 }
+function ReviewSession(props: any) {
+	const controller = useFeedbackController(
+		feedbackKey(props.storageKey, props.run.reviewGate?.id),
+	);
+	return (
+		<FeedbackContext.Provider value={props.controls ? controller : null}>
+			<ReviewReader {...props} />
+		</FeedbackContext.Provider>
+	);
+}
 function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
+	const feedback = useReviewFeedback();
 	const chapters = guide.chapters?.length
 			? guide.chapters
 			: (guide.behavior ?? []).map((b: any, i: number) => ({
@@ -203,6 +275,57 @@ function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 			heading.current?.scrollIntoView({ block: "start", behavior: "instant" });
 		});
 	};
+	const base = guide.chapters?.length
+		? `/chapters/${page - 1}`
+		: `/behavior/${page - 1}`;
+	const annotate: Annotate = (path, label, kind, context, order, children) => (
+		<Commentable
+			target={{
+				path,
+				label,
+				kind,
+				context,
+				order: [page, ...order],
+				page,
+				pageTitle: `${pages[page]}${chapter?.id ? ` (${chapter.id})` : ""}`,
+			}}
+		>
+			{children}
+		</Commentable>
+	);
+	const lines = (items: string[], path: string, order: number[]) => (
+		<Lines items={items} path={path} order={order} annotate={annotate} />
+	);
+	const goToItem = (target: FeedbackTarget) => {
+		if (
+			!Number.isInteger(target.page) ||
+			target.page < 0 ||
+			target.page >= pages.length
+		)
+			return;
+		feedback?.update((d) => ({ ...d, editing: target.path }));
+		go(target.page);
+		setProgress((p) => ({
+			...p,
+			disclosures: {
+				...p.disclosures,
+				[`${target.page}/code`]: true,
+				[`${target.page}/criteria`]: true,
+				[`${target.page}/verification`]: true,
+			},
+		}));
+		requestAnimationFrame(() =>
+			requestAnimationFrame(() => {
+				const item = document.querySelector<HTMLElement>(
+					`[data-comment-path="${CSS.escape(target.path)}"]`,
+				);
+				item?.scrollIntoView({ block: "center" });
+				item
+					?.querySelector<HTMLButtonElement>(".item-comment-actions button")
+					?.focus({ preventScroll: true });
+			}),
+		);
+	};
 	return (
 		<article className="guided-review">
 			<header className="guide-topline">
@@ -246,13 +369,36 @@ function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 					))}
 				</select>
 			</label>
+			<CollectedFeedback go={goToItem} />
 			<section className="guide-page" key={page}>
-				<h2 ref={heading} tabIndex={-1}>
-					{page === 0 ? guide.goal : final ? "Ready to decide?" : chapter.title}
-				</h2>
+				{annotate(
+					page === 0
+						? "/goal"
+						: final
+							? "/decision/title"
+							: `${base}/${guide.chapters?.length ? "title" : "scenario"}`,
+					page === 0 ? guide.goal : final ? "Ready to decide?" : chapter.title,
+					"Heading",
+					page === 0 ? guide.goal : final ? "Checks & decision" : chapter.title,
+					[0],
+					<h2 ref={heading} tabIndex={-1}>
+						{page === 0
+							? guide.goal
+							: final
+								? "Ready to decide?"
+								: chapter.title}
+					</h2>,
+				)}
 				{page === 0 ? (
 					<>
-						<Markdown>{guide.summary}</Markdown>
+						{annotate(
+							"/summary",
+							"Review summary",
+							"Text block",
+							guide.summary,
+							[1],
+							<Markdown>{guide.summary}</Markdown>,
+						)}
 						<p className="muted">
 							This guide covers the complete pull request. Each chapter explains
 							one change, then shows the evidence to review it.
@@ -260,33 +406,53 @@ function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 						<ol className="guide-outline">
 							{chapters.map((c: any, i: number) => (
 								<li key={c.id}>
-									<button type="button" onClick={() => go(i + 1)}>
-										<span>{String(i + 1).padStart(2, "0")}</span>
-										<strong>{c.title}</strong>
-										<span aria-hidden="true">→</span>
-									</button>
+									{annotate(
+										`${guide.chapters?.length ? "/chapters" : "/behavior"}/${i}/outline`,
+										c.title,
+										"Chapter outline",
+										c.title,
+										[2, i],
+										<button type="button" onClick={() => go(i + 1)}>
+											<span>{String(i + 1).padStart(2, "0")}</span>
+											<strong>{c.title}</strong>
+											<span aria-hidden="true">→</span>
+										</button>,
+									)}
 								</li>
 							))}
 						</ol>
-						{guide.revisionSummary && (
-							<p className="notice">
-								{guide.revisionNote ??
-									"Updated since your previous review. The complete feature guide remains available below."}
-							</p>
-						)}
+						{(guide.revisionSummary || guide.revisionNote) &&
+							annotate(
+								"/revisionNote",
+								"Revision note",
+								"Text block",
+								guide.revisionNote ?? "Updated since your previous review.",
+								[3],
+								<p className="notice">
+									{guide.revisionNote ??
+										"Updated since your previous review. The complete feature guide remains available below."}
+								</p>,
+							)}
 					</>
 				) : final ? (
 					<>
-						<Markdown>{guide.decision.summary}</Markdown>
+						{annotate(
+							"/decision/summary",
+							"Decision summary",
+							"Text block",
+							guide.decision.summary,
+							[1],
+							<Markdown>{guide.decision.summary}</Markdown>,
+						)}
 						{guide.risks.length > 0 && (
 							<section className="guide-risk">
 								<h3>Know before approving</h3>
-								<Lines items={guide.risks} />
+								{lines(guide.risks, "/risks", [2])}
 							</section>
 						)}
 						<details {...disclosure("verification")}>
 							<summary>Verification evidence ({guide.checks.length})</summary>
-							<Lines items={guide.checks} />
+							{lines(guide.checks, "/checks", [3])}
 						</details>
 						<details {...disclosure("criteria")}>
 							<summary>
@@ -294,15 +460,22 @@ function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 							</summary>
 							{guide.requirements.map((r: any, i: number) => (
 								<section key={i}>
-									<strong>
-										{r.status === "supported" ? "✓" : "⚠"} {r.criterion}
-									</strong>
-									<Lines items={r.evidence} />
+									{annotate(
+										`/requirements/${i}/criterion`,
+										r.criterion,
+										"Acceptance criterion",
+										r.criterion,
+										[4, i, 0],
+										<strong>
+											{r.status === "supported" ? "✓" : "⚠"} {r.criterion}
+										</strong>,
+									)}
+									{lines(r.evidence, `/requirements/${i}/evidence`, [4, i, 1])}
 								</section>
 							))}
 						</details>
 						<h3>Your final checks</h3>
-						<Lines items={guide.reviewInstructions} />
+						{lines(guide.reviewInstructions, "/reviewInstructions", [5])}
 						<p className="muted">
 							{Object.values(progress.reviewed).filter(Boolean).length}/
 							{chapters.length} chapters marked reviewed. This records your
@@ -311,19 +484,46 @@ function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 					</>
 				) : (
 					<>
-						<Markdown>{chapter.summary}</Markdown>
+						{annotate(
+							`${base}/summary`,
+							"Change summary",
+							"Text block",
+							chapter.summary,
+							[1],
+							<Markdown>{chapter.summary}</Markdown>,
+						)}
 						<div className="guide-comparison">
 							<section>
 								<small>BEFORE</small>
-								<Markdown>{chapter.before}</Markdown>
+								{annotate(
+									`${base}/before`,
+									"Before",
+									"Text block",
+									chapter.before,
+									[2],
+									<Markdown>{chapter.before}</Markdown>,
+								)}
 							</section>
 							<section>
 								<small>AFTER</small>
-								<Markdown>{chapter.after}</Markdown>
+								{annotate(
+									`${base}/after`,
+									"After",
+									"Text block",
+									chapter.after,
+									[3],
+									<Markdown>{chapter.after}</Markdown>,
+								)}
 							</section>
 						</div>
 						{chapter.diagrams.map((d: any, i: number) => (
-							<Flow diagram={d} key={i} />
+							<Flow
+								diagram={d}
+								key={i}
+								path={`${base}/diagrams/${i}`}
+								order={[4, i]}
+								annotate={annotate}
+							/>
 						))}
 						<div className="guide-visuals">
 							{chapter.screenshots.map((ref: any, i: number) => {
@@ -331,59 +531,90 @@ function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 									(s: any) => s.area === ref.area && s.state === ref.state,
 								);
 								return (
-									<figure key={i}>
-										{shot ? (
-											<External
-												href={`${location.origin}/api/runs/${run.id}/screenshots/${shot.index}?v=${shot.imageSha256 ?? ""}`}
-											>
-												<LazyImage
-													key={shot.imageSha256 ?? shot.index}
-													src={`/api/runs/${run.id}/screenshots/${shot.index}?v=${shot.imageSha256 ?? ""}`}
-													alt={ref.caption}
-													style={{ aspectRatio: "auto", width: "100%" }}
-												/>
-											</External>
-										) : (
-											<p role="status">
-												{evidence.error
-													? "Could not load image evidence"
-													: evidence.isPending
-														? "Loading image evidence…"
-														: "This screenshot is unavailable"}
-											</p>
-										)}
-										<figcaption>{ref.caption}</figcaption>
-										{shot && <small>{shot.state}</small>}
-									</figure>
+									<Commentable
+										key={i}
+										target={{
+											path: `${base}/screenshots/${i}`,
+											page,
+											pageTitle: `${chapter.title} (${chapter.id})`,
+											kind: "Screenshot",
+											label: ref.caption,
+											context: `Area: ${ref.area}; state: ${ref.state}; caption: ${ref.caption}`,
+											order: [page, 5, i],
+										}}
+									>
+										<figure>
+											{shot ? (
+												<External
+													href={`${location.origin}/api/runs/${run.id}/screenshots/${shot.index}?v=${shot.imageSha256 ?? ""}`}
+												>
+													<LazyImage
+														key={shot.imageSha256 ?? shot.index}
+														src={`/api/runs/${run.id}/screenshots/${shot.index}?v=${shot.imageSha256 ?? ""}`}
+														alt={ref.caption}
+														style={{ aspectRatio: "auto", width: "100%" }}
+													/>
+												</External>
+											) : (
+												<p role="status">
+													{evidence.error
+														? "Could not load image evidence"
+														: evidence.isPending
+															? "Loading image evidence…"
+															: "This screenshot is unavailable"}
+												</p>
+											)}
+											<figcaption>{ref.caption}</figcaption>
+											{shot && <small>{shot.state}</small>}
+										</figure>
+									</Commentable>
 								);
 							})}
 						</div>
 						{chapter.risks.length > 0 && (
 							<section className="guide-risk">
 								<h3>Watch out for</h3>
-								<Lines items={chapter.risks} />
+								{lines(chapter.risks, `${base}/risks`, [6])}
 							</section>
 						)}
 						{chapter.reviewChecks.length > 0 && (
 							<section>
 								<h3>What to check</h3>
-								<Lines items={chapter.reviewChecks} />
+								{lines(chapter.reviewChecks, `${base}/reviewChecks`, [7])}
 							</section>
 						)}
 						<details {...disclosure("code")}>
 							<summary>Code & evidence · {chapter.files.length} files</summary>
 							<ul className="guide-files">
-								{chapter.files.map((file: string) => (
-									<li key={file}>
-										<FileLink path={file} url={url} />
+								{chapter.files.map((file: string, i: number) => (
+									<li key={i}>
+										{annotate(
+											`${base}/files/${i}`,
+											file,
+											"File",
+											file,
+											[8, i],
+											<FileLink path={file} url={url} />,
+										)}
 									</li>
 								))}
 							</ul>
-							<Lines items={chapter.evidence} />
-							{chapter.requirementIndexes.map((i: number) => (
+							{lines(chapter.evidence, `${base}/evidence`, [9])}
+							{chapter.requirementIndexes.map((i: number, j: number) => (
 								<section key={i}>
-									<strong>{guide.requirements[i]?.criterion}</strong>
-									<Lines items={guide.requirements[i]?.evidence ?? []} />
+									{annotate(
+										`${base}/requirementIndexes/${j}/criterion`,
+										guide.requirements[i]?.criterion ?? "Criterion",
+										"Acceptance criterion",
+										guide.requirements[i]?.criterion ?? "",
+										[10, j, 0],
+										<strong>{guide.requirements[i]?.criterion}</strong>,
+									)}
+									{lines(
+										guide.requirements[i]?.evidence ?? [],
+										`${base}/requirementIndexes/${j}/evidence`,
+										[10, j, 1],
+									)}
 								</section>
 							))}
 						</details>

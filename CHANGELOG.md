@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Collect editable comments on review-guide items while reading, retain drafts across navigation and reloads, and submit them together with additional feedback from any guide page. ([Taskbot #70](https://taskbot.apps.janjaap.de/p/bobs-factory/t/70))
+
 - Automatically name new runs in the background with a globally configurable title agent and project context tools, including Cursor, Claude's URL-only HTTP servers, Gemini's URL-only SSE servers and relative server scripts. Show the run ID while naming, update titles live, preserve historical titles during recovery, and keep dashboard feedback usable for Slack/Zulip sessions across restarts and concurrent platform replies. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68), [#11](https://github.com/Attraccess/bobs-factory/pull/11))
 
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
