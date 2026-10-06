@@ -1202,6 +1202,67 @@ kbd {
 	flex-shrink: 0;
 	align-self: flex-start;
 }
+.review-document .run-header > div {
+	min-width: 0;
+	width: 100%;
+}
+.review-context {
+	margin-top: 14px;
+	font-size: 13px;
+}
+.review-context-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px 16px;
+}
+.review-context-row > a,
+.review-branch {
+	min-width: 0;
+	max-width: 100%;
+	min-height: 44px;
+	align-content: center;
+	overflow-wrap: anywhere;
+}
+.review-branch a {
+	display: inline-block;
+	min-height: 44px;
+	align-content: center;
+}
+.review-context-row .button {
+	min-height: 44px;
+}
+.checkout-menu {
+	width: 420px;
+	min-width: 0;
+	max-width: calc(100vw - 32px);
+	max-height: var(--radix-dropdown-menu-content-available-height);
+	overflow: auto;
+	color: var(--text);
+}
+.checkout-option {
+	display: block;
+	overflow-wrap: anywhere;
+}
+.checkout-option code {
+	display: block;
+	margin: 8px 0;
+	font-size: 12px;
+	font-weight: 500;
+	white-space: pre-wrap;
+}
+.checkout-fallback {
+	margin-top: 12px;
+	padding: 14px;
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	background: var(--quiet);
+}
+.checkout-fallback textarea {
+	width: 100%;
+	margin: 8px 0;
+	font-family: monospace;
+}
 .artifacts-section,
 .steps-section {
 	margin-top: 32px;

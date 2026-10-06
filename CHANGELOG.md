@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Review Guide headers now link to the PR, branch and originating ticket, with GitHub CLI and Git-only checkout commands to copy and manual copying when clipboard access fails.
+
 - Guided PR review now offers concise chapter steps, system maps, image viewers,
   browser-local reading checks and Changed files with diffs pinned to the reviewed
   revision. Incomplete new guides return to the guide agent for correction; older
