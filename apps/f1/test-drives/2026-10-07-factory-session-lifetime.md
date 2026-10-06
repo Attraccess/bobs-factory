@@ -56,15 +56,39 @@ values. All five checks passed:
 - Auth POST with foreign Origin: 403.
 
 This establishes actual tunnel behavior for an isolated share on the same
-frontend. It does not claim the reserved production hostname has been deployed
-or that physical-device checks have passed. The physical iPhone/Safari and PWA
-checks are being performed separately with the operator; outcomes must be
-recorded before QA approval.
+frontend. The reserved production hostname has not been deployed or retargeted.
+
+## Physical iPhone and installed-app checks
+
+The operator tested a physical iPhone in Safari at the isolated instance's
+configured public HTTPS origin, with an operator code transferred through the
+Mac clipboard rather than included in prompts, URLs or evidence. The iOS version
+was not supplied. The operator reported success for all three rounds:
+
+- Create the public-origin phone passkey, sign out/in, and add/open the Home
+  Screen app: “All three worked.” Backend registration/login/logout receipts
+  independently confirm successful ceremonies at the exact configured origin.
+- View keys and remove `Temporary removable test key`, preserving the phone
+  passkey: “Removed it; ready for expiry.” The companion credential was created
+  by the cryptographic fixture; successful DELETE and one remaining credential
+  confirm removal. This does not claim two physical authenticators were used.
+- Return to sign-in after expiry, sign in again, disable cellular/Wi-Fi, close
+  and reopen the installed app without private content, then reconnect and sign
+  in again: “All three worked.” A private fixture command expired only temporary
+  sessions and notified the normal access listeners. Expiry was accelerated;
+  the lifetime matrix separately verified real configured deadlines.
+
+Device/UI outcomes are operator-reported, not an automated Safari drive or
+assistant-observed screenshot. `phone-user-results.json` records the steps,
+verbatim confirmations and matching sanitized backend receipts. Production
+origin enrollment remains part of the eventual deployment; this drive verifies
+the approved isolated public test instance without changing production services.
 
 ## Evidence
 
 Driver, before/after results, build/typecheck logs and sanitized tunnel receipts:
 `/Users/jappy/.cyrus/factory/evidence/manual-09e877cd-6bbb-4ad8-9aec-85b6d59877e8/resolution-2026-10-07/`.
 Setup codes, authentication cookies and credential state are excluded.
-The session-configuration finding is resolved; overall run QA still needs its
-remaining device evidence and a fresh workflow review of the changed revision.
+The session-configuration finding is resolved and the previously missing real
+tunnel/device evidence is now available. The run still requires a fresh QA
+review of the changed revision; these results do not approve or merge the PR.
