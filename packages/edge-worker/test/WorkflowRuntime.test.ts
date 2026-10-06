@@ -1469,6 +1469,82 @@ it("recovers a saved nested handoff through its existing fixer without replaying
 	expect(run.step).toBe("pipeline/after-ci-fix");
 });
 
+it.each([
+	"executing",
+	"result",
+	"ready",
+] as const)("tracks handoff corrections before a failing fixer, and ready handoffs as review (%s)", async (phase) => {
+	const track = vi.fn<NonNullable<RuntimeHooks["track"]>>(async () => {});
+	const output =
+		phase === "ready"
+			? { url: "https://github.com/test/repo/pull/1", ready: true }
+			: {
+					url: "https://github.com/test/repo/pull/1",
+					fix: true,
+					blockers: [
+						{ message: "Resolve merge conflicts" },
+						{ message: "Fix failing checks" },
+					],
+				};
+	const tool = vi.fn(async () => output);
+	const { runtime } = create({
+		track,
+		tool,
+		agent: async () => {
+			throw new Error("Fixer unavailable");
+		},
+	});
+	const run = start(
+		runtime,
+		workflow([
+			{
+				id: "handoff",
+				name: "Handoff",
+				type: "tool",
+				tool: "handoff",
+				branches: [{ when: { path: "fix", equals: true }, next: "ci-fix" }],
+				next: "end",
+			},
+			agent("ci-fix", { next: "end" }),
+		]),
+	);
+	run.ticketReference = {
+		provider: "native",
+		platform: "cli",
+		workspaceId: "cli-workspace",
+		id: "ticket",
+		url: "https://example.test/ticket",
+	};
+	if (phase === "result") {
+		run.outputs.handoff = output;
+		run.checkpoint = {
+			current: "handoff",
+			visits: { handoff: 1 },
+			active: { phase: "result" },
+		};
+	}
+	await runtime.launch(run);
+	expect(run.status).toBe(phase === "ready" ? "completed" : "failed");
+	expect(tool).toHaveBeenCalledTimes(phase === "result" ? 0 : 1);
+	const milestone = track.mock.calls.find(([, receipt]) =>
+		receipt.key.startsWith("handoff:"),
+	)?.[1];
+	expect(milestone).toMatchObject({
+		stage: phase === "ready" ? "in_review" : "in_progress",
+		pr: output.url,
+	});
+	if (phase === "ready") {
+		expect(milestone?.body).toMatch(/Ready for human review/);
+	} else {
+		expect(milestone?.body).toMatch(/Resolve merge conflicts/);
+		expect(milestone?.body).toMatch(/Fix failing checks/);
+		expect(milestone?.body).not.toMatch(/Ready for human review/);
+		expect(track.mock.calls.map(([, receipt]) => receipt.stage)).not.toContain(
+			"in_review",
+		);
+	}
+});
+
 it("upgrades stock coordination limits without changing agent/custom limits", () => {
 	const definitions = structuredClone(defaultWorkflows);
 	const shared = definitions.find((x) => x.id === "factory-pipeline")!;

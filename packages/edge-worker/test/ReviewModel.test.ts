@@ -74,6 +74,21 @@ it("joins authoritative files to duplicate/shared/rename claims, exposes unassig
 	]);
 	expect(fileTree([file("a/b/c/d.ts")])[0]!.name).toBe("a/b/c");
 });
+it.each([
+	"A",
+	"D",
+] as const)("keeps the file and descendants when a directory is replaced (%s)", (status) => {
+	const files = [
+		file("config", { status }),
+		file("config/nested/new.ts", { status: status === "A" ? "D" : "A" }),
+		file("config/other.ts", { status: status === "A" ? "D" : "A" }),
+	];
+	for (const ordered of [files, files.toReversed()]) {
+		const tree = fileTree(ordered);
+		expect(tree[0]!.file).toEqual(files[0]);
+		expect(treeFiles(tree)).toEqual(files);
+	}
+});
 it("preserves empty lines, hunk numbers and no-final-newline markers and pairs uneven replacement blocks", () => {
 	const lines = parsePatch(
 		"diff --git a/x b/x\n@@ -2,3 +2,4 @@\n context\n-old\n+new\n+\n+more\n\\ No newline at end of file\n",

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { passiveTools } from "../Workflow";
+import { passiveTools } from "../CapacityPolicy";
 import { useAction, useConfig } from "./client";
 import { DraftNotice } from "./pwa-ui";
 import { forgetDraft, revisionOf, useRestorableState } from "./restoration";

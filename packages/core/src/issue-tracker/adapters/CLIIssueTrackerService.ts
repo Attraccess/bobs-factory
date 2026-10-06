@@ -168,7 +168,16 @@ export class CLIIssueTrackerService
 			.map((id) => this.state.labels.get(id))
 			.filter((l): l is CLILabelData => l !== undefined);
 
-		return createCLIIssue(issueData, resolvedLabels);
+		const issue = createCLIIssue(issueData, resolvedLabels);
+		const teamId = issueData.teamId;
+		const stateId = issueData.stateId;
+		Object.defineProperties(issue, {
+			team: { get: () => (teamId ? this.fetchTeam(teamId) : undefined) },
+			state: {
+				get: () => (stateId ? this.fetchWorkflowState(stateId) : undefined),
+			},
+		});
+		return issue;
 	}
 
 	/**
@@ -431,17 +440,23 @@ export class CLIIssueTrackerService
 	/**
 	 * Fetch attachments for an issue.
 	 */
+	async linkPullRequest(
+		issueId: string,
+		url: string,
+		title: string,
+	): Promise<void> {
+		const issue = await this.fetchIssue(issueId);
+		const data = this.state.issues.get(issue.id)!;
+		data.attachments ??= [];
+		if (!data.attachments.some((a) => a.url === url))
+			data.attachments.push({ title, url });
+	}
+
 	async fetchIssueAttachments(
 		issueId: string,
 	): Promise<Array<{ title: string; url: string }>> {
 		const issue = await this.fetchIssue(issueId);
-
-		// Get attachments from the issue
-		const attachmentsConnection = await issue.attachments();
-		return attachmentsConnection.nodes.map(() => ({
-			title: "Untitled attachment",
-			url: "",
-		}));
+		return [...(this.state.issues.get(issue.id)?.attachments ?? [])];
 	}
 
 	// ========================================================================

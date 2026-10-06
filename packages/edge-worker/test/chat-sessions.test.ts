@@ -1736,8 +1736,9 @@ it.each([
 				),
 			{ timeout: 10000 },
 		);
-		await vi.waitFor(async () =>
-			expect((await slots.snapshot()).requests).toEqual([]),
+		await vi.waitFor(
+			async () => expect((await slots.snapshot()).requests).toEqual([]),
+			{ timeout: 10000 },
 		);
 		// Only the restored owner executes; stopping it remains terminal on another restart.
 		expect(providers[0].start).not.toHaveBeenCalled();

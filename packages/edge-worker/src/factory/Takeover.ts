@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { taskbotSource } from "./TicketTracking.js";
 
 const ticketIdPattern = /^[A-Za-z][A-Za-z0-9_]*-\d+$/;
 const ticketUrlPattern =
@@ -10,10 +11,11 @@ export const TakeoverSourceSchema = z
 	.string()
 	.refine(
 		(source) =>
+			Boolean(taskbotSource(source)) ||
 			ticketIdPattern.test(source) ||
 			ticketUrlPattern.test(source) ||
 			pullRequestUrlPattern.test(source),
-		"Use an existing Linear ticket ID (e.g. ATT-1127), Linear ticket URL or GitHub PR URL. Put task instructions in Additional instructions, or choose Software factory for a new task.",
+		"Use an existing Linear ticket ID (e.g. ATT-1127), Linear or Taskbot ticket URL or GitHub PR URL. Put task instructions in Additional instructions, or choose Software factory for a new task.",
 	);
 
 export type TakeoverCommand = (

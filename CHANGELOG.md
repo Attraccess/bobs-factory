@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Share a durable machine-wide pool across workers, agents and intensive workflow steps, with four slots by default, live capacity settings, separate queue states and cancellable queued work. Recipes can classify scripts and tools, including fanout branches. Preserve unsaved capacity settings through app updates and keep passive handoff polling outside the pool. Managed conversations resume through admission after each completed turn. Keep Slack/Zulip message submission available during capacity waits, visibly mark queued messages, and preserve pending follow-ups through restart. Concurrent submissions persist atomically so rejected messages cannot return after restart. ([Taskbot #37](https://taskbot.apps.janjaap.de/p/bobs-factory/t/37), [#20](https://github.com/Attraccess/bobs-factory/pull/20))
+- Share a durable machine-wide pool across workers, agents and intensive workflow steps, with four slots by default, live capacity settings, separate queue states and cancellable queued work. Recipes can classify scripts and tools, including fanout branches. Preserve unsaved capacity settings through app updates and keep passive handoff polling outside the pool. Managed conversations resume through admission after each completed turn. Keep Slack/Zulip message submission available during capacity waits, visibly mark queued messages, and preserve pending follow-ups through restart. Concurrent submissions persist atomically so rejected messages cannot return after restart, while ordinary history saves remain batched and responsive. ([Taskbot #37](https://taskbot.apps.janjaap.de/p/bobs-factory/t/37), [#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
 - Guided PR review now offers concise chapter steps, system maps, image viewers,
   browser-local reading checks and Changed files with diffs pinned to the reviewed
@@ -56,6 +56,19 @@ All notable changes to this project will be documented in this file.
 - Upgrade saved intensive handoff recipes to passive polling before startup validation, so worker restarts recover existing runs without changing their accepted definitions. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
 - Keep concurrent Codex executions isolated, gate and cancel integration setup, recover queued chat and PR work after restart, reclaim abandoned coordinator locks, retain unverified remote title capacity, and prevent recipe classification edits from overwriting one another. PR recovery preserves provider sandbox settings, GitHub serialization and stops during configuration loading, and removes failed recovery requests from capacity queues. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
+
+- Keep Bob's webhook and web UI responsive while saving large session histories; combine overlapping saves while preserving complete restart state. ([#25](https://github.com/Attraccess/bobs-factory/pull/25))
+
+- Start Factory workflows from Taskbot tickets with uploaded screenshots or files, preserving attachment details and resolving their download links. ([#24](https://github.com/Attraccess/bobs-factory/pull/24))
+
+- Factory backend calls to HTTP MCP servers now reuse the selected Codex runner's OAuth login and token refresh, allowing Taskbot workflows and pending ticket updates to recover after restarts. ([#22](https://github.com/Attraccess/bobs-factory/pull/22))
+
+- Keep completed and canceled tickets quiet on restart: skip historical attempts without pending tracking or confirmed merge evidence, and discard obsolete progress updates while retaining genuine pending merge delivery. ([#21](https://github.com/Attraccess/bobs-factory/pull/21))
+
+- Keep every changed file visible when a file replaces a directory or a directory replaces a file, including file-diff navigation; allow customized review-guide roles with restricted inputs to bind their reviewed revision successfully. ([#19](https://github.com/Attraccess/bobs-factory/pull/19))
+
+- Keep Factory ticket progress and PR links synchronized for native and Taskbot launches, retain the originating ticket through follow-ups, and recover pending tracking after provider failures with readable provider error messages. Use configured base branches for new native-ticket work, respect the selected runner’s MCP configuration, keep blocked handoffs In Progress with their corrective-work blockers, and mark coding tickets Done only after confirmed merge. ([Taskbot #77](https://taskbot.apps.janjaap.de/p/bobs-factory/t/77), [#19](https://github.com/Attraccess/bobs-factory/pull/19))
+
 - Preserve compact review pages, checked and explicitly unchecked steps, visited pages and item feedback through explicit app updates, including stale feedback warnings when the guide changes. ([#17](https://github.com/Attraccess/bobs-factory/pull/17))
 
 - Make review-map Before/After pills visibly checked in red/green, and connect changed-file area legends and shared-step tags to their matching colours. ([#17](https://github.com/Attraccess/bobs-factory/pull/17))

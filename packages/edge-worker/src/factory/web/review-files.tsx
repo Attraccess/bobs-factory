@@ -99,7 +99,7 @@ function Tree({
 		<ul className="review-file-tree">
 			{nodes.map((node) => (
 				<li key={node.name}>
-					{node.file ? (
+					{node.file && (
 						<button
 							type="button"
 							className="file-row"
@@ -150,13 +150,16 @@ function Tree({
 								</span>
 							)}
 						</button>
-					) : (
+					)}
+					{node.children.length > 0 && (
 						<details open>
 							<summary className="folder-row">
 								<strong>{node.name}/</strong>
-								<span>{node.files.length} files</span>
+								<span>{node.files.length - (node.file ? 1 : 0)} files</span>
 								<span className="folder-counts">
-									<Counts files={node.files} />
+									<Counts
+										files={node.files.filter((file) => file !== node.file)}
+									/>
 								</span>
 							</summary>
 							<Tree
