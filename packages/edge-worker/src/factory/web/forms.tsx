@@ -671,8 +671,10 @@ export function Recipes() {
 				recipe is used when nothing else matches. Launch methods apply to new
 				runs; existing runs retain their definitions.
 			</p>
-			<MachineCapacitySettings config={config} />
-			<RunTitleSettings config={config} />
+			<div className="recipe-settings">
+				<MachineCapacitySettings config={config} />
+				<RunTitleSettings config={config} />
+			</div>
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (
 					<article className="recipe" key={workflow.id}>
