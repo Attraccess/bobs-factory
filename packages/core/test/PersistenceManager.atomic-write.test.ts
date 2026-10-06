@@ -80,6 +80,73 @@ describe("PersistenceManager atomic writes", () => {
 		expect(parsed.state).toEqual(sampleState);
 	});
 
+	it("preserves native JSON encoding for transcript entries and mappings", async () => {
+		const state: SerializableEdgeWorkerState = {
+			...sampleState,
+			pendingTriggerMessages: {
+				empty: null,
+				text: '雪\n"\\',
+				absent: undefined,
+			} as never,
+			agentSessionEntries: {
+				'"session\\': [
+					{
+						content: '雪\n"\\',
+						metadata: { missing: undefined, date: new Date(0) },
+					},
+					undefined,
+					null,
+				] as never,
+			},
+		};
+		await manager.saveEdgeWorkerState(state);
+		expect(await manager.loadEdgeWorkerState()).toEqual(
+			JSON.parse(JSON.stringify(state)),
+		);
+	});
+
+	it("allows event-loop work before a large transcript finishes serializing", async () => {
+		let serializedEntries = 0;
+		let entriesAtYield = -1;
+		const content = "x".repeat(16 * 1024);
+		const entries = Array.from({ length: 2048 }, () => ({
+			get content() {
+				serializedEntries++;
+				if (serializedEntries === 1) {
+					setImmediate(() => {
+						entriesAtYield = serializedEntries;
+					});
+				}
+				return content;
+			},
+		}));
+		await manager.saveEdgeWorkerState({
+			agentSessionEntries: { session: entries as never },
+		});
+		expect(entriesAtYield).toBeGreaterThan(0);
+		expect(entriesAtYield).toBeLessThan(entries.length);
+		const loaded = await manager.loadEdgeWorkerState();
+		expect(loaded?.agentSessionEntries?.session).toHaveLength(entries.length);
+		expect(loaded?.agentSessionEntries?.session.at(-1)).toEqual({ content });
+	});
+
+	it("retains the previous complete state when entry serialization fails", async () => {
+		await manager.saveEdgeWorkerState(sampleState);
+		await expect(
+			manager.saveEdgeWorkerState({
+				agentSessionEntries: {
+					session: [
+						{ content: "x".repeat(256 * 1024) },
+						{ value: 1n },
+					] as never,
+				},
+			}),
+		).rejects.toThrow();
+		expect(await manager.loadEdgeWorkerState()).toEqual(sampleState);
+		await manager.saveEdgeWorkerState(sampleState);
+		expect(existsSync(join(dir, "edge-worker-state.json.tmp"))).toBe(false);
+	});
+
 	it("treats an intentionally cleared state file as no state, not an error", async () => {
 		await manager.saveEdgeWorkerState(sampleState);
 		await manager.deleteStateFile();

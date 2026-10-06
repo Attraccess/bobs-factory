@@ -333,6 +333,7 @@ export class EdgeWorker extends EventEmitter {
 	private titleGenerator?: RunTitleGenerator;
 	private titleStarted = new Set<string>();
 	private stateSaveQueue: Promise<void> = Promise.resolve();
+	private pendingStateSave?: Promise<void>;
 	private recoveryAbort = new AbortController();
 	private stopping = false;
 	private factoryServer?: FactoryServer;
@@ -9945,7 +9946,12 @@ ${input.userComment}
 	 * Save current EdgeWorker state for all repositories
 	 */
 	private savePersistedState(): Promise<void> {
+		if (this.pendingStateSave) return this.pendingStateSave;
 		this.stateSaveQueue = this.stateSaveQueue.then(async () => {
+			// Requests waiting for a snapshot share this write. Once it starts,
+			// new changes schedule one follow-up snapshot. A caller only waits
+			// for its own batch, so ongoing activity cannot hold it indefinitely.
+			this.pendingStateSave = undefined;
 			try {
 				const state = this.serializeMappings();
 				await this.persistenceManager.saveEdgeWorkerState(state);
@@ -9956,6 +9962,7 @@ ${input.userComment}
 				this.logger.error(`Failed to save persisted EdgeWorker state:`, error);
 			}
 		});
+		this.pendingStateSave = this.stateSaveQueue;
 		return this.stateSaveQueue;
 	}
 
