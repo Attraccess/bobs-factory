@@ -148,6 +148,22 @@ describe("ClaudeRunner", () => {
 				}),
 			);
 		});
+		it.each([
+			undefined,
+			"sonnet",
+		])("omits an identical Sonnet fallback after applying defaults (%s)", async (fallbackModel) => {
+			mockQuery.mockImplementation(async function* () {});
+			const configured = new ClaudeRunner(
+				{ ...defaultConfig, model: "sonnet", fallbackModel },
+				false,
+			);
+			await configured.start("Generate a title");
+			expect(mockQuery.mock.calls.at(-1)?.[0].options).toMatchObject({
+				model: "sonnet",
+				fallbackModel: undefined,
+			});
+		});
+
 		it("should start Claude session with basic prompt", async () => {
 			// Mock successful query
 			const mockMessages: SDKMessage[] = [

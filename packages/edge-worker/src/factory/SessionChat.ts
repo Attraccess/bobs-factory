@@ -3,7 +3,8 @@ import type { IAgentRunner } from "cyrus-core";
 export interface ChatState {
 	enabled: boolean;
 	available: boolean;
-	mode?: "steer" | "continue";
+	mode?: "steer" | "continue" | "queue";
+	queuedMessageIds?: string[];
 	step?: string;
 	reason?: string;
 }

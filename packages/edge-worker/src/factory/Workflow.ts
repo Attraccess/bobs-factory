@@ -1,3 +1,7 @@
+import { passiveTools } from "./CapacityPolicy.js";
+
+export { isComputeIntensive, passiveTools } from "./CapacityPolicy.js";
+
 import type { WorkflowTrigger } from "cyrus-core";
 import { z } from "zod";
 import { agentSettings, resolveAgentSettings } from "./AgentSettings.js";
@@ -20,6 +24,7 @@ const base = {
 export const AgentStepSchema = z.object({
 	...base,
 	type: z.literal("agent"),
+	computeIntensive: z.never().optional(),
 	prompt: z.string().min(1),
 	inputs: z.array(z.string()).optional(),
 	...agentSettings,
@@ -46,6 +51,7 @@ export interface WorkflowStep {
 	json?: boolean;
 	askQuestions?: boolean;
 	chat?: boolean;
+	computeIntensive?: boolean;
 	script?: string;
 	tool?: string;
 	args?: string[];
@@ -56,18 +62,30 @@ export interface WorkflowStep {
 export const StepSchema: z.ZodType<WorkflowStep> = z.lazy(() =>
 	z.discriminatedUnion("type", [
 		AgentStepSchema,
-		z.object({ ...base, type: z.literal("workflow"), workflow: id }),
-		z.object({ ...base, type: z.literal("script"), script: z.string().min(1) }),
+		z.object({
+			...base,
+			type: z.literal("workflow"),
+			workflow: id,
+			computeIntensive: z.never().optional(),
+		}),
+		z.object({
+			...base,
+			type: z.literal("script"),
+			script: z.string().min(1),
+			computeIntensive: z.boolean().optional(),
+		}),
 		z.object({
 			...base,
 			type: z.literal("tool"),
 			tool: z.string().min(1),
+			computeIntensive: z.boolean().optional(),
 			args: z.array(z.string()).default([]),
 			arguments: z.record(z.string(), z.unknown()).optional(),
 		}),
 		z.object({
 			...base,
 			type: z.literal("fanout"),
+			computeIntensive: z.never().optional(),
 			groups: z.array(z.array(StepSchema).min(1)).min(1).max(8),
 		}),
 	]),
@@ -185,6 +203,10 @@ export function validateWorkflows(value: unknown): Workflow[] {
 			const names = new Set(steps.map((step) => step.id));
 			if (names.size !== steps.length) throw new Error("Duplicate step IDs");
 			for (const step of steps) {
+				if (step.computeIntensive && passiveTools.includes(step.tool ?? ""))
+					throw new Error(
+						`Passive wait ${step.tool} cannot consume execution capacity`,
+					);
 				if (step.type === "agent" && step.runner)
 					resolveAgentSettings(step.runner, step);
 				for (const target of [
@@ -245,3 +267,6 @@ export function readPath(value: unknown, path: string): unknown {
 
 export const workflowTriggerInstructions =
 	"Current workflow launch behavior (capability reference): Factory manual launches accept an originating Linear or Taskbot ticket URL as the prompt or explicit ticket source. The runtime fetches complete ticket context, retains verified tracker identity through roles and follow-ups, and owns lifecycle comments and PR links. Coding tickets stay nonterminal during work, In Review awaiting human/provider action, and Done only after provider-confirmed merge. Ticket synchronization failures remain visible in run activity and ticketSync receipts; retry only tracking through POST /api/runs/:id/ticket-sync after restoring access or reassessing conflicts. Simple retains its native tracking lifecycle. Workflow selection is separate from repository routing. Stock workflow labels are workflow:factory (or factory), workflow:takeover (or takeover), and workflow:simple; operators can customize labels in Recipes. New launches select an explicit manual UI/API workflow choice, then [workflow=<id>] in the original triggering comment, then the issue description, then the first matching workflow in configured label order, then the single saved default. Escaped brackets are supported. Quoted text and code examples are ignored; repeated identical selectors are valid, but malformed or conflicting selectors in the winning source reject without fallback. Higher-priority sources override lower-source conflicts. New mention-created sessions on an active issue reject temporarily pending #36; reply to the existing session for steering or answers. The selected workflow must allow ticket-assignment for assignments or @mentions, manual for new UI/API or follow-up launches, and workflow for nested calls. A disallowed selection is rejected without fallback; enable its permission in Recipes, change the selection/label, or choose an eligible default. Existing runs retain their accepted definitions; replies and resume do not select a new workflow. Use these supported launch methods when starting work. When the task requests changes to this product, evaluate the proposed behavior against the task's requirements and accepted decisions, within your assigned role. Missing current capabilities are implementation work, not a conflict with these instructions; update the capability reference alongside an implemented behavior change. Explicit task restrictions such as planning-only or deferred implementation still apply.";
+
+export const capacityInstructions =
+	"Machine capacity bounds scheduled agent executions and intensive workflow steps. Do not launch harness subagents or independent background heavy work inside a managed agent turn. Schedule heavy children as nested workflow steps or fanout branches so each receives capacity. Ask questions in your final response and finish the turn; native AskUserQuestion is disabled because its callback cannot safely suspend all parallel execution. The default machine pool has four slots. Parent orchestration, human waits, and passive CI waits consume no slots.";

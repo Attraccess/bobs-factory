@@ -18,6 +18,7 @@ import {
 	api,
 	artifactsOf,
 	attention,
+	capacityPhaseLabel,
 	client,
 	finished,
 	icons,
@@ -30,6 +31,7 @@ import {
 	useLiveUpdates,
 	useRun,
 	useRuns,
+	workingLabel,
 } from "./client";
 import { RunConversation } from "./conversation";
 import {
@@ -805,9 +807,19 @@ function RunPage({
 		artifacts = artifactsOf(run),
 		steps = stepsOf(run, config),
 		visited = new Set(run.history?.map((h: any) => h.step));
-	const rows = steps.length
+	const graphRows = steps.length
 			? steps
 			: [{ id: "simple", key: "simple", name: "Cyrus session" }],
+		rows = [
+			...graphRows,
+			...Object.keys(run.capacityLeaves ?? {})
+				.filter((key) => !graphRows.some((step) => step.key === key))
+				.map((key) => ({
+					id: key,
+					key,
+					name: key === "setup" ? "Prepare workspace" : key.split("/").at(-1),
+				})),
+		],
 		pr = run.outputs?.["draft-pr"]?.url;
 	return (
 		<>
@@ -830,7 +842,7 @@ function RunPage({
 											? run.outputs?.guide
 												? "Ready for your review"
 												: "Done — take a look"
-											: "Working")}
+											: workingLabel(run))}
 						</span>
 						<RunMeta run={run} config={config} />
 						<span>started {ago(run.createdAt)}</span>
@@ -839,6 +851,9 @@ function RunPage({
 					<RunTitleStatus run={run} />
 				</div>
 				<div className="actions">
+					{run.status === "capacity-waiting" && (
+						<p role="status">Waiting for machine capacity</p>
+					)}
 					{active(run.status) ? (
 						<ConfirmStop
 							requiresConnection
@@ -922,7 +937,10 @@ function RunPage({
 								(h: any) => h.step === step.key,
 							).length,
 							started =
-								visited.has(step.key) || current === step.key || !steps.length,
+								visited.has(step.key) ||
+								Boolean(run.capacityLeaves?.[step.key]) ||
+								current === step.key ||
+								!steps.length,
 							artifact = artifacts.find((a) => a.name === step.id),
 							isOpen = open[step.key] ?? (!current && i === rows.length - 1);
 						return (
@@ -942,6 +960,11 @@ function RunPage({
 								>
 									<span className="step-dot">{icons[step.id] ?? "⚙️"}</span>
 									<strong>{step.name}</strong>
+									{run.capacityLeaves?.[step.key] && (
+										<span className="chip">
+											{capacityPhaseLabel(run.capacityLeaves[step.key].phase)}
+										</span>
+									)}
 									{count > 1 && <span className="chip">↺ {count}</span>}
 									{artifact && (
 										<span role="img" aria-label="Has artifact">

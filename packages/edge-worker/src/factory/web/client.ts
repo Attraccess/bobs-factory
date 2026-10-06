@@ -214,7 +214,9 @@ export function useAction() {
 		}) => api(path, { method, body: JSON.stringify(body) }),
 		onSuccess: async (data, { path, method = "POST" }) => {
 			if (
-				["/api/workflows", "/api/title-settings"].includes(path) &&
+				["/api/workflows", "/api/title-settings", "/api/capacity"].includes(
+					path,
+				) &&
 				method === "PUT"
 			) {
 				// A failed refresh must not let the next edit restore old permissions.
@@ -246,7 +248,27 @@ export const finished = (status: string) =>
 		"cancelled",
 	].includes(status);
 export const active = (status: string) =>
-	["running", "active", "waiting"].includes(status);
+	["running", "active", "waiting", "capacity-waiting", "stopping"].includes(
+		status,
+	);
+export function capacityPhaseLabel(phase?: string): string {
+	if (phase === "waiting-human") return "Waiting for review";
+	return phase === "queued"
+		? "Waiting for capacity"
+		: phase === "waiting-ci"
+			? "Waiting for CI"
+			: phase === "stopping"
+				? "Stopping"
+				: "Executing";
+}
+export function workingLabel(run: any): string {
+	if (run.status === "capacity-waiting") return "Waiting for capacity";
+	if (run.status === "stopping") return "Stopping";
+	const leaves = Object.values(run.capacityLeaves ?? {}) as { phase: string }[];
+	return leaves.length && leaves.every((leaf) => leaf.phase === "waiting-ci")
+		? "Waiting for CI"
+		: "Working";
+}
 export function ago(at?: string) {
 	if (!at) return "just now";
 	const minutes = Math.max(
