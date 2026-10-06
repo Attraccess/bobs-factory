@@ -6,6 +6,16 @@ export interface WorkflowTriggerOrigin {
 	type: "manual" | "ticket-assignment";
 	workflowId: string;
 	selectionMethod?: "explicit" | "label" | "default";
+	selection?: {
+		source:
+			| "manual"
+			| "comment-selector"
+			| "description-selector"
+			| "label"
+			| "default";
+		selector?: string;
+		label?: string;
+	};
 	at: string;
 	manual?: { method: "composer-api" | "follow-up"; sourceRunId?: string };
 	ticket?: {

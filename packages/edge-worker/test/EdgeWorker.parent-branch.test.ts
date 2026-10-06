@@ -1,4 +1,6 @@
+import { rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import { ClaudeRunner } from "cyrus-claude-runner";
 import type { LinearAgentSessionCreatedWebhook } from "cyrus-core";
@@ -70,6 +72,9 @@ describe("EdgeWorker - Parent Branch Handling", () => {
 	};
 
 	beforeEach(() => {
+		rmSync(join(TEST_CYRUS_HOME, "factory", "ticket-deliveries.json"), {
+			force: true,
+		});
 		vi.clearAllMocks();
 
 		// Mock console methods
@@ -128,6 +133,7 @@ describe("EdgeWorker - Parent Branch Handling", () => {
 		// Mock AgentSessionManager
 		mockAgentSessionManager = {
 			createCyrusAgentSession: vi.fn(),
+			getSessionsByIssueId: vi.fn().mockReturnValue([]),
 			getSession: vi.fn().mockReturnValue({
 				claudeSessionId: "claude-session-123",
 				workspace: { path: "/test/workspaces/TEST-123" },
@@ -201,6 +207,10 @@ Base Branch: {{base_branch}}`;
 		// The EdgeWorker constructor creates real LinearIssueTrackerService instances,
 		// but we need to replace them with mocks for testing
 		const mockIssueTracker = {
+			fetchComments: vi
+				.fn()
+				.mockResolvedValue({ nodes: [], pageInfo: { hasNextPage: false } }),
+			fetchIssueAttachments: vi.fn().mockResolvedValue([]),
 			fetchIssue: vi.fn().mockImplementation(async (issueId: string) => {
 				// Return the same mock data as mockLinearClient.issue()
 				return mockLinearClient.issue(issueId);

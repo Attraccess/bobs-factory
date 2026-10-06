@@ -49,7 +49,28 @@ export function originLabel(run: any): string {
 			? "Manual follow-up"
 			: "Manual start";
 	const ticket = origin.ticket;
-	return `${ticket?.provider === "cli" ? "CLI fixture" : "Linear"} ${ticket?.subtype ?? "ticket start"}${ticket?.identifier ? ` · ${ticket.identifier}` : ""}`;
+	return `${ticket?.provider === "cli" ? "CLI fixture" : "Linear"} ${ticket?.subtype ?? "ticket start"}${ticket?.identifier ? ` · ${ticket.identifier}` : ""} · ${origin.workflowId} · ${selectionLabel(origin)}`;
+}
+
+function selectionLabel(origin: any): string {
+	const selection = origin?.selection;
+	switch (selection?.source) {
+		case "manual":
+			return "manual workflow choice";
+		case "comment-selector":
+			return `triggering comment ${selection.selector}`;
+		case "description-selector":
+			return `issue description ${selection.selector}`;
+		case "label":
+			return `configured label ${selection.label ?? "(label unavailable)"}`;
+		case "default":
+			return "saved default";
+	}
+	return origin?.selectionMethod === "label"
+		? "configured label (label unavailable)"
+		: origin?.selectionMethod === "default"
+			? "saved default"
+			: "selection source unavailable for this older run";
 }
 
 export function RunOrigin({ run }: { run: any }) {
@@ -67,6 +88,11 @@ export function RunOrigin({ run }: { run: any }) {
 					<Link to={`/runs/${origin.manual.sourceRunId}`}>Source run</Link>
 				)}
 			</p>
+			{origin && (
+				<p>
+					Workflow: {origin.workflowId} · Selected by {selectionLabel(origin)}
+				</p>
+			)}
 			{(origin || calls.length > 0) && (
 				<details>
 					<summary>

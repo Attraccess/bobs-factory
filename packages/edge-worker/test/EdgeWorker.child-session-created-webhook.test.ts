@@ -1,3 +1,5 @@
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import type { LinearAgentSessionCreatedWebhook } from "cyrus-core";
 import { LinearEventTransport } from "cyrus-linear-event-transport";
@@ -42,12 +44,16 @@ describe("EdgeWorker - child AgentSessionEvent.created webhooks", () => {
 	};
 
 	beforeEach(() => {
+		rmSync(join(TEST_CYRUS_HOME, "factory", "ticket-deliveries.json"), {
+			force: true,
+		});
 		vi.clearAllMocks();
 		vi.spyOn(console, "log").mockImplementation(() => {});
 		vi.spyOn(console, "error").mockImplementation(() => {});
 
 		mockAgentSessionManager = {
 			createCyrusAgentSession: vi.fn(),
+			getSession: vi.fn(),
 			getSessionsByIssueId: vi.fn().mockReturnValue([]),
 			serializeState: vi.fn().mockReturnValue({ sessions: {}, entries: {} }),
 			restoreState: vi.fn(),
@@ -99,6 +105,9 @@ describe("EdgeWorker - child AgentSessionEvent.created webhooks", () => {
 		};
 
 		edgeWorker = new EdgeWorker(mockConfig);
+		vi.spyOn(edgeWorker as any, "preflightTicketLaunch").mockResolvedValue(
+			undefined,
+		);
 	});
 
 	afterEach(() => {
@@ -292,9 +301,9 @@ describe("EdgeWorker - child AgentSessionEvent.created webhooks", () => {
 					childSessionId,
 				),
 			).toBeUndefined();
-			expect(
-				mockAgentSessionManager.getSessionsByIssueId,
-			).not.toHaveBeenCalled();
+			expect(mockAgentSessionManager.getSessionsByIssueId).toHaveBeenCalledWith(
+				childIssueId,
+			);
 			expect(initializeSpy).toHaveBeenCalledOnce();
 		});
 

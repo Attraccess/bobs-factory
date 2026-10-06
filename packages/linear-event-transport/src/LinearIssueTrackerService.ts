@@ -421,14 +421,28 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 				throw new Error(`Issue ${issueId} not found`);
 			}
 
-			// Call the Linear SDK's attachments() method which returns a Connection
-			const attachmentsConnection = await issue.attachments();
-
-			// Extract title and url from each attachment node
-			return attachmentsConnection.nodes.map((attachment) => ({
-				title: attachment.title || "Untitled attachment",
-				url: attachment.url,
-			}));
+			const attachments: Array<{ title: string; url: string }> = [];
+			const cursors = new Set<string>();
+			let after: string | undefined;
+			do {
+				const page = await issue.attachments({
+					first: 100,
+					...(after ? { after } : {}),
+				});
+				attachments.push(
+					...page.nodes.map((attachment) => ({
+						title: attachment.title || "Untitled attachment",
+						url: attachment.url,
+					})),
+				);
+				if (!page.pageInfo?.hasNextPage) break;
+				const cursor = page.pageInfo.endCursor;
+				if (!cursor || cursors.has(cursor))
+					throw new Error("Ticket attachment pagination did not advance");
+				cursors.add(cursor);
+				after = cursor;
+			} while (after);
+			return attachments;
 		} catch (error) {
 			const err = new Error(
 				`Failed to fetch attachments for issue ${issueId}: ${error instanceof Error ? error.message : String(error)}`,

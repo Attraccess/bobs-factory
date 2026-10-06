@@ -212,6 +212,25 @@ export const CaptureSchema = z.object({
 		.array(z.object({ area: z.string(), reason: z.string() }))
 		.default([]),
 });
+function captureGaps(capture: z.infer<typeof CaptureSchema>, areas: unknown) {
+	const gaps = [...capture.unavailable];
+	if (Array.isArray(areas)) {
+		for (const area of areas) {
+			const missing = (area.states ?? []).filter(
+				(state: string) =>
+					!capture.screenshots.some(
+						(shot) => shot.area === area.name && shot.state === state,
+					),
+			);
+			if (missing.length && !gaps.some((gap) => gap.area === area.name))
+				gaps.push({
+					area: area.name,
+					reason: `No screenshot supplied for states: ${missing.join("; ")}`,
+				});
+		}
+	}
+	return gaps;
+}
 export function verifiedScreenshot(path: string, directory: string): string {
 	const resolved = realpathSync(resolve(directory, path));
 	const inside = relative(realpathSync(directory), resolved);
@@ -443,10 +462,19 @@ export class FactoryTools {
 				);
 				if (source === "visual-review") {
 					const capture = CaptureSchema.parse(run.outputs.capture);
-					if (!capture.screenshots.length || capture.unavailable.length)
-						throw new Error(
-							"Visual evidence is incomplete. Supply capture tools/access and start a new run; screenshots cannot be approved without evidence.",
-						);
+					const gaps = captureGaps(
+						capture,
+						readPath(run.outputs, "visual-scope.areas"),
+					);
+					if (!capture.screenshots.length || gaps.length)
+						return {
+							approved: false,
+							findings: open,
+							captureBlocked: true,
+							questions: [
+								`Visual evidence is incomplete. ${gaps.length ? gaps.map((gap) => `${gap.area}: ${gap.reason}`).join("\n\n") : "No screenshots were supplied."}\n\nResolve the capture access, tooling or application setup above, then explain how to capture the missing states. Your answer retries capture and visual review in this run, preserving verified accepted screenshots where possible. An answer does not approve or waive missing evidence.`,
+							],
+						};
 					for (const shot of capture.screenshots)
 						verifiedScreenshot(shot.path, context.evidenceDir);
 				}
@@ -719,23 +747,7 @@ export function captureEvidence(
 				},
 			]);
 	}
-	if (Array.isArray(areas)) {
-		for (const area of areas) {
-			for (const state of area.states ?? []) {
-				if (
-					!capture.screenshots.some(
-						(shot) => shot.area === area.name && shot.state === state,
-					) &&
-					!capture.unavailable.some((item) => item.area === area.name)
-				) {
-					capture.unavailable.push({
-						area: area.name,
-						reason: `No screenshot supplied for state: ${state}`,
-					});
-				}
-			}
-		}
-	}
+	capture.unavailable = captureGaps(capture, areas);
 	const scope = context.run.outputs["visual-scope"] as
 		| {
 				areas?: { name: string; dependencies?: string[]; changed?: boolean }[];

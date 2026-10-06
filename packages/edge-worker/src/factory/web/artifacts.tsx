@@ -62,6 +62,7 @@ const typeIcons: Record<string, string> = {
 export function artifactSummary(v: any): string {
 	if (v?.__artifactPreview)
 		return `${Math.ceil(v.size / 1024)} KB · open to inspect`;
+	if (v?.captureBlocked) return "Capture assistance needed";
 	if (v?.screenshots) return `${v.screenshots.length} screenshots`;
 	if (v?.decisions) return `${v.decisions.length} decisions`;
 	if (v?.checks && v?.headSha)
@@ -545,11 +546,20 @@ function RenderArtifact({
 		case "gate":
 			return (
 				<>
-					<p className={`chip ${v.approved ? "green" : "red"}`}>
-						{v.approved ? "✅ Approved" : "⛔ Changes needed"}
+					<p
+						className={`chip ${v.captureBlocked ? "orange" : v.approved ? "green" : "red"}`}
+					>
+						{v.captureBlocked
+							? "⏸ Capture assistance needed"
+							: v.approved
+								? "✅ Approved"
+								: "⛔ Changes needed"}
 					</p>
+					{v.captureBlocked && <List items={v.questions} />}
 					<List items={v.feedback} />
-					{v.findings && <Findings items={v.findings} />}
+					{v.findings && (!v.captureBlocked || v.findings.length > 0) && (
+						<Findings items={v.findings} />
+					)}
 				</>
 			);
 		case "scope":
