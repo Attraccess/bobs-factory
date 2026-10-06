@@ -320,8 +320,8 @@ function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 					`[data-comment-path="${CSS.escape(target.path)}"]`,
 				);
 				item?.scrollIntoView({ block: "center" });
-				item
-					?.querySelector<HTMLButtonElement>(".item-comment-actions button")
+				document
+					.querySelector<HTMLTextAreaElement>(".comment-popover textarea")
 					?.focus({ preventScroll: true });
 			}),
 		);
@@ -369,6 +369,11 @@ function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 					))}
 				</select>
 			</label>
+			{feedback && (
+				<p className="comment-hint">
+					Hold an item to comment, or use its comment button.
+				</p>
+			)}
 			<CollectedFeedback go={goToItem} />
 			<section className="guide-page" key={page}>
 				{annotate(
