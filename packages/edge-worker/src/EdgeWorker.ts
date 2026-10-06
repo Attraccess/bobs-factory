@@ -7742,7 +7742,7 @@ ${taskSection}`;
 					state: pr.state,
 					headSha: pr.headRefOid,
 				});
-				if (output) {
+				if (output && pendingMergeConfirmation(run, output)) {
 					run.outputs[pending.step.id] = output;
 					if (pending.checkpoint.active!.phase === "executing")
 						run.history.push({

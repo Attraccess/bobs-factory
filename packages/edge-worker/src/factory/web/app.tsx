@@ -22,6 +22,7 @@ import {
 	finished,
 	icons,
 	phase,
+	refreshFactory,
 	settleReason,
 	stepsOf,
 	useAction,
@@ -41,7 +42,15 @@ import {
 	WorkingRow,
 } from "./focus";
 import { Composer, Recipes } from "./forms";
+import { pwaState, startPwa, usePwa } from "./pwa";
+import { ConnectionNotice, InstallControl, RecoveredDrafts } from "./pwa-ui";
 import { useReadingPosition } from "./reading-position";
+import {
+	completeRestoration,
+	forgetDraft,
+	restoredDraft,
+	useRestorableState,
+} from "./restoration";
 import { ReviewPage } from "./review-page";
 import {
 	readStored,
@@ -172,6 +181,7 @@ function Header({
 					</Link>
 				</nav>
 				<div className="header-actions">
+					<InstallControl />
 					<Dropdown.Root>
 						<Dropdown.Trigger asChild>
 							<Button variant="icon" aria-label={`Theme: ${theme.choice}`}>
@@ -351,19 +361,30 @@ function Today({
 	const settle = useSettle(),
 		navigate = useNavigate(),
 		location = useLocation(),
-		[selected, setSelected] = useState<string | undefined>(
+		requestedFocus = useRef<string | undefined>(location.state?.focusRunId),
+		[selected, setSelected] = useRestorableState<string | undefined>(
+			"today/selected",
 			() =>
 				location.state?.focusRunId ??
 				(readTextStored("bob-selected", "", true) || undefined),
 		),
-		[skipped, setSkipped] = useState<string[]>(() => {
-			const saved = readStored<unknown>("bob-skipped", [], true);
-			return Array.isArray(saved)
-				? saved.filter((id) => typeof id === "string")
-				: [];
-		}),
-		[expanded, setExpanded] = useState<string>(),
-		[showAllAttention, setShowAllAttention] = useState(false),
+		[skipped, setSkipped] = useRestorableState<string[]>(
+			"today/skipped",
+			() => {
+				const saved = readStored<unknown>("bob-skipped", [], true);
+				return Array.isArray(saved)
+					? saved.filter((id) => typeof id === "string")
+					: [];
+			},
+		),
+		[expanded, setExpanded] = useRestorableState<string | undefined>(
+			"today/expanded",
+			undefined,
+		),
+		[showAllAttention, setShowAllAttention] = useRestorableState(
+			"today/all-attention",
+			false,
+		),
 		[highlight, setHighlight] = useState<string>();
 	const [swipe, setSwipe] = useState(0);
 	useReadingPosition("bob-today-position");
@@ -385,7 +406,9 @@ function Today({
 					(b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt)
 				);
 			}),
-		current = deck.find((run) => run.id === selected) ?? deck[0],
+		current =
+			deck.find((run) => run.id === (requestedFocus.current ?? selected)) ??
+			deck[0],
 		index = deck.indexOf(current),
 		working = available
 			.filter((run) => active(run.status) && !attention(run))
@@ -399,6 +422,7 @@ function Today({
 		touch = useRef<number | undefined>(undefined);
 	useEffect(() => {
 		if (current && selected !== current.id) setSelected(current.id);
+		requestedFocus.current = undefined;
 		if (current && location.state?.focusRunId !== current.id)
 			navigate("/", { replace: true, state: { focusRunId: current.id } });
 		if (!initial.current && priorCount.current > 0 && deck.length === 0) {
@@ -410,7 +434,14 @@ function Today({
 		priorCount.current = deck.length;
 		initial.current = false;
 		return undefined;
-	}, [current, deck.length, selected, location.state?.focusRunId, navigate]);
+	}, [
+		current,
+		deck.length,
+		selected,
+		setSelected,
+		location.state?.focusRunId,
+		navigate,
+	]);
 	useEffect(() => {
 		if (!highlight) return;
 		const timer = setTimeout(() => setHighlight(undefined), 1600);
@@ -706,7 +737,19 @@ function RunPage({
 		toast = useToast(),
 		settle = useSettle(),
 		title = useRef<HTMLHeadingElement>(null),
-		[open, setOpen] = useState<Record<string, boolean>>({});
+		[open, setOpen] = useRestorableState<Record<string, boolean>>(
+			`panels/${id}`,
+			{},
+		),
+		panelsEdited = useRef(Boolean(restoredDraft(`panels/${id}`)));
+	// Auto-opened steps belong to this mounted page. Retain historical panel
+	// state only when the user changed it or it was restored from an update.
+	useEffect(
+		() => () => {
+			if (!panelsEdited.current) forgetDraft(`panels/${id}`);
+		},
+		[id],
+	);
 
 	const current = run?.step;
 	const hasRun = Boolean(run);
@@ -720,7 +763,7 @@ function RunPage({
 					? previous
 					: { ...previous, [current]: true },
 			);
-	}, [current]);
+	}, [current, setOpen]);
 	useEffect(
 		() => () => {
 			const data = client.getQueryData<any>(["run", id]);
@@ -742,6 +785,8 @@ function RunPage({
 		},
 		[id],
 	);
+	if (query.isLoading && pwaState().status === "offline")
+		return <p role="status">Reconnect to load this run.</p>;
 	if (query.isLoading) return <Loading />;
 	if (!run)
 		return (
@@ -791,6 +836,7 @@ function RunPage({
 				<div className="actions">
 					{active(run.status) ? (
 						<ConfirmStop
+							requiresConnection
 							busy={action.isPending}
 							onStop={() =>
 								void action
@@ -884,7 +930,10 @@ function RunPage({
 									className="step-row"
 									disabled={!started}
 									aria-expanded={isOpen}
-									onClick={() => setOpen({ ...open, [step.key]: !isOpen })}
+									onClick={() => {
+										panelsEdited.current = true;
+										setOpen({ ...open, [step.key]: !isOpen });
+									}}
 								>
 									<span className="step-dot">{icons[step.id] ?? "⚙️"}</span>
 									<strong>{step.name}</strong>
@@ -936,7 +985,8 @@ function Loading() {
 	);
 }
 function App() {
-	const liveError = useLiveUpdates();
+	const pwa = usePwa();
+	useLiveUpdates();
 	const settle = useSettle();
 	const runsQuery = useRuns(),
 		configQuery = useConfig(),
@@ -945,11 +995,11 @@ function App() {
 		location = useLocation(),
 		navigate = useNavigate(),
 		[shortcuts, setShortcuts] = useState(false),
-		[inspection, setInspection] = useState<{
-			run: any;
-			name: string;
-			image?: number;
-		}>();
+		[inspection, setInspection] = useRestorableState<
+			{ runId: string; name: string; image?: number } | undefined
+		>("inspector/selection", undefined);
+	const inspectionRun = useRun(inspection?.runId);
+
 	const count = runs.filter(
 			(run) => !settleReason(run, runs) && attention(run),
 		).length,
@@ -964,6 +1014,11 @@ function App() {
 						: runs.length
 							? "party"
 							: "sleepy";
+	useEffect(() => {
+		if (config && runsQuery.data && pwa.status === "ready") {
+			requestAnimationFrame(completeRestoration);
+		}
+	}, [config, runsQuery.data, pwa.status]);
 	useEffect(() => {
 		document.title = `${count ? `(${count}) ` : ""}Bob's Factory`;
 	}, [count]);
@@ -1012,7 +1067,7 @@ function App() {
 		};
 	}, []);
 	const inspect = (run: any, name: string, image?: number) =>
-		setInspection({ run, name, image });
+		setInspection({ runId: run.id, name, image });
 	return (
 		<>
 			<a className="skip-link" href="#main-content">
@@ -1024,57 +1079,62 @@ function App() {
 				onShortcuts={() => setShortcuts(true)}
 			/>
 			<main id="main-content" className="page">
-				{(runsQuery.error || configQuery.error || liveError) && (
-					<div className="connection-error" role="alert">
-						Can't reach the factory (
-						{(runsQuery.error ?? configQuery.error)?.message ?? liveError}).
-						Retrying…
-					</div>
-				)}
-				{!config || runsQuery.isLoading ? (
-					<Loading />
-				) : (
-					<Routes>
-						<Route
-							path="/"
-							element={
-								<Today runs={runs} config={config} onInspect={inspect} />
-							}
-						/>
-						<Route path="/recipes" element={<Recipes />} />
-						<Route
-							path="/runs/:id/review"
-							element={
-								<ReviewPage
-									key={location.pathname}
-									config={config}
-									onSettled={(run) => void settle.change(run, "settle")}
-									settling={settle.busy}
-								/>
-							}
-						/>
-						<Route
-							path="/runs/:id"
-							element={
-								<RunPage
-									key={location.pathname}
-									runs={runs}
-									config={config}
-									onInspect={inspect}
-								/>
-							}
-						/>
-						<Route
-							path="*"
-							element={
-								<>
-									<h1>Page not found</h1>
-									<Link to="/">← Today</Link>
-								</>
-							}
-						/>
-					</Routes>
-				)}
+				<ConnectionNotice hasData={Boolean(config || runs.length)} />
+				<RecoveredDrafts />
+				<div inert={pwa.updating}>
+					{!config || (runsQuery.isLoading && !runsQuery.data) ? (
+						pwa.status === "offline" || pwa.status === "mismatch" ? (
+							<p className="intro">
+								The app shell is available. Reconnect to load your Today queue
+								and runs.
+							</p>
+						) : (
+							<Loading />
+						)
+					) : (
+						<Routes>
+							<Route
+								path="/"
+								element={
+									<Today runs={runs} config={config} onInspect={inspect} />
+								}
+							/>
+							<Route path="/recipes" element={<Recipes />} />
+							<Route
+								path="/runs/:id/review"
+								element={
+									<ReviewPage
+										key={location.pathname}
+										config={config}
+										onSettled={(run) => void settle.change(run, "settle")}
+										settling={settle.busy}
+									/>
+								}
+							/>
+
+							<Route
+								path="/runs/:id"
+								element={
+									<RunPage
+										key={location.pathname}
+										runs={runs}
+										config={config}
+										onInspect={inspect}
+									/>
+								}
+							/>
+							<Route
+								path="*"
+								element={
+									<>
+										<h1>Page not found</h1>
+										<Link to="/">← Today</Link>
+									</>
+								}
+							/>
+						</Routes>
+					)}
+				</div>
 			</main>
 			<Modal
 				open={shortcuts}
@@ -1106,9 +1166,10 @@ function App() {
 					<Button onClick={() => setShortcuts(false)}>Got it</Button>
 				</div>
 			</Modal>
-			{inspection && (
+			{inspection && inspectionRun.data && (
 				<Inspector
-					run={inspection.run}
+					key={`${inspection.runId}/${inspection.name}`}
+					run={inspectionRun.data}
 					selected={inspection}
 					onClose={() => setInspection(undefined)}
 					onChange={(name, image) =>
@@ -1119,6 +1180,7 @@ function App() {
 		</>
 	);
 }
+startPwa(refreshFactory);
 createRoot(document.getElementById("root")!).render(
 	<QueryClientProvider client={client}>
 		<HashRouter>

@@ -143,6 +143,82 @@ it("retains an already saved merge receipt without duplicating it", async () => 
 });
 
 it.each([
+	"executing",
+	"result",
+] as const)("rejects receipt-dependent unfinished work from the %s phase", async (phase) => {
+	for (const path of ["merged", "headSha", "url"]) {
+		const { runtime, run } = fixture();
+		const receipt = {
+			merged: true,
+			url: "https://github.com/test/repo/pull/1",
+			headSha: "approved",
+		};
+		const pipeline = run.workflowDefinitions!.find(
+			(item) => item.id === "factory-pipeline",
+		)!;
+		const merge = pipeline.steps.find((step) => step.id === "merge")!;
+		merge.branches = [
+			{
+				when: { path, equals: receipt[path as keyof typeof receipt] },
+				next: "publish",
+			},
+		];
+		merge.next = "end";
+		pipeline.steps.push({
+			id: "publish",
+			type: "tool",
+			tool: "publish",
+			branches: [],
+			next: "end",
+		});
+		run.checkpoint!.active!.children![0]!.active!.phase = phase;
+		if (phase === "result") {
+			run.outputs.merge = receipt;
+			run.history.push({ step: "pipeline/merge", output: receipt, at: "" });
+		}
+		const history = structuredClone(run.history);
+		const outputs = structuredClone(run.outputs);
+		const command = vi
+			.spyOn(tools, "executeCommand")
+			.mockResolvedValue(
+				JSON.stringify({ state: "MERGED", headRefOid: "approved" }),
+			);
+		await runtime.launch(run);
+		expect(command).toHaveBeenCalledOnce();
+		expect(run.status).toBe("failed");
+		expect(run.error).toContain("Saved worktree is unavailable");
+		expect(run.history).toEqual(history);
+		expect(run.outputs).toEqual(outputs);
+		expect(run.step).toBe("pipeline/merge");
+		await runtime.shutdown();
+		command.mockRestore();
+	}
+});
+
+it("allows a receipt-dependent terminal route", async () => {
+	const { runtime, run } = fixture();
+	const pipeline = run.workflowDefinitions!.find(
+		(item) => item.id === "factory-pipeline",
+	)!;
+	const merge = pipeline.steps.find((step) => step.id === "merge")!;
+	merge.branches = [
+		{ when: { path: "headSha", equals: "approved" }, next: "end" },
+	];
+	merge.next = "publish";
+	vi.spyOn(tools, "executeCommand").mockResolvedValue(
+		JSON.stringify({ state: "MERGED", headRefOid: "approved" }),
+	);
+	await runtime.launch(run);
+	expect(run.status).toBe("completed");
+	expect(run.outputs.merge).toEqual({
+		merged: true,
+		url: "https://github.com/test/repo/pull/1",
+		headSha: "approved",
+	});
+	await runtime.shutdown();
+});
+
+it.each([
 	"no-approval",
 	"unfinished-agent",
 	"more-work",

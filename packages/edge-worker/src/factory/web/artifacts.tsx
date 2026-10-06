@@ -11,6 +11,7 @@ import {
 import { Link } from "react-router-dom";
 import { api, artifactsOf, friendly, screenshotUrl } from "./client";
 import { LazyImage } from "./media";
+import { useRestorableState } from "./restoration";
 import { GuidedReview } from "./review";
 import { Button, External, Markdown, Modal, useToast } from "./ui";
 export function artifactType(v: any) {
@@ -752,7 +753,10 @@ export function Inspector({
 		),
 		index = artifacts.findIndex((a) => a.name === selected?.name),
 		artifact = artifacts[index];
-	const [raw, setRaw] = useState(false);
+	const [raw, setRaw] = useRestorableState(
+		`inspector/raw/${run.id}/${selected?.name}`,
+		false,
+	);
 	const full = useQuery({
 		queryKey: [
 			"artifact",
@@ -806,9 +810,6 @@ export function Inspector({
 		}
 	}, [selected, index, run, artifacts, cache, v?.screenshots]);
 
-	useEffect(() => {
-		if (selected?.name) setRaw(false);
-	}, [selected?.name]);
 	const move = (delta: number) => {
 		if (!selected) return;
 		if (selected.image !== undefined) {
