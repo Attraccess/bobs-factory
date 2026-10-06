@@ -14,6 +14,11 @@ import type {
 	WorkflowTrigger,
 	WorkflowTriggerOrigin,
 } from "cyrus-core";
+import type {
+	CapacityOptions,
+	CapacityRequest,
+	ExecutionCapacity,
+} from "../MachineCapacity.js";
 import { activityMarkers } from "./ActivityPage.js";
 import {
 	type AgentSettings,
@@ -24,6 +29,7 @@ import { defaultWorkflows, upgradeWorkflows } from "./defaultWorkflows.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
+	isComputeIntensive,
 	readPath,
 	requireTrigger,
 	validateWorkflows,
@@ -129,6 +135,18 @@ export interface FactoryRun {
 	workspaceId?: string;
 	step?: string;
 	checkpoint?: GraphCheckpoint;
+	capacityLeaves?: Record<
+		string,
+		{
+			phase:
+				| "queued"
+				| "executing"
+				| "stopping"
+				| "waiting-ci"
+				| "waiting-human";
+			request?: CapacityRequest;
+		}
+	>;
 	simplePrompt?: string;
 	simpleExecution?: {
 		userPrompt: string;
@@ -159,6 +177,7 @@ export interface ChatMessage {
 }
 export interface ExecutionContext {
 	stepKey?: string;
+	capacity?: CapacityOptions;
 	chat?: boolean;
 	progress?: RoleProgress;
 	run: FactoryRun;
@@ -172,6 +191,7 @@ export interface ExecutionContext {
 	checkpointAgent?: (agent: AgentCheckpoint) => void;
 }
 export interface RuntimeHooks {
+	capacity?: ExecutionCapacity;
 	titleDefaults?(
 		runner?: RunTitleJob["settings"]["runner"],
 	): RunTitleJob["settings"];
@@ -638,6 +658,31 @@ export class WorkflowRuntime {
 				await this.hooks.finished?.(run);
 		}
 	}
+	capacityOptions(run: FactoryRun, key: string, visit = 1): CapacityOptions {
+		return {
+			identity: `${this.directory}:run:${run.id}:${key}:${visit}`,
+			recoverable: true,
+			preserveOnShutdown: () => run.status !== "stopped",
+			onChange: (request) => {
+				run.capacityLeaves ??= {};
+				const previous = run.capacityLeaves[key]?.phase;
+				if (request && request.phase !== previous)
+					this.log(
+						run,
+						key,
+						request.phase === "queued"
+							? "Waiting for machine capacity."
+							: request.phase === "stopping"
+								? "Stopping execution; capacity remains reserved until it settles."
+								: "Machine capacity admitted execution.",
+					);
+				if (request)
+					run.capacityLeaves[key] = { phase: request.phase, request };
+				else delete run.capacityLeaves[key];
+				this.save(run);
+			},
+		};
+	}
 	private async graph(
 		run: FactoryRun,
 		steps: WorkflowStep[],
@@ -695,6 +740,7 @@ export class WorkflowRuntime {
 				run,
 				step,
 				stepKey: key,
+				capacity: this.capacityOptions(run, key, count),
 				chat: step.chat ?? chat,
 				input,
 				outputs,
@@ -724,20 +770,34 @@ export class WorkflowRuntime {
 						outputs: structuredClone(outputs),
 					}));
 					this.save(run);
-					output = await Promise.all(
+					const branchController = new AbortController();
+					const cancelBranches = () => branchController.abort(signal.reason);
+					signal.addEventListener("abort", cancelBranches, { once: true });
+					if (signal.aborted) cancelBranches();
+					let failure: unknown;
+					const branchResults = await Promise.allSettled(
 						(step.groups ?? []).map((group, index) =>
 							this.graph(
 								run,
 								group,
 								state.children![index]!.outputs!,
-								signal,
+								branchController.signal,
 								`${key}/${index}/`,
 								state.children![index]!,
 								workflowId,
 								chat,
 								true,
-							),
+							).catch((error) => {
+								failure ??= error;
+								branchController.abort(error);
+								throw error;
+							}),
 						),
+					);
+					signal.removeEventListener("abort", cancelBranches);
+					if (failure) throw failure;
+					output = branchResults.map((result) =>
+						result.status === "fulfilled" ? result.value : undefined,
 					);
 				} else if (step.type === "workflow") {
 					const definition = run.workflowDefinitions?.find(
@@ -785,7 +845,40 @@ export class WorkflowRuntime {
 					);
 					output = { workflow: definition.id, completed: true };
 				} else {
-					output = await this.hooks[step.type](context);
+					run.capacityLeaves ??= {};
+					run.capacityLeaves[key] = {
+						phase:
+							step.tool === "ci" || step.tool === "merge-readiness"
+								? "waiting-ci"
+								: step.tool === "human-review"
+									? "waiting-human"
+									: "executing",
+					};
+					this.save(run);
+					try {
+						if (
+							step.type !== "agent" &&
+							isComputeIntensive(step) &&
+							this.hooks.capacity
+						) {
+							const lease = await this.hooks.capacity.acquireLease(signal, {
+								...context.capacity,
+								remote: step.tool?.startsWith("mcp__"),
+							});
+							try {
+								signal.throwIfAborted();
+								output = await lease.run(() =>
+									this.hooks[step.type as "script" | "tool"](context),
+								);
+							} finally {
+								await lease.release();
+							}
+						} else output = await this.hooks[step.type](context);
+					} finally {
+						if (!this.shuttingDown || run.status === "stopped")
+							delete run.capacityLeaves[key];
+						this.save(run);
+					}
 				}
 				signal.throwIfAborted();
 				outputs[step.id] = output;
@@ -1267,4 +1360,14 @@ export class WorkflowRuntime {
 		writeFileSync(temporary, JSON.stringify(data, null, 2));
 		renameSync(temporary, path);
 	}
+}
+
+/** Durable run status remains compatible; API derives queueing from all active leaves. */
+export function capacityRunStatus(run: FactoryRun): string {
+	const leaves = Object.values(run.capacityLeaves ?? {});
+	return run.status === "running" &&
+		leaves.length &&
+		leaves.every((leaf) => leaf.phase === "queued")
+		? "capacity-waiting"
+		: run.status;
 }

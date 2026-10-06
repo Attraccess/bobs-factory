@@ -4,6 +4,7 @@ import type { ServerResponse } from "node:http";
 import { join } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { MachineCapacity } from "../MachineCapacity.js";
 import { activityMarkers, activityPage } from "./ActivityPage.js";
 import { reasoningLevels, serviceTierRunners } from "./AgentSettings.js";
 import { CaptureSchema, verifiedScreenshot } from "./FactoryTools.js";
@@ -15,8 +16,10 @@ import {
 } from "./LaunchFields.js";
 import type { ChatState } from "./SessionChat.js";
 import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
+import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	capacity?: MachineCapacity;
 	chat?(id: string): ChatState;
 	message?(id: string, text: string): void;
 	defaultRunner?(): string;
@@ -73,10 +76,14 @@ export class FactoryServer {
 				}
 			}, 500);
 		};
+		const unsubscribeCapacity = hooks.capacity?.subscribe(() =>
+			broadcast({ config: true }),
+		);
 		const unsubscribeRuntime = runtime.subscribe(broadcast);
 		const unsubscribeSessions = hooks.subscribe?.((id) => broadcast({ id }));
 		this.app.addHook("preClose", async () => {
 			unsubscribeRuntime();
+			unsubscribeCapacity?.();
 			unsubscribeSessions?.();
 			if (timer) clearTimeout(timer);
 			for (const stream of this.streams) stream.end();
@@ -133,7 +140,8 @@ export class FactoryServer {
 				this.streams.delete(stream);
 			});
 		});
-		this.app.get("/api/config", () => ({
+		this.app.get("/api/config", async () => ({
+			capacity: await hooks.capacity?.snapshot(),
 			repositories: hooks.repositories(),
 			workflows: runtime.listWorkflows().map((workflow) => ({
 				...workflow,
@@ -145,6 +153,14 @@ export class FactoryServer {
 			reasoningLevels,
 			serviceTierRunners,
 		}));
+		this.app.put("/api/capacity", async (request) => {
+			if (!hooks.capacity) throw new Error("Machine capacity unavailable");
+			const { limit } = z
+				.object({ limit: z.number().int().positive() })
+				.parse(request.body);
+			await hooks.capacity.setLimit(limit);
+			return { capacity: await hooks.capacity.snapshot() };
+		});
 		this.app.put("/api/title-settings", (request) => ({
 			titleGeneration: runtime.updateTitleSettings(request.body),
 		}));
@@ -175,6 +191,7 @@ export class FactoryServer {
 					id,
 					title,
 					status,
+					capacityLeaves,
 					createdAt,
 					updatedAt,
 					repositoryId,
@@ -188,7 +205,8 @@ export class FactoryServer {
 				}) => ({
 					id,
 					title,
-					status,
+					status: capacityRunStatus({ status, capacityLeaves } as FactoryRun),
+					capacityLeaves,
 					createdAt,
 					updatedAt,
 					repositoryId,
@@ -243,6 +261,7 @@ export class FactoryServer {
 						questions: [],
 						outputs: {},
 					}),
+					status: run ? capacityRunStatus(run) : session!.status,
 					chat: hooks.chat?.(request.params.id) ?? {
 						enabled: false,
 						available: false,

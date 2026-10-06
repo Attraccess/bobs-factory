@@ -658,6 +658,7 @@
 			"type": "boolean"
 		},
 		"maxConcurrentSessions": {
+			"description": "Shared machine capacity for scheduled agents and intensive workflow steps. Defaults to four; explicit limits seed or must agree with the machine policy.",
 			"type": "integer",
 			"exclusiveMinimum": 0,
 			"maximum": 9007199254740991

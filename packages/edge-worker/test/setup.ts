@@ -1,8 +1,12 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SDKMessage } from "cyrus-claude-runner";
 import { vi } from "vitest";
+
+process.env.CYRUS_CAPACITY_DIRECTORY = mkdtempSync(
+	join(tmpdir(), "cyrus-test-capacity-"),
+);
 
 // Disable the remote session store in tests so EdgeWorker construction
 // doesn't try to instantiate HttpSessionStore. Tests using a partial

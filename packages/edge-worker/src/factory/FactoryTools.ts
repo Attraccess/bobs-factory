@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	existsSync,
@@ -10,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { spawnExecution as spawn } from "cyrus-core";
 import { z } from "zod";
 import { dependencyCovers, dependencyHashes } from "./Incremental.js";
 import {

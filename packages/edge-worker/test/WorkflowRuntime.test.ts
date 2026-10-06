@@ -1665,3 +1665,137 @@ it("upgrades stock implementation blockers without replacing custom instructions
 	expect(custom.prompt).toBe(implementation.prompt);
 	expect(custom.askQuestions).toBe(false);
 });
+
+it("runs nested intensive fanout at limit one and cancels queued leaves without deadlock", async () => {
+	const { MachineCapacity } = await import("../src/MachineCapacity.js");
+	const { capacityRunStatus } = await import(
+		"../src/factory/WorkflowRuntime.js"
+	);
+	const directory = mkdtempSync(join(tmpdir(), "runtime-capacity-"));
+	homes.push(directory);
+	const capacity = new MachineCapacity(1, directory);
+	const blocker = await capacity.acquireLease();
+	const script = vi.fn(async () => ({ done: true }));
+	const { runtime } = create({ capacity, script });
+	const definition = workflow([
+		{
+			id: "parallel",
+			name: "Parallel",
+			type: "fanout",
+			groups: [
+				[{ id: "a", name: "A", type: "script", script: "a" }],
+				[{ id: "b", name: "B", type: "tool", tool: "exec", args: ["b"] }],
+			],
+		},
+	]);
+	const run = start(runtime, definition);
+	const done = runtime.launch(run);
+	await vi.waitFor(() =>
+		expect(capacityRunStatus(run)).toBe("capacity-waiting"),
+	);
+	expect(Object.keys(run.capacityLeaves!)).toEqual([
+		"parallel/0/a",
+		"parallel/1/b",
+	]);
+	runtime.stop(run.id);
+	await done;
+	await blocker.release();
+	expect(script).not.toHaveBeenCalled();
+	expect((await capacity.snapshot()).queued).toBe(0);
+	const another = start(runtime, definition);
+	await runtime.launch(another);
+	expect(another.status).toBe("completed");
+	expect(script).toHaveBeenCalledOnce();
+	expect((await capacity.snapshot()).active).toBe(0);
+});
+it("rejects intensive passive waits and preserves explicit lightweight scripts in nested recipes", () => {
+	expect(() =>
+		workflow([
+			{
+				id: "wait",
+				name: "CI",
+				type: "tool",
+				tool: "ci",
+				computeIntensive: true,
+			},
+		]),
+	).toThrow(/Passive wait/);
+	expect(() =>
+		workflow([
+			{
+				id: "parent",
+				name: "Parent",
+				type: "fanout",
+				computeIntensive: true,
+				groups: [[agent("child")]],
+			},
+		]),
+	).toThrow();
+	const definition = workflow([
+		{
+			id: "script",
+			name: "Light",
+			type: "script",
+			script: "echo ready",
+			computeIntensive: false,
+		},
+	]);
+	expect(definition.steps[0]!.computeIntensive).toBe(false);
+});
+
+it("admits nested workflow leaves at limit one while passive CI consumes no slot", async () => {
+	const { MachineCapacity } = await import("../src/MachineCapacity.js");
+	const directory = mkdtempSync(join(tmpdir(), "nested-capacity-"));
+	homes.push(directory);
+	const capacity = new MachineCapacity(1, directory);
+	let finishCI!: () => void;
+	const tool = vi.fn(
+		() =>
+			new Promise<unknown>((resolve) => {
+				finishCI = () => resolve({ done: true });
+			}),
+	);
+	const script = vi.fn(async () => ({ done: true }));
+	const { runtime } = create({ capacity, script, tool });
+	const child = {
+		...workflow([
+			{ id: "heavy", name: "Heavy", type: "script", script: "echo {}" },
+		]),
+		id: "child",
+	};
+	const parent = workflow(
+		[
+			{
+				id: "parallel",
+				name: "Parallel",
+				type: "fanout",
+				groups: [
+					[{ id: "call", name: "Child", type: "workflow", workflow: "child" }],
+					[{ id: "ci", name: "CI", type: "tool", tool: "ci" }],
+				],
+			},
+		],
+		[child],
+	);
+	runtime.updateWorkflows([...defaultWorkflows, parent, child]);
+	const run = start(runtime, parent),
+		done = runtime.launch(run);
+	await vi.waitFor(() => expect(script).toHaveBeenCalledOnce());
+	await vi.waitFor(() =>
+		expect(run.capacityLeaves).toMatchObject({
+			"parallel/1/ci": { phase: "waiting-ci" },
+		}),
+	);
+	await vi.waitFor(
+		async () => expect((await capacity.snapshot()).active).toBe(0),
+		{ timeout: 10000 },
+	);
+	const next = await capacity.acquireLease();
+	await next.release();
+	finishCI();
+	await done;
+	expect(run.status).toBe("completed");
+	expect(run.history.map((item) => item.step)).toContain(
+		"parallel/0/call/heavy",
+	);
+});

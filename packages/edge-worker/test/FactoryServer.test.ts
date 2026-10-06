@@ -1001,3 +1001,97 @@ it("protects and persists global title settings independently of workflow config
 		rmSync(home, { recursive: true, force: true });
 	}
 });
+
+it("protects and validates machine settings, exposing durable cross-worker policy and queue counts", async () => {
+	const { MachineCapacity } = await import("../src/MachineCapacity.js");
+	const home = mkdtempSync(join(tmpdir(), "factory-capacity-api-"));
+	const capacity = new MachineCapacity(1, join(home, "capacity"));
+	const other = new MachineCapacity(undefined, join(home, "capacity"));
+	await Promise.all([capacity.ready(), other.ready()]);
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+		capacity,
+	});
+	const server = new FactoryServer(runtime, {
+		capacity,
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("Unused");
+		},
+		stop: (id) => runtime.stop(id),
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	try {
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/capacity",
+					headers: { host: "localhost" },
+					payload: { limit: 2 },
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/capacity",
+					headers: { ...headers, origin: "https://elsewhere.invalid" },
+					payload: { limit: 2 },
+				})
+			).statusCode,
+		).toBe(403);
+		for (const limit of [0, -1, 1.5, "2"]) {
+			expect(
+				(
+					await server.app.inject({
+						method: "PUT",
+						url: "/api/capacity",
+						headers,
+						payload: { limit },
+					})
+				).statusCode,
+			).toBe(400);
+		}
+		const saved = await server.app.inject({
+			method: "PUT",
+			url: "/api/capacity",
+			headers,
+			payload: { limit: 2 },
+		});
+		expect(saved.statusCode).toBe(200);
+		expect(saved.json().capacity.limit).toBe(2);
+		expect((await other.snapshot()).limit).toBe(2);
+		const first = await other.acquireLease(),
+			second = await other.acquireLease();
+		const controller = new AbortController();
+		const queued = other.acquireLease(controller.signal);
+		const cancelled = expect(queued).rejects.toThrow();
+		await vi.waitFor(async () => {
+			const response = await server.app.inject({ url: "/api/config", headers });
+			expect(response.json().capacity).toMatchObject({
+				limit: 2,
+				active: 2,
+				queued: 1,
+			});
+		});
+		controller.abort();
+		await cancelled;
+		await Promise.all([first.release(), second.release()]);
+		expect(
+			(await server.app.inject({ url: "/api/config", headers })).json()
+				.capacity,
+		).toMatchObject({ active: 0, queued: 0 });
+	} finally {
+		await runtime.shutdown();
+		await server.stop();
+		await capacity.shutdown();
+		await other.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});

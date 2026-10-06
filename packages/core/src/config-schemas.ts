@@ -559,7 +559,14 @@ export const EdgeConfigSchema = z.object({
 	 * limit admits queued sessions immediately; lowering it applies as
 	 * running sessions finish.
 	 */
-	maxConcurrentSessions: z.number().int().positive().optional(),
+	maxConcurrentSessions: z
+		.number()
+		.int()
+		.positive()
+		.optional()
+		.describe(
+			"Shared machine capacity for scheduled agents and intensive workflow steps. Defaults to four; explicit limits seed or must agree with the machine policy.",
+		),
 
 	/**
 	 * Whether Cyrus follows along with all subsequent replies in a Slack thread

@@ -57,14 +57,17 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 function setup(deadline = 1000, slots = new SessionSemaphore(2)) {
-	const directory = home(),
-		completion = deferred<void>();
+	const directory = home();
+	let completion = deferred<void>();
 	let config!: AgentRunnerConfig;
 	const start = vi.fn(async () => {
 		await completion.promise;
 		return { sessionId: "auxiliary" };
 	});
-	const stop = vi.fn();
+	const stop = vi.fn(() => {
+		completion.resolve();
+		completion = deferred<void>();
+	});
 	const runner = { start, stop } as unknown as IAgentRunner;
 	const buildConfig = vi.fn(async () => ({ workingDirectory: directory }));
 	const update = vi.fn();
@@ -81,7 +84,9 @@ function setup(deadline = 1000, slots = new SessionSemaphore(2)) {
 	const emit = (message: unknown) => config.onMessage?.(message as SDKMessage);
 	return {
 		directory,
-		completion,
+		get completion() {
+			return completion;
+		},
 		config: () => config,
 		start,
 		stop,
@@ -338,8 +343,8 @@ it("does not create a runner when slow configuration resolves after timeout", as
 	config.resolve({ workingDirectory: directory });
 	await Promise.resolve();
 	expect(create).not.toHaveBeenCalled();
-	expect(slots.active).toBe(0);
 	await generator.shutdown();
+	expect(slots.active).toBe(0);
 });
 it("persists global settings independently of recipes and frozen run snapshots", async () => {
 	const directory = home(),

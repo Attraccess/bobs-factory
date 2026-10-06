@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { passiveTools } from "../Workflow";
 import { useAction, useConfig } from "./client";
 import { Button, Modal, useToast } from "./ui";
 
@@ -417,6 +418,126 @@ function ownRoles(
 				: [],
 	);
 }
+function MachineCapacitySettings({ config }: { config: any }) {
+	const capacity = config.capacity;
+	const action = useAction();
+	const [limit, setLimit] = useState(String(capacity?.limit ?? 4));
+	const [dirty, setDirty] = useState(false);
+	useEffect(() => {
+		if (!dirty) setLimit(String(capacity?.limit ?? 4));
+	}, [capacity?.limit, dirty]);
+	if (!capacity) return null;
+	return (
+		<section className="recipe" aria-labelledby="machine-capacity">
+			<h2 id="machine-capacity">Machine capacity</h2>
+			<p>
+				One shared pool for agents and intensive workflow steps. Default:{" "}
+				{capacity.defaultLimit} slots.
+			</p>
+			<p role="status">
+				Shared limit: {capacity.limit} {capacity.limit === 1 ? "slot" : "slots"}
+				. {capacity.active} executing · {capacity.stopping} stopping ·{" "}
+				{capacity.queued} waiting for capacity
+			</p>
+			{capacity.error && <p role="alert">{capacity.error}</p>}
+			{capacity.conflict && <p role="alert">{capacity.conflict}</p>}
+			<form
+				onSubmit={async (event) => {
+					event.preventDefault();
+					try {
+						await action.mutateAsync({
+							path: "/api/capacity",
+							method: "PUT",
+							body: { limit: Number(limit) },
+						});
+						setDirty(false);
+					} catch {}
+				}}
+			>
+				<label>
+					Shared slot limit{" "}
+					<input
+						type="number"
+						min="1"
+						step="1"
+						required
+						value={limit}
+						onChange={(event) => {
+							setDirty(true);
+							setLimit(event.target.value);
+						}}
+					/>
+				</label>
+				<Button type="submit" disabled={action.isPending}>
+					Save machine limit
+				</Button>
+				{action.error && <p role="alert">{action.error.message}</p>}
+			</form>
+		</section>
+	);
+}
+function CapacityClassification({
+	steps,
+	onSave,
+	path = "",
+}: {
+	steps: any[];
+	onSave: (path: string, value: boolean | undefined) => Promise<unknown>;
+	path?: string;
+}) {
+	return (
+		<div className="capacity-classification">
+			{steps.map((step: any, index: number) => {
+				const key = `${path}${index}`;
+				const heavy = step.type === "script" || step.tool === "exec";
+				return (
+					<div key={key}>
+						{["script", "tool"].includes(step.type) && (
+							<label>
+								{step.name} capacity{" "}
+								<select
+									aria-label={`${step.name} capacity`}
+									value={
+										step.computeIntensive === undefined
+											? "default"
+											: String(step.computeIntensive)
+									}
+									onChange={(event) => {
+										void onSave(
+											key,
+											event.target.value === "default"
+												? undefined
+												: event.target.value === "true",
+										);
+									}}
+								>
+									<option value="default">
+										Default ({heavy ? "one slot" : "lightweight"})
+									</option>
+									<option
+										value="true"
+										disabled={passiveTools.includes(step.tool ?? "")}
+									>
+										Intensive (one slot)
+									</option>
+									<option value="false">Lightweight (no slot)</option>
+								</select>
+							</label>
+						)}
+						{(step.groups ?? []).map((group: any[], branch: number) => (
+							<CapacityClassification
+								key={branch}
+								steps={group}
+								path={`${key}/groups/${branch}/`}
+								onSave={onSave}
+							/>
+						))}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
 function RunTitleSettings({ config }: { config: any }) {
 	const [value, setValue] = useState(config.titleGeneration ?? {});
 	const [dirty, setDirty] = useState(false);
@@ -502,6 +623,7 @@ export function Recipes() {
 				recipe is used when nothing else matches. Launch methods apply to new
 				runs; existing runs retain their definitions.
 			</p>
+			<MachineCapacitySettings config={config} />
 			<RunTitleSettings config={config} />
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (
@@ -694,6 +816,18 @@ export function Recipes() {
 								</div>
 							</section>
 						</div>
+						<CapacityClassification
+							steps={workflow.steps}
+							onSave={async (path, computeIntensive) => {
+								const definitions = structuredClone(config.workflows);
+								let node: any = definitions.find(
+									(item: any) => item.id === workflow.id,
+								).steps;
+								for (const part of path.split("/")) node = node[part];
+								node.computeIntensive = computeIntensive;
+								await save(definitions);
+							}}
+						/>
 						<details>
 							<summary>Edit as JSON</summary>
 							<RecipeEditor

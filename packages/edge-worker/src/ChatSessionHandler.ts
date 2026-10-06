@@ -15,6 +15,7 @@ import { AgentSessionStatus, createLogger } from "cyrus-core";
 import { AgentSessionManager } from "./AgentSessionManager.js";
 import type { ChatRepositoryProvider } from "./ChatRepositoryProvider.js";
 import { type ChatState, steeringState } from "./factory/SessionChat.js";
+import { runnerCapacityState } from "./RunnerConcurrency.js";
 import type { RunnerConfigBuilder } from "./RunnerConfigBuilder.js";
 
 /**
@@ -106,6 +107,7 @@ export interface ChatSessionHandlerDeps {
 		config: AgentRunnerConfig,
 		runnerType?: RunnerType,
 		signal?: AbortSignal,
+		sessionId?: string,
 	) => IAgentRunner;
 	/**
 	 * Live read of the workspace-level custom-integration MCP config paths
@@ -384,6 +386,8 @@ export class ChatSessionHandler<TEvent> {
 				runnerConfig,
 				(runnerConfig as AgentRunnerConfig & { runnerType?: RunnerType })
 					.runnerType,
+				undefined,
+				sessionId,
 			);
 
 			// Store the runner in the session manager
@@ -488,6 +492,12 @@ export class ChatSessionHandler<TEvent> {
 				reason: "The chat session has stopped.",
 			};
 		const runner = session.agentRunner;
+		if (runnerCapacityState(runner)?.phase === "queued")
+			return {
+				enabled: true,
+				available: false,
+				reason: "Waiting for machine capacity.",
+			};
 		if (runner?.isRunning()) return steeringState(runner);
 		if (this.continuationStarts.has(id))
 			return {
@@ -722,6 +732,7 @@ export class ChatSessionHandler<TEvent> {
 				runnerConfig,
 				runnerType,
 				controller.signal,
+				sessionId,
 			);
 			this.sessionManager.addAgentRunner(sessionId, runner);
 

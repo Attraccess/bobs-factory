@@ -64,6 +64,7 @@ import {
 	CLIRPCServer,
 	createLogger,
 	DEFAULT_PROXY_URL,
+	executionEnvironment,
 	GitHubTokenStore,
 	isAgentSessionCreatedWebhook,
 	isAgentSessionPromptedWebhook,
@@ -218,6 +219,7 @@ import {
 	ticketIdentifier,
 } from "./factory/Takeover.js";
 import {
+	capacityInstructions,
 	readPath as readFactoryPath,
 	workflowTriggerInstructions,
 } from "./factory/Workflow.js";
@@ -227,8 +229,12 @@ import {
 	WorkflowRuntime,
 } from "./factory/WorkflowRuntime.js";
 import { resolveWorkflowSelector } from "./factory/WorkflowSelector.js";
-import { GitService } from "./GitService.js";
+import { GitService, setupExecutionScope } from "./GitService.js";
 import { GlobalSessionRegistry } from "./GlobalSessionRegistry.js";
+import {
+	DEFAULT_MACHINE_CAPACITY,
+	MachineCapacity,
+} from "./MachineCapacity.js";
 import { McpConfigService } from "./McpConfigService.js";
 import { PromptBuilder } from "./PromptBuilder.js";
 import type {
@@ -242,7 +248,11 @@ import {
 	RepositoryRouter,
 	type RepositoryRouterDeps,
 } from "./RepositoryRouter.js";
-import { capRunnerStarts, SessionSemaphore } from "./RunnerConcurrency.js";
+import {
+	capRunnerStarts,
+	runnerCapacityState,
+	waitForRunnerCapacity,
+} from "./RunnerConcurrency.js";
 import {
 	RunnerConfigBuilder,
 	resolveIssueMcpConfigPath,
@@ -337,7 +347,7 @@ export class EdgeWorker extends EventEmitter {
 	private attachmentService: AttachmentService;
 	private runnerSelectionService: RunnerSelectionService;
 	/** Global cap on concurrently executing runner sessions (see maxConcurrentSessions). */
-	private runnerSlots: SessionSemaphore;
+	private runnerSlots: MachineCapacity;
 	private toolPermissionResolver: ToolPermissionResolver;
 	private mcpConfigService: McpConfigService;
 	private runnerConfigBuilder: RunnerConfigBuilder;
@@ -529,7 +539,10 @@ export class EdgeWorker extends EventEmitter {
 			},
 		};
 		this.repositoryRouter = new RepositoryRouter(repositoryRouterDeps);
-		this.gitService = new GitService({ cyrusHome: this.cyrusHome });
+		this.gitService = new GitService({
+			cyrusHome: this.cyrusHome,
+			capacity: () => this.runnerSlots,
+		});
 
 		// Initialize AskUserQuestion handler for elicitation via Linear select signal
 		this.askUserQuestionHandler = new AskUserQuestionHandler({
@@ -669,10 +682,7 @@ export class EdgeWorker extends EventEmitter {
 			this.config.linearWorkspaces || {},
 		);
 		this.runnerSelectionService = new RunnerSelectionService(this.config);
-		this.runnerSlots = new SessionSemaphore(
-			this.config.maxConcurrentSessions ?? Number.POSITIVE_INFINITY,
-			(message) => this.logger.info(message),
-		);
+		this.runnerSlots = new MachineCapacity(this.config.maxConcurrentSessions);
 		this.toolPermissionResolver = new ToolPermissionResolver(
 			this.config,
 			this.logger,
@@ -728,6 +738,15 @@ export class EdgeWorker extends EventEmitter {
 	 * Start the edge worker
 	 */
 	async start(): Promise<void> {
+		await this.runnerSlots.ready();
+		const factory = this.getFactoryRuntime();
+		await this.runnerSlots.reconcileQueue((identity) => {
+			const prefix = `${factory.directory}:run:`;
+			if (!identity.startsWith(prefix)) return false;
+			const id = identity.slice(prefix.length).split(":")[0]!;
+			const run = factory.runs.get(id);
+			return !run || ["completed", "failed", "stopped"].includes(run.status);
+		});
 		// If cyrus-hosted has pushed per-org GitHub App tokens previously, make
 		// sure the git credential helper and the per-invocation gh token
 		// resolver are wired up (idempotent). Covers the case where the
@@ -755,6 +774,17 @@ export class EdgeWorker extends EventEmitter {
 
 		// Load persisted state for each repository
 		await this.loadPersistedState();
+		await this.runnerSlots.reconcileQueue((identity) => {
+			const prefix = `${this.cyrusHome}:session:`;
+			if (!identity.startsWith(prefix)) return false;
+			const session = this.titleSession(identity.slice(prefix.length));
+			return Boolean(
+				session &&
+					[AgentSessionStatus.Complete, AgentSessionStatus.Error].includes(
+						session.status,
+					),
+			);
+		});
 
 		// Pre-warm the 30 most recent Claude sessions in the background
 		// so their first query after restart has near-zero cold-start latency.
@@ -784,13 +814,18 @@ export class EdgeWorker extends EventEmitter {
 				await this.addNewRepositories(changes.added);
 				// Live-update sandbox / egress proxy settings
 				await this.applySandboxConfigChanges(changes.newConfig);
+				if (
+					changes.newConfig.maxConcurrentSessions !==
+					this.config.maxConcurrentSessions
+				) {
+					await this.runnerSlots.setLimit(
+						changes.newConfig.maxConcurrentSessions ?? DEFAULT_MACHINE_CAPACITY,
+					);
+				}
 				this.config = EdgeWorker.normalizeConfigPaths(changes.newConfig);
 				this.configManager.setConfig(changes.newConfig);
 				this.runnerSelectionService.setConfig(changes.newConfig);
 				this.toolPermissionResolver.setConfig(changes.newConfig);
-				this.runnerSlots.setLimit(
-					changes.newConfig.maxConcurrentSessions ?? Number.POSITIVE_INFINITY,
-				);
 			},
 		);
 		this.configManager.startConfigWatcher();
@@ -861,6 +896,7 @@ export class EdgeWorker extends EventEmitter {
 			process.env.CYRUS_FACTORY_PORT !== "0"
 		) {
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
+				capacity: this.runnerSlots,
 				defaultRunner: () => this.runnerSelectionService.getDefaultRunner(),
 				repositories: () =>
 					Array.from(this.repositories.values())
@@ -871,9 +907,12 @@ export class EdgeWorker extends EventEmitter {
 						id: session.id,
 						title: session.displayTitle ?? session.issue?.title ?? session.id,
 						titleGeneration: session.titleGeneration,
-						status: session.agentRunner?.isRunning()
-							? "running"
-							: session.status,
+						status:
+							runnerCapacityState(session.agentRunner)?.phase === "queued"
+								? "capacity-waiting"
+								: session.agentRunner?.isRunning()
+									? "running"
+									: session.status,
 						createdAt: new Date(session.createdAt).toISOString(),
 						triggerOrigin: session.triggerOrigin,
 						workspace: session.workspace.path,
@@ -1279,7 +1318,7 @@ export class EdgeWorker extends EventEmitter {
 			chatRepositoryProvider,
 			onSessionChange: (id) => this.emit("chatSessionChanged", id),
 			runnerConfigBuilder: this.runnerConfigBuilder,
-			createRunner: (config, chatRunnerType, signal) => {
+			createRunner: (config, chatRunnerType, signal, sessionId) => {
 				const runnerType =
 					chatRunnerType ?? this.runnerSelectionService.getDefaultRunner();
 				return this.createRunnerForType(
@@ -1290,6 +1329,7 @@ export class EdgeWorker extends EventEmitter {
 						fallbackModel: this.getDefaultFallbackModelForRunner(runnerType),
 					},
 					signal,
+					sessionId,
 				);
 			},
 			getPlatformMcpConfigOverrides,
@@ -1952,7 +1992,12 @@ export class EdgeWorker extends EventEmitter {
 				}
 			};
 
-			runner = this.createRunnerForType(runnerType, runnerConfig);
+			runner = this.createRunnerForType(
+				runnerType,
+				runnerConfig,
+				undefined,
+				githubSessionId,
+			);
 
 			// Store the runner in the session manager
 			agentSessionManager.addAgentRunner(githubSessionId, runner);
@@ -2680,7 +2725,12 @@ ${taskSection}`;
 					"gitlab", // sessionPlatform → uses githubMcpConfigs override
 				);
 
-			const runner = this.createRunnerForType(runnerType, runnerConfig);
+			const runner = this.createRunnerForType(
+				runnerType,
+				runnerConfig,
+				undefined,
+				gitlabSessionId,
+			);
 
 			// Store the runner in the session manager
 			agentSessionManager.addAgentRunner(gitlabSessionId, runner);
@@ -3070,6 +3120,7 @@ ${taskSection}`;
 	 */
 	async stop(): Promise<void> {
 		this.stopping = true;
+		await this.runnerSlots.shutdown();
 		this.recoveryAbort.abort();
 		await this.titleGenerator?.shutdown();
 		await this.factoryRuntime?.shutdown();
@@ -3107,6 +3158,7 @@ ${taskSection}`;
 		}
 
 		// Clear event transport (no explicit cleanup needed, routes are removed when server stops)
+		await Promise.allSettled(agentRunners.map(waitForRunnerCapacity));
 		this.linearEventTransport = null;
 		this.configUpdater = null;
 		this.mcpConfigService.clearAllContexts();
@@ -5622,7 +5674,12 @@ ${taskSection}`;
 				`Label-based runner selection for new session: ${runnerType} (session ${sessionId})`,
 			);
 
-			const runner = this.createRunnerForType(runnerType, runnerConfig);
+			const runner = this.createRunnerForType(
+				runnerType,
+				runnerConfig,
+				undefined,
+				sessionId,
+			);
 			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 
 			// Store runner by comment ID
@@ -6624,11 +6681,20 @@ ${taskSection}`;
 		runnerType: RunnerType,
 		config: AgentRunnerConfig,
 		signal?: AbortSignal,
+		sessionId = config.workspaceName ?? config.workingDirectory ?? randomUUID(),
 	): IAgentRunner {
 		return capRunnerStarts(
 			this.buildRunnerForType(runnerType, config),
 			this.runnerSlots,
 			signal,
+			{
+				identity: `${this.cyrusHome}:session:${sessionId}`,
+				recoverable: true,
+				preserveOnShutdown: () =>
+					this.titleSession(sessionId)?.status !== AgentSessionStatus.Error,
+				remote: runnerType === "cursor",
+				onChange: () => this.emit("chatSessionChanged", sessionId),
+			},
 		);
 	}
 
@@ -6641,6 +6707,7 @@ ${taskSection}`;
 					this.executeFactoryMcpTool(context, server, tool),
 			});
 			this.factoryRuntime = new WorkflowRuntime(this.cyrusHome, {
+				capacity: this.runnerSlots,
 				finished: async (run) => {
 					if (!run.triggerOrigin?.ticket || run.workflow.id === "simple")
 						return;
@@ -6660,7 +6727,14 @@ ${taskSection}`;
 					runner = this.runnerSelectionService.getDefaultRunner(),
 				) => ({ runner, model: this.getDefaultModelForRunner(runner) }),
 				stopTitle: (id) => this.cancelRunTitle(id),
-				prepare: (run, signal) => this.prepareFactoryRun(run, signal),
+				prepare: (run, signal) =>
+					setupExecutionScope.run(
+						{
+							signal,
+							capacity: this.getFactoryRuntime().capacityOptions(run, "setup"),
+						},
+						() => this.prepareFactoryRun(run, signal),
+					),
 				simple: (run, signal) => this.executeSimpleFactoryRun(run, signal),
 				agent: (context) => this.executeFactoryAgent(context),
 				script: (context) => {
@@ -6904,7 +6978,7 @@ ${taskSection}`;
 				},
 				createRunner: (snapshot, config) =>
 					snapshot.settings.runner === "claude"
-						? new ClaudeRunner(config, false)
+						? new ClaudeRunner(this.managedRunnerConfig(config), false)
 						: this.buildRunnerForType(snapshot.settings.runner, config),
 			},
 		);
@@ -7265,10 +7339,11 @@ ${taskSection}`;
 			};
 			const runner = capRunnerStarts(
 				runnerType === "claude"
-					? new ClaudeRunner(built.config, false)
+					? new ClaudeRunner(this.managedRunnerConfig(built.config), false)
 					: this.buildRunnerForType(runnerType, built.config),
 				this.runnerSlots,
 				context.signal,
+				{ ...context.capacity, remote: runnerType === "cursor" },
 			);
 			this.agentSessionManager.addAgentRunner(run.id, runner);
 			this.factoryChat ??= new SessionChat();
@@ -7416,7 +7491,9 @@ ${taskSection}`;
 				`MCP server ${serverName} is not configured as a process/HTTP transport`,
 			);
 		return callConfiguredTool(
-			server,
+			"command" in server
+				? { ...server, env: { ...server.env, ...executionEnvironment() } }
+				: server,
 			toolName,
 			toolArguments(context, context.step.arguments ?? {}) as Record<
 				string,
@@ -7886,6 +7963,10 @@ ${taskSection}`;
 			this.buildRunnerForType(runnerType, built.config),
 			this.runnerSlots,
 			signal,
+			{
+				...this.getFactoryRuntime().capacityOptions(run, "simple"),
+				remote: runnerType === "cursor",
+			},
 		);
 		this.agentSessionManager.addAgentRunner(run.id, runner);
 		const stop = () => runner.stop();
@@ -7917,10 +7998,24 @@ ${taskSection}`;
 		}
 	}
 
+	private managedRunnerConfig(config: AgentRunnerConfig): AgentRunnerConfig {
+		return {
+			...config,
+			appendSystemPrompt: `${config.appendSystemPrompt ?? ""}\n${capacityInstructions}`,
+			onAskUserQuestion: undefined,
+			disallowedTools: [
+				...(config.disallowedTools ?? []),
+				"Agent",
+				"Task",
+				"AskUserQuestion",
+			],
+		};
+	}
 	private buildRunnerForType(
 		runnerType: RunnerType,
 		config: AgentRunnerConfig,
 	): IAgentRunner {
+		config = this.managedRunnerConfig(config);
 		switch (runnerType) {
 			case "claude": {
 				// Inject the hosted SessionStore at the last moment so it only
@@ -7935,6 +8030,7 @@ ${taskSection}`;
 			case "codex":
 				return new CodexRunner({
 					...config,
+					configOverrides: { features: { multi_agent: false } },
 					sandbox: this.config.codexSandboxMode ?? "workspace-write",
 				});
 			case "cursor":
@@ -9381,16 +9477,13 @@ ${input.userComment}
 	/**
 	 * Whether the warm-session feature is enabled.
 	 *
-	 * Warm sessions are an opt-in optimization that pre-spawns Claude Code
-	 * subprocesses on startup so the first query after a restart skips the
-	 * cold-start cost. Disabled by default; opt in by setting
-	 * `CYRUS_ENABLE_WARM_SESSIONS=1` (or `=true`).
+	 * Managed workers disable idle streams and prewarming until providers can
+	 * enforce admission at each turn boundary, including streamed follow-ups.
 	 */
 	private isWarmSessionsEnabled(): boolean {
-		const raw = process.env.CYRUS_ENABLE_WARM_SESSIONS;
-		if (!raw) return false;
-		const v = raw.toLowerCase().trim();
-		return v === "1" || v === "true";
+		// Warm queries cannot await admission before each follow-up; resume the
+		// saved conversation through a fresh gated start instead.
+		return false;
 	}
 
 	/**
@@ -10000,8 +10093,19 @@ ${input.userComment}
 					this.buildRunnerForType(runnerType, runnerConfig),
 					this.runnerSlots,
 					recoverySignal,
+					{
+						identity: `${this.cyrusHome}:session:${sessionId}`,
+						recoverable: true,
+						remote: runnerType === "cursor",
+						onChange: () => this.emit("chatSessionChanged", sessionId),
+					},
 				)
-			: this.createRunnerForType(runnerType, runnerConfig);
+			: this.createRunnerForType(
+					runnerType,
+					runnerConfig,
+					undefined,
+					sessionId,
+				);
 
 		// Store runner
 		agentSessionManager.addAgentRunner(sessionId, runner);
