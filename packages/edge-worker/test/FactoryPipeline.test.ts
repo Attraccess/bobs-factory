@@ -18,11 +18,13 @@ import {
 	filterReview,
 } from "../src/factory/FactoryTools.js";
 import { roleProgress } from "../src/factory/Incremental.js";
+import { qaDigest } from "../src/factory/Qa.js";
 import {
 	type ExecutionContext,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
+import { qaExecution, qaScope } from "./fixtures/qa.js";
 
 const directories: string[] = [];
 it("keeps internal provider stdout quiet while preserving explicit CLI output and errors", async () => {
@@ -594,6 +596,8 @@ it.each([
 	pipeline.steps = pipeline.steps.filter((s) =>
 		["capture", "visual-review", "visual-gate"].includes(s.id),
 	);
+	// These fixtures deliberately exercise frozen screenshot-only run recovery.
+	for (const step of pipeline.steps) delete step.qaContract;
 	pipeline.steps.at(-1)!.next = "end";
 	pipeline.steps.at(-1)!.branches = [];
 	pipeline.steps[0]!.inputs = ["visual-scope"];
@@ -716,6 +720,8 @@ it("waits again when capture remains blocked after an answer, and stops without 
 	pipeline.steps = pipeline.steps.filter((s) =>
 		["capture", "visual-review", "visual-gate"].includes(s.id),
 	);
+	// These fixtures deliberately exercise frozen screenshot-only run recovery.
+	for (const step of pipeline.steps) delete step.qaContract;
 	pipeline.steps.at(-1)!.branches = [];
 	pipeline.steps.at(-1)!.next = "delivery";
 	pipeline.steps.push({
@@ -872,4 +878,333 @@ it("never publishes partial work from a blocked implementation, even for a legac
 		new FactoryTools({ postComment: vi.fn(), command }).tool(input),
 	).rejects.toThrow("Implementation is blocked: Missing access");
 	expect(command).not.toHaveBeenCalled();
+});
+
+function qaContext(surface: "ui" | "api" | "cli" = "api") {
+	const ctx = context();
+	ctx.step = {
+		...ctx.step,
+		id: "visual-gate",
+		tool: "visual-gate",
+		qaContract: "qa-v1",
+	};
+	ctx.run.step = "visual-gate";
+	ctx.run.outputs.clarify = {
+		requirements: ["Persist a record"],
+		decisions: [],
+	};
+	ctx.run.outputs["visual-scope"] = qaScope(surface);
+	ctx.run.roleRevisions = Object.fromEntries(
+		["visual-scope", "capture", "visual-review"].map((id) => [
+			id,
+			{ headSha: "head", dirty: false, at: "now", historyLength: 0 },
+		]),
+	);
+	ctx.progress = {
+		visit: 1,
+		changedFiles: [],
+		unchangedCode: false,
+		uncertain: true,
+		newHistory: [],
+		currentRevision: {
+			headSha: "head",
+			dirty: false,
+			at: "now",
+			historyLength: 0,
+		},
+	};
+	return ctx;
+}
+function stampQa(ctx: ExecutionContext, output = qaExecution()) {
+	const captureStep = { ...ctx.step, id: "capture" };
+	ctx.run.outputs.capture = captureEvidence(
+		{ ...ctx, step: captureStep },
+		output,
+	);
+	ctx.run.outputs["visual-review"] = {
+		qaContract: "qa-v1",
+		findings: [],
+		summary: "Reviewed executed receipts",
+		acceptedScreenshots: [],
+		qaReviewStamp: {
+			headSha: "head",
+			dirty: false,
+			scopeHash: qaDigest(ctx.run.outputs["visual-scope"]),
+			captureHash: qaDigest(ctx.run.outputs.capture),
+		},
+	};
+}
+const qaTools = () =>
+	new FactoryTools({
+		postComment: vi.fn(),
+		command: async (_ctx, _exe, args) => (args[0] === "status" ? "" : "head"),
+	});
+
+it.each([
+	"api",
+	"cli",
+] as const)("allows executed %s QA with no screenshots and retains optional observations", async (surface) => {
+	const ctx = qaContext(surface);
+	const capture = qaExecution();
+	capture.observations = [
+		{
+			id: "help",
+			summary: "Optional clearer help",
+			evidence: "Observed current wording",
+		},
+	];
+	stampQa(ctx, capture);
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: true,
+		observations: capture.observations,
+	});
+	expect(
+		(ctx.run.outputs.capture as typeof capture).testedRevision?.headSha,
+	).toBe("head");
+});
+it("generates an actionable stable QA finding when a reviewer approves failed behavior, then requires retesting", async () => {
+	const ctx = qaContext();
+	stampQa(ctx, qaExecution("failed"));
+	const first = (await qaTools().tool(ctx)) as {
+		approved: boolean;
+		findings: { id: string; reproduction: string[] }[];
+	};
+	expect(first.approved).toBe(false);
+	expect(first.findings[0].reproduction).toEqual(["Save a valid record"]);
+	stampQa(ctx, qaExecution("failed"));
+	expect(await qaTools().tool(ctx)).toMatchObject({
+		approved: false,
+		findings: [{ id: first.findings[0].id }],
+	});
+	stampQa(ctx, qaExecution());
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({ approved: true });
+});
+it("keeps independently reported consequential findings blocking even when all criteria pass", async () => {
+	const ctx = qaContext(),
+		capture = qaExecution();
+	capture.findings.push({
+		id: "data-loss",
+		rating: 2,
+		status: "open",
+		summary: "Lost neighboring data",
+		evidence: "Readback lost existing record",
+		storyId: "save",
+		criterionId: "saved",
+		requirementRefs: ["requirements/0"],
+		reproduction: ["Save"],
+		expected: "Existing records retained",
+		actual: "Record missing",
+	});
+	stampQa(ctx, capture);
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		findings: [{ id: "data-loss" }],
+	});
+});
+it("requests assistance for blocked, missing, mismatched or stale QA rather than approving", async () => {
+	const ctx = qaContext();
+	stampQa(ctx, qaExecution("blocked"));
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		qaBlocked: true,
+		questions: [expect.stringContaining("Test account unavailable")],
+	});
+	const absent = qaExecution();
+	absent.results = [];
+	stampQa(ctx, absent);
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		qaBlocked: true,
+	});
+	stampQa(ctx);
+	(
+		ctx.run.outputs["visual-scope"] as ReturnType<typeof qaScope>
+	).stories[0].criteria[0].expected = "Changed criterion";
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		qaBlocked: true,
+	});
+	ctx.run.outputs["visual-scope"] = qaScope();
+	stampQa(ctx);
+	ctx.run.roleRevisions!.capture!.headSha = "old";
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		qaBlocked: true,
+	});
+});
+it("requires selected UI screenshots and exact inspected-image receipts, rejecting unknown tasks", async () => {
+	const ctx = qaContext("ui");
+	execFileSync("git", ["init", "-q"], { cwd: ctx.run.workspace });
+	writeFileSync(join(ctx.run.workspace, "view.ts"), "fixture");
+	stampQa(ctx);
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		captureBlocked: true,
+	});
+	const path = join(ctx.evidenceDir, "saved.png");
+	writeFileSync(path, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]));
+	const capture = qaExecution();
+	capture.screenshots.push({
+		path,
+		caption: "Saved",
+		area: "Editor",
+		state: "saved",
+	});
+	stampQa(ctx, capture);
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		qaBlocked: true,
+	});
+	const stamped = ctx.run.outputs.capture as typeof capture;
+	(
+		ctx.run.outputs["visual-review"] as { acceptedScreenshots: unknown[] }
+	).acceptedScreenshots = stamped.screenshots.map((s) => ({
+		area: s.area,
+		state: s.state,
+		imageSha256: s.imageSha256,
+	}));
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({ approved: true });
+	capture.screenshots[0].state = "unplanned";
+	expect(() => stampQa(ctx, capture)).toThrow("Unknown screenshot task");
+});
+it("requires the versioned QA fields while preserving screenshot-only legacy result validation", () => {
+	const legacy = { screenshots: [], unavailable: [] };
+	expect(validateFactoryResult("capture", legacy)).toMatchObject(legacy);
+	expect(() => validateFactoryResult("capture", legacy, "qa-v1")).toThrow();
+	expect(() =>
+		validateFactoryResult(
+			"visual-scope",
+			{ changed: false, areas: [] },
+			"qa-v1",
+		),
+	).toThrow();
+	const scope = qaScope();
+	scope.stories.push(scope.stories[0]);
+	expect(() => validateFactoryResult("visual-scope", scope, "qa-v1")).toThrow(
+		"unique",
+	);
+});
+
+it("routes a confirmed product failure preventing a screenshot to fixes, keeping unconfirmed capture gaps blocked", async () => {
+	const ctx = qaContext("ui"),
+		failed = qaExecution("failed");
+	failed.unavailable = [
+		{
+			area: "Editor",
+			reason: "Failed save never reaches success view",
+			cause: "product",
+		},
+	];
+	stampQa(ctx, failed);
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		findings: [expect.objectContaining({ rating: 3 })],
+	});
+	expect(await qaTools().tool(ctx)).not.toHaveProperty("qaBlocked");
+	const passed = qaExecution();
+	passed.unavailable = failed.unavailable;
+	stampQa(ctx, passed);
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		qaBlocked: true,
+	});
+});
+
+it("allows fresh clean execution after fixture preparation while retaining the unchanged accepted scope", async () => {
+	const ctx = qaContext();
+	ctx.run.roleRevisions!["visual-scope"] = {
+		headSha: "fixture-before",
+		dirty: true,
+		at: "before",
+		historyLength: 0,
+	};
+	stampQa(ctx);
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({ approved: true });
+});
+it("blocks handoff when a previously approved QA artifact changes", async () => {
+	const ctx = qaContext();
+	stampQa(ctx);
+	ctx.run.outputs["visual-gate"] = await qaTools().tool(ctx);
+	ctx.step = { ...ctx.step, id: "handoff", tool: "handoff" };
+	ctx.run.step = "handoff";
+	ctx.run.outputs.ci = { approved: true, headSha: "head" };
+	ctx.run.outputs.guide = { decision: { status: "ready" } };
+	(
+		ctx.run.outputs.capture as ReturnType<typeof qaExecution>
+	).results[0].criteria[0].observed = "A replacement receipt";
+	const postComment = vi.fn();
+	const tools = new FactoryTools({
+		postComment,
+		command: async (_ctx, exe, args) => {
+			if (exe === "git") return args[0] === "status" ? "" : "head";
+			if (args.includes("graphql")) return JSON.stringify(providerReceipt());
+			if (args[0] === "api") return "[[]]";
+			return JSON.stringify({
+				headRefOid: "head",
+				isDraft: true,
+				state: "OPEN",
+			});
+		},
+	});
+	await expect(tools.tool(ctx)).rejects.toThrow(
+		"QA evidence changed or is incomplete",
+	);
+	expect(postComment).not.toHaveBeenCalled();
+});
+
+it("does not present legacy screenshot-only roles as QA when a runner supplies extra QA fields", () => {
+	expect(validateFactoryResult("capture", qaExecution())).toEqual({
+		screenshots: [],
+		unavailable: [],
+	});
+	expect(
+		validateFactoryResult("visual-review", {
+			qaContract: "qa-v1",
+			findings: [],
+			summary: "Screenshot-only review",
+			qaReviewStamp: {
+				headSha: "invented",
+				dirty: false,
+				captureHash: "invented",
+				scopeHash: "invented",
+			},
+		}),
+	).toEqual({ findings: [], summary: "Screenshot-only review" });
+});
+
+it("uses a reported open criterion failure without generating a duplicate, but never accepts a rejection of failed behavior", async () => {
+	const ctx = qaContext(),
+		failed = qaExecution("failed");
+	failed.findings = [
+		{
+			id: "save-failure",
+			rating: 3,
+			status: "open",
+			summary: "Save lost the record",
+			evidence: "Readback missing",
+			storyId: "save",
+			criterionId: "saved",
+			requirementRefs: ["requirements/0"],
+			reproduction: ["Save"],
+			expected: "Record is persisted",
+			actual: "Record missing",
+		},
+	];
+	stampQa(ctx, failed);
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		findings: [expect.objectContaining({ id: "save-failure" })],
+	});
+	expect(
+		((await qaTools().tool(ctx)) as { findings: unknown[] }).findings,
+	).toHaveLength(1);
+	failed.findings[0].status = "accepted-rejection";
+	stampQa(ctx, failed);
+	const rejected = (await qaTools().tool(ctx)) as {
+		approved: boolean;
+		findings: { id: string }[];
+	};
+	expect(rejected.approved).toBe(false);
+	expect(rejected.findings).toHaveLength(1);
+	expect(rejected.findings[0].id).not.toBe("save-failure");
 });

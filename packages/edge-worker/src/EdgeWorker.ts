@@ -196,6 +196,7 @@ import {
 	OutputValidationError,
 	outputValidationError,
 } from "./factory/OutputValidation.js";
+import { type QaScope, qaDigest, qaRequirementIssues } from "./factory/Qa.js";
 import { questionInstructions } from "./factory/Questions.js";
 import {
 	buildTitleContext,
@@ -6735,12 +6736,21 @@ ${taskSection}`;
 		try {
 			let output = value;
 			if (
+				step.qaContract ||
 				["factory", "takeover"].includes(run.workflow.id) ||
 				run.workflowDefinitions
 					?.find((item) => item.id === "factory-pipeline")
 					?.steps.includes(step)
 			)
-				output = validateFactoryResult(step.id, output);
+				output = validateFactoryResult(step.id, output, step.qaContract);
+			if (step.id === "visual-scope" && step.qaContract) {
+				const issues = qaRequirementIssues(
+					output as QaScope,
+					run.outputs,
+					run.answers,
+				);
+				if (issues.length) throw new Error(issues.join("; "));
+			}
 			if (step.id === "guide") validateGuideCoverage(context, output);
 			return output;
 		} catch (error) {
@@ -6758,6 +6768,17 @@ ${taskSection}`;
 		if (step.id === "ci-fix")
 			output = recordFeedbackAssessment(context, output);
 		const completed = (await roleProgress(context)).currentRevision;
+		if (completed && step.id === "visual-review" && step.qaContract) {
+			output = {
+				...(output as Record<string, unknown>),
+				qaReviewStamp: {
+					headSha: completed.headSha,
+					dirty: completed.dirty,
+					captureHash: qaDigest(run.outputs.capture),
+					scopeHash: qaDigest(run.outputs["visual-scope"]),
+				},
+			};
+		}
 		if (completed) {
 			run.roleRevisions ??= {};
 			completed.historyLength = run.history.length + 1;
