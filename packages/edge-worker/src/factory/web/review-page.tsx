@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useRun } from "./client";
 import { FullReview, RunMeta } from "./focus";
+import { ReviewContextRow } from "./review-context-row";
 import { writeTextStored } from "./review-state";
 import { Button } from "./ui";
 
@@ -72,6 +73,7 @@ export function ReviewPage({
 							</span>
 						)}
 					</div>
+					<ReviewContextRow key={run.id} run={run} />
 				</div>
 			</header>
 			{query.error && (
