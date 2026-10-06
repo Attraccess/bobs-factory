@@ -1,7 +1,12 @@
 import { useEffect, useRef } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useRun } from "./client";
 import { FullReview, RunMeta } from "./focus";
+import {
+	PrototypeSwitcher,
+	prototypesEnabled,
+	ReviewPrototype,
+} from "./review-prototype";
 import { writeTextStored } from "./review-state";
 import { Button } from "./ui";
 
@@ -16,6 +21,9 @@ export function ReviewPage({
 }) {
 	const { id } = useParams(),
 		query = useRun(id),
+		[params] = useSearchParams(),
+		// PROTOTYPE (bobs-factory#71): `?variant=B…E` swaps the guide renderer.
+		variant = prototypesEnabled ? (params.get("variant") ?? "A") : "A",
 		run = query.data,
 		heading = useRef<HTMLHeadingElement>(null),
 		hasRun = Boolean(run);
@@ -94,7 +102,10 @@ export function ReviewPage({
 						: "Approval is available only while a matching review is pending."}
 				</p>
 			)}
-			{guide ? (
+			{guide && prototypesEnabled && <PrototypeSwitcher guide={guide} />}
+			{guide && variant !== "A" ? (
+				<ReviewPrototype run={run} variant={variant} />
+			) : guide ? (
 				<div className="review-surface">
 					<FullReview
 						run={run}
