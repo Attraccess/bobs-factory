@@ -14,6 +14,7 @@ const base = {
 	name: z.string().min(1),
 	next: id.optional(),
 	branches: z.array(z.object({ when: condition, next: id })).default([]),
+	qaContract: z.literal("qa-v1").optional(),
 	maxVisits: z.number().int().min(1).max(100).default(8),
 };
 export const AgentStepSchema = z.object({
@@ -35,6 +36,7 @@ export interface WorkflowStep {
 	next?: string;
 	branches: { when: { path: string; equals?: unknown }; next: string }[];
 	maxVisits: number;
+	qaContract?: "qa-v1";
 	prompt?: string;
 	inputs?: string[];
 	runner?: AgentStep["runner"];

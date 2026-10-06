@@ -17,11 +17,12 @@ import {
 import { activitiesOf } from "./conversation";
 import { GuidedReview } from "./review";
 import {
-	guideMatchesGate,
-	readStored,
-	signature,
-	writeStored,
-} from "./review-state";
+	type FeedbackController,
+	useFeedbackController,
+	useReviewFeedback,
+} from "./review-comments";
+import { feedbackKey, hasFeedback, serializeFeedback } from "./review-feedback";
+import { guideMatchesGate, reviewRevision, signature } from "./review-state";
 import { Bob, Button, ConfirmStop, External, Markdown, useToast } from "./ui";
 export const labels: Record<string, string> = {
 	question: "💬 Question",
@@ -347,45 +348,72 @@ export function FullReview({
 	);
 }
 
-function DecisionActions({
-	run,
-	identity = `factory-review/${run.id}/finished`,
-	decisionPage = true,
-	onSettled,
-	settling,
-}: {
+type DecisionProps = {
 	run: any;
 	identity?: string;
 	decisionPage?: boolean;
 	onSettled: () => void;
 	settling?: boolean;
-}) {
+};
+function DecisionActions(props: DecisionProps) {
+	const controller = useReviewFeedback();
+	return controller ? (
+		<ReviewDecisions {...props} controller={controller} />
+	) : (
+		<LocalDecisions {...props} />
+	);
+}
+function LocalDecisions(props: DecisionProps) {
+	const controller = useFeedbackController(
+		feedbackKey(
+			props.identity ?? `factory-review/${props.run.id}/finished`,
+			props.run.reviewGate?.id,
+		),
+	);
+	return <ReviewDecisions {...props} controller={controller} />;
+}
+function ReviewDecisions({
+	run,
+	identity = `factory-review/${run.id}/finished`,
+	decisionPage = true,
+	onSettled,
+	settling,
+	controller,
+}: DecisionProps & { controller: FeedbackController }) {
 	const toast = useToast(),
 		navigate = useNavigate(),
 		action = useAction(),
-		draftKey = `${identity}/feedback/${run.reviewGate?.id ?? "finished"}`,
-		[draft, setDraft] = useState(() => {
-			const saved = readStored<any>(draftKey, {});
-			return {
-				feedback: typeof saved?.feedback === "string" ? saved.feedback : "",
-				open: saved?.open === true,
-			};
-		});
+		[validationError, setValidationError] = useState("");
+	const { draft, update, busy } = controller;
 	const feedback = draft.feedback,
 		feedbackOpen = draft.open;
-	const setFeedback = (feedback: string) =>
-		setDraft((d) => ({ ...d, feedback }));
-	const setFeedbackOpen = (open: boolean) => setDraft((d) => ({ ...d, open }));
-	useEffect(() => {
-		writeStored(draftKey, draft);
-	}, [draftKey, draft]);
+	const setFeedback = (feedback: string) => update((d) => ({ ...d, feedback }));
+	const setFeedbackOpen = (open: boolean) => update((d) => ({ ...d, open }));
 	const guide = run.outputs?.guide,
 		gate = run.reviewGate,
 		waiting = gate?.status === "pending",
 		matching = !waiting || (run.status === "waiting" && guideMatchesGate(run)),
 		url = run.outputs?.["draft-pr"]?.url ?? gate?.url;
 	const reject = async () => {
-		if (!feedback.trim() || action.isPending || !matching) return;
+		if (!hasFeedback(draft) || busy || action.isPending || !matching) return;
+		let feedback: string;
+		try {
+			feedback = serializeFeedback(
+				draft,
+				guide
+					? {
+							revision: reviewRevision(run) || "historical",
+							goal: guide.goal ?? guide.summary ?? "Review guide",
+							identity,
+						}
+					: undefined,
+			);
+			setValidationError("");
+		} catch (error) {
+			setValidationError((error as Error).message);
+			return;
+		}
+		if (!controller.lock()) return;
 		try {
 			if (waiting) {
 				await action.mutateAsync({
@@ -411,10 +439,11 @@ function DecisionActions({
 				navigate(`/runs/${next.id}`);
 			}
 			toast({ text: "Feedback sent — Bob is on it" });
-			writeStored(draftKey, { feedback: "", open: false });
-			setDraft({ feedback: "", open: false });
+			controller.clear(draft);
 		} catch {
-			/* error stays visible */
+			/* error stays visible; the submitted draft is retained. */
+		} finally {
+			controller.unlock();
 		}
 	};
 	return (
@@ -435,7 +464,7 @@ function DecisionActions({
 					</Markdown>
 				</div>
 			)}
-			{feedbackOpen ? (
+			{(guide || feedbackOpen) && (
 				<form
 					className="feedback-form"
 					onSubmit={(e) => {
@@ -443,44 +472,70 @@ function DecisionActions({
 						void reject();
 					}}
 				>
-					<label>
-						What should Bob change?
-						<textarea
-							rows={3}
-							placeholder="e.g. Keep the old receipt layout for non-metered resources"
-							value={feedback}
-							onChange={(e) => setFeedback(e.target.value)}
-						/>
-					</label>
+					{(!guide || decisionPage || feedbackOpen) && (
+						<label>
+							{guide ? "Additional feedback" : "What should Bob change?"}
+							<textarea
+								rows={guide ? 6 : 3}
+								disabled={busy}
+								placeholder="What else should Bob change?"
+								value={feedback}
+								onChange={(e) => setFeedback(e.target.value)}
+							/>
+						</label>
+					)}
 					<div className="actions">
 						<Button
 							type="submit"
-							busy={action.isPending}
-							disabled={!feedback.trim() || !matching}
+							busy={busy || action.isPending}
+							disabled={!hasFeedback(draft) || !matching}
 						>
-							Send to Bob
+							Submit feedback to Bob
 						</Button>
-						<Button
-							variant="ghost"
-							disabled={action.isPending}
-							onClick={() => setFeedbackOpen(false)}
-						>
-							Cancel
-						</Button>
+						{!decisionPage && (
+							<Button
+								variant="ghost"
+								disabled={busy}
+								onClick={() => setFeedbackOpen(!feedbackOpen)}
+							>
+								{feedbackOpen
+									? "Hide additional feedback"
+									: "Add additional feedback"}
+							</Button>
+						)}
+						{!guide && (
+							<Button
+								variant="ghost"
+								disabled={busy}
+								onClick={() => setFeedbackOpen(false)}
+							>
+								Cancel
+							</Button>
+						)}
 					</div>
+					{validationError && (
+						<p className="error" role="alert">
+							{validationError}
+						</p>
+					)}
 				</form>
-			) : (
+			)}
+			{(guide || !feedbackOpen) && (
 				<div className="actions">
 					{(!guide || decisionPage) &&
 						!["running", "interrupted"].includes(run.status) && (
 							<Button
 								variant={guide ? "rainbow" : "primary"}
-								busy={action.isPending || settling}
-								disabled={!matching || (!waiting && !finished(run.status))}
+								busy={busy || action.isPending || settling}
+								disabled={
+									busy || !matching || (!waiting && !finished(run.status))
+								}
 								onClick={() => {
-									if (!matching || action.isPending) return;
+									if (!matching || action.isPending || !controller.lock())
+										return;
 									if (!waiting) {
 										onSettled();
+										controller.unlock();
 										return;
 									}
 									void action
@@ -497,7 +552,8 @@ function DecisionActions({
 												text: "Approved — Bob is checking merge criteria",
 											}),
 										)
-										.catch(() => {});
+										.catch(() => {})
+										.finally(() => controller.unlock());
 								}}
 							>
 								{waiting
@@ -510,8 +566,9 @@ function DecisionActions({
 					{waiting && (
 						<Button
 							variant="ghost"
-							busy={action.isPending}
+							busy={busy || action.isPending}
 							onClick={() => {
+								if (!controller.lock()) return;
 								void action
 									.mutateAsync({
 										path: `/api/runs/${run.id}/guide/refresh`,
@@ -522,7 +579,8 @@ function DecisionActions({
 											text: "Refreshing the guide — existing reviews and images are retained",
 										}),
 									)
-									.catch(() => {});
+									.catch(() => {})
+									.finally(() => controller.unlock());
 							}}
 						>
 							Refresh guide
@@ -538,9 +596,15 @@ function DecisionActions({
 							Open PR #{url.split("/").at(-1)} ↗
 						</External>
 					)}
-					<Button variant="ghost" onClick={() => setFeedbackOpen(true)}>
-						{guide ? "Request changes" : "Ask a follow-up"}
-					</Button>
+					{!guide && (
+						<Button
+							variant="ghost"
+							disabled={busy}
+							onClick={() => setFeedbackOpen(true)}
+						>
+							Ask a follow-up
+						</Button>
+					)}
 					{!guide && (
 						<Link className="button ghost" to={`/runs/${run.id}`}>
 							Open run
@@ -548,6 +612,7 @@ function DecisionActions({
 					)}
 				</div>
 			)}
+
 			{waiting && (
 				<small className="muted">
 					Approval applies to {gate.headSha.slice(0, 8)}. Settles after GitHub

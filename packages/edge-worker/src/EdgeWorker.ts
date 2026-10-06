@@ -199,9 +199,14 @@ import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
 import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
 import {
+	confirmedMerge,
+	pendingMergeConfirmation,
+} from "./factory/MergeRecovery.js";
+import {
 	OutputValidationError,
 	outputValidationError,
 } from "./factory/OutputValidation.js";
+import { type QaScope, qaDigest, qaRequirementIssues } from "./factory/Qa.js";
 import { questionInstructions } from "./factory/Questions.js";
 import {
 	buildTitleContext,
@@ -7479,12 +7484,21 @@ ${taskSection}`;
 		try {
 			let output = value;
 			if (
+				step.qaContract ||
 				["factory", "takeover"].includes(run.workflow.id) ||
 				run.workflowDefinitions
 					?.find((item) => item.id === "factory-pipeline")
 					?.steps.includes(step)
 			)
-				output = validateFactoryResult(step.id, output);
+				output = validateFactoryResult(step.id, output, step.qaContract);
+			if (step.id === "visual-scope" && step.qaContract) {
+				const issues = qaRequirementIssues(
+					output as QaScope,
+					run.outputs,
+					run.answers,
+				);
+				if (issues.length) throw new Error(issues.join("; "));
+			}
 			if (step.id === "guide") validateGuideCoverage(context, output);
 			return output;
 		} catch (error) {
@@ -7502,6 +7516,17 @@ ${taskSection}`;
 		if (step.id === "ci-fix")
 			output = recordFeedbackAssessment(context, output);
 		const completed = (await roleProgress(context)).currentRevision;
+		if (completed && step.id === "visual-review" && step.qaContract) {
+			output = {
+				...(output as Record<string, unknown>),
+				qaReviewStamp: {
+					headSha: completed.headSha,
+					dirty: completed.dirty,
+					captureHash: qaDigest(run.outputs.capture),
+					scopeHash: qaDigest(run.outputs["visual-scope"]),
+				},
+			};
+		}
 		if (completed) {
 			run.roleRevisions ??= {};
 			completed.historyLength = run.history.length + 1;
@@ -7820,10 +7845,61 @@ ${taskSection}`;
 		if ((!run.workspace || run.setupComplete === false) && run.launchRequest)
 			await this.prepareManualFactoryRun(run, run.launchRequest, signal);
 		signal.throwIfAborted();
-		if (!run.workspace || !existsSync(run.workspace))
+		if (!run.workspace || !existsSync(run.workspace)) {
+			const pending = pendingMergeConfirmation(run);
+			const url = readFactoryPath(run.outputs, "draft-pr.url");
+			if (
+				pending &&
+				run.humanDecisions?.at(-1)?.decision === "approve" &&
+				typeof url === "string" &&
+				/^https:\/\/github.com\/[\w.-]+\/[\w.-]+\/pull\/\d+\/?$/.test(url)
+			) {
+				const evidenceDir = join(
+					this.getFactoryRuntime().directory,
+					"evidence",
+					run.id,
+				);
+				await mkdir(evidenceDir, { recursive: true });
+				const pr = JSON.parse(
+					await executeCommand(
+						{
+							run: { ...run, workspace: repository.repositoryPath },
+							step: pending.step,
+							input: {},
+							signal,
+							evidenceDir,
+							log: () => {},
+						},
+						"gh",
+						["pr", "view", url, "--json", "state,headRefOid"],
+						60000,
+					),
+				);
+				const output = confirmedMerge(run, {
+					state: pr.state,
+					headSha: pr.headRefOid,
+				});
+				if (output) {
+					run.outputs[pending.step.id] = output;
+					if (pending.checkpoint.active!.phase === "executing")
+						run.history.push({
+							step: pending.key,
+							output,
+							at: new Date().toISOString(),
+						});
+					pending.checkpoint.active!.phase = "result";
+					this.getFactoryRuntime().log(
+						run,
+						pending.key,
+						"Confirmed the approved PR revision was merged after worktree cleanup.",
+					);
+					return;
+				}
+			}
 			throw new Error(
 				"Saved worktree is unavailable; recovery cannot recreate unfinished work",
 			);
+		}
 		let session = this.agentSessionManager.getSession(run.id);
 		if (!session) {
 			session = this.agentSessionManager.createChatSession(

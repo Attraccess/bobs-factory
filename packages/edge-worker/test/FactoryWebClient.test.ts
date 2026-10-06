@@ -5,8 +5,12 @@ import {
 	useMutation,
 	useQueryClient,
 } from "@tanstack/react-query";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it, vi } from "vitest";
-import { api, useAction } from "../src/factory/web/client.js";
+import { artifactType, RenderArtifact } from "../src/factory/web/artifacts.js";
+import { api, artifactsOf, useAction } from "../src/factory/web/client.js";
+import { qaExecution } from "./fixtures/qa.js";
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@tanstack/react-query")>()),
@@ -211,4 +215,42 @@ it("keeps capacity queues active without rendering human attention", async () =>
 	expect(active("capacity-waiting")).toBe(true);
 	expect(active("stopping")).toBe(true);
 	expect(attention({ status: "capacity-waiting" })).toBeUndefined();
+});
+
+it("classifies QA before screenshot artifacts, including previews, and renders zero-image receipts and observations", () => {
+	const qa = qaExecution("blocked");
+	qa.observations = [
+		{
+			id: "help",
+			summary: "Optional help wording",
+			evidence: "Observed ambiguous text",
+		},
+	];
+	expect(artifactType(qa)).toBe("qa");
+	expect(
+		artifactType({
+			__artifactPreview: true,
+			keys: ["qaContract", "results", "screenshots"],
+			size: 10000,
+		}),
+	).toBe("qa");
+	expect(artifactType({ screenshots: [] })).toBe("screenshots");
+	const html = renderToStaticMarkup(
+		createElement(RenderArtifact, {
+			name: "capture",
+			v: qa,
+			run: { id: "qa" },
+			onImage: () => {},
+		}),
+	);
+	expect(html).toContain("Test account unavailable");
+	expect(html).toContain("Optional help wording");
+	expect(html).toContain("Record is persisted");
+	expect(html).toContain("0/1 criteria passed");
+	expect(
+		artifactsOf({ outputs: { capture: { screenshots: [] } } })[0].title,
+	).toBe("Screenshots");
+	expect(artifactsOf({ outputs: { capture: qa } })[0].title).toBe(
+		"QA and screenshots",
+	);
 });
