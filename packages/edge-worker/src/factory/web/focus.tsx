@@ -14,6 +14,8 @@ import {
 	workflowOf,
 } from "./client";
 import { activitiesOf } from "./conversation";
+import { DraftNotice } from "./pwa-ui";
+import { revisionOf, useRestorableState } from "./restoration";
 import { GuidedReview } from "./review";
 import {
 	type FeedbackController,
@@ -87,6 +89,7 @@ export function RunTitleStatus({ run }: { run: any }) {
 			<p>Title generation failed: {job.error ?? "Unknown error"}</p>
 			<Button
 				variant="ghost"
+				requiresConnection
 				busy={action.isPending}
 				onClick={() =>
 					void action
@@ -159,11 +162,18 @@ function QuickReplies({ question }: { question: string }) {
 export function QuestionForm({ run }: { run: any }) {
 	const toast = useToast(),
 		action = useAction(),
-		[answers, setAnswers] = useState<Record<number, string>>({});
+		[answers, setAnswers, staleAnswers] = useRestorableState<
+			Record<number, string>
+		>(
+			`answers/${run.id}`,
+			{},
+			revisionOf([run.questions, run.step, run.status]),
+		);
 	const questions = run.questions ?? [];
 	const submit = async () => {
 		if (
 			action.isPending ||
+			staleAnswers ||
 			questions.some((_: string, i: number) => !answers[i]?.trim())
 		)
 			return;
@@ -171,6 +181,7 @@ export function QuestionForm({ run }: { run: any }) {
 			await action.mutateAsync({
 				path: `/api/runs/${run.id}/answer`,
 				body: {
+					context: { questions, step: run.step },
 					answer: questions
 						.map((q: string, i: number) => `${i + 1}. ${q}\n${answers[i]}`)
 						.join("\n\n"),
@@ -195,6 +206,7 @@ export function QuestionForm({ run }: { run: any }) {
 				}
 			}}
 		>
+			<DraftNotice conflict={staleAnswers} draftKey={`answers/${run.id}`} />
 			<fieldset disabled={action.isPending}>
 				<legend className="sr-only">
 					Answers to Bob's clarification questions
@@ -242,8 +254,10 @@ export function QuestionForm({ run }: { run: any }) {
 			)}
 			<Button
 				type="submit"
+				requiresConnection
 				busy={action.isPending}
 				disabled={
+					staleAnswers ||
 					!questions.length ||
 					questions.some((_: string, i: number) => !answers[i]?.trim())
 				}
@@ -368,6 +382,7 @@ function LocalDecisions(props: DecisionProps) {
 			props.identity ?? `factory-review/${props.run.id}/finished`,
 			props.run.reviewGate?.id,
 		),
+		revisionOf([props.run.reviewGate, props.run.status, props.run.chat?.mode]),
 	);
 	return <ReviewDecisions {...props} controller={controller} />;
 }
@@ -383,7 +398,7 @@ function ReviewDecisions({
 		navigate = useNavigate(),
 		action = useAction(),
 		[validationError, setValidationError] = useState("");
-	const { draft, update, busy } = controller;
+	const { draft, update, busy, staleFeedback, draftKey } = controller;
 	const feedback = draft.feedback,
 		feedbackOpen = draft.open;
 	const setFeedback = (feedback: string) => update((d) => ({ ...d, feedback }));
@@ -394,7 +409,14 @@ function ReviewDecisions({
 		matching = !waiting || (run.status === "waiting" && guideMatchesGate(run)),
 		url = run.outputs?.["draft-pr"]?.url ?? gate?.url;
 	const reject = async () => {
-		if (!hasFeedback(draft) || busy || action.isPending || !matching) return;
+		if (
+			!hasFeedback(draft) ||
+			staleFeedback ||
+			busy ||
+			action.isPending ||
+			!matching
+		)
+			return;
 		let feedback: string;
 		try {
 			feedback = serializeFeedback(
@@ -447,6 +469,7 @@ function ReviewDecisions({
 	};
 	return (
 		<>
+			<DraftNotice conflict={staleFeedback} draftKey={draftKey} />
 			{waiting && !matching && (
 				<p className="notice" role="status">
 					The pending revision changed. Decisions are unavailable until its
@@ -487,7 +510,8 @@ function ReviewDecisions({
 						<Button
 							type="submit"
 							busy={busy || action.isPending}
-							disabled={!hasFeedback(draft) || !matching}
+							requiresConnection
+							disabled={!hasFeedback(draft) || staleFeedback || !matching}
 						>
 							Submit feedback to Bob
 						</Button>
@@ -525,6 +549,7 @@ function ReviewDecisions({
 						!["running", "interrupted"].includes(run.status) && (
 							<Button
 								variant={guide ? "rainbow" : "primary"}
+								requiresConnection
 								busy={busy || action.isPending || settling}
 								disabled={
 									busy || !matching || (!waiting && !finished(run.status))
@@ -565,6 +590,7 @@ function ReviewDecisions({
 					{waiting && (
 						<Button
 							variant="ghost"
+							requiresConnection
 							busy={busy || action.isPending}
 							onClick={() => {
 								if (!controller.lock()) return;
@@ -700,6 +726,7 @@ export function FocusCard({
 					</div>
 					<div className="actions">
 						<Button
+							requiresConnection
 							busy={action.isPending}
 							onClick={() =>
 								void action
@@ -831,6 +858,7 @@ export function WorkingRow({
 							Open run
 						</Link>
 						<ConfirmStop
+							requiresConnection
 							busy={action.isPending}
 							onStop={() =>
 								void action

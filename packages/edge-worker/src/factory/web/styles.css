@@ -69,6 +69,12 @@
 * {
 	box-sizing: border-box;
 }
+html,
+body {
+	/* Keep wide content from making the document scroll sideways. */
+	overflow-x: clip;
+	max-width: 100%;
+}
 body {
 	margin: 0;
 	font-family:
@@ -492,6 +498,7 @@ kbd {
 	margin-left: auto;
 }
 .page {
+	overflow-wrap: anywhere;
 	max-width: 880px;
 	margin: auto;
 	padding: 24px 0 120px;
@@ -1448,6 +1455,8 @@ kbd {
 	transform: translateX(-50%);
 }
 .markdown {
+	min-width: 0;
+	max-width: 100%;
 	font-weight: 400;
 	overflow-wrap: anywhere;
 }
@@ -2087,7 +2096,9 @@ kbd {
 	}
 	.site-header > div {
 		padding: 0 14px;
-		height: 60px;
+		height: auto;
+		min-height: 60px;
+		flex-wrap: wrap;
 		gap: 8px;
 	}
 	.brand strong {
@@ -2097,6 +2108,7 @@ kbd {
 		width: 32px;
 	}
 	.nav-pill a {
+		white-space: nowrap;
 		padding: 7px 12px;
 		font-size: 13px;
 		min-height: 40px;
@@ -2108,6 +2120,9 @@ kbd {
 	}
 	.header-actions {
 		gap: 4px;
+	}
+	.keyboard-hint {
+		display: none;
 	}
 	.page {
 		padding: 18px 14px calc(70px + env(safe-area-inset-bottom));
@@ -3902,6 +3917,57 @@ kbd {
 	}
 }
 
+.update-notice {
+	margin: 0 0 18px;
+	padding: 16px;
+	border: 1px solid var(--line);
+	border-radius: 16px;
+	background: var(--blue);
+	color: var(--text);
+}
+.update-notice .actions {
+	margin-top: 10px;
+	flex-wrap: wrap;
+}
+.update-notice label {
+	display: block;
+	margin-top: 12px;
+}
+.install-help ul {
+	padding-inline-start: 20px;
+}
+.install-help li {
+	margin-block: 12px;
+}
+.site-header {
+	padding-top: env(safe-area-inset-top);
+}
+@media (max-width: 640px) {
+	.install-control {
+		font-size: 12px;
+		padding-inline: 8px;
+	}
+}
+
+/* Let app and dialog content shrink; tables and inspectors scroll locally. */
+#root,
+.page > *,
+.modal-body > * {
+	min-width: 0;
+	max-width: 100%;
+}
+
+@media (max-width: 980px), (pointer: coarse) {
+	/* iPhone focus zoom is triggered by small form text; keep pinch zoom available. */
+	:root input,
+	:root textarea,
+	:root select {
+		font-size: 16px;
+	}
+	:root .composer-main textarea {
+		font-size: 17px;
+	}
+}
 .commentable {
 	position: relative;
 	min-width: 0;

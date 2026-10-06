@@ -11,6 +11,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import type { Guide } from "../FactoryResults";
 import { api, client } from "./client";
 import { useReadingPosition } from "./reading-position";
+import { revisionOf, useRestorableState } from "./restoration";
 import {
 	CollectedFeedback,
 	Commentable,
@@ -153,6 +154,12 @@ export function GuidedReview({
 function ReviewSession(props: React.ComponentProps<typeof ReviewReader>) {
 	const controller = useFeedbackController(
 		feedbackKey(props.storageKey, props.run.reviewGate?.id),
+		revisionOf([
+			feedbackKey(props.storageKey, props.run.reviewGate?.id),
+			props.run.reviewGate,
+			props.run.status,
+			props.run.chat?.mode,
+		]),
 	);
 	return (
 		<FeedbackContext.Provider value={props.controls ? controller : null}>
@@ -188,7 +195,9 @@ function ReviewReader({
 		navigate = useNavigate(),
 		revision = signature(storageKey),
 		params = new URLSearchParams(location.search);
-	const [progress, setProgress] = useState(() => {
+	const [progress, setProgress] = useRestorableState<
+			ReturnType<typeof readProgress>
+		>(`review/progress/${storageKey}`, () => {
 			const saved = readProgress(readStored(storageKey, null), tokens.length),
 				stale = params.has("rev") && params.get("rev") !== revision;
 			return {
@@ -284,6 +293,7 @@ function ReviewReader({
 			navigate,
 			revision,
 			focusPage,
+			setProgress,
 		],
 	);
 	useEffect(() => {
@@ -323,6 +333,7 @@ function ReviewReader({
 		tokens,
 		page,
 		focusPage,
+		setProgress,
 	]);
 	useEffect(() => {
 		const key = (event: KeyboardEvent) => {
