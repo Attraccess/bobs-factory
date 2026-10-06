@@ -104,7 +104,12 @@ export function ReviewPage({
 			)}
 			{guide && prototypesEnabled && <PrototypeSwitcher guide={guide} />}
 			{guide && variant !== "A" ? (
-				<ReviewPrototype run={run} variant={variant} />
+				<ReviewPrototype
+					run={run}
+					variant={variant}
+					onSettled={() => onSettled(run)}
+					settling={settling}
+				/>
 			) : guide ? (
 				<div className="review-surface">
 					<FullReview

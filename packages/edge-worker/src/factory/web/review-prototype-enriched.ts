@@ -366,8 +366,277 @@ const bundledLiveUpdates: Enriched = {
 	},
 };
 
+// Mixed visual + API example: manual-cffae79b… ("named meters").
+const namedMeters: Enriched = {
+	tldr: "Resources get any number of named meters — tracked, billed per meter, shown everywhere.",
+	system: {
+		lanes: ["Inputs", "Metering", "Sessions", "Billing", "Outputs"],
+		nodes: [
+			{
+				id: "flowNodes",
+				label: "Flow meter nodes",
+				lane: 0,
+				status: "changed",
+			},
+			{ id: "migration", label: "Upgrade migration", lane: 0, status: "new" },
+			{ id: "energy", label: "Energy-only meter", lane: 1, status: "legacy" },
+			{ id: "meters", label: "Named meters", lane: 1, status: "new" },
+			{ id: "sessions", label: "Session terms", lane: 2, status: "changed" },
+			{ id: "recovery", label: "Recovery & waivers", lane: 2, status: "new" },
+			{ id: "billing", label: "Meter bill items", lane: 3, status: "changed" },
+			{ id: "web", label: "Web cards & bills", lane: 4, status: "changed" },
+			{ id: "receipts", label: "Receipt emails", lane: 4, status: "changed" },
+			{ id: "reader", label: "Attractap reader", lane: 4, status: "changed" },
+		],
+		before: [
+			{ from: "flowNodes", to: "energy", label: "kWh only" },
+			{ from: "energy", to: "sessions" },
+			{ from: "sessions", to: "billing", label: "1 energy item" },
+			{ from: "billing", to: "web" },
+			{ from: "billing", to: "receipts" },
+			{ from: "sessions", to: "reader" },
+		],
+		after: [
+			{ from: "flowNodes", to: "meters", label: "any meter" },
+			{ from: "migration", to: "meters", label: "energy → meter" },
+			{ from: "meters", to: "sessions", label: "capture price" },
+			{ from: "meters", to: "recovery", label: "unavailable" },
+			{ from: "sessions", to: "billing", label: "item / meter" },
+			{ from: "recovery", to: "billing", label: "pending · waive" },
+			{ from: "billing", to: "web" },
+			{ from: "billing", to: "receipts" },
+			{ from: "sessions", to: "reader", label: "names + rates" },
+		],
+	},
+	sequence: {
+		actors: [
+			{ id: "flow", label: "Flow node" },
+			{ id: "meter", label: "Meter" },
+			{ id: "session", label: "Session" },
+			{ id: "billing", label: "Billing" },
+			{ id: "out", label: "Bill · email · reader" },
+		],
+		steps: [
+			{
+				from: "flow",
+				to: "meter",
+				label: "report total 1532.4",
+				chapter: "reporting-consumption",
+				note: "idle → lifetime only",
+			},
+			{
+				from: "session",
+				to: "meter",
+				label: "start: capture name, price, mode",
+				chapter: "session-billing",
+			},
+			{
+				from: "flow",
+				to: "meter",
+				label: "increment +0.8",
+				chapter: "reporting-consumption",
+			},
+			{
+				from: "flow",
+				to: "meter",
+				label: "reading unavailable",
+				chapter: "meter-recovery",
+				note: "usage continues",
+			},
+			{
+				from: "session",
+				to: "meter",
+				label: "end: final reading?",
+				chapter: "session-billing",
+			},
+			{
+				from: "meter",
+				to: "session",
+				label: "pending — no evidence",
+				chapter: "meter-recovery",
+			},
+			{
+				from: "flow",
+				to: "meter",
+				label: "retry → correction",
+				chapter: "meter-recovery",
+			},
+			{
+				from: "session",
+				to: "billing",
+				label: "1 item per meter, exact qty",
+				chapter: "session-billing",
+			},
+			{
+				from: "billing",
+				to: "out",
+				label: "bill + receipt email",
+				chapter: "bills-and-receipts",
+			},
+			{
+				from: "session",
+				to: "out",
+				label: "reader: names, rates",
+				chapter: "reader-meters",
+			},
+		],
+	},
+	chapters: {
+		"named-meters": {
+			tldr: "A resource can have many meters, created with just a name.",
+			beforeShort: "One built-in energy meter",
+			afterShort: "Any number of named meters",
+			nodes: ["meters", "web"],
+			risk: {
+				level: "low",
+				text: "Delete/rename follow per-action permissions",
+			},
+			keyChecks: [
+				{ do: "Create a meter by name", expect: "Appears with idle total 0" },
+				{
+					do: "View as an ordinary user",
+					expect: "Values visible, no manage controls",
+				},
+				{
+					do: "Rename to a very long name (mobile)",
+					expect: "Wraps, nothing clipped",
+				},
+			],
+		},
+		"reporting-consumption": {
+			tldr: "Flows report totals or increments into any meter.",
+			beforeShort: "Energy-specific flow nodes",
+			afterShort: "Generic nodes, pick or create a meter",
+			nodes: ["flowNodes", "meters"],
+			risk: {
+				level: "medium",
+				text: "Cumulative session math needs fresh boundaries",
+			},
+			keyChecks: [
+				{
+					do: "Report a total while idle",
+					expect: "Lifetime grows, no session change",
+				},
+				{ do: "Increment during a session", expect: "Session + lifetime grow" },
+				{
+					do: "Create a meter inline from a node",
+					expect: "Selectable immediately",
+				},
+			],
+		},
+		"session-billing": {
+			tldr: "Sessions freeze each meter's price; bills get one line per meter.",
+			beforeShort: "One energy line, live price",
+			afterShort: "Captured terms, item per meter",
+			nodes: ["sessions", "billing"],
+			risk: {
+				level: "high",
+				text: "Money math: check rounding on exact quantities",
+			},
+			keyChecks: [
+				{ do: "Change price mid-session", expect: "Bill uses captured price" },
+				{ do: "Two paid meters in one session", expect: "Two separate items" },
+				{ do: "Paid evidence missing", expect: "Live estimate waits" },
+			],
+		},
+		"meter-recovery": {
+			tldr: "Missing readings stay pending, get corrected, or are waived.",
+			beforeShort: "Missing reading = broken bill",
+			afterShort: "Pending → correction or waiver",
+			nodes: ["recovery", "billing"],
+			risk: {
+				level: "medium",
+				text: "Unrecoverable meters need a manual waiver",
+			},
+			keyChecks: [
+				{ do: "Free meter fails", expect: "Usage continues" },
+				{ do: "Paid final reading missing", expect: "Shown as pending" },
+				{ do: "Waive a charge", expect: "Audit row with details" },
+			],
+		},
+		"bills-and-receipts": {
+			tldr: "Bills and receipt emails list every meter separately.",
+			beforeShort: "Single energy line",
+			afterShort: "Named lines: paid, free, unavailable",
+			nodes: ["billing", "web", "receipts"],
+			risk: {
+				level: "low",
+				text: "Admin-edited receipt templates are not refreshed",
+			},
+			keyChecks: [
+				{
+					do: "Open a multi-meter transaction",
+					expect: "Separate paid + free lines",
+				},
+				{ do: "Unavailable value on mobile", expect: "Distinct from zero" },
+				{ do: "Render receipt email", expect: "Matches the modal" },
+			],
+		},
+		"energy-upgrade": {
+			tldr: "Existing energy setups migrate to meters without losing history.",
+			beforeShort: "Energy tables + conversions",
+			afterShort: "Generic meters + flow expressions",
+			nodes: ["migration", "meters", "energy"],
+			risk: { level: "high", text: "One-way migration on production data" },
+			keyChecks: [
+				{
+					do: "Migrate a DB with active sessions",
+					expect: "Baselines preserved",
+				},
+				{
+					do: "Migrate a custom conversion",
+					expect: "Rewritten as expression",
+				},
+				{ do: "Edited receipt template", expect: "Left untouched" },
+			],
+		},
+		"reader-meters": {
+			tldr: "The Attractap reader shows named meters; firmware 1.6.0.",
+			beforeShort: "Reader shows energy only",
+			afterShort: "Names, rates, exact quantities",
+			nodes: ["sessions", "reader"],
+			risk: {
+				level: "medium",
+				text: "Firmware checked in the desktop simulator only",
+			},
+			keyChecks: [
+				{
+					do: "Active session on the reader",
+					expect: "Named meters with rates",
+				},
+				{ do: "Zero vs missing value", expect: "Shown differently" },
+				{ do: "Firmware screen", expect: "Shows 1.6.0" },
+			],
+		},
+		"meter-documentation": {
+			tldr: "Docs explain meters in English and German.",
+			beforeShort: "Energy-metering guide",
+			afterShort: "Generic meter guide, EN + DE",
+			nodes: [],
+			risk: { level: "low", text: "No risks listed" },
+			keyChecks: [
+				{ do: "Open the meter guide", expect: "Sidebar entry present" },
+				{ do: "Long inline example on mobile", expect: "Wraps fully" },
+			],
+		},
+		"focused-flow-modules": {
+			tldr: "Large flow files split into focused modules; no behaviour change.",
+			beforeShort: "Few very large files",
+			afterShort: "Focused modules, same entry points",
+			nodes: ["flowNodes"],
+			risk: { level: "low", text: "Pure refactor — skim, don't deep-review" },
+			keyChecks: [
+				{ do: "Check public imports", expect: "Unchanged entry points" },
+				{ do: "Run flow tests", expect: "Green" },
+			],
+		},
+	},
+};
+
 export function enrichedFor(guide: any): Enriched | undefined {
-	return guide?.goal?.startsWith("Reduce browser HTTP connections by bundling")
-		? bundledLiveUpdates
-		: undefined;
+	if (guide?.goal?.startsWith("Reduce browser HTTP connections by bundling"))
+		return bundledLiveUpdates;
+	if (guide?.goal?.startsWith("Replace energy-only metering"))
+		return namedMeters;
+	return undefined;
 }

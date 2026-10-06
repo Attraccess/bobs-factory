@@ -285,7 +285,7 @@ export function FullReview({
 	);
 }
 
-function DecisionActions({
+export function DecisionActions({
 	run,
 	identity = `factory-review/${run.id}/finished`,
 	decisionPage = true,

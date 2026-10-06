@@ -1,3 +1,4 @@
+// biome-ignore-all lint/a11y/useKeyWithClickEvents: throwaway prototype (lightbox handles keys globally)
 // biome-ignore-all lint/complexity/noCommaOperator: throwaway prototype
 // biome-ignore-all lint/suspicious/useIterableCallbackReturn: throwaway prototype
 // biome-ignore-all lint/a11y/noStaticElementInteractions: throwaway prototype
@@ -13,6 +14,8 @@ import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "./client";
+import { DecisionActions } from "./focus";
+import { LazyImage } from "./media";
 import { type Enriched, enrichedFor } from "./review-prototype-enriched";
 import { Markdown } from "./ui";
 
@@ -21,6 +24,7 @@ export const prototypesEnabled = process.env.NODE_ENV !== "production";
 
 export const VARIANTS: [string, string][] = [
 	["A", "Current guide"],
+	["F", "Unified Atlas (all ideas)"],
 	["B", "Atlas: system map"],
 	["C", "Deck: one idea per card"],
 	["D", "Triage matrix"],
@@ -63,7 +67,13 @@ const GAP =
 	/not (verified|exercised|reconstructed)|simulator|fixture|predates|earlier/i;
 
 export type Chapter = ReturnType<typeof buildModel>["chapters"][number];
-function buildModel(guide: any, enriched?: Enriched) {
+function buildModel(
+	guide: any,
+	enriched?: Enriched,
+	evidence: any[] = [],
+	runId = "",
+) {
+	const shotOwner = new Map<number, number>();
 	const raw: any[] = guide.chapters?.length
 		? guide.chapters
 		: (guide.behavior ?? []).map((b: any, i: number) => ({
@@ -85,6 +95,16 @@ function buildModel(guide: any, enriched?: Enriched) {
 		const e = enriched?.chapters[c.id];
 		for (const f of c.files) if (!owner.has(f)) owner.set(f, i);
 		const text = [...c.evidence, ...c.risks].join("\n");
+		const shots = c.screenshots
+			.map((ref: any) => ({
+				...ref,
+				shot: evidence.find(
+					(s: any) => s.area === ref.area && s.state === ref.state,
+				),
+			}))
+			.filter((x: any) => x.shot);
+		for (const x of shots)
+			if (!shotOwner.has(x.shot.index)) shotOwner.set(x.shot.index, i);
 		return {
 			...c,
 			index: i,
@@ -107,9 +127,10 @@ function buildModel(guide: any, enriched?: Enriched) {
 				c.reviewChecks
 					.slice(0, 3)
 					.map((r: string) => ({ do: shorten(r, 90), expect: "" })),
-			evidenceKinds: EVIDENCE.filter(([, , re]) => re.test(text)).map(
-				([k, l]) => ({ k, l }),
-			),
+			shots,
+			evidenceKinds: EVIDENCE.filter(
+				([k, , re]) => re.test(text) || (k === "browser" && shots.length > 0),
+			).map(([k, l]) => ({ k, l })),
 			gaps: [...c.evidence, ...c.risks].filter((t: string) => GAP.test(t))
 				.length,
 			files: c.files.map((f: string) => ({ path: f, ...areaOf(f) })),
@@ -130,6 +151,8 @@ function buildModel(guide: any, enriched?: Enriched) {
 		files: all,
 		tldr: enriched?.tldr ?? shorten(guide.summary, 110),
 		supported,
+		runId,
+		shots: evidence.map((s: any) => ({ ...s, owner: shotOwner.get(s.index) })),
 	};
 }
 type Model = ReturnType<typeof buildModel>;
@@ -227,7 +250,7 @@ function SystemDiagram({
 							d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
 							markerEnd="url(#rp-arrow)"
 						/>
-						{e.label && (
+						{e.label && (hot || mode === "before" || !highlight.length) && (
 							<text x={mx} y={(y1 + y2) / 2 - 7} className="rp-edge-label">
 								{e.label}
 							</text>
@@ -1140,28 +1163,793 @@ function VariantE({ model }: { model: Model }) {
 	);
 }
 
+/* ------------------------------------------------------- F · Unified Atlas */
+// Atlas layout (B) + lens tabs for the system map, the sequence story (E), the
+// screenshot sheet and the code footprint; chapter rows carry the triage signals (D); the
+// drawer adapts to the chapter (screens for visual changes, step-reveal flow for technical
+// ones, both for mixed); focus mode (`f`) turns the drawer into a deck-like card (C).
+
+type Lens = "system" | "story" | "screens" | "code";
+const LENS_LABEL: Record<Lens, string> = {
+	system: "System",
+	story: "Story",
+	screens: "Screens",
+	code: "Code",
+};
+const shotUrl = (model: Model, shot: any) =>
+	`/api/runs/${model.runId}/screenshots/${shot.index}?v=${shot.imageSha256 ?? ""}`;
+const device = (state: string) =>
+	/mobile|390|DE mobile/i.test(state)
+		? "Mobile"
+		: /480×480|reader/i.test(state)
+			? "Reader"
+			: /email|receipt/i.test(state)
+				? "Email"
+				: "Desktop";
+function kindOf(c: Chapter) {
+	const visual = c.shots.length > 0,
+		technical = c.nodes.length > 0 || c.diagrams.length > 0;
+	return visual && technical
+		? "Visual + logic"
+		: visual
+			? "Visual"
+			: technical
+				? "Logic"
+				: "Supporting";
+}
+
+function SequenceDiagram({
+	model,
+	selected,
+	onPick,
+}: {
+	model: Model;
+	selected?: string;
+	onPick: (i: number) => void;
+}) {
+	const seq = model.enriched!.sequence,
+		COL = Math.max(112, Math.min(170, 640 / seq.actors.length)),
+		ROW = 38,
+		TOP = 50,
+		cx = (id: string) => 70 + seq.actors.findIndex((a) => a.id === id) * COL,
+		width = 70 + (seq.actors.length - 1) * COL + 90,
+		height = TOP + seq.steps.length * ROW + 14;
+	return (
+		<svg className="rp-seq" viewBox={`0 0 ${width} ${height}`}>
+			<defs>
+				<marker
+					id="rp-useq-arrow"
+					viewBox="0 0 10 10"
+					refX="9"
+					refY="5"
+					markerWidth="6"
+					markerHeight="6"
+					orient="auto-start-reverse"
+				>
+					<path d="M0,0 L10,5 L0,10 z" fill="context-stroke" />
+				</marker>
+			</defs>
+			{seq.actors.map((a) => (
+				<g key={a.id}>
+					<line
+						x1={cx(a.id)}
+						x2={cx(a.id)}
+						y1={TOP - 8}
+						y2={height - 6}
+						className="rp-lifeline"
+					/>
+					<rect
+						x={cx(a.id) - 54}
+						y={6}
+						width={108}
+						height={30}
+						rx={10}
+						className="rp-actor"
+					/>
+					<text x={cx(a.id)} y={26} className="rp-actor-label">
+						{a.label}
+					</text>
+				</g>
+			))}
+			{seq.steps.map((s, i) => {
+				const ci = model.chapters.findIndex((c: Chapter) => c.id === s.chapter),
+					col = model.chapters[ci]?.color ?? "gray",
+					y = TOP + i * ROW + 20,
+					x1 = cx(s.from),
+					x2 = cx(s.to),
+					self = x1 === x2,
+					faded = selected !== undefined && selected !== s.chapter;
+				return (
+					<g
+						key={i}
+						className={`rp-msg ${faded ? "faded" : ""}`}
+						onClick={() => onPick(ci)}
+						style={{ stroke: col }}
+					>
+						<rect
+							x={0}
+							y={y - 24}
+							width={width}
+							height={ROW}
+							className="rp-hit"
+						/>
+						{self ? (
+							<path
+								d={`M${x1},${y - 8} h34 v14 h-30`}
+								markerEnd="url(#rp-useq-arrow)"
+								fill="none"
+							/>
+						) : (
+							<line
+								x1={x1}
+								x2={x2 + (x2 > x1 ? -4 : 4)}
+								y1={y}
+								y2={y}
+								markerEnd="url(#rp-useq-arrow)"
+							/>
+						)}
+						<text
+							x={self ? x1 + 40 : (x1 + x2) / 2}
+							y={self ? y : y - 6}
+							className={`rp-msg-label ${self ? "left" : ""}`}
+							style={{ fill: col }}
+						>
+							{s.label}
+						</text>
+						{s.note && (
+							<text
+								x={Math.max(x1, x2) + (self ? 40 : 8)}
+								y={self ? y + 14 : y + 4}
+								className="rp-msg-note"
+							>
+								{s.note}
+							</text>
+						)}
+						<circle
+							cx={16}
+							cy={y}
+							r={9}
+							style={{ fill: col, stroke: "none" }}
+						/>
+						<text x={16} y={y + 4} className="rp-step-num">
+							{ci + 1}
+						</text>
+					</g>
+				);
+			})}
+		</svg>
+	);
+}
+
+/** All accepted screenshots as a contact sheet, grouped by UI area, coloured by chapter. */
+function ScreenSheet({
+	model,
+	selected,
+	onOpen,
+}: {
+	model: Model;
+	selected?: number;
+	onOpen: (list: any[], i: number) => void;
+}) {
+	const groups = new Map<string, any[]>();
+	for (const s of model.shots)
+		groups.set(s.area, [...(groups.get(s.area) ?? []), s]);
+	return (
+		<div className="rp-sheet">
+			{[...groups.entries()].map(([area, shots]) => {
+				const owner = shots.find((s) => s.owner !== undefined)?.owner,
+					c = owner !== undefined ? model.chapters[owner] : undefined;
+				return (
+					<div
+						className={`rp-sheet-group ${selected !== undefined && owner !== selected ? "faded" : ""}`}
+						key={area}
+						style={{ "--c": c?.color ?? "var(--line)" } as any}
+					>
+						<small>
+							{c && <span className="rp-dotnum">{c.index + 1}</span>}
+							{area}
+						</small>
+						<div>
+							{shots.map((s, i) => (
+								<button
+									type="button"
+									key={s.index}
+									className={`rp-thumb ${device(s.state).toLowerCase()}`}
+									onClick={() =>
+										onOpen(
+											shots.map((x) => ({ shot: x, caption: x.caption })),
+											i,
+										)
+									}
+									title={s.state}
+								>
+									<LazyImage src={shotUrl(model, s)} alt={s.caption} />
+									<span>{device(s.state)}</span>
+								</button>
+							))}
+						</div>
+					</div>
+				);
+			})}
+		</div>
+	);
+}
+
+function Lightbox({
+	model,
+	box,
+	onClose,
+}: {
+	model: Model;
+	box: { list: any[]; i: number };
+	onClose: (next?: { list: any[]; i: number }) => void;
+}) {
+	const item = box.list[box.i],
+		go = (d: number) =>
+			onClose({
+				...box,
+				i: (box.i + d + box.list.length) % box.list.length,
+			});
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (!["Escape", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
+			e.stopImmediatePropagation();
+			if (e.key === "Escape") onClose();
+			else go(e.key === "ArrowLeft" ? -1 : 1);
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	});
+	return (
+		<div className="rp-lightbox" onClick={() => onClose()}>
+			<figure onClick={(e) => e.stopPropagation()}>
+				<img src={shotUrl(model, item.shot)} alt={item.caption} />
+				<figcaption>
+					<b>{item.caption}</b>
+					<span className="muted">{item.shot.state}</span>
+				</figcaption>
+				<div className="rp-row">
+					<button type="button" onClick={() => go(-1)}>
+						← prev
+					</button>
+					<span className="muted">
+						{box.i + 1}/{box.list.length} · Esc to close
+					</span>
+					<button type="button" onClick={() => go(1)}>
+						next →
+					</button>
+				</div>
+			</figure>
+		</div>
+	);
+}
+
+function VariantF({
+	model,
+	run,
+	onSettled,
+	settling,
+}: {
+	model: Model;
+	run: any;
+	onSettled?: () => void;
+	settling?: boolean;
+}) {
+	const n = model.chapters.length,
+		seq = model.enriched?.sequence;
+	const has = (lens: Lens, c?: Chapter) =>
+		lens === "system"
+			? Boolean(model.enriched?.system) && (!c || c.nodes.length > 0)
+			: lens === "story"
+				? Boolean(seq) && (!c || seq!.steps.some((s) => s.chapter === c.id))
+				: lens === "screens"
+					? model.shots.length > 0 && (!c || c.shots.length > 0)
+					: !c || c.files.length > 0;
+	const lenses = (["system", "story", "screens", "code"] as Lens[]).filter(
+		(l) => has(l),
+	);
+	const [sel, setSel] = useState(0), // n = decide page
+		[chosenLens, setLens] = useState<Lens>(lenses[0]!),
+		[mode, setMode] = useState<"before" | "after">("after"),
+		[focus, setFocus] = useState(false),
+		[step, setStep] = useState<number>(),
+		[box, setBox] = useState<{ list: any[]; i: number }>(),
+		[reviewed, setReviewed] = useState<Record<string, boolean>>({}),
+		[done, toggle] = useChecks();
+	const lens = lenses.includes(chosenLens) ? chosenLens : lenses[0]!;
+	const c = sel < n ? model.chapters[sel] : undefined;
+	const pick = (i: number) => {
+		const next = Math.max(0, Math.min(n, i));
+		setSel(next);
+		setStep(undefined);
+		const ch = model.chapters[next];
+		if (ch && !has(lens, ch)) {
+			const l = lenses.find((x) => has(x, ch));
+			if (l) setLens(l);
+		}
+	};
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (
+				box ||
+				(e.target as HTMLElement)?.closest?.(
+					"input,textarea,select,[contenteditable]",
+				)
+			)
+				return;
+			if (e.key === "ArrowDown" || e.key === "j") {
+				e.preventDefault();
+				pick(sel + 1);
+			}
+			if (e.key === "ArrowUp" || e.key === "k") {
+				e.preventDefault();
+				pick(sel - 1);
+			}
+			if (e.key === "f") setFocus((f) => !f);
+			if (e.key === "Escape") setFocus(false);
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	});
+	const reviewedCount = model.chapters.filter(
+		(x: Chapter) => reviewed[x.id],
+	).length;
+	const care = model.chapters.filter(
+		(x: Chapter) => x.risk.level !== "low",
+	).length;
+	return (
+		<div className={`rp-unified ${focus ? "focus" : ""}`}>
+			<div className="rp-u-top">
+				<p className="rp-tldr">{model.tldr}</p>
+				<div className="rp-u-kpis">
+					<span>
+						<b>{n}</b> changes
+					</span>
+					<span>
+						<b>{model.files.length}</b> files ·{" "}
+						{model.files.filter((f) => f.test).length} tests
+					</span>
+					{model.shots.length > 0 && (
+						<span>
+							<b>{model.shots.length}</b> screens
+						</span>
+					)}
+					<span
+						className={
+							model.supported === model.guide.requirements.length
+								? "good"
+								: "warn"
+						}
+					>
+						<b>
+							{model.supported}/{model.guide.requirements.length}
+						</b>{" "}
+						criteria
+					</span>
+					<span className={care ? "warn" : "good"}>
+						<b>{care}</b> need care
+					</span>
+					<span>
+						<b>
+							{reviewedCount}/{n}
+						</b>{" "}
+						reviewed
+					</span>
+				</div>
+			</div>
+			<div className="rp-u-grid">
+				<div className="rp-u-main">
+					<section className="rp-panel rp-u-lens">
+						<header className="rp-row">
+							<div className="rp-seg" role="tablist">
+								{lenses.map((l) => (
+									<button
+										type="button"
+										role="tab"
+										aria-selected={lens === l}
+										key={l}
+										className={lens === l ? "on" : ""}
+										onClick={() => setLens(l)}
+									>
+										{LENS_LABEL[l]}
+										{c && has(l, c) && (
+											<i
+												className="rp-lens-dot"
+												style={{ background: c.color }}
+											/>
+										)}
+									</button>
+								))}
+							</div>
+							{lens === "system" && (
+								<div className="rp-seg">
+									{(["before", "after"] as const).map((m) => (
+										<button
+											type="button"
+											key={m}
+											className={mode === m ? "on" : ""}
+											onClick={() => setMode(m)}
+										>
+											{m === "before" ? "Before" : "After"}
+										</button>
+									))}
+								</div>
+							)}
+						</header>
+						{lens === "system" && model.enriched && (
+							<SystemDiagram
+								system={model.enriched.system}
+								mode={mode}
+								highlight={c?.nodes ?? []}
+								tint={c?.color}
+								onNode={(id) => {
+									const i = model.chapters.findIndex((x: Chapter) =>
+										x.nodes.includes(id),
+									);
+									if (i >= 0) pick(i);
+								}}
+							/>
+						)}
+						{lens === "story" && seq && (
+							<SequenceDiagram model={model} selected={c?.id} onPick={pick} />
+						)}
+						{lens === "screens" && (
+							<ScreenSheet
+								model={model}
+								selected={c?.index}
+								onOpen={(list, i) => setBox({ list, i })}
+							/>
+						)}
+						{lens === "code" && (
+							<Footprint model={model} selected={c?.index} onPick={pick} />
+						)}
+					</section>
+					<ol className="rp-rail">
+						{model.chapters.map((x: Chapter) => {
+							const checked = x.keyChecks.filter(
+								(_: any, i: number) => done[`${x.id}/${i}`],
+							).length;
+							return (
+								<li key={x.id}>
+									<button
+										type="button"
+										className={x.index === sel ? "on" : ""}
+										style={{ "--c": x.color } as any}
+										onClick={() => pick(x.index)}
+									>
+										<span className="rp-num">
+											{reviewed[x.id] ? "✓" : x.index + 1}
+										</span>
+										<span className="rp-rail-text">
+											<b>{x.title}</b>
+											<small>{x.tldr}</small>
+										</span>
+										<span className="rp-kind">{kindOf(x)}</span>
+										<span className="rp-proof">
+											{EVIDENCE.map(([k, l]) => (
+												<span
+													key={k}
+													className={
+														x.evidenceKinds.some((e: any) => e.k === k)
+															? "yes"
+															: "no"
+													}
+													title={l}
+												>
+													{k === "unit"
+														? "T"
+														: k === "browser"
+															? "B"
+															: k === "ci"
+																? "CI"
+																: "R"}
+												</span>
+											))}
+											{x.gaps > 0 && (
+												<span
+													className="gap"
+													title="Evidence with limits (fixtures, simulators, earlier runs)"
+												>
+													⚠{x.gaps}
+												</span>
+											)}
+										</span>
+										<RiskDot level={x.risk.level} />
+										<span className="rp-count">
+											{checked}/{x.keyChecks.length}
+										</span>
+									</button>
+								</li>
+							);
+						})}
+						<li>
+							<button
+								type="button"
+								className={`rp-decide ${sel === n ? "on" : ""}`}
+								onClick={() => pick(n)}
+							>
+								<span className="rp-num">✓</span>
+								<span className="rp-rail-text">
+									<b>Decide</b>
+									<small>
+										{reviewedCount}/{n} chapters reviewed · bot says{" "}
+										{model.guide.decision.status}
+									</small>
+								</span>
+							</button>
+						</li>
+					</ol>
+					<p className="rp-legend muted">
+						Proof: T tests · B browser/screens · CI · R code review · ⚠ evidence
+						with limits · ↑↓ chapters · f focus
+					</p>
+				</div>
+				<aside
+					className="rp-drawer rp-u-drawer"
+					style={c ? ({ "--c": c.color } as any) : undefined}
+				>
+					{c ? (
+						<>
+							<small>
+								{c.index + 1} / {n} · {kindOf(c).toUpperCase()}
+							</small>
+							<h2>{c.title}</h2>
+							<p className="rp-tldr small">{c.tldr}</p>
+							<BeforeAfter c={c} big={focus} />
+							{c.shots.length > 0 && (
+								<>
+									<h4>See it · {c.shots.length}</h4>
+									<div className="rp-gallery">
+										{c.shots.map((x: any, i: number) => (
+											<button
+												type="button"
+												key={i}
+												className={`rp-thumb ${device(x.shot.state).toLowerCase()}`}
+												onClick={() => setBox({ list: c.shots, i })}
+												title={x.caption}
+											>
+												<LazyImage
+													src={shotUrl(model, x.shot)}
+													alt={x.caption}
+												/>
+												<span>{device(x.shot.state)}</span>
+											</button>
+										))}
+									</div>
+								</>
+							)}
+							{c.diagrams.map((d: any, di: number) => (
+								<div key={di}>
+									<h4>{d.title}</h4>
+									<ol className="rp-steps">
+										{d.steps.map((s: any, i: number) => {
+											const k = di * 100 + i;
+											return (
+												<li key={i} className={step === k ? "now" : ""}>
+													<button
+														type="button"
+														onClick={() => setStep(step === k ? undefined : k)}
+													>
+														<span>{i + 1}</span>
+														<b>{s.label}</b>
+													</button>
+													{step === k && <p>{s.detail}</p>}
+												</li>
+											);
+										})}
+									</ol>
+								</div>
+							))}
+							<div className="rp-riskline">
+								<RiskDot level={c.risk.level} /> {c.risk.text}
+							</div>
+							<h4>Check</h4>
+							<Checks c={c} done={done} toggle={toggle} />
+							<label className="rp-reviewed">
+								<input
+									type="checkbox"
+									checked={!!reviewed[c.id]}
+									onChange={(e) =>
+										setReviewed((r) => ({ ...r, [c.id]: e.target.checked }))
+									}
+								/>{" "}
+								I’ve reviewed this change
+							</label>
+							<FullText c={c} />
+						</>
+					) : (
+						<>
+							<small>DECIDE</small>
+							<h2>Ready to decide?</h2>
+							<p className="rp-tldr small">
+								{shorten(model.guide.decision.summary, 120)}
+							</p>
+							<ul className="rp-decide-list">
+								{model.chapters.map((x: Chapter) => (
+									<li key={x.id} style={{ "--c": x.color } as any}>
+										<RiskDot level={x.risk.level} />
+										<button
+											type="button"
+											className="rp-link"
+											onClick={() => pick(x.index)}
+										>
+											{x.title}
+										</button>
+										<span>{reviewed[x.id] ? "✓ reviewed" : "—"}</span>
+									</li>
+								))}
+							</ul>
+							<details className="rp-more">
+								<summary>Overall risks ({model.guide.risks.length})</summary>
+								<ul>
+									{model.guide.risks.map((r: string, i: number) => (
+										<li key={i}>{r}</li>
+									))}
+								</ul>
+							</details>
+							<details className="rp-more">
+								<summary>
+									Acceptance criteria ({model.supported}/
+									{model.guide.requirements.length} supported)
+								</summary>
+								<ul>
+									{model.guide.requirements.map((r: any, i: number) => (
+										<li key={i}>
+											{r.status === "supported" ? "✓" : "⚠"} {r.criterion}
+										</li>
+									))}
+								</ul>
+							</details>
+							<div className="rp-u-actions">
+								<DecisionActions
+									identity={`prototype-review/${run.id}`}
+									decisionPage
+									run={run}
+									onSettled={onSettled ?? (() => {})}
+									settling={settling}
+								/>
+							</div>
+						</>
+					)}
+					<div className="rp-row rp-u-nav">
+						<button
+							type="button"
+							disabled={sel === 0}
+							onClick={() => pick(sel - 1)}
+						>
+							↑ Prev
+						</button>
+						<button type="button" onClick={() => setFocus(!focus)}>
+							{focus ? "Show map" : "Focus"}
+						</button>
+						<button
+							type="button"
+							disabled={sel === n}
+							onClick={() => pick(sel + 1)}
+						>
+							{sel === n - 1 ? "Decide ↓" : "Next ↓"}
+						</button>
+					</div>
+				</aside>
+			</div>
+			{box && (
+				<Lightbox model={model} box={box} onClose={(next) => setBox(next)} />
+			)}
+		</div>
+	);
+}
+
+const UNIFIED_CSS = `
+.rp-u-top{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;flex-wrap:wrap;margin-bottom:14px}
+.rp-u-top .rp-tldr{margin:0}
+.rp-u-kpis{display:flex;flex-wrap:wrap;gap:6px}
+.rp-u-kpis span{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:13px;color:var(--secondary)}
+.rp-u-kpis b{color:var(--text)}
+.rp-u-kpis .good{background:var(--green)}.rp-u-kpis .warn{background:var(--orange)}
+.rp-u-grid{display:grid;grid-template-columns:minmax(0,1fr) 440px;gap:20px;align-items:start}
+.rp-u-main{min-width:0}
+.rp-u-lens{min-height:300px}
+.rp-u-lens .rp-seq{max-height:62vh}
+.rp-seg button{position:relative}
+.rp-lens-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-left:6px;vertical-align:middle}
+.rp-rail{list-style:none;padding:0;margin:0;display:grid;gap:5px}
+.rp-rail button{width:100%;display:grid;grid-template-columns:28px minmax(0,1fr) auto auto 14px 34px;gap:10px;align-items:center;text-align:left;background:var(--surface);color:var(--text);border:1px solid var(--line);border-left:5px solid var(--c,var(--primary));border-radius:12px;padding:8px 10px}
+.rp-rail button:hover,.rp-rail button.on{background:color-mix(in srgb,var(--c,#7b61ff) 10%,var(--surface))}
+.rp-rail button.on{box-shadow:0 0 0 2px var(--c,#7b61ff)}
+.rp-rail .rp-num{background:var(--c,var(--primary));color:#fff}
+.rp-rail .rp-decide{grid-template-columns:28px 1fr;--c:var(--primary)}
+.rp-rail .rp-decide .rp-num{color:var(--primary-text)}
+.rp-rail-text b{display:block;font-size:14px}
+.rp-rail-text small{display:block;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rp-kind{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--secondary);background:var(--quiet);border-radius:6px;padding:2px 6px}
+.rp-count{font-size:12px;color:var(--muted);text-align:right}
+.rp-u-drawer h4{margin:14px 0 6px}
+.rp-u-nav{margin-top:14px;position:sticky;bottom:-16px;background:var(--surface);padding:8px 0}
+.rp-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.rp-thumb{position:relative;display:block;border:2px solid var(--line);border-radius:10px;padding:0;overflow:hidden;background:var(--quiet);height:110px;cursor:zoom-in}
+.rp-thumb img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}
+.rp-thumb.mobile img,.rp-thumb.reader img{object-fit:contain}
+.rp-thumb span{position:absolute;left:4px;bottom:4px;font-size:10px;font-weight:800;background:#000a;color:#fff;border-radius:6px;padding:1px 6px}
+.rp-thumb:hover{border-color:var(--c,#7b61ff)}
+.rp-sheet{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px}
+.rp-sheet-group{border-left:4px solid var(--c);padding-left:10px;transition:opacity .2s}
+.rp-sheet-group.faded{opacity:.25}
+.rp-sheet-group small{display:flex;gap:6px;align-items:center;font-weight:700;font-size:12px;margin-bottom:6px}
+.rp-sheet-group > div{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
+.rp-sheet-group .rp-thumb{height:78px}
+.rp-dotnum{display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:50%;background:var(--c);color:#fff;font-size:10px;font-weight:800}
+.rp-steps{list-style:none;padding:0;margin:0;display:grid;gap:4px}
+.rp-steps button{display:flex;gap:8px;align-items:center;width:100%;text-align:left;background:color-mix(in srgb,var(--c) 9%,var(--surface));border:1px solid transparent;border-radius:10px;padding:6px 8px;color:var(--text)}
+.rp-steps button span{display:inline-grid;place-items:center;flex:none;width:20px;height:20px;border-radius:50%;background:var(--c);color:#fff;font-size:11px;font-weight:800}
+.rp-steps li.now button{border-color:var(--c)}
+.rp-steps p{margin:4px 0 4px 36px;font-size:13.5px;color:var(--secondary)}
+.rp-reviewed{display:flex;gap:8px;align-items:center;margin-top:12px;font-weight:700;cursor:pointer}
+.rp-decide-list{list-style:none;padding:0;display:grid;gap:4px}
+.rp-decide-list li{display:grid;grid-template-columns:14px 1fr auto;gap:8px;align-items:center;border-left:4px solid var(--c);padding:2px 8px;font-size:13.5px}
+.rp-decide-list .rp-link{text-align:left}
+.rp-decide-list li span:last-child{color:var(--muted);font-size:12px}
+.rp-u-actions{margin-top:14px}
+.rp-lightbox{position:fixed;inset:0;z-index:900;background:#000c;display:grid;place-items:center;padding:24px}
+.rp-lightbox figure{margin:0;max-width:min(1200px,94vw);background:var(--surface);border-radius:16px;padding:12px}
+.rp-lightbox img{display:block;max-width:100%;max-height:74vh;margin:auto;border-radius:8px}
+.rp-lightbox figcaption{display:grid;gap:2px;margin:10px 4px;font-size:14px}
+/* focus mode: deck-like single card */
+.rp-unified.focus .rp-u-main{display:none}
+.rp-unified.focus .rp-u-grid{grid-template-columns:minmax(0,820px);justify-content:center}
+.rp-unified.focus .rp-u-drawer{position:static;max-height:none;padding:28px 34px;border-radius:26px}
+.rp-unified.focus .rp-u-drawer h2{font-size:30px}
+.rp-unified.focus .rp-u-drawer .rp-tldr.small{font-size:24px;font-weight:800}
+.rp-unified.focus .rp-gallery{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.rp-unified.focus .rp-gallery .rp-thumb{height:180px}
+@media (max-width:1100px){.rp-u-grid{grid-template-columns:1fr}.rp-u-drawer{position:static;max-height:none}}
+`;
+
 /* ------------------------------------------------------- mount + switcher */
 
 export function ReviewPrototype({
 	run,
 	variant,
+	onSettled,
+	settling,
 }: {
 	run: any;
 	variant: string;
+	onSettled?: () => void;
+	settling?: boolean;
 }) {
 	const [params] = useSearchParams(),
-		guide = useFullGuide(run);
+		guide = useFullGuide(run),
+		evidence = useQuery({
+			queryKey: ["prototype-evidence", run.id],
+			queryFn: ({ signal }) => api(`/api/runs/${run.id}/evidence`, { signal }),
+			staleTime: Infinity,
+		});
 	const model = useMemo(
 		() =>
-			guide
+			guide && !evidence.isPending
 				? buildModel(
 						guide,
 						params.get("enriched") === "0" ? undefined : enrichedFor(guide),
+						evidence.data?.screenshots ?? [],
+						run.id,
 					)
 				: undefined,
-		[guide, params],
+		[guide, params, evidence.isPending, evidence.data, run.id],
 	);
 	if (!model) return <p role="status">Loading review guide…</p>;
+	if (variant === "F")
+		return (
+			<div className="rp-root">
+				<style>{CSS}</style>
+				<style>{UNIFIED_CSS}</style>
+				<VariantF
+					model={model}
+					run={run}
+					onSettled={onSettled}
+					settling={settling}
+				/>
+			</div>
+		);
 	const V =
 		{ B: VariantB, C: VariantC, D: VariantD, E: VariantE }[variant] ?? VariantB;
 	return (
