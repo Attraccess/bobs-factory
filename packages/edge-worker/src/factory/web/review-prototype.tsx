@@ -17,6 +17,7 @@ import { api } from "./client";
 import { DecisionActions } from "./focus";
 import { LazyImage } from "./media";
 import { type Enriched, enrichedFor } from "./review-prototype-enriched";
+import { GUIDED_CSS, VariantG } from "./review-prototype-guided";
 import { Markdown } from "./ui";
 
 declare const process: { env: { NODE_ENV?: string } };
@@ -24,6 +25,7 @@ export const prototypesEnabled = process.env.NODE_ENV !== "production";
 
 export const VARIANTS: [string, string][] = [
 	["A", "Current guide"],
+	["G", "Guided Atlas (step by step)"],
 	["F", "Unified Atlas (all ideas)"],
 	["B", "Atlas: system map"],
 	["C", "Deck: one idea per card"],
@@ -36,7 +38,7 @@ export const VARIANTS: [string, string][] = [
 const HUES = [262, 200, 160, 32, 330, 280, 140, 12, 215];
 const color = (i: number, l = 60) => `hsl(${HUES[i % HUES.length]} 70% ${l}%)`;
 
-function shorten(text = "", max = 70) {
+export function shorten(text = "", max = 70) {
 	const first = text.split(/(?<=[.;])\s/)[0]!.replace(/[.;]$/, "");
 	return first.length <= max ? first : `${first.slice(0, max - 1).trimEnd()}…`;
 }
@@ -53,7 +55,7 @@ function areaOf(file: string) {
 	else if (file.startsWith("docs/")) area = "Docs";
 	return { area, test, name: p.at(-1)! };
 }
-const EVIDENCE: [string, string, RegExp][] = [
+export const EVIDENCE: [string, string, RegExp][] = [
 	[
 		"unit",
 		"Unit tests",
@@ -155,7 +157,7 @@ function buildModel(
 		shots: evidence.map((s: any) => ({ ...s, owner: shotOwner.get(s.index) })),
 	};
 }
-type Model = ReturnType<typeof buildModel>;
+export type Model = ReturnType<typeof buildModel>;
 
 function useFullGuide(run: any) {
 	const value = run.outputs?.guide;
@@ -171,7 +173,7 @@ function useFullGuide(run: any) {
 
 /* ------------------------------------------------------- shared widgets */
 
-function SystemDiagram({
+export function SystemDiagram({
 	system,
 	mode,
 	highlight = [],
@@ -288,7 +290,7 @@ function SystemDiagram({
 }
 
 /** Every changed file as a tile, grouped by area, coloured by owning chapter. */
-function Footprint({
+export function Footprint({
 	model,
 	selected,
 	onPick,
@@ -349,7 +351,7 @@ function FlowStrip({ diagram, color }: { diagram: any; color: string }) {
 	);
 }
 
-function BeforeAfter({ c, big }: { c: Chapter; big?: boolean }) {
+export function BeforeAfter({ c, big }: { c: Chapter; big?: boolean }) {
 	return (
 		<div className={`rp-ba ${big ? "big" : ""}`}>
 			<div className="before">
@@ -367,11 +369,11 @@ function BeforeAfter({ c, big }: { c: Chapter; big?: boolean }) {
 	);
 }
 
-function RiskDot({ level }: { level: string }) {
+export function RiskDot({ level }: { level: string }) {
 	return <span className={`rp-risk ${level}`} title={`${level} risk`} />;
 }
 
-function Checks({
+export function Checks({
 	c,
 	done,
 	toggle,
@@ -404,7 +406,7 @@ function Checks({
 	);
 }
 
-function FullText({ c }: { c: Chapter }) {
+export function FullText({ c }: { c: Chapter }) {
 	return (
 		<details className="rp-more">
 			<summary>Full text, evidence & {c.files.length} files</summary>
@@ -447,7 +449,7 @@ function FullText({ c }: { c: Chapter }) {
 	);
 }
 
-function useChecks() {
+export function useChecks() {
 	const [done, setDone] = useState<Record<string, boolean>>({});
 	return [done, (k: string) => setDone((d) => ({ ...d, [k]: !d[k] }))] as const;
 }
@@ -1176,9 +1178,9 @@ const LENS_LABEL: Record<Lens, string> = {
 	screens: "Screens",
 	code: "Code",
 };
-const shotUrl = (model: Model, shot: any) =>
+export const shotUrl = (model: Model, shot: any) =>
 	`/api/runs/${model.runId}/screenshots/${shot.index}?v=${shot.imageSha256 ?? ""}`;
-const device = (state: string) =>
+export const device = (state: string) =>
 	/mobile|390|DE mobile/i.test(state)
 		? "Mobile"
 		: /480×480|reader/i.test(state)
@@ -1186,7 +1188,7 @@ const device = (state: string) =>
 			: /email|receipt/i.test(state)
 				? "Email"
 				: "Desktop";
-function kindOf(c: Chapter) {
+export function kindOf(c: Chapter) {
 	const visual = c.shots.length > 0,
 		technical = c.nodes.length > 0 || c.diagrams.length > 0;
 	return visual && technical
@@ -1375,7 +1377,7 @@ function ScreenSheet({
 	);
 }
 
-function Lightbox({
+export function Lightbox({
 	model,
 	box,
 	onClose,
@@ -1937,6 +1939,20 @@ export function ReviewPrototype({
 		[guide, params, evidence.isPending, evidence.data, run.id],
 	);
 	if (!model) return <p role="status">Loading review guide…</p>;
+	if (variant === "G")
+		return (
+			<div className="rp-root">
+				<style>{CSS}</style>
+				<style>{UNIFIED_CSS}</style>
+				<style>{GUIDED_CSS}</style>
+				<VariantG
+					model={model}
+					run={run}
+					onSettled={onSettled}
+					settling={settling}
+				/>
+			</div>
+		);
 	if (variant === "F")
 		return (
 			<div className="rp-root">
