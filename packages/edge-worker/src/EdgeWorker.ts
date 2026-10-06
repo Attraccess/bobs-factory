@@ -19,7 +19,7 @@ import {
 	normalizeMcpHttpTransport,
 } from "cyrus-claude-runner";
 import { getCyrusAppUrl } from "cyrus-cloudflare-tunnel-client";
-import { CodexRunner } from "cyrus-codex-runner";
+import { CodexRunner, callCodexMcpTool } from "cyrus-codex-runner";
 import {
 	ConfigUpdater,
 	ensureGhTokenResolver,
@@ -6963,14 +6963,44 @@ ${taskSection}`;
 			undefined,
 			run.workspaceId ?? repository.linearWorkspaceId,
 		);
+		const runnerType =
+			(run.runner as RunnerType | undefined) ?? built.runnerType;
+		const servers = titleMcpConfig(
+			built.config,
+			runnerType,
+			run.workspace || repository.repositoryPath,
+			this.logger,
+		);
 		return {
 			built,
-			servers: titleMcpConfig(
-				built.config,
-				(run.runner as RunnerType | undefined) ?? built.runnerType,
-				run.workspace || repository.repositoryPath,
-				this.logger,
-			),
+			servers,
+			callTool: (
+				serverName: string,
+				tool: string,
+				args: Record<string, unknown>,
+				signal: AbortSignal,
+			) => {
+				assertFactoryToolAllowed(
+					`mcp__${serverName}__${tool}`,
+					built.config.allowedTools,
+					built.config.disallowedTools,
+				);
+				const server = servers[serverName];
+				if (!server || server.type === "sdk")
+					throw new Error(
+						`MCP server ${serverName} is not configured as a process/HTTP transport`,
+					);
+				if (runnerType === "codex" && "url" in server)
+					return callCodexMcpTool(
+						{ ...built.config, workingDirectory: run.workspace },
+						serverName,
+						server,
+						tool,
+						args,
+						signal,
+					);
+				return callConfiguredTool(server, tool, args, signal, run.workspace);
+			},
 		};
 	}
 	private async factoryTicketAdapter(run: FactoryRun): Promise<TicketAdapter> {
@@ -6983,7 +7013,7 @@ ${taskSection}`;
 				);
 			return nativeAdapter(ref, tracker);
 		}
-		const { built, servers } = await this.factoryMcpConfig(run);
+		const { servers, callTool } = await this.factoryMcpConfig(run);
 		if (taskbotServer(ref.instance, servers) !== ref.server)
 			throw new Error(
 				"Originating Taskbot transport identity changed; restore its configured server",
@@ -6991,20 +7021,9 @@ ${taskSection}`;
 		const server = servers[ref.server]!;
 		if (server.type === "sdk")
 			throw new Error("Taskbot needs a configured HTTP/SSE transport");
-		return taskbotAdapter(ref, async (tool, args) => {
-			assertFactoryToolAllowed(
-				`mcp__${ref.server}__${tool}`,
-				built.config.allowedTools,
-				built.config.disallowedTools,
-			);
-			return callConfiguredTool(
-				server,
-				tool,
-				args,
-				AbortSignal.timeout(60000),
-				run.workspace,
-			);
-		});
+		return taskbotAdapter(ref, (tool, args) =>
+			callTool(ref.server, tool, args, AbortSignal.timeout(60000)),
+		);
 	}
 	private async resolveFactoryTicket(
 		run: FactoryRun,
@@ -7592,26 +7611,15 @@ ${taskSection}`;
 		serverName: string,
 		toolName: string,
 	): Promise<unknown> {
-		const { built, servers } = await this.factoryMcpConfig(context.run);
-		assertFactoryToolAllowed(
-			`mcp__${serverName}__${toolName}`,
-			built.config.allowedTools,
-			built.config.disallowedTools,
-		);
-		const server = servers[serverName];
-		if (!server || server.type === "sdk")
-			throw new Error(
-				`MCP server ${serverName} is not configured as a process/HTTP transport`,
-			);
-		return callConfiguredTool(
-			server,
+		const { callTool } = await this.factoryMcpConfig(context.run);
+		return callTool(
+			serverName,
 			toolName,
 			toolArguments(context, context.step.arguments ?? {}) as Record<
 				string,
 				unknown
 			>,
 			context.signal,
-			context.run.workspace,
 		);
 	}
 
