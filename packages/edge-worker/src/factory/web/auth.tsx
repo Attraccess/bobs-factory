@@ -13,7 +13,8 @@ import {
 	onAccessLost,
 	useAccess,
 } from "./auth-state";
-import { uiBuild } from "./pwa";
+import { uiBuild, usePwa, versionMismatch } from "./pwa";
+import { ConnectionNotice } from "./pwa-ui";
 import { Bob, Button } from "./ui";
 
 onAccessLost(() => WebAuthnAbortService.cancelCeremony());
@@ -34,6 +35,7 @@ async function authRequest(path: string, body: unknown = {}, method = "POST") {
 		accessRequired("Your session expired. Sign in again.");
 	const result = await response.json();
 	if (epoch !== accessGeneration()) throw new Error("Session changed");
+	if (result.code === "FACTORY_VERSION_MISMATCH") versionMismatch();
 	if (!response.ok) throw new Error(result.error ?? "Passkey request failed");
 	return result;
 }
@@ -55,10 +57,12 @@ async function ceremony(
 }
 export function AccessBoundary({ children }: { children: ReactNode }) {
 	const access = useAccess();
+	const pwa = usePwa();
 	const [grant, setGrant] = useState("");
 	const [label, setLabel] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string>();
+	const updateRequired = pwa.status === "mismatch" || pwa.updating;
 	useEffect(() => {
 		if (location.hostname === "127.0.0.1") {
 			const canonical = new URL(location.href);
@@ -118,6 +122,7 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 				<p>
 					Passkeys protect your Factory on every address, including localhost.
 				</p>
+				<ConnectionNotice hasData={false} signedOut />
 				{access.status !== "checking" && (
 					<>
 						<p>{access.error}</p>
@@ -158,6 +163,7 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 						<Button
 							disabled={
 								busy ||
+								updateRequired ||
 								!browserSupportsWebAuthn() ||
 								(Boolean(access.setupRequired) && !grant)
 							}
