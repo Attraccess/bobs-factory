@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CLIIssueTrackerService } from "cyrus-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager.js";
 import { EdgeWorker } from "../src/EdgeWorker.js";
@@ -56,9 +57,13 @@ function setup() {
 	vi.spyOn(edge, "postRoutingActivity").mockResolvedValue(undefined);
 	vi.spyOn(edge, "postInstantAcknowledgment").mockResolvedValue(undefined);
 	const activity = vi.fn(async () => ({ success: true }));
-	edge.issueTrackers.set("cli-workspace", { createAgentActivity: activity });
+	edge.issueTrackers.set("cli-workspace", {
+		createAgentActivity: activity,
+		getPlatformType: () => "cli",
+	});
 	cleanups.push(async () => {
 		await runtime.shutdown();
+		edge.ticketTracking?.stop();
 		await edge.stateSaveQueue;
 		rmSync(home, { recursive: true, force: true });
 	});
@@ -990,6 +995,8 @@ it("returns a manual launch immediately, preserves source naming data and mirror
 		path: home,
 		isGitWorktree: false,
 	});
+	// Naming is independent of origin transport; ticket access is covered separately.
+	vi.spyOn(edge, "resolveFactoryTicket").mockResolvedValue(undefined);
 	const titleStart = vi.fn();
 	edge.titleGenerator = {
 		start: titleStart,
@@ -1259,4 +1266,217 @@ it.each([
 		"Full primary execution prompt",
 	);
 	expect(run.sessionSnapshot.titleGeneration.state).toBe("pending");
+});
+
+async function nativeManualFixture() {
+	const f = setup();
+	const tracker = new CLIIssueTrackerService();
+	tracker.seedDefaultData();
+	const issue = await tracker.createIssue({
+		teamId: "team-default",
+		title: "Native ticket",
+	});
+	const data = tracker.getState().issues.get(issue.id)!;
+	data.url = `https://linear.app/test/issue/${issue.identifier}`;
+	data.branchName = "not-yet-created-ticket-head";
+	f.edge.issueTrackers.set("cli-workspace", tracker);
+	const workflow = {
+		id: "native-fixture",
+		name: "Native fixture",
+		allowedTriggers: ["manual"],
+		steps: [{ id: "work", name: "Work", type: "script", script: "true" }],
+	};
+	f.runtime.updateWorkflows([...f.runtime.listWorkflows(), workflow]);
+	f.edge.titleGenerator = { start() {}, cancel() {}, async shutdown() {} };
+	const worktree = vi
+		.spyOn(f.edge.gitService, "createGitWorktree")
+		.mockImplementation(
+			async (_issue: unknown, _repos: unknown, options: any) => ({
+				path: f.home,
+				isGitWorktree: false,
+				resolvedBaseBranches: {
+					repo: { branch: options.baseBranchOverrides?.get("repo") ?? "main" },
+				},
+			}),
+		);
+	return {
+		...f,
+		tracker,
+		issue: await tracker.fetchIssue(issue.id),
+		workflow,
+		worktree,
+	};
+}
+
+it.each([
+	"native-fixture",
+	"takeover",
+])("uses native ticket heads only for Takeover base selection: %s", async (workflowId) => {
+	const f = await nativeManualFixture();
+	// Only preparation is needed; the stock Takeover agent must not execute.
+	const workflow = f.runtime.selectWorkflow([], "manual", workflowId);
+	const input = resolveLaunchRequest(workflow, {
+		repositoryId: "repo",
+		workflow: workflowId,
+		...(workflowId === "takeover"
+			? { source: f.issue.url }
+			: { inputs: { prompt: f.issue.url } }),
+	});
+	const run = f.runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId,
+			at: new Date().toISOString(),
+		},
+		repositoryId: "repo",
+		workflow,
+		workspace: "",
+		input: f.issue.url,
+	});
+	await f.edge.prepareManualFactoryRun(
+		run,
+		input,
+		new AbortController().signal,
+	);
+	expect(f.worktree.mock.calls[0][2].baseBranchOverrides?.get("repo")).toBe(
+		workflowId === "takeover" ? f.issue.branchName : undefined,
+	);
+	expect(run.outputs.repository.baseBranch).toBe("main");
+});
+
+it("retains the parent's native origin when follow-up instructions name another ticket before a PR exists", async () => {
+	const f = await nativeManualFixture();
+	const other = await f.tracker.createIssue({
+		teamId: "team-default",
+		title: "Unrelated",
+		stateId: "state-todo",
+	});
+	f.tracker
+		.getState()
+		.issues.get(
+			other.id,
+		)!.url = `https://linear.app/test/issue/${other.identifier}`;
+	const parent = f.runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "native-fixture",
+			at: new Date().toISOString(),
+		},
+		repositoryId: "repo",
+		workflow: f.workflow,
+		workspace: f.home,
+		input: f.issue.url,
+	});
+	parent.status = "completed";
+	parent.ticketReference = {
+		provider: "native",
+		platform: "cli",
+		workspaceId: "cli-workspace",
+		id: f.issue.id,
+		url: f.issue.url,
+	};
+	f.runtime.save(parent);
+	const run = await f.edge.startManualFactoryRun(
+		resolveLaunchRequest(f.workflow, {
+			repositoryId: "repo",
+			workflow: f.workflow.id,
+			inputs: {
+				prompt: `Ticket: https://linear.app/test/issue/${other.identifier}`,
+			},
+		}),
+		parent.id,
+	);
+	await vi.waitFor(() => expect(["completed", "failed"]).toContain(run.status));
+	expect(run.error).toBeUndefined();
+	expect(run.status).toBe("completed");
+	expect(run.ticketReference).toEqual(parent.ticketReference);
+	expect(run.issueId).toBe(f.issue.id);
+	expect(run.outputs.ticket.id).toBe(f.issue.id);
+	expect((await (await f.tracker.fetchIssue(f.issue.id)).state)?.type).toBe(
+		"started",
+	);
+	expect((await f.tracker.fetchComments(other.id)).nodes).toHaveLength(0);
+	expect((await (await f.tracker.fetchIssue(other.id)).state)?.type).toBe(
+		"unstarted",
+	);
+});
+
+it("discovers Taskbot from the accepted Cursor runner despite the default Claude runner", async () => {
+	const f = setup();
+	mkdirSync(join(f.home, ".cursor"));
+	writeFileSync(
+		join(f.home, ".cursor", "mcp.json"),
+		JSON.stringify({
+			mcpServers: {
+				taskbot: { type: "http", url: "https://taskbot.example/mcp" },
+			},
+		}),
+	);
+	const run = f.runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
+		repositoryId: "repo",
+		workflow: defaultWorkflows.find((w) => w.id === "factory")!,
+		workspace: f.home,
+		input: "https://taskbot.example/p/fixture/t/77",
+		runner: "cursor",
+	});
+	f.edge.agentSessionManager.createChatSession(
+		run.id,
+		{ path: f.home, isGitWorktree: false },
+		"manual",
+		[],
+	);
+	vi.spyOn(f.edge, "buildAgentRunnerConfig").mockResolvedValue({
+		runnerType: "claude",
+		config: {},
+	});
+	expect((await f.edge.factoryMcpConfig(run)).servers.taskbot).toEqual({
+		type: "http",
+		url: "https://taskbot.example/mcp",
+	});
+});
+
+it("reconstructs missing legacy merged receipts during tracking-only retry after source access recovers", async () => {
+	const f = await nativeManualFixture();
+	const run = f.runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "native-fixture",
+			at: new Date().toISOString(),
+		},
+		repositoryId: "repo",
+		workflow: f.workflow,
+		workspace: f.home,
+		input: f.issue.url,
+	});
+	run.status = "completed";
+	run.outputs.merge = {
+		merged: true,
+		url: "https://github.com/org/repo/pull/1",
+	};
+	const history = structuredClone(run.history);
+	const fetch = f.tracker.fetchIssue.bind(f.tracker);
+	const unavailable = vi
+		.spyOn(f.tracker, "fetchIssue")
+		.mockRejectedValue(new Error("offline"));
+	await f.edge.recoverFactoryTicketTracking(run);
+	expect(run.ticketSync).toBeUndefined();
+	unavailable.mockImplementation(fetch);
+	await f.runtime.retryTracking(run.id);
+	expect(run.ticketSync?.receipts[0]?.delivered).toBe(true);
+	expect((await (await f.tracker.fetchIssue(f.issue.id)).state)?.type).toBe(
+		"completed",
+	);
+	expect(run.history).toEqual(history);
+	expect(f.worktree).not.toHaveBeenCalled();
+	const comments = (await f.tracker.fetchComments(f.issue.id)).nodes.length;
+	await f.runtime.retryTracking(run.id);
+	expect((await f.tracker.fetchComments(f.issue.id)).nodes).toHaveLength(
+		comments,
+	);
+	expect(await f.tracker.fetchIssueAttachments(f.issue.id)).toHaveLength(1);
 });

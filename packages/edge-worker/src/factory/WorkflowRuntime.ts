@@ -113,6 +113,8 @@ export interface RunViewState {
 	seenAt?: string;
 }
 export interface FactoryRun {
+	ticketReference?: import("./TicketTracking.js").TicketReference;
+	ticketSync?: import("./TicketTracking.js").TicketSync;
 	triggerOrigin?: WorkflowTriggerOrigin;
 	workflowCalls?: { call: WorkflowCall; at: string }[];
 	id: string;
@@ -181,6 +183,11 @@ export interface ExecutionContext {
 	checkpointAgent?: (agent: AgentCheckpoint) => void;
 }
 export interface RuntimeHooks {
+	track?(
+		run: FactoryRun,
+		milestone: import("./TicketTracking.js").TicketMilestone,
+	): Promise<void>;
+	retryTracking?(run: FactoryRun): Promise<void>;
 	titleDefaults?(
 		runner?: RunTitleJob["settings"]["runner"],
 	): RunTitleJob["settings"];
@@ -573,6 +580,7 @@ export class WorkflowRuntime {
 		if (this.controllers.has(run.id))
 			throw new Error("Run is already executing");
 		const controller = new AbortController();
+		if (run.ticketReference && run.status === "waiting") run.status = "running";
 		this.controllers.set(run.id, controller);
 		const execution = this.execute(run, controller, task);
 		this.executions.set(run.id, execution);
@@ -613,6 +621,12 @@ export class WorkflowRuntime {
 			}
 			await this.hooks.prepare?.(run, controller.signal);
 			controller.signal.throwIfAborted();
+			if (run.ticketReference && this.hooks.track)
+				await this.track(run, {
+					key: "started",
+					stage: "in_progress",
+					body: `Factory work started: ${run.workflow.name}. Run ${run.id}.\n\n${String(readPath(run.outputs, "ticket.title") ?? run.title)}\n${run.launchRequest?.prompt ?? ""}`,
+				});
 			if (task) await task(controller.signal);
 			else if (run.workflow.id === "simple") {
 				if (!this.hooks.simple)
@@ -658,9 +672,39 @@ export class WorkflowRuntime {
 				!this.shuttingDown &&
 				["completed", "failed", "stopped"].includes(run.status)
 			)
-				await this.hooks.finished?.(run);
+				try {
+					if (run.ticketReference && this.hooks.track)
+						await this.track(run, {
+							key: `outcome:${run.status}:${run.history.length}`,
+							body:
+								run.status === "completed"
+									? `Workflow ${run.workflow.name} completed. Coding tickets become Done only after confirmed merge. Inspect run ${run.id} for results.`
+									: `Workflow ${run.status}: ${run.error ?? "stopped by user"}. Work is preserved in run ${run.id}; restore access or answer the blocker before retrying.`,
+						});
+					await this.hooks.finished?.(run);
+				} catch (error) {
+					this.log(
+						run,
+						"ticket-sync",
+						`Final tracking hook failed: ${String(error)}. Underlying run outcome retained.`,
+					);
+				}
 		}
 	}
+	private async track(
+		run: FactoryRun,
+		milestone: import("./TicketTracking.js").TicketMilestone,
+	): Promise<void> {
+		try {
+			await this.hooks.track?.(run, milestone);
+		} catch (error) {
+			this.log(run, "ticket-sync", `Ticket tracking failed: ${String(error)}`);
+		}
+	}
+	async retryTracking(id: string): Promise<void> {
+		await this.hooks.retryTracking?.(this.get(id));
+	}
+
 	private async graph(
 		run: FactoryRun,
 		steps: WorkflowStep[],
@@ -696,6 +740,12 @@ export class WorkflowRuntime {
 			this.log(run, key, `Starting ${step.name} (pass ${count})`);
 			const input = step.inputs
 				? {
+						...(run.ticketReference
+							? {
+									ticketReference: structuredClone(run.ticketReference),
+									ticketSync: structuredClone(run.ticketSync),
+								}
+							: {}),
 						...Object.fromEntries(
 							step.inputs.map((name) => [name, outputs[name]]),
 						),
@@ -709,6 +759,12 @@ export class WorkflowRuntime {
 					}
 				: {
 						originalInput: run.input,
+						...(run.ticketReference
+							? {
+									ticketReference: structuredClone(run.ticketReference),
+									ticketSync: structuredClone(run.ticketSync),
+								}
+							: {}),
 						launchInputs: structuredClone(run.launchInputs ?? {}),
 						outputs: structuredClone(outputs),
 						answers: structuredClone(run.answers),
@@ -824,6 +880,60 @@ export class WorkflowRuntime {
 				this.save(run);
 			}
 			if (
+				step.tool === "draft-pr" ||
+				step.tool === "handoff" ||
+				step.tool === "merge" ||
+				step.id === "implement" ||
+				step.id === "plan"
+			) {
+				const pr = readPath(output, "url");
+				const merged =
+					step.tool === "merge" && readPath(output, "merged") === true;
+				const handoffFix =
+					step.tool === "handoff" && readPath(output, "fix") === true;
+				const stage = merged
+					? "done"
+					: step.tool === "handoff"
+						? handoffFix
+							? "in_progress"
+							: "in_review"
+						: step.tool === "merge"
+							? readPath(output, "fix") === true
+								? "in_progress"
+								: "in_review"
+							: "in_progress";
+				let body = merged
+					? `Git provider confirmed merge: ${pr}. Run ${run.id}.`
+					: step.tool === "handoff"
+						? handoffFix
+							? `Handoff requires corrections: ${pr}. Corrective work continues in Factory.`
+							: `Ready for human review: ${pr}. Review the guide and explicitly approve this revision or request changes in Factory. ${String(readPath(outputs, "guide.summary") ?? "")}`
+						: step.tool === "draft-pr"
+							? `Draft PR created or continued: ${pr}. Review and validation are underway.`
+							: `${step.name}: ${String(readPath(output, "summary") ?? (step.id === "plan" ? "Implementation direction recorded in the accepted plan." : "Inspect the implementation receipts and checks in Factory."))}`;
+				const blockers = readPath(output, "blockers");
+				if (handoffFix && Array.isArray(blockers))
+					body += `\n\nBlockers:\n${blockers
+						.map((blocker) => readPath(blocker, "message"))
+						.filter((message) => typeof message === "string")
+						.map((message) => `- ${message}`)
+						.join("\n")}`;
+				const checks = readPath(output, "checks");
+				if (step.id === "implement" && Array.isArray(checks))
+					body += `\n\nChecks:\n${checks
+						.filter((check) => typeof check === "string")
+						.map((check) => `- ${check}`)
+						.join("\n")}`;
+				if (run.ticketReference && this.hooks.track)
+					await this.track(run, {
+						key: `${key}:${count}:${readPath(output, "headSha") ?? "result"}`,
+						stage,
+						body,
+						...(typeof pr === "string" ? { pr } : {}),
+						...(merged ? { merged: true } : {}),
+					});
+			}
+			if (
 				step.tool === "visual-gate" &&
 				(readPath(output, "captureBlocked") === true ||
 					readPath(output, "qaBlocked") === true)
@@ -889,6 +999,16 @@ export class WorkflowRuntime {
 						state,
 					);
 				output = outputs[step.id] = run.humanDecisions!.at(-1)!;
+				const decision = output as HumanDecision;
+				if (run.ticketReference && this.hooks.track)
+					await this.track(run, {
+						key: `decision:${decision.reviewId}`,
+						stage: decision.decision === "reject" ? "in_progress" : "in_review",
+						body:
+							decision.decision === "reject"
+								? `Human requested corrections: ${decision.feedback}. Corrective work resumes with the existing PR.`
+								: "Human approved the revision. Waiting for provider requirements or confirmed merge; ticket remains In Review.",
+					});
 				if (
 					!run.history.some(
 						(item) =>
@@ -925,6 +1045,11 @@ export class WorkflowRuntime {
 		signal.addEventListener("abort", abort, { once: true });
 		this.log(run, run.step ?? "clarify", questions.join("\n"));
 		try {
+			if (run.ticketReference && this.hooks.track)
+				await this.track(run, {
+					key: `questions:${run.step}:${run.answers.length}`,
+					body: `Factory needs assistance:\n\n${questions.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nReply on the ticket or answer in the Factory UI to resume.`,
+				});
 			if (!restored) await this.hooks.question?.(run);
 			signal.throwIfAborted();
 			await waiting;
@@ -961,6 +1086,13 @@ export class WorkflowRuntime {
 			"Ready for explicit human review. Approve this revision or request changes in the factory UI.",
 		);
 		try {
+			if (run.ticketReference && this.hooks.track)
+				await this.track(run, {
+					key: `review:${run.reviewGate!.id}`,
+					stage: "in_review",
+					pr: result.url,
+					body: `Awaiting explicit human approval for ${result.url}. Review the guide, then approve this revision or request changes in Factory.`,
+				});
 			signal.throwIfAborted();
 			await waiting;
 		} finally {
@@ -1030,6 +1162,11 @@ export class WorkflowRuntime {
 		run.status = "stopped";
 		this.controllers.get(id)?.abort();
 		this.log(run, "run", "Terminated by user");
+		if (run.ticketReference && this.hooks.track)
+			void this.track(run, {
+				key: `outcome:stopped:${run.history.length}`,
+				body: `Workflow stopped by user. Run ${run.id} retains its work and remains open; resume or start a follow-up when ready.`,
+			});
 	}
 	async refreshGuide(id: string, reviewId: string): Promise<FactoryRun> {
 		const run = this.get(id);

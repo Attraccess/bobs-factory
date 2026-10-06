@@ -227,6 +227,17 @@ import {
 	ticketIdentifier,
 } from "./factory/Takeover.js";
 import {
+	nativeAdapter,
+	originatingTicket,
+	type TicketAdapter,
+	TicketReferenceSchema,
+	TicketTracking,
+	taskbotAdapter,
+	taskbotServer,
+	taskbotSource,
+} from "./factory/TicketTracking.js";
+import { titleMcpConfig } from "./factory/TitleMcpConfig.js";
+import {
 	readPath as readFactoryPath,
 	workflowTriggerInstructions,
 } from "./factory/Workflow.js";
@@ -318,6 +329,7 @@ export class EdgeWorker extends EventEmitter {
 	private sharedApplicationServer: SharedApplicationServer;
 	private cyrusHome: string;
 	private factoryRuntime?: WorkflowRuntime;
+	private ticketTracking?: TicketTracking;
 	private titleGenerator?: RunTitleGenerator;
 	private titleStarted = new Set<string>();
 	private stateSaveQueue: Promise<void> = Promise.resolve();
@@ -3081,6 +3093,7 @@ ${taskSection}`;
 		this.stopping = true;
 		this.recoveryAbort.abort();
 		await this.titleGenerator?.shutdown();
+		this.ticketTracking?.stop();
 		await this.factoryRuntime?.shutdown();
 		await this.factoryServer?.stop();
 		// Stop config file watcher
@@ -5592,6 +5605,14 @@ ${taskSection}`;
 				};
 				run.titleGeneration = session.titleGeneration;
 				run.outputs.ticket = ticket;
+				const tracker = this.issueTrackers.get(linearWorkspaceId)!;
+				run.ticketReference = {
+					provider: "native",
+					platform: tracker.getPlatformType(),
+					workspaceId: linearWorkspaceId,
+					id: fullIssue.id,
+					url: fullIssue.url,
+				};
 				run.runner = selectedRunner.runnerType;
 				run.model = selectedRunner.config.model;
 				this.saveFactorySession(run);
@@ -6650,20 +6671,10 @@ ${taskSection}`;
 					this.executeFactoryMcpTool(context, server, tool),
 			});
 			this.factoryRuntime = new WorkflowRuntime(this.cyrusHome, {
-				finished: async (run) => {
-					if (!run.triggerOrigin?.ticket || run.workflow.id === "simple")
-						return;
-					const body =
-						run.status === "completed"
-							? `Workflow ${run.workflow.name} completed. Inspect its results in the Factory UI.`
-							: `Workflow ${run.workflow.name} ${run.status}: ${run.error ?? "stopped by user"}. Inspect the existing run in the Factory UI before retrying.`;
-					await this.ticketLaunchFeedback(
-						{
-							organizationId: run.triggerOrigin.ticket.workspaceId,
-							agentSession: { id: run.triggerOrigin.ticket.agentSessionId },
-						},
-						body,
-					);
+				track: (run, milestone) =>
+					this.getTicketTracking().record(run, milestone),
+				retryTracking: async (run) => {
+					await this.syncFactoryTicketTracking(run, true);
 				},
 				titleDefaults: (
 					runner = this.runnerSelectionService.getDefaultRunner(),
@@ -6682,7 +6693,7 @@ ${taskSection}`;
 				},
 				question: async (run) => {
 					const body = `## Factory clarification\n\n${run.questions.map((question, index) => `${index + 1}. ${question}`).join("\n")}\n\nReply here or answer in the factory UI. The run waits for your answers.`;
-					await this.postFactoryComment(run, body);
+					if (!run.ticketReference) await this.postFactoryComment(run, body);
 					await this.agentSessionManager.createResponseActivity(run.id, body);
 				},
 			});
@@ -6920,10 +6931,167 @@ ${taskSection}`;
 		this.titleGenerator.start(id, job);
 	}
 
+	private getTicketTracking(): TicketTracking {
+		this.ticketTracking ??= new TicketTracking(
+			(run) => this.factoryTicketAdapter(run),
+			(run) => this.getFactoryRuntime().save(run),
+			(run, message) =>
+				this.getFactoryRuntime().log(run, "ticket-sync", message),
+		);
+		return this.ticketTracking;
+	}
+	private async factoryMcpConfig(run: FactoryRun) {
+		const repository = this.repositories.get(run.repositoryId);
+		const session =
+			this.agentSessionManager.getSession(run.id) ??
+			(run.sessionSnapshot as CyrusAgentSession | undefined);
+		if (!repository || !session)
+			throw new Error(
+				"Ticket transport requires the saved run session and repository configuration",
+			);
+		const built = await this.buildAgentRunnerConfig(
+			session,
+			repository,
+			run.id,
+			undefined,
+			this.buildAllowedTools([repository]),
+			[repository.repositoryPath],
+			this.buildDisallowedTools([repository]),
+			undefined,
+			[],
+			undefined,
+			undefined,
+			run.workspaceId ?? repository.linearWorkspaceId,
+		);
+		return {
+			built,
+			servers: titleMcpConfig(
+				built.config,
+				(run.runner as RunnerType | undefined) ?? built.runnerType,
+				run.workspace || repository.repositoryPath,
+				this.logger,
+			),
+		};
+	}
+	private async factoryTicketAdapter(run: FactoryRun): Promise<TicketAdapter> {
+		const ref = TicketReferenceSchema.parse(run.ticketReference);
+		if (ref.provider === "native") {
+			const tracker = this.issueTrackers.get(ref.workspaceId);
+			if (!tracker || tracker.getPlatformType() !== ref.platform)
+				throw new Error(
+					"Originating ticket tracker unavailable; restore its workspace configuration",
+				);
+			return nativeAdapter(ref, tracker);
+		}
+		const { built, servers } = await this.factoryMcpConfig(run);
+		if (taskbotServer(ref.instance, servers) !== ref.server)
+			throw new Error(
+				"Originating Taskbot transport identity changed; restore its configured server",
+			);
+		const server = servers[ref.server]!;
+		if (server.type === "sdk")
+			throw new Error("Taskbot needs a configured HTTP/SSE transport");
+		return taskbotAdapter(ref, async (tool, args) => {
+			assertFactoryToolAllowed(
+				`mcp__${ref.server}__${tool}`,
+				built.config.allowedTools,
+				built.config.disallowedTools,
+			);
+			return callConfiguredTool(
+				server,
+				tool,
+				args,
+				AbortSignal.timeout(60000),
+				run.workspace,
+			);
+		});
+	}
+	private async resolveFactoryTicket(
+		run: FactoryRun,
+		signal: AbortSignal,
+		ancestors = new Set<string>(),
+	): Promise<void> {
+		if (ancestors.has(run.id))
+			throw new Error(
+				"Ticket inheritance contains a cycle; restore a valid source run",
+			);
+		ancestors.add(run.id);
+		if (run.workflow.id === "simple") return;
+		if (!run.ticketReference) {
+			const parent = run.triggerOrigin?.manual?.sourceRunId;
+			const parentRun = parent
+				? this.getFactoryRuntime().runs.get(parent)
+				: undefined;
+			if (parentRun && !parentRun.ticketReference)
+				await this.resolveFactoryTicket(parentRun, signal, ancestors);
+			const inherited = parentRun?.ticketReference;
+			if (inherited) run.ticketReference = structuredClone(inherited);
+			else if (run.issueId && run.workspaceId) {
+				const tracker = this.issueTrackers.get(run.workspaceId);
+				if (!tracker) throw new Error("Originating ticket tracker unavailable");
+				const issue = await tracker.fetchIssue(run.issueId);
+				run.ticketReference = {
+					provider: "native",
+					platform: tracker.getPlatformType(),
+					workspaceId: run.workspaceId,
+					id: issue.id,
+					url: issue.url,
+				};
+			} else {
+				const source = originatingTicket(
+					run.launchRequest?.prompt ?? run.input,
+					run.source,
+				);
+				if (!source) return;
+				const taskbot = taskbotSource(source);
+				if (taskbot) {
+					const { servers } = await this.factoryMcpConfig(run);
+					run.ticketReference = {
+						...taskbot,
+						server: taskbotServer(taskbot.instance, servers),
+					};
+				} else {
+					const workspaceId = this.repositories.get(
+						run.repositoryId,
+					)?.linearWorkspaceId;
+					const tracker = workspaceId
+						? this.issueTrackers.get(workspaceId)
+						: undefined;
+					if (!tracker)
+						throw new Error(
+							"Explicit ticket source cannot be tracked; configure the originating ticket workspace",
+						);
+					const issue = await tracker.fetchIssue(ticketIdentifier(source));
+					assertNativeTicketSource(source, issue.url);
+					run.ticketReference = {
+						provider: "native",
+						platform: tracker.getPlatformType(),
+						workspaceId: workspaceId!,
+						id: issue.id,
+						url: issue.url,
+					};
+					run.issueId = issue.id;
+					run.workspaceId = workspaceId;
+				}
+			}
+		}
+		signal.throwIfAborted();
+		if (!run.outputs.ticket)
+			run.outputs.ticket = await (await this.factoryTicketAdapter(run)).read();
+		this.getFactoryRuntime().save(run);
+	}
+
 	private async postFactoryComment(
 		run: FactoryRun,
 		body: string,
 	): Promise<void> {
+		if (run.ticketReference) {
+			await this.getTicketTracking().record(run, {
+				key: `comment:${body}`,
+				body,
+			});
+			return;
+		}
 		if (!run.issueId || !run.workspaceId) return;
 		const tracker = this.issueTrackers.get(run.workspaceId);
 		if (!tracker)
@@ -7178,7 +7346,7 @@ ${taskSection}`;
 				}
 			: undefined;
 
-		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${step.askQuestions ? questionInstructions(run.id) : ""}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${step.askQuestions ? questionInstructions(run.id) : ""}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
 			repository,
@@ -7424,36 +7592,12 @@ ${taskSection}`;
 		serverName: string,
 		toolName: string,
 	): Promise<unknown> {
-		const session = this.agentSessionManager.getSession(context.run.id);
-		const repository = this.repositories.get(context.run.repositoryId);
-		if (!session || !repository)
-			throw new Error("Run session/repository unavailable");
-		const built = await this.buildAgentRunnerConfig(
-			session,
-			repository,
-			context.run.id,
-			undefined,
-			this.buildAllowedTools([repository]),
-			[repository.repositoryPath],
-			this.buildDisallowedTools([repository]),
-			undefined,
-			[],
-			undefined,
-			undefined,
-			context.run.workspaceId ?? repository.linearWorkspaceId,
+		const { built, servers } = await this.factoryMcpConfig(context.run);
+		assertFactoryToolAllowed(
+			`mcp__${serverName}__${toolName}`,
+			built.config.allowedTools,
+			built.config.disallowedTools,
 		);
-		const servers: Record<string, McpServerConfig> = {};
-		const paths = built.config.mcpConfigPath
-			? Array.isArray(built.config.mcpConfigPath)
-				? built.config.mcpConfigPath
-				: [built.config.mcpConfigPath]
-			: [];
-		for (const path of paths)
-			Object.assign(
-				servers,
-				JSON.parse(readFileSync(path, "utf8")).mcpServers ?? {},
-			);
-		Object.assign(servers, built.config.mcpConfig);
 		const server = servers[serverName];
 		if (!server || server.type === "sdk")
 			throw new Error(
@@ -7560,6 +7704,9 @@ ${taskSection}`;
 			modelVariant: input.modelVariant,
 			serviceTier: input.serviceTier,
 		});
+		const parent = sourceRunId ? runtime.runs.get(sourceRunId) : undefined;
+		if (parent?.ticketReference)
+			run.ticketReference = structuredClone(parent.ticketReference);
 		run.launchRequest = structuredClone(input);
 		run.setupComplete = false;
 		runtime.save(run);
@@ -7595,8 +7742,16 @@ ${taskSection}`;
 			};
 			let takeoverPr: TakeoverPullRequest | undefined;
 			let baseBranchOverrides: Map<string, string> | undefined;
-			if (workflow.id === "takeover" && input.source) {
-				if (input.source.startsWith("https://github.com/")) {
+			const ticketSource =
+				run.ticketReference?.url ?? originatingTicket(prompt, input.source);
+			const nativeSource =
+				ticketSource && !taskbotSource(ticketSource) ? ticketSource : undefined;
+			if (
+				(workflow.id === "takeover" &&
+					input.source?.startsWith("https://github.com/")) ||
+				nativeSource
+			) {
+				if (input.source?.startsWith("https://github.com/")) {
 					const setupContext: ExecutionContext = {
 						run: { ...run, workspace: repository.repositoryPath },
 						step: workflow.steps[0]!,
@@ -7619,26 +7774,99 @@ ${taskSection}`;
 					run.outputs.source = takeoverPr;
 				} else {
 					const existingTracker = this.issueTrackers.get(
-						repository.linearWorkspaceId ?? "",
+						(run.ticketReference?.provider === "native"
+							? run.ticketReference.workspaceId
+							: repository.linearWorkspaceId) ?? "",
 					);
 					if (!existingTracker)
 						throw new Error(
 							"Ticket tracker unavailable; configure the ticket workspace before taking over a ticket",
 						);
 					fullIssue = await existingTracker.fetchIssue(
-						ticketIdentifier(input.source),
+						run.ticketReference?.provider === "native"
+							? run.ticketReference.id
+							: ticketIdentifier(nativeSource!),
 					);
+					assertNativeTicketSource(nativeSource!, fullIssue.url);
 					run.issueId = fullIssue.id;
-					run.workspaceId = repository.linearWorkspaceId;
+					run.workspaceId =
+						run.ticketReference?.provider === "native"
+							? run.ticketReference.workspaceId
+							: repository.linearWorkspaceId;
+					run.ticketReference ??= {
+						provider: "native",
+						platform: existingTracker.getPlatformType(),
+						workspaceId: run.workspaceId!,
+						id: fullIssue.id,
+						url: fullIssue.url,
+					};
 					run.outputs.ticket = await issueSnapshot(
 						fullIssue,
 						await this.fetchIssueLabels(fullIssue),
 						existingTracker,
 					);
-					baseBranchOverrides = new Map([
-						[repository.id, fullIssue.branchName ?? repository.baseBranch],
-					]);
+					if (workflow.id === "takeover")
+						baseBranchOverrides = new Map([
+							[repository.id, fullIssue.branchName ?? repository.baseBranch],
+						]);
 					run.input = `${prompt}\n\nComplete existing ticket snapshot:\n${JSON.stringify(run.outputs.ticket, null, 2)}`;
+				}
+			}
+			if (ticketSource && taskbotSource(ticketSource)) {
+				// Resolve the explicit source before worktree/agent work. This temporary
+				// session supplies the existing runner config path, not a second transport.
+				this.agentSessionManager.createChatSession(
+					run.id,
+					{ path: repository.repositoryPath, isGitWorktree: false },
+					"manual",
+					[
+						{
+							repositoryId: repository.id,
+							baseBranchName: repository.baseBranch,
+						},
+					],
+				);
+				await this.resolveFactoryTicket(run, signal);
+				if (workflow.id === "takeover") {
+					const snapshot = run.outputs.ticket as {
+						attachments?: { kind?: string; url: string }[];
+					};
+					const links = [
+						...new Set(
+							(snapshot.attachments ?? [])
+								.filter(
+									(a) =>
+										a.kind === "pr" && /^https:\/\/github\.com\//.test(a.url),
+								)
+								.map((a) => a.url),
+						),
+					];
+					if (links.length > 1)
+						throw new Error(
+							"Taskbot ticket has multiple PR attachments; start Takeover with an explicit PR URL and confirmed originating ticket.",
+						);
+					if (links[0]) {
+						const context: ExecutionContext = {
+							run: { ...run, workspace: repository.repositoryPath },
+							step: workflow.steps[0]!,
+							input: {},
+							signal,
+							log: (text) => runtime.log(run, "setup", text),
+							evidenceDir: join(runtime.directory, "evidence", run.id),
+						};
+						const command = (exe: string, args: string[]) =>
+							executeCommand(context, exe, args, 60000);
+						takeoverPr = await inspectPullRequest(command, links[0]);
+						const ref = `refs/factory/takeover/${takeoverPr.number}`;
+						await command("git", [
+							"fetch",
+							"origin",
+							`+refs/pull/${takeoverPr.number}/head:${ref}`,
+						]);
+						fullIssue = { ...fullIssue, branchName: takeoverPr.headRefName };
+						baseBranchOverrides = new Map([[repository.id, ref]]);
+						run.outputs.source = takeoverPr;
+					}
 				}
 			}
 			if (run.status === "stopped") return;
@@ -7828,12 +8056,68 @@ ${taskSection}`;
 					}
 				: undefined,
 		});
+		await this.resolveFactoryTicket(run, signal);
+		await this.getTicketTracking().flush(run);
 		this.saveFactorySession(run);
 		this.getFactoryRuntime().save(run);
 	}
 
+	private async syncFactoryTicketTracking(
+		run: FactoryRun,
+		reassess = false,
+	): Promise<void> {
+		if (run.workflow.id === "simple") return;
+		await this.resolveFactoryTicket(run, new AbortController().signal);
+		if (!run.ticketReference) return;
+		if (run.ticketSync) {
+			await this.getTicketTracking().flush(run, reassess);
+			return;
+		}
+		const merged = readFactoryPath(run.outputs, "merge.merged") === true;
+		const pr =
+			readFactoryPath(run.outputs, "merge.url") ??
+			readFactoryPath(run.outputs, "draft-pr.url");
+		const review =
+			run.reviewGate?.status === "pending" ||
+			(/(?:human-review|merge)$/.test(run.step ?? "") &&
+				!["failed", "stopped"].includes(run.status));
+		const active = ["running", "waiting", "failed", "interrupted"].includes(
+			run.status,
+		);
+		await this.getTicketTracking().record(run, {
+			key: `legacy-current:${run.history.length}`,
+			body: merged
+				? `Recovered confirmed merge receipt for ${pr}. Run ${run.id}.`
+				: `Recovered ticket tracking for run ${run.id}: ${run.status} at ${run.step ?? "setup"}. ${run.error ?? "Inspect the retained results and checkpoints in Factory."}`,
+			...(merged
+				? { stage: "done" as const, merged: true }
+				: review
+					? { stage: "in_review" as const }
+					: active
+						? { stage: "in_progress" as const }
+						: {}),
+			...(typeof pr === "string" ? { pr } : {}),
+		});
+	}
+
+	private async recoverFactoryTicketTracking(run: FactoryRun): Promise<void> {
+		if (run.workflow.id === "simple") return;
+		try {
+			await this.syncFactoryTicketTracking(run);
+		} catch (error) {
+			this.getFactoryRuntime().log(
+				run,
+				"ticket-sync",
+				`Ticket tracking recovery requires assistance: ${String(error)}. Restore source access, then retry ticket synchronization; checkpoints are retained.`,
+			);
+		}
+	}
+
 	private recoverFactoryRuns(): void {
 		const runtime = this.getFactoryRuntime();
+		for (const run of runtime.runs.values()) {
+			void this.recoverFactoryTicketTracking(run);
+		}
 		const admission = this.getLaunchAdmission();
 		const resumingSessions = new Set<string>();
 		// Original Simple issue sessions retain Cyrus's continuation path and timeline.
@@ -10315,4 +10599,39 @@ ${input.userComment}
 			this.logger.error("Failed to save OAuth tokens:", error);
 		}
 	}
+}
+
+/** Factory transports use the same configured restrictions as agent tools. */
+export function assertFactoryToolAllowed(
+	name: string,
+	allowed?: string[],
+	denied?: string[],
+): void {
+	const matches = (pattern: string) => {
+		if (pattern === `mcp__${name.split("__")[1]}`) return true;
+		return new RegExp(
+			"^" +
+				pattern
+					.split("*")
+					.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+					.join(".*") +
+				"$",
+		).test(name);
+	};
+	if (denied?.some(matches) || (allowed?.length && !allowed.some(matches)))
+		throw new Error(
+			`Ticket tracking tool ${name} is restricted by configured tool permissions. Enable the required tool before retrying ticket synchronization.`,
+		);
+}
+
+function assertNativeTicketSource(source: string, verified: string): void {
+	if (!source.startsWith("https://")) return;
+	const identity = (value: string) => {
+		const url = new URL(value);
+		return `${url.origin}/${url.pathname.split("/").filter(Boolean).slice(0, 3).join("/")}`.toLowerCase();
+	};
+	if (identity(source) !== identity(verified))
+		throw new Error(
+			"Configured native tracker returned another ticket workspace. Configure the originating URL’s workspace before starting work.",
+		);
 }

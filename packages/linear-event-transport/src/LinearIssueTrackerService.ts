@@ -411,6 +411,20 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 	 * Uses the Linear SDK to fetch native attachments (typically external links
 	 * to Sentry errors, Datadog reports, etc.)
 	 */
+	async linkPullRequest(
+		issueId: string,
+		url: string,
+		title: string,
+	): Promise<void> {
+		const result = await this.linearClient.createAttachment({
+			issueId,
+			url,
+			title,
+		});
+		if (!result.success)
+			throw new Error(`Failed to attach PR to issue ${issueId}`);
+	}
+
 	async fetchIssueAttachments(
 		issueId: string,
 	): Promise<Array<{ title: string; url: string }>> {

@@ -56,3 +56,30 @@ it("detects cursor cycles instead of looping or returning incomplete data", asyn
 	);
 	expect(attachments).toHaveBeenCalledTimes(3);
 });
+
+it("links PRs through native attachments and exposes provider failure", async () => {
+	const createAttachment = vi
+		.fn()
+		.mockResolvedValueOnce({ success: true })
+		.mockResolvedValueOnce({ success: false });
+	const tracker = new LinearIssueTrackerService({
+		createAttachment,
+	} as unknown as LinearClient);
+	await tracker.linkPullRequest(
+		"issue",
+		"https://github.com/org/repo/pull/1",
+		"Factory pull request",
+	);
+	expect(createAttachment).toHaveBeenCalledWith({
+		issueId: "issue",
+		url: "https://github.com/org/repo/pull/1",
+		title: "Factory pull request",
+	});
+	await expect(
+		tracker.linkPullRequest(
+			"issue",
+			"https://github.com/org/repo/pull/1",
+			"Factory pull request",
+		),
+	).rejects.toThrow("Failed to attach PR");
+});

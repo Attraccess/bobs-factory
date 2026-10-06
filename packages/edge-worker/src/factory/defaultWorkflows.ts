@@ -178,6 +178,12 @@ Optional chapter flow:{title,steps:[{label,detail}]} has 2-8 stages (label <=60,
 ];
 
 const pipeline = definitions[1]!;
+const planStep = pipeline.steps.find((step) => step.id === "plan")!;
+if (!("prompt" in planStep)) throw new Error("Stock planner unavailable");
+const previousPlanPrompt = planStep.prompt;
+const ticketPlanInstructions =
+	" Include the verified originating ticket reference, tracker instance/workspace/project and URL, runtime tracking ownership, coding Done-after-confirmed-merge rule, and any synchronization gaps in the self-contained plan. Roles supply summaries and blockers; the tracking service owns lifecycle comments, status and PR links.";
+planStep.prompt += ticketPlanInstructions;
 export const defaultWorkflows = validateWorkflows([
 	definitions[0],
 	{
@@ -354,6 +360,8 @@ export function upgradeWorkflows(value: unknown): unknown {
 					step.next = "end";
 			}
 		for (const step of steps) {
+			if (step.id === "plan" && step.prompt === previousPlanPrompt)
+				step.prompt = previousPlanPrompt + ticketPlanInstructions;
 			const stock = defaultWorkflows
 				.find((item) => item.id === "factory-pipeline")!
 				.steps.find((item) => item.id === step.id);

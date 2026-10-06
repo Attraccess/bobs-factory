@@ -866,10 +866,11 @@ export class FactoryTools {
 				}
 				const guide = reviewGuideMarkdown(run.outputs.guide, headSha);
 				await command("gh", ["pr", "edit", url, "--body", guide]);
-				await this.hooks.postComment(
-					run.id,
-					`## Factory ready for human review\n\nDraft PR: ${url}\n\n${guide}`,
-				);
+				if (!run.ticketReference)
+					await this.hooks.postComment(
+						run.id,
+						`## Factory ready for human review\n\nDraft PR: ${url}\n\n${guide}`,
+					);
 				return { url, headSha, ready: true };
 			}
 			case "exec": {

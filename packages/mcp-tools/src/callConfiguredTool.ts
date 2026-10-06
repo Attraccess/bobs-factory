@@ -55,8 +55,20 @@ export async function callConfiguredTool(
 			signal,
 			timeout: 10 * 60 * 1000,
 		});
-		if (result.isError)
-			throw new Error(`MCP tool failed: ${JSON.stringify(result.content)}`);
+		if (result.isError) {
+			const message = Array.isArray(result.content)
+				? result.content
+						.filter((block) => block.type === "text")
+						.map((block) =>
+							typeof block.text === "string" ? block.text.trim() : "",
+						)
+						.filter(Boolean)
+						.join("\n")
+				: "";
+			throw new Error(
+				`MCP tool failed: ${message || "Provider returned an error without a text message."}`,
+			);
+		}
 		return result.structuredContent ?? result;
 	} finally {
 		signal.removeEventListener("abort", stop);

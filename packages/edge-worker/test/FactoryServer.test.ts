@@ -1222,6 +1222,80 @@ it("protects and persists global title settings independently of workflow config
 	}
 });
 
+it("protects tracking-only retries and leaves development checkpoints intact", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-tracking-api-"));
+	const retryTracking = vi.fn(async () => {});
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+		retryTracking,
+	});
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("unused");
+		},
+		stop: (id) => runtime.stop(id),
+	});
+	const run = runtime.create({
+		repositoryId: "repo",
+		workflow: defaultWorkflows.find((w) => w.id === "factory")!,
+		workspace: home,
+		input: "",
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
+	});
+	run.status = "completed";
+	run.outputs.merge = {
+		merged: true,
+		url: "https://github.com/org/repo/pull/1",
+	};
+	const before = structuredClone({
+		status: run.status,
+		checkpoint: run.checkpoint,
+		outputs: run.outputs,
+		history: run.history,
+	});
+	try {
+		const url = `/api/runs/${run.id}/ticket-sync`;
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url,
+					headers: { host: "localhost" },
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url,
+					headers: { host: "localhost", "x-factory-request": "1" },
+				})
+			).statusCode,
+		).toBe(200);
+		expect(retryTracking).toHaveBeenCalledExactlyOnceWith(run);
+		expect({
+			status: run.status,
+			checkpoint: run.checkpoint,
+			outputs: run.outputs,
+			history: run.history,
+		}).toEqual(before);
+	} finally {
+		await server.stop();
+		await runtime.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
 it("rejects title saves overtaken during body parsing and simultaneous saves", async () => {
 	const home = mkdtempSync(join(tmpdir(), "factory-title-save-race-"));
 	const hooks = {

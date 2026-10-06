@@ -145,7 +145,10 @@ export function fileTree(files: ReviewFile[]): FileTree[] {
 	return compress(root.children);
 }
 export function treeFiles(nodes: FileTree[]): ReviewFile[] {
-	return nodes.flatMap((n) => (n.file ? [n.file] : treeFiles(n.children)));
+	return nodes.flatMap((n) => [
+		...(n.file ? [n.file] : []),
+		...treeFiles(n.children),
+	]);
 }
 export type DiffLine = {
 	kind: "hunk" | "context" | "add" | "remove" | "meta";

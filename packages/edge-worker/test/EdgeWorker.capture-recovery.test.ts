@@ -292,6 +292,31 @@ it("validates recovered guide coverage and resumes the same conversation with ex
 	expect(f.ctx.resumeAgent!.rejected).toBeUndefined();
 });
 
+it.each([
+	false,
+	true,
+])("finalizes a customized restricted-input guide (saved result: %s)", async (saved) => {
+	const f = await guideFixture();
+	f.ctx.step.inputs = ["plan", "capture"];
+	f.ctx.input = { plan: {}, capture: f.ctx.run.outputs.capture };
+	if (saved) f.ctx.resumeAgent!.result!.output = f.guide;
+	else delete f.ctx.resumeAgent!.result;
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(output).toMatchObject(f.guide);
+	expect(output.reviewFiles).toMatchObject({
+		baseSha: (f.ctx.run.outputs.ci as { baseSha: string }).baseSha,
+		headSha: f.ctx.progress!.currentRevision!.headSha,
+	});
+	expect(f.runner.start).toHaveBeenCalledTimes(saved ? 0 : 1);
+	if (!saved) {
+		expect(f.getInput().plan).toEqual({});
+		expect(f.getInput().capture).toEqual(f.ctx.run.outputs.capture);
+		expect(f.getInput().ci).toBeUndefined();
+		expect(f.getInput().progress.newHistory).toEqual([]);
+		expect(f.getInput().progress.reviewScope.files).toEqual(["other.txt"]);
+	}
+});
+
 it("corrects fresh malformed JSON and missing PR files through the same boundary", async () => {
 	const f = await guideFixture();
 	delete f.ctx.resumeAgent!.result;
