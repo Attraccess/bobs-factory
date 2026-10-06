@@ -18,6 +18,7 @@ import {
 	api,
 	artifactsOf,
 	attention,
+	capacityPhaseLabel,
 	client,
 	finished,
 	icons,
@@ -30,6 +31,7 @@ import {
 	useLiveUpdates,
 	useRun,
 	useRuns,
+	workingLabel,
 } from "./client";
 import { RunConversation } from "./conversation";
 import {
@@ -59,6 +61,13 @@ import {
 	writeStored,
 	writeTextStored,
 } from "./review-state";
+import {
+	applyTheme,
+	readThemeChoice,
+	resolveTheme,
+	themeChoice,
+	themeQuery,
+} from "./theme";
 import {
 	Bob,
 	Button,
@@ -120,27 +129,25 @@ function useSettle() {
 	};
 }
 function useTheme() {
-	const [choice, setChoice] = useState(() =>
-			readTextStored("factory-theme", "system"),
-		),
+	const [choice, setChoice] = useState(readThemeChoice),
 		[systemDark, setSystemDark] = useState(
-			() => matchMedia("(prefers-color-scheme: dark)").matches,
+			() => matchMedia(themeQuery).matches,
 		);
-	useEffect(() => {
-		const media = matchMedia("(prefers-color-scheme: dark)"),
+	useLayoutEffect(() => {
+		const media = matchMedia(themeQuery),
 			changed = (event: MediaQueryListEvent) => setSystemDark(event.matches);
 		media.addEventListener("change", changed);
+		setSystemDark(media.matches);
 		return () => media.removeEventListener("change", changed);
 	}, []);
-	const dark = choice === "dark" || (choice === "system" && systemDark);
-	useEffect(() => {
-		document.documentElement.dataset.theme = dark ? "dark" : "light";
+	useLayoutEffect(() => {
+		applyTheme(resolveTheme(choice, systemDark));
 		writeTextStored("factory-theme", choice);
-		document
-			.querySelector('meta[name="theme-color"]')
-			?.setAttribute("content", dark ? "#16122a" : "#fff4f6");
-	}, [dark, choice]);
-	return { choice, setChoice };
+	}, [systemDark, choice]);
+	return {
+		choice,
+		setChoice: (value: string) => setChoice(themeChoice(value)),
+	};
 }
 function Header({
 	count,
@@ -800,9 +807,19 @@ function RunPage({
 		artifacts = artifactsOf(run),
 		steps = stepsOf(run, config),
 		visited = new Set(run.history?.map((h: any) => h.step));
-	const rows = steps.length
+	const graphRows = steps.length
 			? steps
 			: [{ id: "simple", key: "simple", name: "Cyrus session" }],
+		rows = [
+			...graphRows,
+			...Object.keys(run.capacityLeaves ?? {})
+				.filter((key) => !graphRows.some((step) => step.key === key))
+				.map((key) => ({
+					id: key,
+					key,
+					name: key === "setup" ? "Prepare workspace" : key.split("/").at(-1),
+				})),
+		],
 		pr = run.outputs?.["draft-pr"]?.url;
 	return (
 		<>
@@ -825,7 +842,7 @@ function RunPage({
 											? run.outputs?.guide
 												? "Ready for your review"
 												: "Done — take a look"
-											: "Working")}
+											: workingLabel(run))}
 						</span>
 						<RunMeta run={run} config={config} />
 						<span>started {ago(run.createdAt)}</span>
@@ -834,6 +851,9 @@ function RunPage({
 					<RunTitleStatus run={run} />
 				</div>
 				<div className="actions">
+					{run.status === "capacity-waiting" && (
+						<p role="status">Waiting for machine capacity</p>
+					)}
 					{active(run.status) ? (
 						<ConfirmStop
 							requiresConnection
@@ -917,7 +937,10 @@ function RunPage({
 								(h: any) => h.step === step.key,
 							).length,
 							started =
-								visited.has(step.key) || current === step.key || !steps.length,
+								visited.has(step.key) ||
+								Boolean(run.capacityLeaves?.[step.key]) ||
+								current === step.key ||
+								!steps.length,
 							artifact = artifacts.find((a) => a.name === step.id),
 							isOpen = open[step.key] ?? (!current && i === rows.length - 1);
 						return (
@@ -937,6 +960,11 @@ function RunPage({
 								>
 									<span className="step-dot">{icons[step.id] ?? "⚙️"}</span>
 									<strong>{step.name}</strong>
+									{run.capacityLeaves?.[step.key] && (
+										<span className="chip">
+											{capacityPhaseLabel(run.capacityLeaves[step.key].phase)}
+										</span>
+									)}
 									{count > 1 && <span className="chip">↺ {count}</span>}
 									{artifact && (
 										<span role="img" aria-label="Has artifact">

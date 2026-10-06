@@ -78,6 +78,8 @@ function validDraft(key: string, value: any): boolean {
 	if (key.startsWith("panels/")) return values(value, "boolean");
 	if (key === "recipe/title-settings")
 		return record(value) && values(value.value, "string");
+	if (key === "recipe/machine-capacity")
+		return record(value) && typeof value.limit === "string";
 	if (key === "recipe/editing")
 		return (
 			record(value) &&

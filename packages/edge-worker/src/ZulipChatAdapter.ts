@@ -64,6 +64,17 @@ const CURSOR_WIDTH = 20;
 export class ZulipChatAdapter
 	implements ChatPlatformAdapter<ZulipWebhookEvent>
 {
+	restoreReplyEvent(event: unknown): ZulipWebhookEvent {
+		return {
+			...(event as ZulipWebhookEvent),
+			credentials: {
+				site: process.env.ZULIP_SITE!,
+				botEmail: process.env.ZULIP_BOT_EMAIL!,
+				apiKey: process.env.ZULIP_API_KEY!,
+			},
+		};
+	}
+
 	readonly platformName = "zulip" as const;
 	private repositoryProvider: ChatRepositoryProvider;
 	private repositoryRoutingContext: string;

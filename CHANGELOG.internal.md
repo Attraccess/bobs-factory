@@ -6,6 +6,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Integrate machine capacity with ticket lifecycle tracking, MCP OAuth recovery and batched session persistence; isolate browser capacity policy from server-only ticket modules and retain transactional chat-save barriers and stdio execution provenance. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
+
 - Integrate the latest review-comment controller with PWA update snapshots, retaining item comments, additional feedback, revision checks and pending-request locks; migrate snapshots from the earlier single-text feedback UI. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
 
 - Integrate automatic run naming into the PWA branch, retain both sets of API/cache checks, and preserve unsaved title-agent settings through explicit updates with stale-draft acknowledgement. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))

@@ -1835,6 +1835,219 @@ it("upgrades stock implementation blockers without replacing custom instructions
 	expect(custom.askQuestions).toBe(false);
 });
 
+it("runs nested intensive fanout at limit one and cancels queued leaves without deadlock", async () => {
+	const { MachineCapacity } = await import("../src/MachineCapacity.js");
+	const { capacityRunStatus } = await import(
+		"../src/factory/WorkflowRuntime.js"
+	);
+	const directory = mkdtempSync(join(tmpdir(), "runtime-capacity-"));
+	homes.push(directory);
+	const capacity = new MachineCapacity(1, directory);
+	const blocker = await capacity.acquireLease();
+	const script = vi.fn(async () => ({ done: true }));
+	const { runtime } = create({ capacity, script });
+	const definition = workflow([
+		{
+			id: "parallel",
+			name: "Parallel",
+			type: "fanout",
+			groups: [
+				[{ id: "a", name: "A", type: "script", script: "a" }],
+				[{ id: "b", name: "B", type: "tool", tool: "exec", args: ["b"] }],
+			],
+		},
+	]);
+	const run = start(runtime, definition);
+	const done = runtime.launch(run);
+	await vi.waitFor(() =>
+		expect(capacityRunStatus(run)).toBe("capacity-waiting"),
+	);
+	expect(Object.keys(run.capacityLeaves!)).toEqual([
+		"parallel/0/a",
+		"parallel/1/b",
+	]);
+	runtime.stop(run.id);
+	await done;
+	await blocker.release();
+	expect(script).not.toHaveBeenCalled();
+	expect((await capacity.snapshot()).queued).toBe(0);
+	const another = start(runtime, definition);
+	await runtime.launch(another);
+	expect(another.status).toBe("completed");
+	expect(script).toHaveBeenCalledOnce();
+	expect((await capacity.snapshot()).active).toBe(0);
+});
+it.each([
+	false,
+	true,
+])("migrates saved intensive handoff recipes before validation without changing accepted runs (object=%s)", async (object) => {
+	const { runtime, home } = create();
+	const custom = workflow([
+		{
+			id: "parallel",
+			name: "Parallel",
+			type: "fanout",
+			groups: [
+				[
+					{
+						id: "wait",
+						name: "Custom handoff",
+						type: "tool",
+						tool: "handoff",
+						computeIntensive: false,
+					},
+				],
+				[
+					{
+						id: "heavy",
+						name: "Intensive tool",
+						type: "tool",
+						tool: "custom-heavy",
+						computeIntensive: true,
+					},
+				],
+			],
+		},
+	]);
+	custom.steps[0]!.groups![0]![0]!.computeIntensive = true;
+	const saved = structuredClone([...defaultWorkflows, custom]);
+	saved
+		.find((w) => w.id === "factory-pipeline")!
+		.steps.find((s) => s.tool === "handoff")!.computeIntensive = true;
+	const run = start(runtime, custom);
+	run.workflowDefinitions = structuredClone(saved);
+	runtime.save(run);
+	const frozen = structuredClone(run);
+	const path = join(home, "factory", "workflows.json");
+	writeFileSync(
+		path,
+		JSON.stringify(
+			object ? { workflows: saved, defaultWorkflow: "custom" } : saved,
+		),
+	);
+	const restored = reload(home);
+	expect(restored.getDefaultWorkflow()).toBe(object ? "custom" : "simple");
+	expect(restored.get(run.id)).toEqual(frozen);
+	expect(restored.listWorkflows().at(-1)!.steps[0]!.groups).toEqual([
+		[{ ...custom.steps[0]!.groups![0]![0]!, computeIntensive: false }],
+		custom.steps[0]!.groups![1],
+	]);
+	expect(
+		restored
+			.listWorkflows()
+			.find((w) => w.id === "factory-pipeline")!
+			.steps.find((s) => s.tool === "handoff")!.computeIntensive,
+	).toBe(false);
+	const normalized = readFileSync(path, "utf8");
+	expect(JSON.parse(normalized).workflows).toEqual(restored.listWorkflows());
+	const second = reload(home);
+	expect(readFileSync(path, "utf8")).toBe(normalized);
+	expect(second.get(run.id)).toEqual(frozen);
+	await restored.shutdown();
+	await second.shutdown();
+});
+
+it.each([
+	"ci",
+	"handoff",
+])("rejects intensive %s waits and preserves explicit lightweight scripts in nested recipes", (tool) => {
+	expect(() =>
+		workflow([
+			{
+				id: "wait",
+				name: "CI",
+				type: "tool",
+				tool,
+				computeIntensive: true,
+			},
+		]),
+	).toThrow(/Passive wait/);
+	expect(() =>
+		workflow([
+			{
+				id: "parent",
+				name: "Parent",
+				type: "fanout",
+				computeIntensive: true,
+				groups: [[agent("child")]],
+			},
+		]),
+	).toThrow();
+	const definition = workflow([
+		{
+			id: "script",
+			name: "Light",
+			type: "script",
+			script: "echo ready",
+			computeIntensive: false,
+		},
+	]);
+	expect(definition.steps[0]!.computeIntensive).toBe(false);
+});
+
+it.each([
+	"ci",
+	"handoff",
+])("admits nested workflow leaves at limit one while passive %s consumes no slot", async (passiveTool) => {
+	const { MachineCapacity } = await import("../src/MachineCapacity.js");
+	const directory = mkdtempSync(join(tmpdir(), "nested-capacity-"));
+	homes.push(directory);
+	const capacity = new MachineCapacity(1, directory);
+	let finishCI!: () => void;
+	const tool = vi.fn(
+		() =>
+			new Promise<unknown>((resolve) => {
+				finishCI = () => resolve({ done: true });
+			}),
+	);
+	const script = vi.fn(async () => ({ done: true }));
+	const { runtime } = create({ capacity, script, tool });
+	const child = {
+		...workflow([
+			{ id: "heavy", name: "Heavy", type: "script", script: "echo {}" },
+		]),
+		id: "child",
+	};
+	const parent = workflow(
+		[
+			{
+				id: "parallel",
+				name: "Parallel",
+				type: "fanout",
+				groups: [
+					[{ id: "call", name: "Child", type: "workflow", workflow: "child" }],
+					[{ id: "ci", name: "CI", type: "tool", tool: passiveTool }],
+				],
+			},
+		],
+		[child],
+	);
+	runtime.updateWorkflows([...defaultWorkflows, parent, child]);
+	const run = start(runtime, parent);
+	// Previously accepted handoff snapshots may carry an intensive flag.
+	if (passiveTool === "handoff")
+		run.workflow.steps[0]!.groups![1]![0]!.computeIntensive = true;
+	const done = runtime.launch(run);
+	await vi.waitFor(() => expect(script).toHaveBeenCalledOnce());
+	await vi.waitFor(() =>
+		expect(run.capacityLeaves).toMatchObject({
+			"parallel/1/ci": { phase: "waiting-ci" },
+		}),
+	);
+	await vi.waitFor(
+		async () => expect((await capacity.snapshot()).active).toBe(0),
+		{ timeout: 10000 },
+	);
+	const next = await capacity.acquireLease();
+	await next.release();
+	finishCI();
+	await done;
+	expect(run.status).toBe("completed");
+	expect(run.history.map((item) => item.step)).toContain(
+		"parallel/0/call/heavy",
+	);
+});
+
 it("upgrades a coherent screenshot recipe to QA atomically, keeps custom behavior and frozen run definitions", async () => {
 	const saved = structuredClone(defaultWorkflows);
 	const pipeline = saved.find((w) => w.id === "factory-pipeline")!;

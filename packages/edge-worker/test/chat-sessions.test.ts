@@ -1,3 +1,5 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getReadOnlyTools } from "cyrus-claude-runner";
 import type { RepositoryConfig } from "cyrus-core";
@@ -12,6 +14,11 @@ import type { ChatRepositoryProvider } from "../src/ChatRepositoryProvider.js";
 import { LiveChatRepositoryProvider } from "../src/ChatRepositoryProvider.js";
 import type { ChatPlatformAdapter } from "../src/ChatSessionHandler.js";
 import { ChatSessionHandler } from "../src/ChatSessionHandler.js";
+import { MachineCapacity } from "../src/MachineCapacity.js";
+import {
+	capRunnerStarts,
+	waitForRunnerCapacity,
+} from "../src/RunnerConcurrency.js";
 import type { RunnerConfigBuilder } from "../src/RunnerConfigBuilder.js";
 import {
 	BEHAVIOURS_PAGE_ROUTE,
@@ -1635,4 +1642,115 @@ describe("ChatSessionHandler thread catch-up", () => {
 
 		expect(prompts).toEqual([TASK, TASK]);
 	});
+});
+
+it.each([
+	"slack",
+	"zulip",
+] as const)("rejoins saved %s queue order and input after shutdown, before any native session exists", async (platform) => {
+	const home = mkdtempSync(join(tmpdir(), "chat-capacity-recovery-"));
+	let slots = new MachineCapacity(1, join(home, "pool"));
+	const blocker = await slots.acquireLease();
+	let shuttingDown = false;
+	const builder = createMockRunnerConfigBuilder();
+	const providers: any[] = [];
+	const configs: any[] = [];
+	const createRunner = vi.fn(
+		(config: any, _type: any, signal: any, id: string) => {
+			configs.push(config);
+			const provider = {
+				start: vi.fn(async () => ({ sessionId: "native" })),
+				stop: vi.fn(),
+				isRunning: () => false,
+				getMessages: () => [],
+			};
+			providers.push(provider);
+			return capRunnerStarts(provider as any, slots, signal, {
+				identity: `${home}:session:${id}`,
+				recoverable: true,
+			});
+		},
+	);
+	const adapter = Object.assign(new TestChatAdapter("saved-thread"), {
+		platformName: platform,
+	});
+	const deps = {
+		cyrusHome: home,
+		chatRepositoryProvider: createStaticProvider([]),
+		runnerConfigBuilder: builder,
+		createRunner,
+		isShuttingDown: () => shuttingDown,
+		onWebhookStart: vi.fn(),
+		onWebhookEnd: vi.fn(),
+		onStateChange: vi.fn().mockResolvedValue(undefined),
+		onClaudeError: vi.fn(),
+	};
+	const original = new ChatSessionHandler(adapter, deps);
+	try {
+		await original.handleEvent({
+			eventId: "saved-event",
+			threadKey: "saved-thread",
+			slackBotToken: "test-secret",
+			credentials: { apiKey: "test-secret" },
+		} as any);
+		await vi.waitFor(async () =>
+			expect((await slots.snapshot()).queued).toBe(1),
+		);
+		const queued = (await slots.snapshot()).requests.find(
+			(r) => r.recoverable,
+		)!;
+		expect(providers[0].start).not.toHaveBeenCalled();
+		shuttingDown = true;
+		await slots.shutdown();
+		await waitForRunnerCapacity(
+			original.getRunnerForThread("saved-thread")!,
+		).catch(() => {});
+		const saved = original.serializeState();
+		const id = original.listThreads()[0]!.sessionId;
+		expect(
+			JSON.stringify(saved.sessions[id].metadata!.pendingExecution),
+		).not.toContain("test-secret");
+		expect(saved.sessions[id].metadata!.pendingExecution!.prompt).toBe(
+			"Inspect repository configuration",
+		);
+		slots = new MachineCapacity(undefined, slots.directory);
+		shuttingDown = false;
+		const restored = new ChatSessionHandler(adapter, deps);
+		restored.restoreState(saved.sessions, saved.entries);
+		await restored.recoverQueuedSessions();
+		await vi.waitFor(async () => {
+			const current = (await slots.snapshot()).requests.find(
+				(r) => r.identity === queued.identity,
+			)!;
+			expect(current.id).toBe(queued.id);
+			expect(current.sequence).toBe(queued.sequence);
+			expect(current.parked).toBe(false);
+		});
+		expect(configs[1].resumeSessionId).toBeUndefined();
+		expect(providers[1].start).not.toHaveBeenCalled();
+		await blocker.release();
+		await vi.waitFor(
+			() =>
+				expect(providers[1].start).toHaveBeenCalledWith(
+					"Inspect repository configuration",
+				),
+			{ timeout: 10000 },
+		);
+		await vi.waitFor(
+			async () => expect((await slots.snapshot()).requests).toEqual([]),
+			{ timeout: 10000 },
+		);
+		// Only the restored owner executes; stopping it remains terminal on another restart.
+		expect(providers[0].start).not.toHaveBeenCalled();
+		restored.stopSession(id);
+		const stopped = restored.serializeState();
+		const again = new ChatSessionHandler(adapter, deps);
+		again.restoreState(stopped.sessions, stopped.entries);
+		await again.recoverQueuedSessions();
+		expect(createRunner).toHaveBeenCalledTimes(2);
+	} finally {
+		await slots.shutdown();
+		await blocker.release();
+		rmSync(home, { recursive: true, force: true });
+	}
 });

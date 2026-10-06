@@ -12,6 +12,7 @@ import {
 	useAction,
 	useRun,
 	workflowOf,
+	workingLabel,
 } from "./client";
 import { activitiesOf } from "./conversation";
 import { DraftNotice } from "./pwa-ui";
@@ -786,7 +787,9 @@ export function Progress({ run, config }: { run: any; config: any }) {
 				<i
 					key={step.key}
 					className={
-						run.step === step.key || (!steps.length && active(run.status))
+						run.capacityLeaves?.[step.key] ||
+						run.step === step.key ||
+						(!steps.length && active(run.status))
 							? ["failed", "error"].includes(run.status)
 								? "failed"
 								: "current"
@@ -830,7 +833,8 @@ export function WorkingRow({
 				<span className="repo-dot" />
 				<strong>{run.title}</strong>
 				<span className={`step-chip ${phase(stepId)}`}>
-					{icons[stepId] ?? "⚙️"} {step?.name ?? run.step ?? "Cyrus session"}
+					{workingLabel(data)} · {icons[stepId] ?? "⚙️"}{" "}
+					{step?.name ?? run.step ?? "Cyrus session"}
 					{/fix/.test(stepId) && " · fixing"}
 					{visits > 1 && ` · ↺${visits}`}
 				</span>
