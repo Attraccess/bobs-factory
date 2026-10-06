@@ -10,8 +10,8 @@ All notable changes to this project will be documented in this file.
   browser-local reading checks and Changed files with diffs pinned to the reviewed
   revision. Incomplete new guides return to the guide agent for correction; older
   guides remain readable. Browser history restores the matching page, map highlights
-  follow chapter colours, long map labels fit their boxes and connections, and file
-  diffs stay limited to the selected file. ([Taskbot #75](https://taskbot.apps.janjaap.de/p/bobs-factory/t/75), [#17](https://github.com/Attraccess/bobs-factory/pull/17))
+  follow chapter colours, long map labels fit their boxes and connections without
+  overlap, and file diffs stay limited to the selected file. ([Taskbot #75](https://taskbot.apps.janjaap.de/p/bobs-factory/t/75), [#17](https://github.com/Attraccess/bobs-factory/pull/17))
 
 - Select workflows from Linear assignments and mentions using `[workflow=<id>]`, retain readable selection/source history, and protect active issues against competing or redelivered launches. Replies respect the accepted run and runner steering capabilities; interrupted startup retains recovery ownership, unassignment releases it and cancels pending runner startup, and native stop redelivery cannot escalate to a full kill. Ticket context includes every comment and attachment page. ([Taskbot #55](https://taskbot.apps.janjaap.de/p/bobs-factory/t/55), [#13](https://github.com/Attraccess/bobs-factory/pull/13))
 - Automatically name new runs in the background with a globally configurable title agent and project context tools, including Cursor, Claude's URL-only HTTP servers, Gemini's URL-only SSE servers and relative server scripts. Show the run ID while naming, update titles live, preserve historical titles during recovery, and keep dashboard feedback usable for Slack/Zulip sessions across restarts and concurrent platform replies. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68), [#11](https://github.com/Attraccess/bobs-factory/pull/11))

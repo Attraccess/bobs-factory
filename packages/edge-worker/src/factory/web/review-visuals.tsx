@@ -69,12 +69,13 @@ export function SystemMap({
 			y += height + 34;
 		}
 	});
-	const tracks: { x: number; y: number; height: number }[] = [];
+	const tracks: { x: number; y: number; width: number; height: number }[] = [];
 	let lower = bottom;
 	const layout = edges.map((edge) => {
 		const source = positions.get(edge.source)!,
 			target = positions.get(edge.target)!;
 		const adjacent = target.lane === source.lane + 1;
+		const labelWidth = adjacent ? 72 : 220;
 		const label =
 			edge.kind === "removed"
 				? `✕ ${edge.label ?? "connection"}`
@@ -83,12 +84,7 @@ export function SystemMap({
 					: (edge.label ?? "");
 		const oldLines =
 				edge.kind === "changed"
-					? labelsFor(
-							edge.oldLabel ?? "unlabelled",
-							adjacent ? 72 : 220,
-							12,
-							400,
-						)
+					? labelsFor(edge.oldLabel ?? "unlabelled", labelWidth, 12, 400)
 					: [],
 			labels =
 				edge.kind === "changed"
@@ -96,14 +92,21 @@ export function SystemMap({
 							...oldLines,
 							...labelsFor(
 								`→ ${edge.newLabel ?? "unlabelled"}`,
-								adjacent ? 72 : 220,
+								labelWidth,
 								12,
 								400,
 							),
 						]
-					: labelsFor(label, adjacent ? 72 : 220, 12, 400),
+					: labelsFor(label, labelWidth, 12, 400),
 			labelHeight = Math.max(1, labels.length) * 15;
-		const x = adjacent ? source.x + 213 : (source.x + target.x) / 2 + 83;
+		// Wide labels on same-lane connections need an inset at the map edges.
+		const x = Math.max(
+			labelWidth / 2 + 12,
+			Math.min(
+				width - labelWidth / 2 - 12,
+				adjacent ? source.x + 213 : (source.x + target.x) / 2 + 83,
+			),
+		);
 		const sourceMiddle = source.y + source.height / 2,
 			targetMiddle = target.y + target.height / 2;
 		// Keep the whole wrapped label below the lane headings, even when it
@@ -114,12 +117,12 @@ export function SystemMap({
 		while (
 			tracks.some(
 				(t) =>
-					Math.abs(t.x - x) < 130 &&
+					Math.abs(t.x - x) < (t.width + labelWidth) / 2 + 12 &&
 					Math.abs(t.y - y) < (t.height + labelHeight) / 2 + 12,
 			)
 		)
 			y += labelHeight + 14;
-		tracks.push({ x, y, height: labelHeight });
+		tracks.push({ x, y, width: labelWidth, height: labelHeight });
 		if (!adjacent) lower = y + 26;
 		const path = adjacent
 			? `M${source.x + 166},${sourceMiddle} C${source.x + 194},${sourceMiddle} ${x - 20},${y} ${x},${y} C${x + 20},${y} ${target.x - 28},${targetMiddle} ${target.x},${targetMiddle}`
