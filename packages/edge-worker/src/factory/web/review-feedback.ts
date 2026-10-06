@@ -66,23 +66,26 @@ export function normalizeFeedback(value: unknown): FeedbackDraft {
 export function loadFeedback(key: string) {
 	const snapshot = restoredDraft(`feedback/draft/${key}`);
 	if (snapshot !== undefined) return normalizeFeedback(snapshot);
-	const saved = normalizeFeedback(readStored(key, null));
 	// Updates from the original single-text shell carry the tab's draft under
-	// these keys; it must take precedence over another tab's shared storage.
-	const migrated = {
-		...saved,
-		feedback: restoredDraft<string>(`feedback/text/${key}`) ?? saved.feedback,
-		open: restoredDraft<boolean>(`feedback/open/${key}`) ?? saved.open,
-	};
-	if (restoredDraft(`feedback/text/${key}`) !== undefined) {
-		rememberDraft(
-			`feedback/draft/${key}`,
-			migrated,
-			draftRevision(`feedback/text/${key}`),
-		);
-		forgetDraft(`feedback/text/${key}`);
-		forgetDraft(`feedback/open/${key}`);
-	}
+	// these keys. Shared storage may belong to another tab, including comments
+	// the original shell could never have collected.
+	const text = restoredDraft<string>(`feedback/text/${key}`);
+	const open = restoredDraft<boolean>(`feedback/open/${key}`);
+	if (text === undefined && open === undefined)
+		return normalizeFeedback(readStored(key, null));
+	const migrated = normalizeFeedback({
+		...emptyFeedback(),
+		feedback: text ?? "",
+		open: open ?? false,
+	});
+	rememberDraft(
+		`feedback/draft/${key}`,
+		migrated,
+		draftRevision(`feedback/text/${key}`) ??
+			draftRevision(`feedback/open/${key}`),
+	);
+	forgetDraft(`feedback/text/${key}`);
+	forgetDraft(`feedback/open/${key}`);
 	return migrated;
 }
 export function saveFeedback(key: string, draft: FeedbackDraft) {

@@ -26,6 +26,7 @@ import {
 	acknowledgeDraft,
 	completeRestoration,
 	decodeSnapshot,
+	draftRevision,
 	forgetDraft,
 	loadRestoration,
 	preserveForUpdate,
@@ -38,6 +39,8 @@ import {
 import {
 	emptyFeedback,
 	loadFeedback,
+	normalizeFeedback,
+	serializeFeedback,
 } from "../src/factory/web/review-feedback.js";
 import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
 
@@ -704,6 +707,12 @@ it("preserves collected feedback per tab through updates and migrates earlier te
 		expect(decodeSnapshot(JSON.stringify(invalid))).toBeUndefined();
 		completeRestoration();
 		forgetDraft(snapshotKey);
+		const otherTab = {
+			...draft,
+			feedback: "Another tab's general feedback",
+			items: [{ ...item, text: "Another tab's unsent item comment" }],
+		};
+		local.setItem(key, JSON.stringify(otherTab));
 		rememberDraft(
 			`feedback/text/${key}`,
 			"Original tab text",
@@ -719,6 +728,19 @@ it("preserves collected feedback per tab through updates and migrates earlier te
 			collectedOpen: false,
 			editing: undefined,
 		});
+		expect(draftRevision(snapshotKey)).toBe("legacy-gate-state");
+		expect(restoredDraft(`feedback/text/${key}`)).toBeUndefined();
+		expect(restoredDraft(`feedback/open/${key}`)).toBeUndefined();
+		expect(
+			serializeFeedback(loadFeedback(key), {
+				revision: "abc123",
+				goal: "Review the update",
+				identity: key,
+			}),
+		).toBe(
+			`Review feedback\nRevision: abc123\nGuide: Review the update\nReview: ${key}\n\nAdditional feedback\n\nOriginal tab text`,
+		);
+		expect(JSON.parse(local.getItem(key)!)).toEqual(otherTab);
 		rememberDraft(snapshotKey, emptyFeedback());
 		expect(restoredDraft(snapshotKey)).toBeUndefined();
 	} finally {
@@ -728,5 +750,36 @@ it("preserves collected feedback per tab through updates and migrates earlier te
 			`feedback/open/${key}`,
 		])
 			forgetDraft(surface);
+	}
+});
+
+it.each([
+	{ text: "Legacy text only", open: undefined },
+	{ text: undefined, open: true },
+])("isolates partial legacy snapshots from shared feedback: %j", ({
+	text,
+	open,
+}) => {
+	browserState();
+	const local = storage();
+	vi.stubGlobal("localStorage", local);
+	const key = "factory-review/partial-legacy/feedback/gate";
+	const textKey = `feedback/text/${key}`,
+		openKey = `feedback/open/${key}`,
+		draftKey = `feedback/draft/${key}`;
+	local.setItem(key, JSON.stringify({ feedback: "Other tab", open: true }));
+	if (text !== undefined) rememberDraft(textKey, text, "legacy-gate");
+	if (open !== undefined) rememberDraft(openKey, open, "legacy-gate");
+	try {
+		const draft = normalizeFeedback({
+			...emptyFeedback(),
+			feedback: text ?? "",
+			open: open ?? false,
+		});
+		expect(loadFeedback(key)).toEqual(draft);
+		expect(loadFeedback(key)).toEqual(draft);
+		expect(draftRevision(draftKey)).toBe("legacy-gate");
+	} finally {
+		for (const surface of [textKey, openKey, draftKey]) forgetDraft(surface);
 	}
 });
