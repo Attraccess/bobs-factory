@@ -16,7 +16,11 @@ import { useSearchParams } from "react-router-dom";
 import { api } from "./client";
 import { DecisionActions } from "./focus";
 import { LazyImage } from "./media";
-import { type Enriched, enrichedFor } from "./review-prototype-enriched";
+import {
+	type Edge,
+	type Enriched,
+	enrichedFor,
+} from "./review-prototype-enriched";
 import { GUIDED_CSS, VariantG } from "./review-prototype-guided";
 import { Markdown } from "./ui";
 
@@ -181,14 +185,15 @@ export function SystemDiagram({
 	onNode,
 }: {
 	system: Enriched["system"];
-	mode: "before" | "after";
+	/** "diff" overlays before and after; "none" shows only the boxes. */
+	mode: "before" | "after" | "diff" | "none";
 	highlight?: string[];
 	tint?: string;
 	onNode?: (id: string) => void;
 }) {
 	const W = 124,
 		H = 40,
-		COL = 186,
+		COL = 212,
 		ROW = 62,
 		TOP = 34;
 	const byLane = system.lanes.map((_, l) =>
@@ -204,7 +209,30 @@ export function SystemDiagram({
 			}),
 		),
 	);
-	const edges = mode === "before" ? system.before : system.after;
+	const key = (e: Edge) => `${e.from}>${e.to}`;
+	const edges: (Edge & {
+		diff?: "added" | "removed" | "same";
+		was?: string;
+	})[] =
+		mode === "before"
+			? system.before
+			: mode === "after"
+				? system.after
+				: mode === "none"
+					? []
+					: [
+							...system.before
+								.filter((b) => !system.after.some((a) => key(a) === key(b)))
+								.map((e) => ({ ...e, diff: "removed" as const })),
+							...system.after.map((e) => {
+								const old = system.before.find((b) => key(b) === key(e));
+								return {
+									...e,
+									diff: old ? ("same" as const) : ("added" as const),
+									was: old && old.label !== e.label ? old.label : undefined,
+								};
+							}),
+						];
 	const width = 10 + (system.lanes.length - 1) * COL + W + 10,
 		height = TOP + rows * ROW;
 	const absent = (s: string) => (mode === "before" ? s === "new" : false);
@@ -227,6 +255,23 @@ export function SystemDiagram({
 				>
 					<path d="M0,0 L10,5 L0,10 z" fill="var(--secondary)" />
 				</marker>
+				{(["added", "removed"] as const).map((d) => (
+					<marker
+						key={d}
+						id={`rp-arrow-${d}`}
+						viewBox="0 0 10 10"
+						refX="9"
+						refY="5"
+						markerWidth="7"
+						markerHeight="7"
+						orient="auto-start-reverse"
+					>
+						<path
+							d="M0,0 L10,5 L0,10 z"
+							fill={d === "added" ? "#3ddc97" : "#ff5d73"}
+						/>
+					</marker>
+				))}
 			</defs>
 			{system.lanes.map((lane, l) => (
 				<text key={lane} x={10 + l * COL + W / 2} y={16} className="rp-lane">
@@ -245,18 +290,27 @@ export function SystemDiagram({
 				return (
 					<g
 						key={i}
-						className={`rp-edge ${e.weak ? "weak" : ""} ${hot ? "hot" : ""}`}
+						className={`rp-edge ${e.weak ? "weak" : ""} ${hot ? "hot" : ""} ${e.diff ?? ""}`}
 						style={hot && tint ? { stroke: tint } : undefined}
 					>
 						<path
 							d={`M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`}
-							markerEnd="url(#rp-arrow)"
+							markerEnd={`url(#rp-arrow${e.diff && e.diff !== "same" ? `-${e.diff}` : ""})`}
 						/>
-						{e.label && (hot || mode === "before" || !highlight.length) && (
-							<text x={mx} y={(y1 + y2) / 2 - 7} className="rp-edge-label">
-								{e.label}
-							</text>
-						)}
+						{(e.label || e.was) &&
+							(hot || mode === "before" || !highlight.length) && (
+								<text x={mx} y={(y1 + y2) / 2 - 7} className="rp-edge-label">
+									{e.was ? (
+										<>
+											<tspan className="was">{e.was}</tspan> → {e.label ?? "—"}
+										</>
+									) : e.diff === "removed" ? (
+										`✕ ${e.label}`
+									) : (
+										e.label
+									)}
+								</text>
+							)}
 					</g>
 				);
 			})}
@@ -268,7 +322,7 @@ export function SystemDiagram({
 				return (
 					<g
 						key={n.id}
-						className={`rp-node ${n.status} ${on ? "on" : ""} ${gone ? "gone" : ""} ${dim ? "dim" : ""}`}
+						className={`rp-node ${n.status} ${on ? "on" : ""} ${gone ? "gone" : ""} ${dim ? "dim" : ""} ${mode === "diff" ? "diff" : ""}`}
 						transform={`translate(${p.x},${p.y})`}
 						onClick={() => onNode?.(n.id)}
 						style={on && tint ? ({ "--tint": tint } as any) : undefined}
@@ -277,9 +331,10 @@ export function SystemDiagram({
 						<text x={W / 2} y={H / 2 + 5}>
 							{n.label}
 						</text>
-						{mode === "after" && n.status === "new" && (
-							<text x={W - 8} y={12} className="rp-badge">
-								NEW
+						{((mode === "after" && n.status === "new") ||
+							(mode === "diff" && n.status !== "same")) && (
+							<text x={W - 8} y={12} className={`rp-badge ${n.status}`}>
+								{n.status.toUpperCase()}
 							</text>
 						)}
 					</g>
@@ -2088,6 +2143,16 @@ const CSS = `
 .rp-node.gone{opacity:.18}
 .rp-node.gone rect{stroke-dasharray:4 3}
 .rp-node.dim{opacity:.45}
+.rp-edge.added path{stroke:#3ddc97;opacity:.95;stroke-width:2.2}
+.rp-edge.removed path{stroke:#ff5d73;opacity:.85;stroke-dasharray:5 4;stroke-width:2}
+.rp-edge.added .rp-edge-label{fill:#3ddc97}
+.rp-edge.removed .rp-edge-label{fill:#ff5d73;font-style:italic}
+.rp-edge-label .was{fill:#ff5d73;font-style:italic}
+.rp-node.diff.new rect{stroke:#3ddc97;stroke-width:2;fill:color-mix(in srgb,#3ddc97 14%,var(--surface))}
+.rp-node.diff.legacy rect{stroke:#ff5d73;stroke-width:1.5;stroke-dasharray:4 3}
+.rp-node.diff.legacy text:not(.rp-badge){opacity:.7}
+.rp-node.diff.changed rect{stroke:#ffb020;stroke-width:2}
+.rp-badge.new{fill:#3ddc97!important}.rp-badge.legacy{fill:#ff5d73!important}.rp-badge.changed{fill:#ffb020!important}
 
 /* footprint */
 .rp-footprint{display:flex;flex-wrap:wrap;gap:14px 22px}

@@ -205,7 +205,16 @@ function Overview({
 	reviewed: Record<string, boolean>;
 	go: (i: number) => void;
 }) {
-	const [hover, setHover] = useState<number>();
+	const [hover, setHover] = useState<number>(),
+		[show, setShow] = useState({ before: true, after: true }),
+		mode =
+			show.before && show.after
+				? "diff"
+				: show.before
+					? "before"
+					: show.after
+						? "after"
+						: "none";
 	const h = hover !== undefined ? model.chapters[hover] : undefined;
 	const care = model.chapters.filter(
 		(x: Chapter) => x.risk.level !== "low",
@@ -231,13 +240,40 @@ function Overview({
 				</span>
 			</div>
 			{model.enriched?.system ? (
-				<div className="rp-g-map">
-					<SystemDiagram
-						system={model.enriched.system}
-						mode="after"
-						highlight={h?.nodes ?? []}
-						tint={h?.color}
-					/>
+				<div className="rp-g-diff">
+					<div className="rp-g-diff-bar">
+						{(["before", "after"] as const).map((k) => (
+							<button
+								type="button"
+								key={k}
+								aria-pressed={show[k]}
+								className={`rp-g-tog ${k} ${show[k] ? "on" : ""}`}
+								onClick={() => setShow((s) => ({ ...s, [k]: !s[k] }))}
+							>
+								<span className="box">{show[k] ? "✓" : ""}</span>
+								{k === "before" ? "Before" : "After"}
+							</button>
+						))}
+						<span className="rp-g-legend">
+							{mode === "diff" && (
+								<>
+									<i className="added" /> added <i className="removed" />{" "}
+									removed <i className="changed" /> changed
+								</>
+							)}
+							{mode === "before" && "How it worked before this PR"}
+							{mode === "after" && "How it works with this PR"}
+							{mode === "none" && "Components only"}
+						</span>
+					</div>
+					<div className="rp-g-map">
+						<SystemDiagram
+							system={model.enriched.system}
+							mode={mode}
+							highlight={h?.nodes ?? []}
+							tint={h?.color}
+						/>
+					</div>
 				</div>
 			) : model.shots.length > 0 ? (
 				<div className="rp-g-strip">
@@ -463,6 +499,7 @@ function HowItWorks({ model, c }: { model: Model; c: Chapter }) {
 
 export const GUIDED_CSS = `
 .page:has(.rp-guided){max-width:820px}
+.page:has(.rp-g-diff){max-width:1120px}
 .rp-guided{scroll-margin-top:80px;padding-bottom:40px}
 .rp-g-stepper{display:flex;gap:3px;margin:0 0 18px}
 .rp-g-stepper button{flex:1;height:8px;border:0;border-radius:4px;background:var(--track);padding:0;--c:var(--primary)}
@@ -477,6 +514,20 @@ export const GUIDED_CSS = `
 .rp-g-page .rp-u-kpis{margin:12px 0 4px}
 .rp-g-map{overflow-x:auto;margin:12px -6px 0;padding:0 6px;-webkit-overflow-scrolling:touch}
 .rp-g-map .rp-system{min-width:640px}
+.rp-g-diff{margin-top:12px}
+.rp-g-diff-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.rp-g-tog{display:inline-flex;gap:6px;align-items:center;border:1.5px solid var(--line);border-radius:999px;padding:4px 12px 4px 8px;font-weight:700;font-size:13px;cursor:pointer;color:var(--muted)}
+.rp-g-tog{background:var(--surface)}
+.rp-g-tog .box{display:inline-grid;place-items:center;width:16px;height:16px;border-radius:4px;border:2px solid currentColor;font-size:11px;line-height:1}
+.rp-g-tog.before.on .box{background:#ff5d73;border-color:#ff5d73;color:#fff}
+.rp-g-tog.after.on .box{background:#3ddc97;border-color:#3ddc97;color:#08241a}
+.rp-g-tog.before.on{border-color:#ff5d73;color:var(--text);background:color-mix(in srgb,#ff5d73 12%,var(--surface))}
+.rp-g-tog.after.on{border-color:#3ddc97;color:var(--text);background:color-mix(in srgb,#3ddc97 12%,var(--surface))}
+.rp-g-legend{font-size:12.5px;color:var(--muted);display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap}
+.rp-g-legend i{display:inline-block;width:18px;height:0;border-top:2.5px solid}
+.rp-g-legend i.added{border-color:#3ddc97}
+.rp-g-legend i.removed{border-color:#ff5d73;border-top-style:dashed}
+.rp-g-legend i.changed{width:12px;height:12px;border:2px solid #ffb020;border-radius:4px}
 .rp-g-strip{display:flex;gap:6px;overflow-x:auto;margin-top:12px}
 .rp-g-strip img{height:110px;border-radius:8px;border:1px solid var(--line)}
 .rp-g-route{list-style:none;padding:0;margin:0;display:grid;gap:5px}
