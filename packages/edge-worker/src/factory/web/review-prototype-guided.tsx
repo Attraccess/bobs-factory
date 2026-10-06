@@ -8,7 +8,7 @@
 // The current step lives in the URL (`&step=`), so it is shareable and reload-stable.
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "./client";
 import { DecisionActions } from "./focus";
@@ -585,7 +585,8 @@ function FilesStep({
 		}),
 		demo = params.get("demoRogue") === "1",
 		[open, setOpen] = useState<Record<string, boolean>>({ unassigned: true }),
-		[viewer, setViewer] = useState<{ list: PrFile[]; i: number }>();
+		[viewer, setViewer] = useState<{ list: PrFile[]; i: number }>(),
+		[collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 	if (!pr)
 		return (
 			<section className="rp-g-page">
@@ -645,11 +646,6 @@ function FilesStep({
 		const soloCount = c
 			? byArea.filter(([x]) => areaSteps.get(x)?.size === 1).length
 			: 0;
-		const sorted = [...list].sort(
-			(x, y) =>
-				Number(areaOf(x.path).test) - Number(areaOf(y.path).test) ||
-				x.path.localeCompare(y.path),
-		);
 		return (
 			<section
 				key={key}
@@ -718,27 +714,31 @@ function FilesStep({
 								</button>
 							)}
 						</div>
-						<ul className="rp-f-list">
-							{sorted.map((f, i) => {
+						<FileTree
+							files={list}
+							groupKey={key}
+							collapsed={collapsed}
+							toggleDir={(k) => setCollapsed((x) => ({ ...x, [k]: !x[k] }))}
+							renderFile={(f, ordered) => {
 								const { test } = areaOf(f.path),
-									dir = f.path.slice(0, f.path.lastIndexOf("/") + 1),
-									name = f.path.slice(dir.length),
 									others = (claimed.get(f.path) ?? []).filter(
 										(o) => o !== c?.index,
 									),
 									[letter, label] = STATUS[f.status] ?? ["M", f.status];
 								return (
-									<li key={f.path}>
-										<button
-											type="button"
-											onClick={() => setViewer({ list: sorted, i })}
-										>
-											<span className={`rp-f-status ${f.status}`} title={label}>
-												{letter}
-											</span>
-											<span className="rp-f-path">
-												<span className="dir">{dir}</span>
-												<b>{name}</b>
+									<button
+										type="button"
+										className="rp-t-file"
+										onClick={() =>
+											setViewer({ list: ordered, i: ordered.indexOf(f) })
+										}
+									>
+										<span className={`rp-f-status ${f.status}`} title={label}>
+											{letter}
+										</span>
+										<span className="rp-f-path">
+											<b>{f.path.slice(f.path.lastIndexOf("/") + 1)}</b>
+											<span className="rp-t-tags">
 												{test && <span className="rp-f-tag">TEST</span>}
 												{f.demo && <span className="rp-f-tag demo">DEMO</span>}
 												{others.map((o) => (
@@ -751,25 +751,12 @@ function FilesStep({
 													</span>
 												))}
 											</span>
-											<span className="rp-f-stat">
-												<i className="add">+{f.additions}</i>{" "}
-												<i className="del">−{f.deletions}</i>
-												<span className="rp-f-mini" aria-hidden>
-													<i
-														className="add"
-														style={{ flexGrow: f.additions || 0.01 }}
-													/>
-													<i
-														className="del"
-														style={{ flexGrow: f.deletions || 0.01 }}
-													/>
-												</span>
-											</span>
-										</button>
-									</li>
+										</span>
+										<Stat a={f.additions} d={f.deletions} bar />
+									</button>
 								);
-							})}
-						</ul>
+							}}
+						/>
 					</div>
 				)}
 			</section>
@@ -821,6 +808,129 @@ function FilesStep({
 			)}
 		</section>
 	);
+}
+
+type TreeNode = {
+	name: string;
+	path: string;
+	dirs: Map<string, TreeNode>;
+	files: PrFile[];
+	adds: number;
+	dels: number;
+	count: number;
+};
+function buildTree(files: PrFile[]): TreeNode {
+	const root: TreeNode = {
+		name: "",
+		path: "",
+		dirs: new Map(),
+		files: [],
+		adds: 0,
+		dels: 0,
+		count: 0,
+	};
+	for (const f of files) {
+		const parts = f.path.split("/");
+		let node = root;
+		for (const part of [root, ...parts.slice(0, -1)].slice(1) as string[]) {
+			node.adds += f.additions;
+			node.dels += f.deletions;
+			node.count++;
+			const path = node.path ? `${node.path}/${part}` : part;
+			if (!node.dirs.has(part))
+				node.dirs.set(part, {
+					name: part,
+					path,
+					dirs: new Map(),
+					files: [],
+					adds: 0,
+					dels: 0,
+					count: 0,
+				});
+			node = node.dirs.get(part)!;
+		}
+		node.adds += f.additions;
+		node.dels += f.deletions;
+		node.count++;
+		node.files.push(f);
+	}
+	// Merge single-child folder chains: apps/api/src/live-updates becomes one row.
+	const compress = (n: TreeNode): TreeNode => {
+		for (const [k, d] of n.dirs) n.dirs.set(k, compress(d));
+		if (n.name && n.files.length === 0 && n.dirs.size === 1) {
+			const only = [...n.dirs.values()][0]!;
+			return { ...only, name: `${n.name}/${only.name}` };
+		}
+		return n;
+	};
+	return compress(root);
+}
+function Stat({ a, d, bar }: { a: number; d: number; bar?: boolean }) {
+	return (
+		<span className="rp-f-stat">
+			<i className="add">+{a}</i> <i className="del">−{d}</i>
+			{bar && (
+				<span className="rp-f-mini" aria-hidden>
+					<i className="add" style={{ flexGrow: a || 0.01 }} />
+					<i className="del" style={{ flexGrow: d || 0.01 }} />
+				</span>
+			)}
+		</span>
+	);
+}
+function FileTree({
+	files,
+	groupKey,
+	collapsed,
+	toggleDir,
+	renderFile,
+}: {
+	files: PrFile[];
+	groupKey: string;
+	collapsed: Record<string, boolean>;
+	toggleDir: (key: string) => void;
+	renderFile: (f: PrFile, ordered: PrFile[]) => ReactNode;
+}) {
+	const root = buildTree(files);
+	const sortDirs = (n: TreeNode) =>
+		[...n.dirs.values()].sort((x, y) => x.name.localeCompare(y.name));
+	const sortFiles = (n: TreeNode) =>
+		[...n.files].sort((x, y) => x.path.localeCompare(y.path));
+	// Viewer order = visual tree order (folders first, then files).
+	const ordered: PrFile[] = [];
+	const walk = (n: TreeNode) => {
+		for (const d of sortDirs(n)) walk(d);
+		ordered.push(...sortFiles(n));
+	};
+	walk(root);
+	const render = (n: TreeNode): ReactNode => (
+		<ul className="rp-tree">
+			{sortDirs(n).map((d) => {
+				const k = `${groupKey}:${d.path}`,
+					closed = !!collapsed[k];
+				return (
+					<li key={d.path}>
+						<button
+							type="button"
+							className="rp-t-dir"
+							aria-expanded={!closed}
+							onClick={() => toggleDir(k)}
+						>
+							<span className="rp-t-chev">{closed ? "▸" : "▾"}</span>
+							<span className="rp-t-name">{d.name}/</span>
+							<span className="rp-t-count">{d.count}</span>
+							<Stat a={d.adds} d={d.dels} />
+						</button>
+						{!closed && render(d)}
+					</li>
+				);
+			})}
+			{sortFiles(n).map((f) => (
+				<li key={f.path}>{renderFile(f, ordered)}</li>
+			))}
+		</ul>
+	);
+	return <div className="rp-tree-root">{render(root)}</div>;
 }
 
 type Row = {
@@ -1065,6 +1175,19 @@ const FILES_CSS = `
 .rp-f-areas .solo em{font-style:normal;font-weight:800;font-size:10.5px;color:#d08a00;margin-left:6px;text-transform:uppercase;letter-spacing:.04em}
 .rp-f-solo-count{color:#d08a00;font-weight:700}
 .rp-f-areas .rp-link{margin-left:auto;font-size:12.5px}
+.rp-tree-root{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.rp-tree{list-style:none;margin:0;padding:0}
+.rp-tree .rp-tree{margin-left:11px;padding-left:10px;border-left:1px solid var(--line)}
+.rp-t-dir,.rp-t-file{width:100%;display:grid;align-items:center;gap:8px;text-align:left;background:none;border:1px solid transparent;border-radius:7px;padding:4px 6px;color:var(--text);cursor:pointer;font:inherit}
+.rp-t-dir{grid-template-columns:14px minmax(0,1fr) auto auto}
+.rp-t-file{grid-template-columns:20px minmax(0,1fr) auto}
+.rp-t-dir:hover,.rp-t-file:hover,.rp-t-dir:focus-visible,.rp-t-file:focus-visible{background:var(--quiet);border-color:var(--line)}
+.rp-t-chev{color:var(--muted)}
+.rp-f-tag,.rp-f-also{white-space:nowrap;display:inline-block}
+.rp-t-name{color:var(--secondary);font-weight:700;overflow-wrap:anywhere}
+.rp-t-count{font-family:ui-rounded,sans-serif;font-size:11px;font-weight:700;color:var(--muted);background:var(--quiet);border-radius:999px;padding:0 7px}
+.rp-t-dir .rp-f-stat{opacity:.75;font-weight:600}
+.rp-t-file .rp-f-status{width:18px;height:18px;font-size:10.5px}
 .rp-f-list{list-style:none;padding:0;margin:0;display:grid;gap:2px}
 .rp-f-list button{width:100%;display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:center;text-align:left;background:none;border:1px solid transparent;border-radius:8px;padding:6px 8px;color:var(--text);cursor:pointer;font-size:13px}
 .rp-f-list button:hover,.rp-f-list button:focus-visible{background:var(--quiet);border-color:var(--line)}
@@ -1105,8 +1228,18 @@ const FILES_CSS = `
 @media (max-width:640px){
  .rp-f-head{grid-template-columns:28px minmax(0,1fr) 16px}
  .rp-f-areabar{grid-column:2;height:6px}
- .rp-f-list button{grid-template-columns:22px minmax(0,1fr)}
- .rp-f-stat{grid-column:2}
+ .rp-tree-root{font-size:11.5px}
+ .rp-t-file{grid-template-columns:18px minmax(0,1fr) auto;gap:6px;padding:4px}
+ .rp-t-file .rp-f-path{overflow-wrap:normal;word-break:normal;min-width:0}
+ .rp-t-file .rp-f-path b{overflow-wrap:anywhere}
+ .rp-t-file .rp-f-mini{display:none}
+ .rp-t-tags{display:flex;flex-wrap:wrap;gap:3px;margin-top:2px}
+ .rp-t-tags:empty{display:none}
+ .rp-t-tags .rp-f-tag,.rp-t-tags .rp-f-also{margin-left:0}
+ .rp-t-file .rp-f-stat{font-size:11px;flex-direction:column;align-items:flex-end;gap:0;line-height:1.2}
+ .rp-t-dir{grid-template-columns:14px minmax(0,1fr) auto}
+ .rp-t-dir .rp-f-stat{display:none}
+ .rp-tree .rp-tree{margin-left:6px;padding-left:7px}
  .rp-diff-overlay{padding:0}
  .rp-diff{width:100vw;height:100dvh;border-radius:0}
  .rp-diff-mode{display:none}
