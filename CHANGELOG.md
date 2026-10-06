@@ -51,7 +51,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Keep Bob's webhook and web UI responsive while saving large session histories; combine overlapping saves while preserving complete restart state.
+- Keep Bob's webhook and web UI responsive while saving large session histories; combine overlapping saves while preserving complete restart state. ([#25](https://github.com/Attraccess/bobs-factory/pull/25))
 
 - Start Factory workflows from Taskbot tickets with uploaded screenshots or files, preserving attachment details and resolving their download links. ([#24](https://github.com/Attraccess/bobs-factory/pull/24))
 
