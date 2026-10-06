@@ -11,6 +11,7 @@ import {
 	saveFeedback,
 	serializeFeedback,
 } from "../src/factory/web/review-feedback.js";
+import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
 import { reviewKey } from "../src/factory/web/review-state.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -237,4 +238,119 @@ it("keeps unavailable storage from blocking draft use", () => {
 	const draft = { ...loadFeedback("denied"), feedback: "In-memory feedback" };
 	expect(() => saveFeedback("denied", draft)).not.toThrow();
 	expect(serializeFeedback(draft)).toBe("In-memory feedback");
+});
+
+function memoryStorage() {
+	const data = new Map<string, string>();
+	vi.stubGlobal("localStorage", {
+		getItem: (key: string) => data.get(key) ?? null,
+		setItem: (key: string, value: string) => data.set(key, value),
+	});
+}
+
+it("retains the pending lock across route remounts and clears the submitted view", () => {
+	memoryStorage();
+	const key = "remount-success";
+	const original = feedbackSession(key);
+	original.update((d) => ({ ...d, feedback: "Submitted feedback" }));
+	const submitted = original.getSnapshot().draft;
+	expect(original.lock()).toBe(true);
+	const returning = feedbackSession(key);
+	const changed = vi.fn();
+	const unsubscribe = returning.subscribe(changed);
+	expect(returning.getSnapshot().busy).toBe(true);
+	expect(returning.lock()).toBe(false);
+	returning.update((d) => ({ ...d, feedback: "New edit while locked" }));
+	expect(returning.getSnapshot().draft).toEqual(submitted);
+	original.clear(submitted);
+	original.unlock();
+	expect(returning.getSnapshot()).toEqual({
+		draft: emptyFeedback(),
+		busy: false,
+	});
+	expect(changed).toHaveBeenCalledTimes(2);
+	unsubscribe();
+	expect(loadFeedback(key).feedback).toBe("");
+	expect(feedbackSession(key).getSnapshot().busy).toBe(false);
+});
+
+it("unlocks a remounted review after failure without clearing its drafts", () => {
+	memoryStorage();
+	const key = "remount-failure";
+	const original = feedbackSession(key);
+	original.update((d) => ({
+		...d,
+		feedback: "General draft",
+		items: [{ target: target("/summary", [0, 1]), text: "Item draft" }],
+	}));
+	const submitted = original.getSnapshot().draft;
+	original.lock();
+	const returning = feedbackSession(key);
+	original.unlock();
+	expect(returning.getSnapshot()).toEqual({ draft: submitted, busy: false });
+	returning.update((d) => ({ ...d, feedback: "Editable after failure" }));
+	expect(loadFeedback(key)).toEqual(
+		normalizeFeedback({ ...submitted, feedback: "Editable after failure" }),
+	);
+	expect(returning.lock()).toBe(true);
+	returning.unlock();
+});
+
+it("clears only the submitted contents and identity when stored drafts change", () => {
+	memoryStorage();
+	const key = "changed-in-other-tab";
+	const original = feedbackSession(key);
+	const first = { target: target("/summary", [0, 1]), text: "Original" };
+	const second = { target: target("/goal", [0, 0]), text: "Unchanged" };
+	original.update((d) => ({
+		...d,
+		feedback: "Original general feedback",
+		items: [first, second],
+	}));
+	const submitted = original.getSnapshot().draft;
+	original.lock();
+	const returning = feedbackSession(key);
+	const newItem = { target: target("/checks/0", [2, 0]), text: "New item" };
+	const edited = {
+		...submitted,
+		feedback: "New unsent general edit",
+		items: [{ ...first, text: "New unsent item edit" }, second, newItem],
+	};
+	saveFeedback(key, edited);
+	const other = feedbackSession("replacement-gate");
+	other.update((d) => ({ ...d, feedback: "Different review" }));
+	expect(other.getSnapshot().busy).toBe(false);
+	original.clear(submitted);
+	original.unlock();
+	const expected = normalizeFeedback({
+		...edited,
+		items: [edited.items[0], newItem],
+	});
+	expect(returning.getSnapshot()).toEqual({ draft: expected, busy: false });
+	expect(loadFeedback(key)).toEqual(expected);
+	expect(feedbackSession(key).getSnapshot().draft).toEqual(expected);
+	expect(loadFeedback("replacement-gate").feedback).toBe("Different review");
+});
+
+it("keeps pending state and submitted drafts in memory when storage is denied", () => {
+	vi.stubGlobal("localStorage", {
+		getItem: () => {
+			throw new Error("Denied");
+		},
+		setItem: () => {
+			throw new Error("Denied");
+		},
+	});
+	const original = feedbackSession("pending-denied");
+	original.update((d) => ({ ...d, feedback: "In-memory draft" }));
+	const submitted = original.getSnapshot().draft;
+	original.lock();
+	const returning = feedbackSession("pending-denied");
+	expect(returning.getSnapshot()).toEqual({ draft: submitted, busy: true });
+	original.clear(submitted);
+	original.unlock();
+	expect(returning.getSnapshot()).toEqual({
+		draft: emptyFeedback(),
+		busy: false,
+	});
 });

@@ -4,50 +4,23 @@ import {
 	useContext,
 	useEffect,
 	useId,
+	useMemo,
 	useRef,
-	useState,
+	useSyncExternalStore,
 } from "react";
-import {
-	emptyFeedback,
-	type FeedbackDraft,
-	type FeedbackTarget,
-	loadFeedback,
-	orderedComments,
-	saveFeedback,
-} from "./review-feedback";
+import { type FeedbackTarget, orderedComments } from "./review-feedback";
+import { feedbackSession } from "./review-feedback-session";
 import { Button } from "./ui";
 
 export function useFeedbackController(key: string) {
-	const [draft, setDraft] = useState(() => loadFeedback(key));
-	const [busy, setBusy] = useState(false);
-	const locked = useRef(false);
-	const update = (change: (d: FeedbackDraft) => FeedbackDraft) => {
-		if (locked.current) return;
-		setDraft((d) => {
-			const next = change(d);
-			saveFeedback(key, next);
-			return next;
-		});
-	};
+	const session = useMemo(() => feedbackSession(key), [key]);
+	const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
 	return {
-		draft,
-		busy,
-		update,
-		lock: () => {
-			if (locked.current) return false;
-			locked.current = true;
-			setBusy(true);
-			return true;
-		},
-		unlock: () => {
-			locked.current = false;
-			setBusy(false);
-		},
-		clear: () => {
-			const next = emptyFeedback();
-			saveFeedback(key, next);
-			setDraft(next);
-		},
+		...state,
+		update: session.update,
+		lock: session.lock,
+		unlock: session.unlock,
+		clear: session.clear,
 	};
 }
 export type FeedbackController = ReturnType<typeof useFeedbackController>;

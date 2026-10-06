@@ -377,7 +377,7 @@ function ReviewDecisions({
 				navigate(`/runs/${next.id}`);
 			}
 			toast({ text: "Feedback sent — Bob is on it" });
-			controller.clear();
+			controller.clear(draft);
 		} catch {
 			/* error stays visible; the submitted draft is retained. */
 		} finally {
