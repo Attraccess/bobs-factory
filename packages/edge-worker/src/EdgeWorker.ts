@@ -6666,8 +6666,7 @@ ${taskSection}`;
 				track: (run, milestone) =>
 					this.getTicketTracking().record(run, milestone),
 				retryTracking: async (run) => {
-					await this.resolveFactoryTicket(run, new AbortController().signal);
-					await this.getTicketTracking().flush(run, true);
+					await this.syncFactoryTicketTracking(run, true);
 				},
 				titleDefaults: (
 					runner = this.runnerSelectionService.getDefaultRunner(),
@@ -6960,7 +6959,7 @@ ${taskSection}`;
 			built,
 			servers: titleMcpConfig(
 				built.config,
-				built.runnerType,
+				(run.runner as RunnerType | undefined) ?? built.runnerType,
 				run.workspace || repository.repositoryPath,
 				this.logger,
 			),
@@ -7720,7 +7719,8 @@ ${taskSection}`;
 			};
 			let takeoverPr: TakeoverPullRequest | undefined;
 			let baseBranchOverrides: Map<string, string> | undefined;
-			const ticketSource = originatingTicket(prompt, input.source);
+			const ticketSource =
+				run.ticketReference?.url ?? originatingTicket(prompt, input.source);
 			const nativeSource =
 				ticketSource && !taskbotSource(ticketSource) ? ticketSource : undefined;
 			if (
@@ -7751,19 +7751,26 @@ ${taskSection}`;
 					run.outputs.source = takeoverPr;
 				} else {
 					const existingTracker = this.issueTrackers.get(
-						repository.linearWorkspaceId ?? "",
+						(run.ticketReference?.provider === "native"
+							? run.ticketReference.workspaceId
+							: repository.linearWorkspaceId) ?? "",
 					);
 					if (!existingTracker)
 						throw new Error(
 							"Ticket tracker unavailable; configure the ticket workspace before taking over a ticket",
 						);
 					fullIssue = await existingTracker.fetchIssue(
-						ticketIdentifier(nativeSource!),
+						run.ticketReference?.provider === "native"
+							? run.ticketReference.id
+							: ticketIdentifier(nativeSource!),
 					);
 					assertNativeTicketSource(nativeSource!, fullIssue.url);
 					run.issueId = fullIssue.id;
-					run.workspaceId = repository.linearWorkspaceId;
-					run.ticketReference = {
+					run.workspaceId =
+						run.ticketReference?.provider === "native"
+							? run.ticketReference.workspaceId
+							: repository.linearWorkspaceId;
+					run.ticketReference ??= {
 						provider: "native",
 						platform: existingTracker.getPlatformType(),
 						workspaceId: run.workspaceId!,
@@ -7775,9 +7782,10 @@ ${taskSection}`;
 						await this.fetchIssueLabels(fullIssue),
 						existingTracker,
 					);
-					baseBranchOverrides = new Map([
-						[repository.id, fullIssue.branchName ?? repository.baseBranch],
-					]);
+					if (workflow.id === "takeover")
+						baseBranchOverrides = new Map([
+							[repository.id, fullIssue.branchName ?? repository.baseBranch],
+						]);
 					run.input = `${prompt}\n\nComplete existing ticket snapshot:\n${JSON.stringify(run.outputs.ticket, null, 2)}`;
 				}
 			}
@@ -7980,40 +7988,48 @@ ${taskSection}`;
 		this.getFactoryRuntime().save(run);
 	}
 
+	private async syncFactoryTicketTracking(
+		run: FactoryRun,
+		reassess = false,
+	): Promise<void> {
+		if (run.workflow.id === "simple") return;
+		await this.resolveFactoryTicket(run, new AbortController().signal);
+		if (!run.ticketReference) return;
+		if (run.ticketSync) {
+			await this.getTicketTracking().flush(run, reassess);
+			return;
+		}
+		const merged = readFactoryPath(run.outputs, "merge.merged") === true;
+		const pr =
+			readFactoryPath(run.outputs, "merge.url") ??
+			readFactoryPath(run.outputs, "draft-pr.url");
+		const review =
+			run.reviewGate?.status === "pending" ||
+			(/(?:human-review|merge)$/.test(run.step ?? "") &&
+				!["failed", "stopped"].includes(run.status));
+		const active = ["running", "waiting", "failed", "interrupted"].includes(
+			run.status,
+		);
+		await this.getTicketTracking().record(run, {
+			key: `legacy-current:${run.history.length}`,
+			body: merged
+				? `Recovered confirmed merge receipt for ${pr}. Run ${run.id}.`
+				: `Recovered ticket tracking for run ${run.id}: ${run.status} at ${run.step ?? "setup"}. ${run.error ?? "Inspect the retained results and checkpoints in Factory."}`,
+			...(merged
+				? { stage: "done" as const, merged: true }
+				: review
+					? { stage: "in_review" as const }
+					: active
+						? { stage: "in_progress" as const }
+						: {}),
+			...(typeof pr === "string" ? { pr } : {}),
+		});
+	}
+
 	private async recoverFactoryTicketTracking(run: FactoryRun): Promise<void> {
 		if (run.workflow.id === "simple") return;
 		try {
-			await this.resolveFactoryTicket(run, new AbortController().signal);
-			if (!run.ticketReference) return;
-			if (run.ticketSync) {
-				await this.getTicketTracking().flush(run);
-				return;
-			}
-			const merged = readFactoryPath(run.outputs, "merge.merged") === true;
-			const pr =
-				readFactoryPath(run.outputs, "merge.url") ??
-				readFactoryPath(run.outputs, "draft-pr.url");
-			const review =
-				run.reviewGate?.status === "pending" ||
-				(/(?:human-review|merge)$/.test(run.step ?? "") &&
-					!["failed", "stopped"].includes(run.status));
-			const active = ["running", "waiting", "failed", "interrupted"].includes(
-				run.status,
-			);
-			await this.getTicketTracking().record(run, {
-				key: `legacy-current:${run.history.length}`,
-				body: merged
-					? `Recovered confirmed merge receipt for ${pr}. Run ${run.id}.`
-					: `Recovered ticket tracking for run ${run.id}: ${run.status} at ${run.step ?? "setup"}. ${run.error ?? "Inspect the retained results and checkpoints in Factory."}`,
-				...(merged
-					? { stage: "done" as const, merged: true }
-					: review
-						? { stage: "in_review" as const }
-						: active
-							? { stage: "in_progress" as const }
-							: {}),
-				...(typeof pr === "string" ? { pr } : {}),
-			});
+			await this.syncFactoryTicketTracking(run);
 		} catch (error) {
 			this.getFactoryRuntime().log(
 				run,

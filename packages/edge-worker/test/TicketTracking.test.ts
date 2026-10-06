@@ -413,3 +413,119 @@ it("preserves a status changed outside the run until ownership is reassessed", a
 	await f.service.flush(f.run, true);
 	expect(f.ticket.status).toBe("in_review");
 });
+
+it("retains an offline confirmed merge ahead of late work milestones across restart", async () => {
+	const f = fixture();
+	const original = f.call.getMockImplementation()!;
+	f.call.mockImplementation(async () => {
+		throw new Error("offline");
+	});
+	await f.service.record(f.run, {
+		key: "merged",
+		body: "Merged",
+		stage: "done",
+		merged: true,
+	});
+	await f.service.record(f.run, {
+		key: "late-work",
+		body: "Late work",
+		stage: "in_progress",
+	});
+	expect(
+		f.run.ticketSync?.receipts.find((r) => r.key === "merged")?.superseded,
+	).not.toBe(true);
+	const restored = new WorkflowRuntime(f.home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	}).get(f.run.id);
+	f.call.mockImplementation(original);
+	await f.service.flush(restored);
+	expect(f.ticket.status).toBe("done");
+	expect(
+		restored.ticketSync?.receipts.find((r) => r.key === "merged")?.delivered,
+	).toBe(true);
+	expect(
+		f.calls.filter((c) => c.tool === "set_status").map((c) => c.args.to),
+	).toEqual(["done"]);
+});
+
+it.each([
+	false,
+	true,
+])("recovers native status response loss without reassessment (reread unavailable: %s)", async (rereadUnavailable) => {
+	const f = fixture();
+	const tracker = new CLIIssueTrackerService();
+	tracker.seedDefaultData();
+	const states = tracker.getState().workflowStates;
+	states.set("state-review", {
+		...states.get("state-in-progress")!,
+		id: "state-review",
+		name: "Awaiting Review",
+	});
+	const issue = await tracker.createIssue({
+		teamId: "team-default",
+		title: "Native response loss",
+	});
+	const reference = {
+		provider: "native" as const,
+		platform: "cli",
+		workspaceId: "cli",
+		id: issue.id,
+		url: issue.url,
+	};
+	f.run.ticketReference = reference;
+	const adapter = nativeAdapter(reference, tracker);
+	const service = new TicketTracking(
+		async () => adapter,
+		(r) => f.runtime.save(r),
+		() => {},
+	);
+	services.push(service);
+	await service.record(f.run, {
+		key: "start",
+		body: "Started",
+		stage: "in_progress",
+	});
+	const update = tracker.updateIssue.bind(tracker);
+	const fetch = tracker.fetchIssue.bind(tracker);
+	let failRead = false;
+	vi.spyOn(tracker, "fetchIssue").mockImplementation(async (id) => {
+		if (failRead) {
+			failRead = false;
+			throw new Error("reread offline");
+		}
+		return fetch(id);
+	});
+	const mutation = vi
+		.spyOn(tracker, "updateIssue")
+		.mockImplementation(async (id, changes) => {
+			await update(id, changes);
+			failRead = rereadUnavailable;
+			throw new Error("response lost");
+		});
+	await service.record(f.run, {
+		key: "review",
+		body: "Review requested",
+		stage: "in_review",
+	});
+	await service.flush(f.run);
+	expect((await (await tracker.fetchIssue(issue.id)).state)?.id).toBe(
+		"state-review",
+	);
+	expect(mutation).toHaveBeenCalledOnce();
+	expect(f.run.ticketSync?.error).toBeUndefined();
+	expect(f.run.ticketSync?.receipts.at(-1)?.delivered).toBe(true);
+	expect((await adapter.read()).comments).toHaveLength(2);
+	// A real outside-run change still requires reassessment.
+	await update(issue.id, { stateId: "state-todo" });
+	await service.record(f.run, {
+		key: "review-again",
+		body: "Another review",
+		stage: "in_review",
+	});
+	expect(f.run.ticketSync?.receipts.at(-1)?.conflict).toBe(true);
+	expect((await (await tracker.fetchIssue(issue.id)).state)?.id).toBe(
+		"state-todo",
+	);
+});

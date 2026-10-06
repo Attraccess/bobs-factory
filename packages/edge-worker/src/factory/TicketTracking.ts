@@ -59,6 +59,7 @@ export interface TicketSnapshot {
 }
 export interface TicketAdapter {
 	read(): Promise<TicketSnapshot>;
+	matchesStage?(stage: TicketStage, snapshot: TicketSnapshot): Promise<boolean>;
 	stage(
 		stage: TicketStage,
 		snapshot: TicketSnapshot,
@@ -281,53 +282,80 @@ export function nativeAdapter(
 	ref: Extract<TicketReference, { provider: "native" }>,
 	tracker: IIssueTrackerService,
 ): TicketAdapter {
+	const selectedState = async (
+		stage: TicketStage,
+		snapshot: TicketSnapshot,
+	) => {
+		const team = snapshot.team as { id?: string } | undefined;
+		if (!team?.id)
+			throw new Error("Originating ticket has no team for status resolution");
+		const states = [];
+		let after: string | undefined;
+		const seen = new Set<string>();
+		do {
+			const page = await tracker.fetchWorkflowStates(team.id, {
+				first: 100,
+				...(after ? { after } : {}),
+			});
+			states.push(...page.nodes);
+			if (!page.pageInfo?.hasNextPage) break;
+			after = page.pageInfo.endCursor ?? undefined;
+			if (!after || seen.has(after))
+				throw new Error("Ticket state pagination did not advance");
+			seen.add(after);
+		} while (after);
+		const selected = states.find((s) =>
+			stage === "done"
+				? s.type === "completed"
+				: s.type === "started" &&
+					(stage === "in_review"
+						? /review/i.test(s.name)
+						: !/review/i.test(s.name)),
+		);
+		return selected;
+	};
 	return {
 		async read() {
 			const issue = await tracker.fetchIssue(ref.id);
-			return (await issueSnapshot(
+			const snapshot = (await issueSnapshot(
 				issue,
 				await tracker.getIssueLabels(issue.id),
 				tracker,
 			)) as TicketSnapshot;
+			const state = await issue.state;
+			return {
+				...snapshot,
+				state: state
+					? { id: state.id, name: state.name, type: state.type }
+					: undefined,
+			};
+		},
+		async matchesStage(stage, snapshot) {
+			const selected = await selectedState(stage, snapshot);
+			return (
+				!!selected &&
+				(snapshot.state as { id?: string } | undefined)?.id === selected.id
+			);
 		},
 		async stage(stage, snapshot) {
 			const state = snapshot.state as
-				| { name?: string; type?: string }
+				| { id?: string; name?: string; type?: string }
 				| undefined;
 			if (["completed", "canceled"].includes(state?.type ?? ""))
 				return stage === "done" && state?.type === "completed"
 					? undefined
 					: "Terminal ticket retained; verify ownership before changing it.";
-			const team = snapshot.team as { id?: string } | undefined;
-			if (!team?.id)
-				throw new Error("Originating ticket has no team for status resolution");
-			const states = [];
-			let after: string | undefined;
-			const seen = new Set<string>();
-			do {
-				const page = await tracker.fetchWorkflowStates(team.id, {
-					first: 100,
-					...(after ? { after } : {}),
-				});
-				states.push(...page.nodes);
-				if (!page.pageInfo?.hasNextPage) break;
-				after = page.pageInfo.endCursor ?? undefined;
-				if (!after || seen.has(after))
-					throw new Error("Ticket state pagination did not advance");
-				seen.add(after);
-			} while (after);
-			const selected = states.find((s) =>
-				stage === "done"
-					? s.type === "completed"
-					: s.type === "started" &&
-						(stage === "in_review"
-							? /review/i.test(s.name)
-							: !/review/i.test(s.name)),
-			);
+			const selected = await selectedState(stage, snapshot);
 			if (!selected)
 				return `Tracker has no ${stage} state; retained nonterminal status. Lifecycle stage is recorded in this comment.`;
-			if (state?.name !== selected.name)
-				await tracker.updateIssue(ref.id, { stateId: selected.id });
+			if (state?.id !== selected.id) {
+				try {
+					await tracker.updateIssue(ref.id, { stateId: selected.id });
+				} catch (error) {
+					const current = await (await tracker.fetchIssue(ref.id)).state;
+					if (current?.id !== selected.id) throw error;
+				}
+			}
 			return undefined;
 		},
 		async comment(body) {
@@ -367,7 +395,7 @@ export class TicketTracking {
 		if (!sync.receipts.some((r) => r.key === milestone.key)) {
 			if (milestone.stage)
 				for (const r of sync.receipts)
-					if (!r.delivered && r.stage) r.superseded = true;
+					if (!r.delivered && r.stage && !r.merged) r.superseded = true;
 			sync.receipts.push({ ...milestone });
 			this.save(run);
 		}
@@ -401,18 +429,21 @@ export class TicketTracking {
 									(snapshot.state as { name?: string } | undefined)?.name ??
 									"",
 							);
+						const merged = sync.receipts.some((r) => r.merged && !r.superseded);
+						const applyStage = receipt.stage && (!merged || receipt.merged);
 						const terminal =
 							["done", "cancelled"].includes(String(snapshot.status)) ||
 							["completed", "canceled"].includes(
 								String((snapshot.state as { type?: string } | undefined)?.type),
 							);
 						if (
-							receipt.stage &&
+							applyStage &&
 							!reassess &&
 							sync.lastStatus &&
 							sync.lastStatus !== statusOf(snapshot) &&
 							!terminal &&
-							snapshot.status !== receipt.stage
+							snapshot.status !== receipt.stage &&
+							!(await adapter.matchesStage?.(receipt.stage!, snapshot))
 						)
 							throw new StatusConflict(
 								`Ticket status changed outside this run (${sync.lastStatus} → ${statusOf(snapshot)}). Reassess ownership and intent before retrying ticket synchronization.`,
@@ -428,10 +459,6 @@ export class TicketTracking {
 						}
 						const marker = `<!-- factory:${run.id}:${createHash("sha256").update(receipt.key).digest("hex").slice(0, 20)} -->`;
 						if (!snapshot.comments.some((c) => c.body.includes(marker))) {
-							// A merge supersedes earlier stages even when an older request resumes.
-							const merged = sync.receipts.some(
-								(r) => r.merged && !r.superseded,
-							);
 							receipt.limitation =
 								receipt.stage && (!merged || receipt.merged)
 									? await adapter.stage(receipt.stage, snapshot)

@@ -43,6 +43,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Keep Factory ticket progress and PR links synchronized for native and Taskbot launches, retain the originating ticket through follow-ups, and recover pending tracking after provider failures. Use configured base branches for new native-ticket work, respect the selected runner’s MCP configuration, and mark coding tickets Done only after confirmed merge. ([Taskbot #77](https://taskbot.apps.janjaap.de/p/bobs-factory/t/77), [#19](https://github.com/Attraccess/bobs-factory/pull/19))
+
 - Retry automatic run-title timeouts once with a longer deadline, show naming failures, and let operators retry naming with current settings without rerunning the workflow.
 
 - Missing visual evidence now waits for capture assistance and retries capture/review in the same run, retaining verified accepted screenshots and completed work across restarts. Retry also recovers existing runs stuck at this gate. ([#14](https://github.com/Attraccess/bobs-factory/pull/14))
