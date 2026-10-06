@@ -870,6 +870,7 @@ export class EdgeWorker extends EventEmitter {
 					this.getAllKnownSessions().map((session) => ({
 						id: session.id,
 						title: session.displayTitle ?? session.issue?.title ?? session.id,
+						titleGeneration: session.titleGeneration,
 						status: session.agentRunner?.isRunning()
 							? "running"
 							: session.status,
@@ -902,6 +903,7 @@ export class EdgeWorker extends EventEmitter {
 				message: (id, text) => this.sendFactoryChat(id, text),
 				start: (input) => this.startManualFactoryRun(input),
 				followup: (id, feedback) => this.startFactoryFollowup(id, feedback),
+				retryTitle: (id) => this.retryRunTitle(id),
 				stop: (id) => {
 					this.settleTicketLaunch(id);
 					this.factoryRuntime?.runs.has(id) && this.factoryRuntime.stop(id);
@@ -6775,6 +6777,26 @@ ${taskSection}`;
 		if (job.state === "failed")
 			this.logger.warn(`Run title generation failed for ${id}: ${job.error}`);
 		void this.savePersistedState();
+	}
+	private retryRunTitle(id: string): void {
+		const runtime = this.getFactoryRuntime();
+		const previous =
+			runtime.runs.get(id)?.titleGeneration ??
+			this.titleSession(id)?.titleGeneration;
+		if (previous?.state !== "failed")
+			throw new Error("Only failed title generation can be retried");
+		const fresh = runtime.createTitleJob(previous.context);
+		if (fresh.state !== "pending") throw new Error(fresh.error);
+		const job: RunTitleJob = {
+			...previous,
+			...fresh,
+			prepared: true,
+			error: undefined,
+			retries: 0,
+		};
+		this.titleStarted.delete(id);
+		this.updateRunTitle(id, job);
+		this.startRunTitle(id);
 	}
 	private cancelRunTitle(id: string): void {
 		const job =

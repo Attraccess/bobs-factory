@@ -71,6 +71,41 @@ function selectionLabel(origin: any): string {
 			: "selection source unavailable for this older run";
 }
 
+export function RunTitleStatus({ run }: { run: any }) {
+	const action = useAction();
+	const job = run.titleGeneration;
+	if (job?.state === "pending")
+		return (
+			<p className="run-title-status" role="status">
+				{job.retries ? "Retrying title…" : "Generating title…"}
+			</p>
+		);
+	if (job?.state !== "failed") return null;
+	return (
+		<div className="run-title-status">
+			<p>Title generation failed: {job.error ?? "Unknown error"}</p>
+			<Button
+				variant="ghost"
+				busy={action.isPending}
+				onClick={() =>
+					void action
+						.mutateAsync({
+							path: `/api/runs/${encodeURIComponent(run.id)}/retry-title`,
+						})
+						.catch(() => {})
+				}
+			>
+				Retry title
+			</Button>
+			{action.error && (
+				<p className="error" role="alert">
+					{action.error.message}
+				</p>
+			)}
+		</div>
+	);
+}
+
 export function RunOrigin({ run }: { run: any }) {
 	const origin = run.triggerOrigin;
 	const calls =

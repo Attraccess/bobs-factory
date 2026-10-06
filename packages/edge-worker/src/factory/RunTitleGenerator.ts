@@ -140,6 +140,17 @@ export class RunTitleGenerator {
 		job: RunTitleJob,
 		signal: AbortSignal,
 	): Promise<void> {
+		while (await this.executeAttempt(id, job, signal)) {
+			if (signal.aborted || this.shuttingDown) return;
+			job = { ...job, retries: 1 };
+			this.hooks.update(id, job);
+		}
+	}
+	private async executeAttempt(
+		id: string,
+		job: RunTitleJob,
+		signal: AbortSignal,
+	): Promise<boolean> {
 		let runner: IAgentRunner | undefined;
 		let admitted = false;
 		let finished = false;
@@ -199,15 +210,24 @@ export class RunTitleGenerator {
 			try {
 				timer = setTimeout(
 					() => rejectFailure(new Error("Title generation timed out")),
-					this.deadlineMs,
+					this.deadlineMs * (job.retries ? 2 : 1),
 				);
 				const title = await Promise.race([task(), failure]);
-				if (signal.aborted || job.state !== "pending") return;
+				if (signal.aborted || job.state !== "pending") return false;
 				this.hooks.update(id, { ...job, state: "completed" }, title);
 			} finally {
 				signal.removeEventListener("abort", abort);
 			}
 		} catch (error) {
+			if (
+				!this.shuttingDown &&
+				!signal.aborted &&
+				job.state === "pending" &&
+				!job.retries &&
+				error instanceof Error &&
+				error.message === "Title generation timed out"
+			)
+				return true;
 			if (!this.shuttingDown && job.state === "pending")
 				this.hooks.update(id, {
 					...job,
@@ -235,5 +255,6 @@ export class RunTitleGenerator {
 				}
 			}
 		}
+		return false;
 	}
 }

@@ -37,6 +37,7 @@ import {
 	ReviewEntry,
 	RunMeta,
 	RunOrigin,
+	RunTitleStatus,
 	WorkingRow,
 } from "./focus";
 import { Composer, Recipes } from "./forms";
@@ -785,6 +786,7 @@ function RunPage({
 						<span>started {ago(run.createdAt)}</span>
 						{pr && <External href={pr}>PR #{pr.split("/").at(-1)} ↗</External>}
 					</div>
+					<RunTitleStatus run={run} />
 				</div>
 				<div className="actions">
 					{active(run.status) ? (
