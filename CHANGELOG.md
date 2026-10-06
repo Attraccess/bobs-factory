@@ -36,6 +36,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Missing visual evidence now waits for capture assistance and retries capture/review in the same run, retaining verified accepted screenshots and completed work across restarts. Retry also recovers existing runs stuck at this gate. ([#14](https://github.com/Attraccess/bobs-factory/pull/14))
+
 - Bob's clarification and implementation-blocker questions now explain the relevant facts, source of the decision and consequences in plain language; optional diagrams and images appear beside the answer box.
 
 - Allow factory planning and review to propose changes to current product capabilities without mistaking capability documentation for a task restriction; retain explicit planning-only and deferred-implementation limits. ([#10](https://github.com/Attraccess/bobs-factory/pull/10))

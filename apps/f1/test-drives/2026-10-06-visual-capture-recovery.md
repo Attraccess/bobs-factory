@@ -1,7 +1,8 @@
 # Visual evidence assistance and same-run recovery
 
-Date: 2026-10-06. Tested base: `91656030c9b3e8d32bc2b2d3202864e895425e8a`
-plus this fix. Source/test/docs diff SHA-256:
+Date: 2026-10-06. [PR #14](https://github.com/Attraccess/bobs-factory/pull/14).
+Tested implementation: `063fefda`, based on
+`91656030c9b3e8d32bc2b2d3202864e895425e8a`. Source/test/docs diff SHA-256:
 `aa89503830464b9edf5ab7d99ba8f25c9305d0c129dbf5583283516512fa6783`.
 
 ## Failure and changed behavior
