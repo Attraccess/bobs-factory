@@ -757,6 +757,9 @@ this control for nested fanout branches, and JSON editing preserves it. Classifi
 on agent/orchestration steps is rejected. Passive CI, handoff, merge and human-review waits
 cannot be classified intensive. Setup/teardown scripts also pass through admission.
 Normal tool calls within an admitted agent share its slot.
+At startup, saved recipes with the formerly allowed intensive handoff flag are
+normalized to passive polling, including custom recipes and fanout branches.
+Accepted run definitions remain unchanged; their handoff polling consumes no slot.
 
 Parent graphs hold no slot while waiting for fanout or nested steps. Human answer
 and review checkpoints and passive CI polling also hold none. Run details show each

@@ -46,6 +46,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Upgrade saved intensive handoff recipes to passive polling before startup validation, so worker restarts recover existing runs without changing their accepted definitions. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
+
 - Keep concurrent Codex executions isolated, gate and cancel integration setup, recover queued chat and PR work after restart, reclaim abandoned coordinator locks, retain unverified remote title capacity, and prevent recipe classification edits from overwriting one another. PR recovery preserves provider sandbox settings, GitHub serialization and stops during configuration loading, and removes failed recovery requests from capacity queues. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
 - Preserve this tab’s unsent review comments and additional feedback when the PR revision, guide or review gate changes; require acknowledgment before sending the recovered draft. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))

@@ -1802,6 +1802,76 @@ it("runs nested intensive fanout at limit one and cancels queued leaves without 
 	expect((await capacity.snapshot()).active).toBe(0);
 });
 it.each([
+	false,
+	true,
+])("migrates saved intensive handoff recipes before validation without changing accepted runs (object=%s)", async (object) => {
+	const { runtime, home } = create();
+	const custom = workflow([
+		{
+			id: "parallel",
+			name: "Parallel",
+			type: "fanout",
+			groups: [
+				[
+					{
+						id: "wait",
+						name: "Custom handoff",
+						type: "tool",
+						tool: "handoff",
+						computeIntensive: false,
+					},
+				],
+				[
+					{
+						id: "heavy",
+						name: "Intensive tool",
+						type: "tool",
+						tool: "custom-heavy",
+						computeIntensive: true,
+					},
+				],
+			],
+		},
+	]);
+	custom.steps[0]!.groups![0]![0]!.computeIntensive = true;
+	const saved = structuredClone([...defaultWorkflows, custom]);
+	saved
+		.find((w) => w.id === "factory-pipeline")!
+		.steps.find((s) => s.tool === "handoff")!.computeIntensive = true;
+	const run = start(runtime, custom);
+	run.workflowDefinitions = structuredClone(saved);
+	runtime.save(run);
+	const frozen = structuredClone(run);
+	const path = join(home, "factory", "workflows.json");
+	writeFileSync(
+		path,
+		JSON.stringify(
+			object ? { workflows: saved, defaultWorkflow: "custom" } : saved,
+		),
+	);
+	const restored = reload(home);
+	expect(restored.getDefaultWorkflow()).toBe(object ? "custom" : "simple");
+	expect(restored.get(run.id)).toEqual(frozen);
+	expect(restored.listWorkflows().at(-1)!.steps[0]!.groups).toEqual([
+		[{ ...custom.steps[0]!.groups![0]![0]!, computeIntensive: false }],
+		custom.steps[0]!.groups![1],
+	]);
+	expect(
+		restored
+			.listWorkflows()
+			.find((w) => w.id === "factory-pipeline")!
+			.steps.find((s) => s.tool === "handoff")!.computeIntensive,
+	).toBe(false);
+	const normalized = readFileSync(path, "utf8");
+	expect(JSON.parse(normalized).workflows).toEqual(restored.listWorkflows());
+	const second = reload(home);
+	expect(readFileSync(path, "utf8")).toBe(normalized);
+	expect(second.get(run.id)).toEqual(frozen);
+	await restored.shutdown();
+	await second.shutdown();
+});
+
+it.each([
 	"ci",
 	"handoff",
 ])("rejects intensive %s waits and preserves explicit lightweight scripts in nested recipes", (tool) => {

@@ -278,6 +278,23 @@ export function upgradeWorkflows(value: unknown): unknown {
 
 		if (!Array.isArray(definition.steps)) continue;
 		const steps = definition.steps as Record<string, unknown>[];
+		// Handoff became a passive poller. Normalize formerly valid saved recipe
+		// classifications before validation, including custom fanout branches.
+		// This upgrade is not applied to immutable accepted run definitions.
+		const upgradeHandoffCapacity = (items: Record<string, unknown>[]): void => {
+			for (const step of items) {
+				if (
+					step.type === "tool" &&
+					step.tool === "handoff" &&
+					step.computeIntensive === true
+				)
+					step.computeIntensive = false;
+				if (Array.isArray(step.groups))
+					for (const group of step.groups)
+						if (Array.isArray(group)) upgradeHandoffCapacity(group);
+			}
+		};
+		upgradeHandoffCapacity(steps);
 		if (!["factory-pipeline", "factory"].includes(String(definition.id)))
 			continue;
 		const stockQa = defaultWorkflows.find(
