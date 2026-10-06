@@ -4,6 +4,10 @@ This changelog documents internal development changes, refactors, tooling update
 
 ## [Unreleased]
 
+### Added
+
+- Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))
+
 ### Changed
 
 - Integrate machine capacity with ticket lifecycle tracking, MCP OAuth recovery and batched session persistence; isolate browser capacity policy from server-only ticket modules and retain transactional chat-save barriers and stdio execution provenance. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))

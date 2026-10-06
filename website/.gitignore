@@ -1,0 +1,4 @@
+node_modules
+dist
+public/video/.*
+demo/shots-png

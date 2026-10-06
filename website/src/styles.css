@@ -1,0 +1,178 @@
+@import "tailwindcss";
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource-variable/nunito";
+@import "@fontsource-variable/jetbrains-mono";
+
+@theme {
+	--font-display:
+		"Bricolage Grotesque Variable", ui-rounded, system-ui, sans-serif;
+	--font-sans: "Nunito Variable", ui-rounded, system-ui, sans-serif;
+	--font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+	--color-cream: #fffaf3;
+	--color-ink: #2b2346;
+	--color-ink-2: #4f4769;
+	--color-muted: #6f6889;
+	--color-line: #efe6f7;
+	--color-night: #16122a;
+	--color-night-2: #221b3d;
+	--color-r1: #ff5d73;
+	--color-r2: #ff9f43;
+	--color-r3: #ffd23f;
+	--color-r4: #3ddc97;
+	--color-r5: #4cc9f0;
+	--color-r6: #7b61ff;
+	--color-r7: #c77dff;
+}
+
+:root {
+	--rainbow: linear-gradient(
+		100deg,
+		#ff5d73,
+		#ff9f43,
+		#ffd23f,
+		#3ddc97,
+		#4cc9f0,
+		#7b61ff,
+		#c77dff
+	);
+	color-scheme: light;
+}
+html {
+	background: var(--color-cream);
+	color: var(--color-ink);
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+html.lenis,
+html.lenis body {
+	height: auto;
+}
+.lenis.lenis-smooth {
+	/* biome-ignore lint/complexity/noImportantStyles: Lenis must override any inherited smooth scrolling. */
+	scroll-behavior: auto !important;
+}
+body {
+	overflow-x: clip;
+}
+::selection {
+	background: #7b61ff33;
+}
+
+.rainbow-text {
+	background: var(--rainbow);
+	background-size: 200% 100%;
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	animation: rainbow-slide 8s linear infinite;
+}
+.rainbow-border {
+	position: relative;
+	isolation: isolate;
+}
+.rainbow-border::before {
+	content: "";
+	position: absolute;
+	inset: -2px;
+	border-radius: inherit;
+	background: var(--rainbow);
+	background-size: 200% 100%;
+	animation: rainbow-slide 6s linear infinite;
+	z-index: -1;
+}
+@keyframes rainbow-slide {
+	to {
+		background-position: 200% 0;
+	}
+}
+
+.grain::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	opacity: 0.35;
+	mix-blend-mode: multiply;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.17 0 0 0 0 0.14 0 0 0 0 0.27 0 0 0 0.06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.bob-svg .bob-arm-right {
+	transform-origin: 91px 60px;
+}
+.bob-happy .bob-arm-right,
+.bob-party .bob-arm-left {
+	animation: wave 2.4s ease-in-out infinite;
+}
+.bob-party .bob-arm-left {
+	transform-origin: 9px 50px;
+}
+.bob-busy {
+	animation: jiggle 0.5s ease-in-out infinite;
+}
+.bob-party {
+	animation: hop 0.6s ease-in-out infinite;
+}
+.bob-zz {
+	animation: float-zz 2.6s ease-in-out infinite;
+}
+@keyframes wave {
+	0%,
+	60%,
+	100% {
+		transform: rotate(0deg);
+	}
+	70% {
+		transform: rotate(-16deg);
+	}
+	85% {
+		transform: rotate(10deg);
+	}
+}
+@keyframes jiggle {
+	50% {
+		transform: translateY(-2px) rotate(-1.5deg);
+	}
+}
+@keyframes hop {
+	50% {
+		transform: translateY(-8px);
+	}
+}
+@keyframes float-zz {
+	50% {
+		transform: translate(3px, -4px);
+		opacity: 0.6;
+	}
+}
+.marquee {
+	animation: marquee 38s linear infinite;
+}
+@keyframes marquee {
+	to {
+		transform: translateX(-50%);
+	}
+}
+.blink-caret::after {
+	content: "▋";
+	margin-left: 2px;
+	animation: caret 1s steps(1) infinite;
+	color: #7b61ff;
+}
+@keyframes caret {
+	50% {
+		opacity: 0;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		/* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat utility animations. */
+		animation-duration: 0.001ms !important;
+		/* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat utility animations. */
+		animation-iteration-count: 1 !important;
+		/* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat utility animations. */
+		transition-duration: 0.001ms !important;
+	}
+}
