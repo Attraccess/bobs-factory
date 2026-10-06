@@ -4,6 +4,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { formatActivities } from "./activity.js";
 import { Structure } from "./artifacts";
 import { api, useAction } from "./client";
+import { DraftNotice } from "./pwa-ui";
+import {
+	collectRestoration,
+	rememberDraft,
+	restoredDraft,
+	revisionOf,
+	useRestorableState,
+} from "./restoration";
 import { mergePage } from "./transcript";
 import { Button, Markdown } from "./ui";
 export function activitiesOf(run: any): any[] {
@@ -17,17 +25,36 @@ const reading = new Map<
 		following: boolean;
 		expanded: Set<string>;
 		groups: Map<string, string>;
+		anchor?: { key: string; offset: number; cursor?: string };
+		restoring?: boolean;
 	}
 >();
 function stateFor(id: string) {
 	let state = reading.get(id);
 	if (!state) {
-		state = { top: 0, following: true, expanded: new Set(), groups: new Map() };
+		const saved = restoredDraft<any>(`reading/${id}`);
+		state = {
+			top: 0,
+			following: saved?.following ?? true,
+			expanded: new Set(saved?.expanded ?? []),
+			groups: new Map(saved?.groups ?? []),
+			anchor: saved?.anchor,
+			restoring: Boolean(saved?.anchor),
+		};
 		if (reading.size >= 40) reading.delete(reading.keys().next().value!);
 		reading.set(id, state);
 	}
 	return state;
 }
+collectRestoration(() => {
+	for (const [id, state] of reading)
+		rememberDraft(`reading/${id}`, {
+			following: state.following,
+			expanded: [...state.expanded],
+			groups: [...state.groups],
+			anchor: state.anchor,
+		});
+});
 function LazyDetails({ id, state, children, summary, className }: any) {
 	const [open, setOpen] = useState(state.expanded.has(id));
 	return (
@@ -119,13 +146,20 @@ export function RunConversation({ run, step }: { run: any; step?: string }) {
 					return Promise.resolve({ ...previous, paused: true });
 				const params = new URLSearchParams({ limit: "120" });
 				if (step) params.set("step", step);
+				const reading = stateFor(`${run.id}/${step ?? "all"}`);
+				if (!previous && !reading.following && reading.anchor?.cursor)
+					params.set("after", reading.anchor.cursor);
 				if (previous?.end !== undefined) params.set("after", previous.end);
 				return api(
 					`/api/runs/${encodeURIComponent(run.id)}/activity?${params}`,
 					{ signal },
 				).then((page) => mergePage(cache.getQueryData<any>(key), page));
 			},
-			refetchInterval: (data) => (data.state.data?.hasNewer ? 500 : false),
+			refetchInterval: (data) =>
+				stateFor(`${run.id}/${step ?? "all"}`).following &&
+				data.state.data?.hasNewer
+					? 500
+					: false,
 			gcTime: 300000,
 		}),
 		[loadingOlder, setLoadingOlder] = useState(false),
@@ -223,14 +257,18 @@ export function RunConversation({ run, step }: { run: any; step?: string }) {
 	);
 }
 
-const chatDrafts = new Map<string, string>();
 function ChatComposer({ run }: { run: any }) {
-	const [text, setText] = useState(chatDrafts.get(run.id) ?? "");
+	const [text, setText, staleChat] = useRestorableState(
+		`chat/${run.id}`,
+		"",
+		revisionOf([run.chat?.mode, run.chat?.step]),
+	);
 	const [notice, setNotice] = useState("");
 	const action = useAction();
 	const cache = useQueryClient();
 	const send = async () => {
-		if (!text.trim() || !run.chat.available || action.isPending) return;
+		if (!text.trim() || !run.chat.available || action.isPending || staleChat)
+			return;
 		setNotice("");
 		try {
 			const sent = await action.mutateAsync({
@@ -238,7 +276,6 @@ function ChatComposer({ run }: { run: any }) {
 				body: { text },
 			});
 			setText("");
-			chatDrafts.delete(run.id);
 			setNotice(
 				sent.mode === "continue"
 					? "Request to resume the conversation sent."
@@ -257,6 +294,7 @@ function ChatComposer({ run }: { run: any }) {
 				void send();
 			}}
 		>
+			<DraftNotice conflict={staleChat} draftKey={`chat/${run.id}`} />
 			<label htmlFor={`chat-${run.id}`}>Message Bob</label>
 			<textarea
 				id={`chat-${run.id}`}
@@ -266,7 +304,6 @@ function ChatComposer({ run }: { run: any }) {
 				placeholder="Ask a question or steer the work…"
 				onChange={(event) => {
 					setText(event.target.value);
-					chatDrafts.set(run.id, event.target.value);
 				}}
 				onKeyDown={(event) => {
 					if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -285,8 +322,9 @@ function ChatComposer({ run }: { run: any }) {
 				</small>
 				<Button
 					type="submit"
+					requiresConnection
 					busy={action.isPending}
-					disabled={!text.trim() || !run.chat.available}
+					disabled={!text.trim() || !run.chat.available || staleChat}
 				>
 					Send message
 				</Button>
@@ -355,16 +393,20 @@ export function Conversation({
 		overscan: 4,
 		getItemKey: (index) => rows[index]?.key ?? index,
 	});
-	const anchor = useRef<{ key: string; offset: number } | undefined>(undefined);
+	const anchor = useRef(state.anchor);
 	const previousFirst = useRef(rows[0]?.key);
 	const totalSize = virtual.getTotalSize();
 	useLayoutEffect(() => {
 		const element = box.current!;
 		if (state.following) element.scrollTop = totalSize;
-		else if (previousFirst.current !== rows[0]?.key && anchor.current) {
+		else if (
+			(state.restoring || previousFirst.current !== rows[0]?.key) &&
+			anchor.current
+		) {
 			const target = { ...anchor.current };
 			const index = rows.findIndex((row) => row.key === target.key);
 			if (index >= 0) {
+				state.restoring = false;
 				virtual.scrollToIndex(index, { align: "start" });
 				element.scrollTop += target.offset;
 				// Dynamic-height rows finish measuring after the prepend commit.
@@ -399,6 +441,12 @@ export function Conversation({
 	};
 	return (
 		<div className="conversation-wrap">
+			{state.restoring && (
+				<p role="status">
+					Restoring your reading position. If the activity is no longer
+					available, load older messages or follow the latest.
+				</p>
+			)}
 			{older && (
 				<Button variant="ghost" busy={loadingOlder} onClick={loadOlder}>
 					↑ Load older messages
@@ -430,11 +478,15 @@ export function Conversation({
 					const first = virtual
 						.getVirtualItems()
 						.find((item) => item.end >= element.scrollTop);
-					if (first)
+					if (first) {
+						const item = rows[first.index]?.tools?.[0] ?? rows[first.index];
 						anchor.current = {
 							key: String(first.key),
 							offset: element.scrollTop - first.start,
+							cursor: item?.raw?.activityCursor ?? item?.cursor,
 						};
+					}
+					state.anchor = anchor.current;
 					setBehind(!state.following);
 					if (!wasFollowing && state.following && hasUpdates) onLatest?.();
 				}}

@@ -5,6 +5,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -65,7 +66,7 @@ it("serves question images only from the requested run, rejecting traversal, ext
 		const image = await get(run.id, "context.png");
 		expect(image.statusCode).toBe(200);
 		expect(image.headers["content-type"]).toBe("image/png");
-		expect(image.headers["cache-control"]).toBe("no-cache");
+		expect(image.headers["cache-control"]).toBe("no-store");
 		expect(image.rawPayload).toEqual(png);
 		expect((await get("without-image", "context.png")).statusCode).toBe(404);
 		expect((await get(run.id, "missing.png")).statusCode).toBe(404);
@@ -213,6 +214,24 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		const savedConfig = (
 			await server.app.inject({ url: "/api/config", headers })
 		).json();
+		const rejectedSettings = await server.app.inject({
+			method: "PUT",
+			url: "/api/workflows",
+			headers: { ...headers, "x-factory-config": "stale" },
+			payload: { workflows: defaultWorkflows, defaultWorkflow: "simple" },
+		});
+		expect(rejectedSettings.statusCode).toBe(409);
+		expect(runtime.getDefaultWorkflow()).toBe("factory");
+		const unchangedSettings = await server.app.inject({
+			method: "PUT",
+			url: "/api/workflows",
+			headers: { ...headers, "x-factory-config": savedConfig.configRevision },
+			payload: { workflows: defaultWorkflows, defaultWorkflow: "factory" },
+		});
+		expect(unchangedSettings.statusCode).toBe(200);
+		expect(unchangedSettings.json().configRevision).toBe(
+			savedConfig.configRevision,
+		);
 		expect(settings.json().workflows).toEqual(savedConfig.workflows);
 		expect(
 			settings
@@ -277,13 +296,30 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		await vi.waitFor(() => expect(runtime.get(id).status).toBe("waiting"));
 		const detail = await server.app.inject({ url: `/api/runs/${id}`, headers });
 		expect(detail.json().questions).toEqual(["Which provider?"]);
+		const staleAnswer = await server.app.inject({
+			method: "POST",
+			url: `/api/runs/${id}/answer`,
+			headers,
+			payload: {
+				answer: "Old draft",
+				context: { questions: ["Old question?"], step: detail.json().step },
+			},
+		});
+		expect(staleAnswer.statusCode).toBe(409);
+		expect(runtime.get(id).answers).toHaveLength(0);
 		expect(
 			(
 				await server.app.inject({
 					method: "POST",
 					url: `/api/runs/${id}/answer`,
 					headers,
-					payload: { answer: "Codex" },
+					payload: {
+						answer: "Codex",
+						context: {
+							questions: detail.json().questions,
+							step: detail.json().step,
+						},
+					},
 				})
 			).statusCode,
 		).toBe(200);
@@ -848,6 +884,158 @@ it("protects chat delivery, validates input, preserves messages and refuses disa
 	}
 });
 
+it("serves a coherent installable shell with protected versioned writes and explicit static routes", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-pwa-api-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const start = vi.fn(async () => ({ id: "test" }) as any);
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start,
+		stop: () => {},
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	try {
+		const version = await server.app.inject({ url: "/api/version", headers });
+		expect(version.statusCode).toBe(200);
+		expect(version.headers["cache-control"]).toBe("no-store");
+		const { build, protocol } = version.json();
+		expect(protocol).toBe(1);
+		expect(build).toMatch(/^[a-f0-9]{24}$/);
+		const index = await server.app.inject({ url: "/", headers });
+		expect(index.headers["content-type"]).toContain("text/html");
+		expect(index.headers["cache-control"]).toBe("no-cache");
+		expect(index.headers["x-factory-build"]).toBe(build);
+		const scripts = index.body.matchAll(
+			/(?:src|href)="(\/(?:app|styles)\.[a-f0-9]+\.(?:js|css))"/g,
+		);
+		const paths = [...scripts].map((match) => match[1]);
+		expect(paths).toHaveLength(2);
+		for (const url of paths) {
+			const asset = await server.app.inject({ url, headers });
+			expect(asset.statusCode).toBe(200);
+			expect(asset.headers["cache-control"]).toContain("immutable");
+			expect(asset.headers["x-factory-build"]).toBe(build);
+		}
+		const manifest = await server.app.inject({
+			url: "/manifest.webmanifest",
+			headers,
+		});
+		expect(manifest.headers["content-type"]).toContain(
+			"application/manifest+json",
+		);
+		expect(manifest.json()).toMatchObject({
+			id: "/",
+			display: "standalone",
+			scope: "/",
+			start_url: "/",
+			name: "Bob’s Factory",
+		});
+		for (const icon of [
+			...manifest.json().icons,
+			{ src: "/icons/apple-touch-icon.png" },
+		]) {
+			const image = await server.app.inject({ url: icon.src, headers });
+			expect(image.headers["content-type"]).toBe("image/png");
+			expect([...image.rawPayload.subarray(0, 8)]).toEqual([
+				137, 80, 78, 71, 13, 10, 26, 10,
+			]);
+		}
+		const worker = await server.app.inject({ url: "/sw.js", headers });
+		expect(worker.headers["cache-control"]).toBe("no-cache");
+		for (const url of [
+			"/shell.json",
+			"/current.json",
+			"/package.json",
+			"/icons/not-allowed.png",
+			"/api/version",
+		]) {
+			const result = await server.app.inject({
+				url,
+				headers: { host: "evil.test" },
+			});
+			expect(result.statusCode).toBe(403);
+		}
+		for (const url of [
+			"/shell.json",
+			"/current.json",
+			"/package.json",
+			"/icons/not-allowed.png",
+		]) {
+			expect((await server.app.inject({ url, headers })).statusCode).toBe(404);
+		}
+		const payload = {
+			repositoryId: "repo",
+			workflow: "simple",
+			inputs: { prompt: "task" },
+		};
+		const stale = await server.app.inject({
+			method: "POST",
+			url: "/api/runs",
+			headers: { ...headers, "x-factory-build": "stale" },
+			payload,
+		});
+		expect(stale.statusCode).toBe(409);
+		expect(stale.json().code).toBe("FACTORY_VERSION_MISMATCH");
+		expect(start).not.toHaveBeenCalled();
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/runs",
+					headers: {
+						...headers,
+						"x-factory-build": build,
+						origin: "https://evil.test",
+					},
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/runs",
+					headers: { host: "localhost", "x-factory-build": build },
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/runs",
+					headers: { ...headers, "x-factory-build": build },
+					payload,
+				})
+			).statusCode,
+		).toBe(202);
+		expect(start).toHaveBeenCalledOnce();
+		// Legacy header-less local automation is explicitly compatible.
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/runs",
+					headers,
+					payload,
+				})
+			).statusCode,
+		).toBe(202);
+	} finally {
+		await server.stop();
+		await runtime.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
 it("protects title retries and accepts existing standalone sessions", async () => {
 	const home = mkdtempSync(join(tmpdir(), "factory-title-retry-"));
 	const runtime = new WorkflowRuntime(home, {
@@ -933,10 +1121,10 @@ it("protects and persists global title settings independently of workflow config
 	});
 	const headers = { host: "localhost", "x-factory-request": "1" };
 	try {
-		expect(
-			(await server.app.inject({ url: "/api/config", headers })).json()
-				.titleGeneration,
-		).toEqual({});
+		const originalConfig = (
+			await server.app.inject({ url: "/api/config", headers })
+		).json();
+		expect(originalConfig.titleGeneration).toEqual({});
 		for (const badHeaders of [
 			{ host: "evil.test", "x-factory-request": "1" },
 			{ host: "localhost" },
@@ -957,16 +1145,48 @@ it("protects and persists global title settings independently of workflow config
 			model: "cheap",
 			reasoningEffort: "low",
 		};
-		expect(
-			(
-				await server.app.inject({
-					method: "PUT",
-					url: "/api/title-settings",
-					headers,
-					payload: settings,
-				})
-			).json(),
-		).toEqual({ titleGeneration: settings });
+		const saved = await server.app.inject({
+			method: "PUT",
+			url: "/api/title-settings",
+			headers: {
+				...headers,
+				"x-factory-config": originalConfig.configRevision,
+			},
+			payload: settings,
+		});
+		expect(saved.statusCode).toBe(200);
+		const savedConfig = (
+			await server.app.inject({ url: "/api/config", headers })
+		).json();
+		expect(saved.json()).toEqual({
+			titleGeneration: settings,
+			configRevision: savedConfig.configRevision,
+		});
+		expect(savedConfig.configRevision).not.toBe(originalConfig.configRevision);
+		for (const url of [
+			"/api/title-settings",
+			"/api/title-settings?source=tab",
+		]) {
+			const staleSave = await server.app.inject({
+				method: "PUT",
+				url,
+				headers: {
+					...headers,
+					"x-factory-config": originalConfig.configRevision,
+				},
+				payload: { runner: "claude", model: "stale-tab" },
+			});
+			expect(staleSave.statusCode).toBe(409);
+			expect(runtime.getTitleSettings()).toEqual(settings);
+		}
+		const currentSave = await server.app.inject({
+			method: "PUT",
+			url: "/api/title-settings",
+			headers: { ...headers, "x-factory-config": savedConfig.configRevision },
+			payload: settings,
+		});
+		expect(currentSave.statusCode).toBe(200);
+		expect(currentSave.json().configRevision).toBe(savedConfig.configRevision);
 		runtime.updateWorkflows(runtime.listWorkflows());
 		expect(new WorkflowRuntime(home, hooks).getTitleSettings()).toEqual(
 			settings,
@@ -996,6 +1216,101 @@ it("protects and persists global title settings independently of workflow config
 			).statusCode,
 		).toBe(409);
 	} finally {
+		await server.stop();
+		await runtime.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+it("rejects title saves overtaken during body parsing and simultaneous saves", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-title-save-race-"));
+	const hooks = {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	};
+	const runtime = new WorkflowRuntime(home, hooks);
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("unused");
+		},
+		stop: () => {},
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	const revision = async () =>
+		(await server.app.inject({ url: "/api/config", headers })).json()
+			.configRevision;
+	let headersReceived!: () => void;
+	const received = new Promise<void>((resolve) => {
+		headersReceived = resolve;
+	});
+	server.app.addHook("onRequest", async (request) => {
+		if (request.headers["x-test-delayed"]) headersReceived();
+	});
+	let delayed: ReturnType<typeof httpRequest> | undefined;
+	try {
+		const address = await server.app.listen({ port: 0, host: "127.0.0.1" });
+		const originalRevision = await revision();
+		const staleSettings = { runner: "codex", model: "delayed-tab" };
+		const body = JSON.stringify(staleSettings);
+		const completed = new Promise<number | undefined>((resolve, reject) => {
+			delayed = httpRequest(
+				`${address}/api/title-settings?source=delayed`,
+				{
+					method: "PUT",
+					headers: {
+						...headers,
+						"x-factory-config": originalRevision,
+						"x-test-delayed": "1",
+						"content-type": "application/json",
+						"content-length": Buffer.byteLength(body),
+					},
+				},
+				(response) => {
+					response.resume();
+					response.on("end", () => resolve(response.statusCode));
+				},
+			);
+			delayed.on("error", reject);
+			delayed.write(body.slice(0, 10));
+		});
+		await received;
+		const newerSettings = { runner: "codex", model: "newer-tab" };
+		const save = (configRevision: string, model: string) =>
+			server.app.inject({
+				method: "PUT",
+				url: "/api/title-settings",
+				headers: { ...headers, "x-factory-config": configRevision },
+				payload: { runner: "codex", model },
+			});
+		expect((await save(originalRevision, newerSettings.model)).statusCode).toBe(
+			200,
+		);
+		delayed!.end(body.slice(10));
+		expect(await completed).toBe(409);
+		expect(runtime.getTitleSettings()).toEqual(newerSettings);
+		expect(new WorkflowRuntime(home, hooks).getTitleSettings()).toEqual(
+			newerSettings,
+		);
+
+		const currentRevision = await revision();
+		const concurrent = await Promise.all([
+			save(currentRevision, "tab-a"),
+			save(currentRevision, "tab-b"),
+		]);
+		expect(concurrent.map((response) => response.statusCode).sort()).toEqual([
+			200, 409,
+		]);
+		const winner = concurrent
+			.find((response) => response.statusCode === 200)!
+			.json().titleGeneration;
+		expect(runtime.getTitleSettings()).toEqual(winner);
+		expect(new WorkflowRuntime(home, hooks).getTitleSettings()).toEqual(winner);
+	} finally {
+		delayed?.destroy();
 		await server.stop();
 		await runtime.shutdown();
 		rmSync(home, { recursive: true, force: true });

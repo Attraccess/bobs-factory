@@ -6,6 +6,16 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import {
+	authoritativeReady,
+	beginWrite,
+	checkVersion,
+	disconnected,
+	pwaState,
+	uiBuild,
+	usePwa,
+	versionMismatch,
+} from "./pwa";
 export const client = new QueryClient({
 	defaultOptions: {
 		queries: { retry: 2, refetchOnWindowFocus: true, staleTime: 1000 },
@@ -19,11 +29,7 @@ export function useLiveUpdates() {
 		void fetchEventSource("/api/events", {
 			signal: controller.signal,
 			async onopen(response) {
-				if (
-					!response.ok ||
-					!response.headers.get("content-type")?.includes("text/event-stream")
-				)
-					throw new Error("Live connection unavailable");
+				await validateLiveConnection(response);
 				setError(undefined);
 				// A new connection can have missed events while offline or in the background.
 				void cache.invalidateQueries({ queryKey: ["runs"] });
@@ -46,6 +52,8 @@ export function useLiveUpdates() {
 				throw new Error("Live connection closed");
 			},
 			onerror(cause) {
+				if (pwaState().status === "mismatch") throw cause; // Await an explicit update; do not accumulate rejected SSE streams.
+				disconnected();
 				if (!controller.signal.aborted)
 					setError(
 						cause instanceof Error
@@ -63,22 +71,113 @@ export function useLiveUpdates() {
 	}, [cache]);
 	return error;
 }
+export async function validateLiveConnection(response: Response) {
+	try {
+		if (
+			!response.ok ||
+			!response.headers.get("content-type")?.includes("text/event-stream")
+		)
+			throw new Error("Live connection unavailable");
+		await refreshFactory();
+	} catch (error) {
+		// onopen runs before the SSE reader is created. Release its response on rejection.
+		await response.body?.cancel();
+		throw error;
+	}
+}
 export async function api<T = any>(
 	path: string,
 	options: RequestInit = {},
 ): Promise<T> {
-	const response = await fetch(path, {
-		...options,
-		headers: {
-			"Content-Type": "application/json",
-			"X-Factory-Request": "1",
-			...options.headers,
-		},
+	const write = !["GET", "HEAD"].includes(
+		(options.method ?? "GET").toUpperCase(),
+	);
+	const finish = write ? beginWrite() : undefined;
+	// Bind the write to the configuration shown when it began, before async checks.
+	const configRevision =
+		write &&
+		["/api/workflows", "/api/title-settings", "/api/runs"].includes(path)
+			? client.getQueryData<any>(["config"])?.configRevision
+			: undefined;
+	try {
+		if ((write || pwaState().status !== "ready") && !(await checkVersion()))
+			throw new Error(
+				"Factory connection or version unavailable. Reconnect or update before continuing.",
+			);
+		const response = await fetch(path, {
+			...options,
+			cache: "no-store",
+			headers: {
+				"Content-Type": "application/json",
+				"X-Factory-Request": "1",
+				...(configRevision ? { "X-Factory-Config": configRevision } : {}),
+				...options.headers,
+				"X-Factory-Build": uiBuild,
+			},
+		});
+		if (response.headers.get("X-Factory-Build") !== uiBuild) {
+			versionMismatch(response.headers.get("X-Factory-Build") ?? undefined);
+			throw new Error("Factory version changed. Update before continuing.");
+		}
+		const body = await response.json();
+		if (!response.ok) {
+			if (response.status >= 500) disconnected();
+			throw new Error(body.error ?? `Request failed (${response.status})`);
+		}
+		return body;
+	} catch (error) {
+		if (error instanceof TypeError) disconnected();
+		throw error;
+	} finally {
+		finish?.();
+	}
+}
+let refreshing: Promise<void> | undefined;
+export function refreshFactory() {
+	refreshing ??= refreshFactoryData().finally(() => {
+		refreshing = undefined;
 	});
-	const body = await response.json();
-	if (!response.ok)
-		throw new Error(body.error ?? `Request failed (${response.status})`);
-	return body;
+	return refreshing;
+}
+async function refreshFactoryData() {
+	if (!(await checkVersion()))
+		throw new Error("Factory connection or version unavailable");
+	await client.cancelQueries({
+		predicate: (query) =>
+			["config", "runs", "run"].includes(String(query.queryKey[0])),
+	});
+	await Promise.all([
+		client.fetchQuery({
+			queryKey: ["config"],
+			queryFn: () => api("/api/config"),
+			staleTime: 0,
+		}),
+		client.fetchQuery({
+			queryKey: ["runs"],
+			queryFn: () => api("/api/runs"),
+			staleTime: 0,
+		}),
+	]);
+	// Restored routes must validate their current run/gate before any actions are enabled.
+	const id = /^#\/runs\/([^/]+)$/.exec(location.hash)?.[1];
+	if (id)
+		await client
+			.fetchQuery({
+				queryKey: ["run", decodeURIComponent(id)],
+				queryFn: () => api(`/api/runs/${id}?view=dashboard`),
+				staleTime: 0,
+			})
+			.catch((error) => {
+				if (error.message !== "Run not found") throw error;
+			});
+	await client.invalidateQueries(
+		{
+			predicate: (query) =>
+				["run", "transcript"].includes(String(query.queryKey[0])),
+		},
+		{ throwOnError: true },
+	);
+	authoritativeReady();
 }
 export function useConfig() {
 	return useQuery({
@@ -102,7 +201,8 @@ export function useRun(id?: string) {
 }
 export function useAction() {
 	const cache = useQueryClient();
-	return useMutation({
+	const connection = usePwa();
+	const mutation = useMutation({
 		mutationFn: ({
 			path,
 			body = {},
@@ -132,6 +232,10 @@ export function useAction() {
 			await cache.invalidateQueries({ queryKey: ["config"] });
 		},
 	});
+	return {
+		...mutation,
+		isBlocked: connection.status !== "ready" || connection.updating,
+	};
 }
 export const finished = (status: string) =>
 	[

@@ -12,15 +12,25 @@ import {
 	useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
+import { useRestorableState } from "./restoration";
 import { type FeedbackTarget, orderedComments } from "./review-feedback";
 import { feedbackSession } from "./review-feedback-session";
 import { Button } from "./ui";
 
-export function useFeedbackController(key: string) {
+export function useFeedbackController(key: string, revision?: string) {
 	const session = useMemo(() => feedbackSession(key), [key]);
 	const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
+	const draftKey = `feedback/draft/${key}`;
+	const [, setSnapshot, staleFeedback] = useRestorableState(
+		draftKey,
+		() => state.draft,
+		revision,
+	);
+	useEffect(() => setSnapshot(state.draft), [setSnapshot, state.draft]);
 	return {
 		...state,
+		draftKey,
+		staleFeedback,
 		update: session.update,
 		lock: session.lock,
 		unlock: session.unlock,

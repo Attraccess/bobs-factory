@@ -6,6 +6,13 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Integrate the latest review-comment controller with PWA update snapshots, retaining item comments, additional feedback, revision checks and pending-request locks; migrate snapshots from the earlier single-text feedback UI. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
+
+- Integrate automatic run naming into the PWA branch, retain both sets of API/cache checks, and preserve unsaved title-agent settings through explicit updates with stale-draft acknowledgement. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
+
+- Integrate the PWA branch with the dedicated review page and question-image routes; retain review navigation, scoped feedback, disclosure restoration and private image cache headers. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
+
+- Bundle maintained Workbox modules locally and publish the factory web shell as a staged, digest-checked build inventory with versioned assets; guard stale UI/configuration/question writes and validate cache/update behavior in focused tests and an isolated F1 drive. (Taskbot bobs-factory #41)
 - Use TanStack Virtual and a reconnecting fetch-event-source SSE client for the factory dashboard, with stable history cursors and step markers across event-buffer trimming. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Bundle the local dashboard with React, TanStack Query, Radix, Markdown/GFM and Tailwind; add browser type checks and lazy artifact endpoints. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 

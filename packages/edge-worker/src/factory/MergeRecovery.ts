@@ -1,9 +1,10 @@
 import { readPath, type WorkflowStep } from "./Workflow.js";
 import type { FactoryRun, GraphCheckpoint } from "./WorkflowRuntime.js";
 
-/** Locate only a final merge confirmation; unfinished work still requires its worktree. */
+/** Locate a merge candidate; the confirmed receipt must validate its terminal route. */
 export function pendingMergeConfirmation(
 	run: FactoryRun,
+	output?: NonNullable<ReturnType<typeof confirmedMerge>>,
 ):
 	| { checkpoint: GraphCheckpoint; step: WorkflowStep; key: string }
 	| undefined {
@@ -37,7 +38,7 @@ export function pendingMergeConfirmation(
 			step.type === "tool" &&
 			step.tool === "merge" &&
 			key === run.step &&
-			finishes(steps, step, { merged: true })
+			(!output || finishes(steps, step, output))
 		)
 			return { checkpoint, step, key };
 		if (

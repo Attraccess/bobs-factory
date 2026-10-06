@@ -57,3 +57,38 @@ The matching MERGED receipt completed and settled the saved run with history
 and activity retained; the OPEN receipt still blocked missing-worktree recovery.
 The integrated candidate passed all 136 focused factory/recovery tests, the
 monorepo test suite (2,412 passing tests), full build, and type checks.
+
+## Complete-receipt routing regression (PR #12)
+
+Tested `ddc5d1b1` plus the complete-receipt recovery fix on 2026-10-06.
+Recovery now validates custom merge branches using the confirmed `merged`,
+`headSha` and `url` values before changing outputs, history or checkpoint phase.
+
+Ran `node /tmp/f1-merge-receipt-routing.mjs` against this worktree's freshly built
+EdgeWorker, a fresh Git repository and the CLI issue tracker on ports 3602/3603.
+The isolated provider executable returned deterministic receipts and never
+contacted or mutated GitHub.
+
+- Created DEF-1 and retried five saved nested runs through the HTTP retry API.
+- An approved MERGED receipt completed and settled the stock terminal route;
+  confirmation remained visible in the activity API.
+- Custom `headSha` and `url` branches to unfinished `publish` work failed with
+  the missing-worktree error. History stayed unchanged, no merge receipt was
+  written, and the run stayed at `pipeline/merge`.
+- A custom receipt-dependent branch to `end` completed successfully even when
+  its default route pointed to unfinished work.
+- An OPEN receipt still failed without recording a merge.
+- All five provider invocations were read-only `gh pr view` calls from the
+  retained repository; no worktree was recreated. Worker shutdown and temporary
+  fixture cleanup succeeded.
+
+All 141 focused tests passed across EdgeWorker recovery, merge readiness,
+workflow runtime, factory pipeline and HTTP server. Regression tests also cover
+nonterminal branches from an already saved result, retaining the saved receipt
+and history without advancing. Build and type checks are enforced by the commit
+hook. Drive script and output are retained as `merge-receipt-routing-f1.mjs` and
+`merge-receipt-routing-f1.log` in this run's factory evidence directory.
+
+Limit: provider state is simulated; this drive performs no real GitHub merge
+or live Linear cleanup webhook. PWA UI and prior native-testing waiver are
+unchanged.

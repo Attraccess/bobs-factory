@@ -3,6 +3,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { api, client } from "./client";
 import { LazyImage } from "./media";
 import { useReadingPosition } from "./reading-position";
+import { revisionOf, useRestorableState } from "./restoration";
 import {
 	CollectedFeedback,
 	Commentable,
@@ -197,6 +198,12 @@ export function GuidedReview({
 function ReviewSession(props: any) {
 	const controller = useFeedbackController(
 		feedbackKey(props.storageKey, props.run.reviewGate?.id),
+		revisionOf([
+			feedbackKey(props.storageKey, props.run.reviewGate?.id),
+			props.run.reviewGate,
+			props.run.status,
+			props.run.chat?.mode,
+		]),
 	);
 	return (
 		<FeedbackContext.Provider value={props.controls ? controller : null}>
@@ -227,7 +234,9 @@ function ReviewReader({ storageKey, guide, run, documentPage, controls }: any) {
 			...chapters.map((c: any) => c.title),
 			"Checks & decision",
 		],
-		[progress, setProgress] = useState(() =>
+		[progress, setProgress] = useRestorableState<
+			ReturnType<typeof readProgress>
+		>(`review/progress/${storageKey}`, () =>
 			readProgress(readStored(storageKey, null), pages.length),
 		),
 		explicitNavigation = useRef(false),
