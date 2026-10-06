@@ -51,7 +51,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Let signed-out Factory users update a cached app after deployment so passkey login can continue. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
+- Let signed-out Factory users update a cached app after deployment so passkey login can continue. Honor the configured session lifetime when launching Factory, with explicit CLI settings taking precedence and invalid values rejected. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Resolve the saved Factory theme before the page loads and keep browser theme colors aligned with the app palette when switching themes. ([#26](https://github.com/Attraccess/bobs-factory/pull/26))
 

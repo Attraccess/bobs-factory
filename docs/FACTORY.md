@@ -81,7 +81,9 @@ and live streams. Labels and metadata are shown; public keys and session tokens
 are never returned.
 
 Sessions last twelve hours without sliding renewal. `--session-hours` or
-`CYRUS_FACTORY_SESSION_HOURS` permits 1–24 hours. Sessions survive a restart;
+`CYRUS_FACTORY_SESSION_HOURS` permits 1–24 hours; the explicit CLI option takes
+precedence over the environment, and twelve hours applies only when neither is
+set. Invalid values fail startup. Sessions survive a restart;
 credentials, counters and token hashes live in private atomic files. HTTPS uses
 host-only `__Host-` cookies with Secure, HttpOnly, SameSite=Strict and Path=/.
 Loopback HTTP uses a host-only HttpOnly/SameSite=Strict cookie. Both paths require
