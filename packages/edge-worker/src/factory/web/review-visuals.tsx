@@ -106,8 +106,10 @@ export function SystemMap({
 		const x = adjacent ? source.x + 213 : (source.x + target.x) / 2 + 83;
 		const sourceMiddle = source.y + source.height / 2,
 			targetMiddle = target.y + target.height / 2;
+		// Keep the whole wrapped label below the lane headings, even when it
+		// is taller than the components it connects.
 		let y = adjacent
-			? (sourceMiddle + targetMiddle) / 2
+			? Math.max((sourceMiddle + targetMiddle) / 2, top + labelHeight / 2 + 12)
 			: lower + labelHeight + 12;
 		while (
 			tracks.some(
