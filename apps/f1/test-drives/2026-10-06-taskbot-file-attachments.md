@@ -34,3 +34,7 @@ Exit 0; fixture run `manual-d60f5fa7-cf64-4ad1-a102-59316a4c9e5e`, 20 MCP calls,
 Driver, call receipts and log are retained in the evidence directory above. No production tracker was mutated by the drive. File downloading in this fixture is unauthenticated; production Taskbot download access still requires its usual authentication. Native agent reasoning and real PR publication/merge are outside this scenario.
 
 Relevant automated suites passed 82 tests, including the original failure and malformed-attachment guardrails. Worker build and changed-file Biome checks passed.
+
+## Isolated merge validation
+
+Before merging PR #24, its two commits were rebased onto `e5cd5b74` to keep the open PR #23 ticket-ownership work separate. The attachment implementation is unchanged. The same drive passed on `ced0f4be`: run `manual-8430ff23-fac3-4b03-b5ce-c9034c92ea5e`, one clarification role, 18 MCP calls. Receipts and logs are retained under `merge-validation/` in the evidence directory above. All 76 relevant tests present on this main base passed, along with the worker build, Biome and diff checks.
