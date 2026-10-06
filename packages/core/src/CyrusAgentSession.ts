@@ -67,7 +67,26 @@ export interface RepositoryContext {
 	baseBranchName?: string;
 }
 
+/** Persisted snapshot for one auxiliary naming attempt; never an execution checkpoint. */
+export interface RunTitleJob {
+	state: "pending" | "completed" | "failed" | "cancelled";
+	context: string;
+	prepared?: boolean;
+	settings: Pick<
+		import("./agent-runner-types.js").AgentRunnerConfig,
+		"model" | "modelReasoningEffort" | "effort" | "modelVariant" | "serviceTier"
+	> & {
+		runner: import("./config-schemas.js").RunnerType;
+	};
+	repositoryId?: string;
+	platform?: string;
+	platformMcpConfigOverrides?: string[];
+	error?: string;
+}
+
 export interface CyrusAgentSession {
+	displayTitle?: string;
+	titleGeneration?: RunTitleJob;
 	triggerOrigin?: import("./WorkflowTrigger.js").WorkflowTriggerOrigin;
 	/** Accepted Simple chat setting, retained across recipe edits and restarts. */
 	workflowChat?: boolean;
@@ -100,6 +119,11 @@ export interface CyrusAgentSession {
 	opencodeSessionId?: string; // OpenCode-specific session ID (assigned once it initializes)
 	agentRunner?: IAgentRunner;
 	metadata?: {
+		/** Default repository available when a standalone chat was created. */
+		chatRepositoryId?: string;
+		chatPlatform?: "slack" | "zulip";
+		chatThreadKey?: string;
+		chatSystemPrompt?: string;
 		model?: string;
 		tools?: string[];
 		permissionMode?: string;

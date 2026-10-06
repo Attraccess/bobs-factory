@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Select workflows from Linear assignments and mentions using `[workflow=<id>]`, retain readable selection/source history, and protect active issues against competing or redelivered launches. Replies respect the accepted run and runner steering capabilities; interrupted startup retains recovery ownership, unassignment releases it and cancels pending runner startup, and native stop redelivery cannot escalate to a full kill. Ticket context includes every comment and attachment page. ([Taskbot #55](https://taskbot.apps.janjaap.de/p/bobs-factory/t/55), [#13](https://github.com/Attraccess/bobs-factory/pull/13))
+- Automatically name new runs in the background with a globally configurable title agent and project context tools, including Cursor, Claude's URL-only HTTP servers, Gemini's URL-only SSE servers and relative server scripts. Show the run ID while naming, update titles live, preserve historical titles during recovery, and keep dashboard feedback usable for Slack/Zulip sessions across restarts and concurrent platform replies. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68), [#11](https://github.com/Attraccess/bobs-factory/pull/11))
 
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
 - Configure workflow launch methods independently in Recipes, preserve saved permissions even when a configuration refresh fails, filter manual choices, reject disallowed workflow selections with actionable feedback, and retain launch/source and nested caller context across restarts. (Taskbot bobs-factory #35, [#2](https://github.com/Attraccess/bobs-factory/pull/2))
@@ -37,6 +38,10 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Acknowledge chat resume requests without reporting that the conversation has resumed while setup is still pending. ([#11](https://github.com/Attraccess/bobs-factory/pull/11))
+
+- Bob's clarification and implementation-blocker questions now explain the relevant facts, source of the decision and consequences in plain language; optional diagrams and images appear beside the answer box.
 
 - Allow factory planning and review to propose changes to current product capabilities without mistaking capability documentation for a task restriction; retain explicit planning-only and deferred-implementation limits. ([#10](https://github.com/Attraccess/bobs-factory/pull/10))
 - Pause blocked factory implementations for actionable answers, retain those waits across restarts, and prevent empty or unfinished work from being published as a draft PR. ([#8](https://github.com/Attraccess/bobs-factory/pull/8))

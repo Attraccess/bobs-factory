@@ -732,15 +732,27 @@ kbd {
 	background: none;
 	color: var(--text);
 }
-.question-form .question label {
+.question-heading {
 	display: flex;
 	align-items: flex-start;
 	gap: 12px;
 	font-size: 16px;
 	font-weight: 700;
 }
-.question-form .question label .bob {
+.question-heading .bob {
 	flex-shrink: 0;
+}
+.question-content {
+	min-width: 0;
+	flex: 1;
+}
+.question-content img {
+	display: block;
+	max-width: 100%;
+	max-height: 360px;
+	object-fit: contain;
+	margin: 12px 0;
+	border-radius: 12px;
 }
 .answer-controls {
 	margin-left: 44px;
@@ -2165,7 +2177,7 @@ kbd {
 		min-height: 44px;
 		width: 44px;
 	}
-	.question-form .question label {
+	.question-heading {
 		font-size: 15px;
 		gap: 8px;
 	}

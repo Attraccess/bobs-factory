@@ -21,7 +21,7 @@ import type { IAgentRunner } from "cyrus-core";
  */
 export class SessionSemaphore {
 	private activeCount = 0;
-	private waiters: Array<() => void> = [];
+	private waiters: Array<{ resolve: () => void; background: boolean }> = [];
 
 	constructor(
 		private limit: number,
@@ -46,17 +46,28 @@ export class SessionSemaphore {
 		return this.limit;
 	}
 
-	acquire(): Promise<void> {
-		if (this.activeCount < this.limit) {
+	acquire(signal?: AbortSignal, background = false): Promise<void> {
+		signal?.throwIfAborted();
+		if (this.activeCount < this.limit && !this.waiters.length) {
 			this.activeCount++;
 			return Promise.resolve();
 		}
-		return new Promise<void>((resolve) => {
-			this.waiters.push(resolve);
+		return new Promise<void>((resolve, reject) => {
+			const waiter = {
+				background,
+				resolve: () => {
+					signal?.removeEventListener("abort", abort);
+					resolve();
+				},
+			};
+			const abort = () => {
+				this.waiters = this.waiters.filter((entry) => entry !== waiter);
+				reject(signal?.reason ?? new Error("Session start cancelled"));
+			};
+			this.waiters.push(waiter);
+			signal?.addEventListener("abort", abort, { once: true });
 			this.onQueued?.(
-				`Session start queued: ${this.activeCount} running at the ` +
-					`maxConcurrentSessions limit of ${this.limit}, ` +
-					`${this.waiters.length} waiting`,
+				`Session start queued: ${this.activeCount} running, ${this.waiters.length} waiting`,
 			);
 		});
 	}
@@ -88,8 +99,9 @@ export class SessionSemaphore {
 	private admitWaiters(): void {
 		while (this.waiters.length > 0 && this.activeCount < this.limit) {
 			this.activeCount++;
-			const next = this.waiters.shift();
-			next?.();
+			const primary = this.waiters.findIndex((waiter) => !waiter.background);
+			const [next] = this.waiters.splice(primary < 0 ? 0 : primary, 1);
+			next?.resolve();
 		}
 	}
 }
@@ -111,7 +123,7 @@ export function capRunnerStarts(
 	signal?: AbortSignal,
 ): IAgentRunner {
 	const gate = async <T>(run: () => Promise<T>): Promise<T> => {
-		await semaphore.acquire();
+		await semaphore.acquire(signal);
 		try {
 			signal?.throwIfAborted();
 			return await run();
@@ -130,7 +142,6 @@ export function capRunnerStarts(
 				typeof target.startStreaming === "function"
 			) {
 				return (initialPrompt?: string) =>
-					// biome-ignore lint/style/noNonNullAssertion: guarded by the typeof check above
 					gate(() => target.startStreaming!(initialPrompt));
 			}
 			return Reflect.get(target, property, receiver);

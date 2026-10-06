@@ -9,11 +9,20 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
-import type { WorkflowTrigger, WorkflowTriggerOrigin } from "cyrus-core";
+import type {
+	RunTitleJob,
+	WorkflowTrigger,
+	WorkflowTriggerOrigin,
+} from "cyrus-core";
 import { activityMarkers } from "./ActivityPage.js";
-import type { AgentSettings } from "./AgentSettings.js";
+import {
+	type AgentSettings,
+	AgentSettingsSchema,
+	resolveAgentSettings,
+} from "./AgentSettings.js";
 import { defaultWorkflows, upgradeWorkflows } from "./defaultWorkflows.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
+import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
 	readPath,
 	requireTrigger,
@@ -99,6 +108,7 @@ export interface FactoryRun {
 	workflowCalls?: { call: WorkflowCall; at: string }[];
 	id: string;
 	title: string;
+	titleGeneration?: RunTitleJob;
 	repositoryId: string;
 	workflow: Workflow;
 	workflowDefinitions?: Workflow[];
@@ -162,6 +172,10 @@ export interface ExecutionContext {
 	checkpointAgent?: (agent: AgentCheckpoint) => void;
 }
 export interface RuntimeHooks {
+	titleDefaults?(
+		runner?: RunTitleJob["settings"]["runner"],
+	): RunTitleJob["settings"];
+	stopTitle?(id: string): void;
 	agent(context: ExecutionContext): Promise<unknown>;
 	script(context: ExecutionContext): Promise<unknown>;
 	tool(context: ExecutionContext): Promise<unknown>;
@@ -200,6 +214,7 @@ export class WorkflowRuntime {
 	>();
 	private shuttingDown = false;
 	private defaultWorkflow = "simple";
+	private titleSettings: AgentSettings = {};
 	private viewStates: Record<string, RunViewState> = {};
 	private chats = new Map<string, ChatMessage[]>();
 	readonly directory: string;
@@ -210,6 +225,11 @@ export class WorkflowRuntime {
 	) {
 		this.directory = join(home, "factory");
 		mkdirSync(join(this.directory, "runs"), { recursive: true });
+		const settings = join(this.directory, "settings.json");
+		if (existsSync(settings))
+			this.titleSettings = AgentSettingsSchema.parse(
+				JSON.parse(readFileSync(settings, "utf8")).titleGeneration ?? {},
+			);
 		const views = join(this.directory, "views.json");
 		if (existsSync(views))
 			this.viewStates = JSON.parse(readFileSync(views, "utf8"));
@@ -335,6 +355,71 @@ export class WorkflowRuntime {
 		this.changed({ config: true });
 		return this.listWorkflows();
 	}
+	getTitleSettings(): AgentSettings {
+		return structuredClone(this.titleSettings);
+	}
+	resolveTitleSettings(): RunTitleJob["settings"] {
+		const defaults = this.hooks.titleDefaults?.() ?? {
+			runner: "claude" as const,
+		};
+		const runner = this.titleSettings.runner ?? defaults.runner;
+		return {
+			runner,
+			model:
+				this.titleSettings.model ?? this.hooks.titleDefaults?.(runner).model,
+			...resolveAgentSettings(runner, this.titleSettings),
+		};
+	}
+	createTitleJob(context: string): RunTitleJob {
+		try {
+			return {
+				state: "pending",
+				settings: this.resolveTitleSettings(),
+				context,
+			};
+		} catch (error) {
+			// Changing the inherited provider can invalidate saved native controls.
+			// Naming configuration must never prevent the primary task from starting.
+			return {
+				state: "failed",
+				settings: {
+					runner:
+						this.titleSettings.runner ??
+						this.hooks.titleDefaults?.().runner ??
+						"claude",
+				},
+				context,
+				error: (error instanceof Error
+					? error.message
+					: "Invalid title agent settings"
+				).slice(0, 240),
+			};
+		}
+	}
+	updateTitleSettings(value: unknown): AgentSettings {
+		const settings = AgentSettingsSchema.strict().parse(value);
+		resolveAgentSettings(
+			settings.runner ?? this.hooks.titleDefaults?.().runner ?? "claude",
+			settings,
+		);
+		this.atomicWrite(join(this.directory, "settings.json"), {
+			titleGeneration: settings,
+		});
+		this.titleSettings = settings;
+		this.changed({ config: true });
+		return this.getTitleSettings();
+	}
+	updateTitle(id: string, job: RunTitleJob, title?: string): void {
+		const run = this.get(id);
+		run.titleGeneration = structuredClone(job);
+		if (title) run.title = title;
+		if (run.sessionSnapshot) {
+			run.sessionSnapshot.displayTitle = run.title;
+			run.sessionSnapshot.titleGeneration = structuredClone(job);
+		}
+		this.save(run);
+	}
+
 	selectWorkflow(
 		labels: string[],
 		trigger: WorkflowTrigger,
@@ -371,7 +456,7 @@ export class WorkflowRuntime {
 		triggerOrigin: WorkflowTriggerOrigin;
 		workflowDefinitions?: Workflow[];
 		id?: string;
-		title: string;
+		title?: string;
 		repositoryId: string;
 		workflow: Workflow;
 		workspace: string;
@@ -407,6 +492,18 @@ export class WorkflowRuntime {
 			),
 			contractVersion: 2,
 			id,
+			title: id,
+			titleGeneration: {
+				...this.createTitleJob(
+					buildTitleContext({
+						workflow: options.workflow.name,
+						instructions: options.input,
+						source: options.source,
+						inputs: options.launchInputs,
+					}),
+				),
+				repositoryId: options.repositoryId,
+			},
 			status: "running",
 			createdAt: now,
 			updatedAt: now,
@@ -855,6 +952,7 @@ export class WorkflowRuntime {
 	}
 	stop(id: string): void {
 		const run = this.get(id);
+		this.hooks.stopTitle?.(id);
 		if (!["running", "waiting", "failed", "interrupted"].includes(run.status))
 			return;
 		run.status = "stopped";

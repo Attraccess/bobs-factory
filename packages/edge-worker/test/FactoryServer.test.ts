@@ -1,4 +1,10 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
@@ -7,6 +13,71 @@ import { FactoryServer } from "../src/factory/FactoryServer.js";
 import type { ResolvedLaunchRequest } from "../src/factory/LaunchFields.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
+
+it("serves question images only from the requested run, rejecting traversal, external symlinks and non-images", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-question-images-"));
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("Unused");
+		},
+		stop: (id) => runtime.stop(id),
+	});
+	const create = (id: string) =>
+		runtime.create({
+			id,
+			triggerOrigin: {
+				type: "manual",
+				workflowId: "factory",
+				at: new Date().toISOString(),
+			},
+			title: "Question",
+			repositoryId: "repo",
+			workspace: home,
+			input: "",
+			workflow: defaultWorkflows.find((workflow) => workflow.id === "factory")!,
+		});
+	const run = create("with-image");
+	create("without-image");
+	const directory = join(runtime.directory, "evidence", run.id);
+	mkdirSync(directory, { recursive: true });
+	const png = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aNNsAAAAASUVORK5CYII=",
+		"base64",
+	);
+	writeFileSync(join(directory, "context.png"), png);
+	writeFileSync(join(home, "outside.png"), png);
+	writeFileSync(join(directory, "text.png"), "Private text is not an image");
+	symlinkSync(join(home, "outside.png"), join(directory, "external.png"));
+	const get = (id: string, name: string) =>
+		server.app.inject({
+			url: `/api/runs/${id}/question-images/${name}`,
+			headers: { host: "localhost" },
+		});
+	try {
+		const image = await get(run.id, "context.png");
+		expect(image.statusCode).toBe(200);
+		expect(image.headers["content-type"]).toBe("image/png");
+		expect(image.headers["cache-control"]).toBe("no-cache");
+		expect(image.rawPayload).toEqual(png);
+		expect((await get("without-image", "context.png")).statusCode).toBe(404);
+		expect((await get(run.id, "missing.png")).statusCode).toBe(404);
+		expect((await get(run.id, "external.png")).statusCode).toBe(409);
+		expect((await get(run.id, "text.png")).statusCode).toBe(409);
+		expect((await get(run.id, "..%2F..%2Foutside.png")).statusCode).toBe(400);
+	} finally {
+		await runtime.shutdown();
+		await server.stop();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
 
 it("accepts failed-run retries through the protected API and rejects duplicate retries", async () => {
 	const home = mkdtempSync(join(tmpdir(), "factory-retry-api-"));
@@ -115,7 +186,6 @@ it("starts, displays, answers and terminates runs through the local API", async 
 				reasoningEffort: input.reasoningEffort,
 				modelVariant: input.modelVariant,
 				serviceTier: input.serviceTier,
-				title: input.title,
 				repositoryId: input.repositoryId,
 				workspace: home,
 				input: input.prompt,
@@ -149,7 +219,7 @@ it("starts, displays, answers and terminates runs through the local API", async 
 				.json()
 				.workflows.find((workflow: { id: string }) => workflow.id === "simple")
 				.launchFields,
-		).toMatchObject([{ name: "prompt", required: true }, { name: "title" }]);
+		).toMatchObject([{ name: "prompt", required: true }]);
 		expect(runtime.selectWorkflow([], "manual").id).toBe("factory");
 		expect(
 			(await server.app.inject({ url: "/api/config", headers })).json()
@@ -315,7 +385,6 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 				workflowId: input.workflow ?? runtime.getDefaultWorkflow(),
 				at: new Date().toISOString(),
 			},
-			title: input.title,
 			repositoryId: input.repositoryId,
 			workspace: home,
 			input: input.prompt,
@@ -360,7 +429,6 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 			expect(start.mock.lastCall?.[0]).toMatchObject({
 				source: "DEF-1",
 				prompt: "",
-				titleProvided: false,
 				inputs: { source: "DEF-1", prompt: "" },
 			});
 		}
@@ -402,7 +470,7 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 		const result = await launch("deploy", { inputs: { target: " App " } });
 		expect(result.statusCode).toBe(202);
 		expect(result.json()).toMatchObject({
-			title: "Deploy",
+			title: result.json().id,
 			input: "",
 			launchInputs: { target: "App", environment: "staging" },
 		});
@@ -592,7 +660,6 @@ it("returns normalized permissions and rejects forged manual requests before the
 	};
 	const start = vi.fn(async (input: ResolvedLaunchRequest) =>
 		runtime.create({
-			title: input.title,
 			repositoryId: input.repositoryId,
 			input: input.prompt,
 			workspace: home,
@@ -774,6 +841,94 @@ it("protects chat delivery, validates input, preserves messages and refuses disa
 		});
 		expect((await send("Too late")).json().error).toBe("Turn ended");
 		expect(runtime.chatMessages("legacy")).toHaveLength(1);
+	} finally {
+		await server.stop();
+		await runtime.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+it("protects and persists global title settings independently of workflow configuration", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-title-settings-"));
+	const hooks = {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	};
+	const runtime = new WorkflowRuntime(home, hooks);
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("unused");
+		},
+		stop: () => {},
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	try {
+		expect(
+			(await server.app.inject({ url: "/api/config", headers })).json()
+				.titleGeneration,
+		).toEqual({});
+		for (const badHeaders of [
+			{ host: "evil.test", "x-factory-request": "1" },
+			{ host: "localhost" },
+			{ ...headers, origin: "https://evil.test" },
+		])
+			expect(
+				(
+					await server.app.inject({
+						method: "PUT",
+						url: "/api/title-settings",
+						headers: badHeaders,
+						payload: { runner: "codex" },
+					})
+				).statusCode,
+			).toBe(403);
+		const settings = {
+			runner: "codex",
+			model: "cheap",
+			reasoningEffort: "low",
+		};
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/title-settings",
+					headers,
+					payload: settings,
+				})
+			).json(),
+		).toEqual({ titleGeneration: settings });
+		runtime.updateWorkflows(runtime.listWorkflows());
+		expect(new WorkflowRuntime(home, hooks).getTitleSettings()).toEqual(
+			settings,
+		);
+		expect(
+			(await server.app.inject({ url: "/api/config", headers })).json()
+				.titleGeneration,
+		).toEqual(settings);
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/title-settings",
+					headers,
+					payload: { runner: "unknown" },
+				})
+			).statusCode,
+		).toBe(400);
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/title-settings",
+					headers,
+					payload: { runner: "gemini", reasoningEffort: "high" },
+				})
+			).statusCode,
+		).toBe(409);
 	} finally {
 		await server.stop();
 		await runtime.shutdown();
