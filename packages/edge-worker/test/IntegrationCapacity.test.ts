@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { GitService, setupExecutionScope } from "../src/GitService.js";
 import { MachineCapacity } from "../src/MachineCapacity.js";
+import { RunnerConfigBuilder } from "../src/RunnerConfigBuilder.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -135,7 +136,10 @@ it.each([
 				systemPrompt: "PR instructions",
 				runner: "codex",
 				model: "saved-model",
-				replyEvent: { deliveryId: "saved-delivery" },
+				replyEvent:
+					platform === "github"
+						? githubEvent("saved-delivery")
+						: { deliveryId: "saved-delivery" },
 			},
 		},
 	};
@@ -145,6 +149,7 @@ it.each([
 		id: "repo",
 		isActive: true,
 		repositoryPath: home,
+		linearWorkspaceId: "test-workspace",
 	} as RepositoryConfig;
 	const worker: any = Object.create(EdgeWorker.prototype);
 	const runtime = { runs: new Map(), resumeAll: vi.fn() };
@@ -152,6 +157,9 @@ it.each([
 		cyrusHome: home,
 		runnerSlots: slots,
 		recoveryAbort: new AbortController(),
+		preparationStarts: new Map(),
+		activeGitHubPrSessions: new Set(),
+		queuedGitHubPrEvents: new Map(),
 		chatSessionHandler: null,
 		zulipChatSessionHandler: null,
 		logger,
@@ -197,11 +205,262 @@ it.each([
 		expect(
 			platform === "github" ? worker.postGitHubReply : worker.postGitLabReply,
 		).toHaveBeenCalledWith(
-			{ deliveryId: "saved-delivery" },
+			session.metadata.pendingExecution.replyEvent,
 			expect.anything(),
 			repository,
 		),
 	);
 	expect(invoke).toHaveBeenCalledWith("Apply the review");
+	expect((await slots.snapshot()).requests).toEqual([]);
+});
+
+function githubEvent(deliveryId = "saved-delivery") {
+	return {
+		deliveryId,
+		eventType: "issue_comment",
+		payload: {
+			action: "created",
+			repository: {
+				full_name: "test/repo",
+				name: "repo",
+				owner: { login: "test" },
+			},
+			issue: {
+				number: 7,
+				title: "Test PR",
+				pull_request: { url: "https://api.github.com/repos/test/repo/pulls/7" },
+			},
+			comment: {
+				id: 42,
+				body: "@cyrusagent apply review",
+				user: { login: "reviewer" },
+			},
+		},
+	};
+}
+
+function recoveryFixture(platform = "github", runnerType = "cursor") {
+	const { home, slots } = fixture();
+	const repository = {
+		id: "repo",
+		isActive: true,
+		repositoryPath: home,
+		linearWorkspaceId: "test-workspace",
+	} as RepositoryConfig;
+	const session: any = {
+		id: "saved",
+		status: AgentSessionStatus.Active,
+		issue: { id: "github:test/repo#7", identifier: "repo#7" },
+		issueContext: { trackerId: platform },
+		workspace: { path: home },
+		repositories: [{ repositoryId: "repo" }],
+		metadata: {
+			pendingExecution: {
+				runner: runnerType,
+				model: "saved-model",
+				prompt: "Apply review",
+				systemPrompt: "Saved instructions",
+				replyEvent: platform === "github" ? githubEvent() : undefined,
+			},
+		},
+	};
+	const provider = {
+		start: vi.fn(async () => ({})),
+		stop: vi.fn(),
+		completeStream: vi.fn(),
+	};
+	const scopedLogger = { ...logger, withContext: () => scopedLogger };
+	const worker: any = Object.create(EdgeWorker.prototype);
+	Object.assign(worker, {
+		cyrusHome: home,
+		runnerSlots: slots,
+		recoveryAbort: new AbortController(),
+		preparationStarts: new Map(),
+		activeGitHubPrSessions: new Set(),
+		queuedGitHubPrEvents: new Map(),
+		activeWebhookCount: 0,
+		logger: scopedLogger,
+		config: {},
+		sdkSandboxSettings: { enabled: true },
+		egressCaCertPath: "/test/ca.pem",
+		skillsPluginResolver: {
+			resolve: async () => [],
+			discoverSkillNames: async () => [],
+		},
+		githubTokenStore: { getTokenForRepoUrl: () => undefined },
+		getLaunchAdmission: () => ({ values: () => [] }),
+		agentSessionManager: {
+			addAgentRunner: (_id: string, runner: any) => {
+				session.agentRunner = runner;
+			},
+		},
+		toolPermissionResolver: { buildGithubAllowedTools: () => ["Read"] },
+		buildDisallowedTools: () => [],
+		buildSkillSessionContext: () => ({}),
+		getDefaultFallbackModelForRunner: () => "fallback",
+		isWarmSessionsEnabled: () => false,
+		buildRunnerForType: vi.fn(() => provider),
+		savePersistedState: vi.fn(),
+		postGitHubReply: vi.fn(),
+		postGitLabReply: vi.fn(),
+		startRunTitle: vi.fn(),
+		handleClaudeMessage: vi.fn(),
+		findRepositoryByGitHubUrl: () => repository,
+		resolveGitHubToken: async () => undefined,
+		createGitHubWorkspace: vi.fn(),
+	});
+	worker.runnerConfigBuilder = new RunnerConfigBuilder(
+		{ buildChatAllowedTools: () => [] },
+		{ buildMcpConfig: () => ({}), buildMergedMcpConfigPath: () => undefined },
+		{
+			getDefaultRunner: () => "claude",
+			determineRunnerSelection: () => ({ runnerType: "claude" }),
+			getDefaultModelForRunner: () => "current-model",
+			getDefaultFallbackModelForRunner: () => "fallback",
+		},
+	);
+	return { worker, session, repository, provider, slots };
+}
+
+it.each([
+	"github",
+	"gitlab",
+])("restores queued %s Cursor configuration before a native conversation exists", async (platform) => {
+	const { worker, session, repository } = recoveryFixture(platform);
+	await worker.recoverIntegrationSession(session, repository);
+	const [runnerType, config] = worker.buildRunnerForType.mock.calls[0];
+	expect(runnerType).toBe("cursor");
+	expect(config.model).toBe("saved-model");
+	expect(config.sandboxSettings).toEqual({ enabled: true });
+	expect(config.egressCaCertPath).toBe("/test/ca.pem");
+});
+
+it.each([
+	"github",
+	"gitlab",
+])("stopping %s recovery during configuration loading prevents execution", async (platform) => {
+	const { worker, session, repository, provider, slots } =
+		recoveryFixture(platform);
+	let finishConfig!: () => void;
+	worker.skillsPluginResolver.resolve = vi.fn(
+		() =>
+			new Promise<[]>((resolve) => {
+				finishConfig = () => resolve([]);
+			}),
+	);
+	const recovering = worker.recoverIntegrationSession(session, repository);
+	const rejected = expect(recovering).rejects.toThrow();
+	expect(worker.preparationStarts.has(session.id)).toBe(true);
+	worker.settleTicketLaunch(session.id);
+	session.status = AgentSessionStatus.Error;
+	finishConfig();
+	await rejected;
+	expect(provider.start).not.toHaveBeenCalled();
+	expect(worker.buildRunnerForType).not.toHaveBeenCalled();
+	expect((await slots.snapshot()).requests).toEqual([]);
+	expect(worker.preparationStarts.size).toBe(0);
+	expect(worker.activeGitHubPrSessions.size).toBe(0);
+});
+
+it("rechecks a terminal stop before starting the registered recovered runner", async () => {
+	const { worker, session, repository, provider } = recoveryFixture();
+	worker.savePersistedState.mockImplementationOnce(async () => {
+		session.status = AgentSessionStatus.Error;
+	});
+	await expect(
+		worker.recoverIntegrationSession(session, repository),
+	).rejects.toThrow(/stopped/);
+	expect(provider.start).not.toHaveBeenCalled();
+	expect(worker.preparationStarts.size).toBe(0);
+	expect(worker.activeGitHubPrSessions.size).toBe(0);
+});
+
+it.each([
+	"completion",
+	"failure",
+	"result",
+])("serializes incoming GitHub work during recovery and advances the queue on %s", async (outcome) => {
+	const { worker, session, repository, provider } = recoveryFixture();
+	let finish!: () => void;
+	let fail!: (error: Error) => void;
+	provider.start.mockImplementationOnce(
+		() =>
+			new Promise((resolve, reject) => {
+				finish = () => resolve({});
+				fail = reject;
+			}),
+	);
+	let finishConfig!: () => void;
+	worker.skillsPluginResolver.resolve = () =>
+		new Promise<[]>((resolve) => {
+			finishConfig = () => resolve([]);
+		});
+	const recovering = worker.recoverIntegrationSession(session, repository);
+	const done =
+		outcome === "failure"
+			? expect(recovering).rejects.toThrow("provider failed")
+			: recovering;
+	const event = githubEvent("next-delivery");
+	// The PR reservation must precede the asynchronous config load.
+	await worker.handleGitHubWebhook(event);
+	expect(worker.queuedGitHubPrEvents.get("github:test/repo#7")).toEqual([
+		event,
+	]);
+	expect(worker.createGitHubWorkspace).not.toHaveBeenCalled();
+	finishConfig();
+	await vi.waitFor(() => expect(provider.start).toHaveBeenCalled());
+	await worker.handleGitHubWebhook(githubEvent("third-delivery"));
+	expect(worker.queuedGitHubPrEvents.get("github:test/repo#7")).toHaveLength(2);
+	expect(worker.createGitHubWorkspace).not.toHaveBeenCalled();
+	const processNext = vi
+		.spyOn(worker, "handleGitHubWebhook")
+		.mockResolvedValue(undefined);
+	if (outcome === "result") {
+		const config = worker.buildRunnerForType.mock.calls[0][1];
+		await config.onMessage({ type: "result" });
+		expect(provider.completeStream).toHaveBeenCalledOnce();
+		expect(processNext).toHaveBeenCalledWith(event, true);
+		finish();
+	} else if (outcome === "failure") fail(new Error("provider failed"));
+	else finish();
+	await done;
+	expect(processNext).toHaveBeenCalledOnce();
+	expect(processNext).toHaveBeenCalledWith(event, true);
+	if (outcome !== "failure")
+		expect(worker.postGitHubReply).toHaveBeenCalledOnce();
+});
+
+it("removes the parked pre-restart queue immediately when configuration recovery is stopped", async () => {
+	const {
+		worker,
+		session,
+		repository,
+		provider,
+		slots: old,
+	} = recoveryFixture();
+	const blocker = await old.acquireLease();
+	const identity = `${worker.cyrusHome}:session:${session.id}`;
+	const queued = old.acquireLease(undefined, { identity, recoverable: true });
+	const rejectedQueue = expect(queued).rejects.toThrow(/shutting down/);
+	await vi.waitFor(async () => expect((await old.snapshot()).queued).toBe(1));
+	await old.shutdown();
+	await rejectedQueue;
+	const slots = new MachineCapacity(undefined, old.directory);
+	worker.runnerSlots = slots;
+	let finishConfig!: () => void;
+	worker.skillsPluginResolver.resolve = () =>
+		new Promise<[]>((resolve) => {
+			finishConfig = () => resolve([]);
+		});
+	const recovering = worker.recoverIntegrationSession(session, repository);
+	const rejected = expect(recovering).rejects.toThrow();
+	worker.settleTicketLaunch(session.id);
+	session.status = AgentSessionStatus.Error;
+	// Do not release configuration until cancellation has removed the saved queue.
+	await vi.waitFor(async () => expect((await slots.snapshot()).queued).toBe(0));
+	finishConfig();
+	await rejected;
+	await blocker.release();
+	expect(provider.start).not.toHaveBeenCalled();
 	expect((await slots.snapshot()).requests).toEqual([]);
 });

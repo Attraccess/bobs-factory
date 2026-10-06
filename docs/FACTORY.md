@@ -612,7 +612,10 @@ user termination. Startup reconciles surviving local descendants before admissio
 Completed graph receipts and saved conversations retain their existing recovery
 behavior. Queued GitHub/GitLab and Slack/Zulip turns save their prompt, runner,
 model and reply routing before admission, then rejoin their original queue position
-after restart. Replies use current platform credentials; webhook credentials are
+after restart. Recovery builds configuration for the saved provider, including its
+sandbox settings, and GitHub work retains per-PR serialization. Stop remains
+available while recovery loads configuration and before execution starts.
+Replies use current platform credentials; webhook credentials are
 excluded from saved session records. Integration workspace preparation shares the
 worker pool even when the CLI supplies a custom workspace handler; stop or
 unassignment cancels pending preparation before it can run. Managed Codex

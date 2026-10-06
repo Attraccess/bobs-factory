@@ -7884,57 +7884,141 @@ ${taskSection}`;
 				"No saved integration execution input; manual recovery required",
 			);
 		const platform = session.issueContext!.trackerId as "github" | "gitlab";
-		const nativeId =
-			session.claudeSessionId ??
-			session.codexSessionId ??
-			session.geminiSessionId ??
-			session.cursorSessionId ??
-			session.opencodeSessionId;
-		const built = await this.buildAgentRunnerConfig(
-			session,
-			repository,
-			session.id,
-			pending.systemPrompt,
-			this.toolPermissionResolver.buildGithubAllowedTools(repository),
-			[repository.repositoryPath],
-			this.buildDisallowedTools(repository),
-			nativeId,
-			undefined,
-			undefined,
-			200,
-			undefined,
-			this.buildSkillSessionContext(repository, undefined, session),
-			platform,
-		);
-		built.config.model = pending.model ?? built.config.model;
-		built.config.fallbackModel = this.getDefaultFallbackModelForRunner(
-			pending.runner,
-		);
-		const runner = this.createRunnerForType(
-			pending.runner,
-			built.config,
+		const githubKey =
+			platform === "github"
+				? pending.replyEvent
+					? extractSessionKey(pending.replyEvent as GitHubCommentWebhookEvent)
+					: session.issue?.id
+				: undefined;
+		if (githubKey && this.activeGitHubPrSessions.has(githubKey))
+			throw new Error(
+				"This PR already has an active execution; manual recovery required",
+			);
+		// Reserve before configuration loading so incoming webhooks cannot start
+		// another writer in the recovered worktree.
+		if (githubKey) this.activeGitHubPrSessions.add(githubKey);
+		let githubSlotReleased = false;
+		const releaseGitHubSlot = () => {
+			if (githubKey && !githubSlotReleased) {
+				githubSlotReleased = true;
+				this.advanceGitHubPrQueue(githubKey);
+			}
+		};
+		const preparation = new AbortController();
+		this.preparationStarts.set(session.id, preparation);
+		const signal = AbortSignal.any([
+			preparation.signal,
 			this.recoveryAbort.signal,
-			session.id,
-		);
-		this.agentSessionManager.addAgentRunner(session.id, runner);
-		await this.savePersistedState();
-		this.recoveryAbort.signal.throwIfAborted();
-		await runner.start(pending.prompt);
-		if (pending.replyEvent) {
-			if (platform === "github")
-				await this.postGitHubReply(
-					pending.replyEvent as GitHubCommentWebhookEvent,
-					runner,
-					repository,
-				);
-			else
-				await this.postGitLabReply(
-					pending.replyEvent as GitLabWebhookEvent,
-					runner,
-					repository,
-				);
+		]);
+		const cancelQueuedRecovery = () =>
+			this.runnerSlots.reconcileQueue(
+				(identity) => identity === `${this.cyrusHome}:session:${session.id}`,
+			);
+		const stopped = () => {
+			void cancelQueuedRecovery().catch((error) =>
+				this.logger.error(
+					"Failed to cancel queued integration recovery",
+					error,
+				),
+			);
+		};
+		// A saved queue entry can still be parked while configuration loads.
+		// Explicit stop removes it immediately; shutdown must preserve it.
+		preparation.signal.addEventListener("abort", stopped, { once: true });
+		const ensureActive = () => {
+			signal.throwIfAborted();
+			if (session.status !== AgentSessionStatus.Active)
+				throw new Error("Integration recovery was stopped");
+		};
+		try {
+			ensureActive();
+			const nativeId =
+				session.claudeSessionId ??
+				session.codexSessionId ??
+				session.geminiSessionId ??
+				session.cursorSessionId ??
+				session.opencodeSessionId;
+			const built = await this.buildAgentRunnerConfig(
+				session,
+				repository,
+				session.id,
+				pending.systemPrompt,
+				this.toolPermissionResolver.buildGithubAllowedTools(repository),
+				[repository.repositoryPath],
+				this.buildDisallowedTools(repository),
+				nativeId,
+				undefined,
+				undefined,
+				200,
+				undefined,
+				this.buildSkillSessionContext(repository, undefined, session),
+				platform,
+				{ runnerType: pending.runner, modelOverride: pending.model },
+			);
+			ensureActive();
+			built.config.fallbackModel = this.getDefaultFallbackModelForRunner(
+				built.runnerType,
+			);
+			let replyPosted = false;
+			let runner: IAgentRunner;
+			const postReply = async () => {
+				if (replyPosted || !pending.replyEvent) return;
+				replyPosted = true;
+				if (platform === "github")
+					await this.postGitHubReply(
+						pending.replyEvent as GitHubCommentWebhookEvent,
+						runner,
+						repository,
+					);
+				else
+					await this.postGitLabReply(
+						pending.replyEvent as GitLabWebhookEvent,
+						runner,
+						repository,
+					);
+			};
+			if (githubKey) {
+				const onMessage = built.config.onMessage;
+				built.config.onMessage = async (message: SDKMessage) => {
+					try {
+						await onMessage?.(message);
+					} finally {
+						if (message.type === "result") {
+							void postReply().catch((error) =>
+								this.logger.error(
+									"Failed to post recovered GitHub reply",
+									error,
+								),
+							);
+							runner.completeStream?.();
+							releaseGitHubSlot();
+						}
+					}
+				};
+			}
+			runner = this.createRunnerForType(
+				built.runnerType,
+				built.config,
+				signal,
+				session.id,
+			);
+			this.agentSessionManager.addAgentRunner(session.id, runner);
+			await this.savePersistedState();
+			ensureActive();
+			await runner.start(pending.prompt);
+			await postReply();
+			await this.savePersistedState();
+		} finally {
+			preparation.signal.removeEventListener("abort", stopped);
+			if (this.preparationStarts.get(session.id) === preparation)
+				this.preparationStarts.delete(session.id);
+			releaseGitHubSlot();
+			if (
+				preparation.signal.aborted ||
+				session.status === AgentSessionStatus.Error
+			)
+				await cancelQueuedRecovery();
 		}
-		await this.savePersistedState();
 	}
 
 	private recoverFactoryRuns(): void {
@@ -7989,7 +8073,8 @@ ${taskSection}`;
 							this.recoveryAbort.signal,
 						)
 			).catch(async (error) => {
-				if (this.stopping) return;
+				if (this.stopping || session.status !== AgentSessionStatus.Active)
+					return;
 				session.status = AgentSessionStatus.Error;
 				this.logger.error(`Session recovery failed for ${session.id}:`, error);
 				await this.savePersistedState();
@@ -9345,6 +9430,7 @@ ${input.userComment}
 		 * Defaults to `"linear"` (the pre-platform-aware behavior).
 		 */
 		sessionPlatform: "linear" | "github" | "gitlab" = "linear",
+		runnerSelection?: { runnerType: RunnerType; modelOverride?: string },
 	): Promise<{ config: AgentRunnerConfig; runnerType: RunnerType }> {
 		const log = this.logger.withContext({
 			sessionId,
@@ -9378,6 +9464,7 @@ ${input.userComment}
 				this.config.sandbox?.additionalWritableDirectories,
 			labels,
 			issueDescription,
+			runnerSelection,
 			maxTurns,
 			// Per-platform MCP config paths — GitHub + GitLab share the
 			// `githubMcpConfigs` knob (single-repo PR contexts both); Linear
