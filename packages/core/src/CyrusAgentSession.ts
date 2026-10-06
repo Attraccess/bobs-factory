@@ -126,6 +126,8 @@ export interface CyrusAgentSession {
 		chatPlatform?: "slack" | "zulip";
 		chatThreadKey?: string;
 		chatSystemPrompt?: string;
+		/** Dashboard messages awaiting their next capacity-gated chat turn. */
+		pendingChatMessages?: { id: string; text: string }[];
 		/** Durable input for a queued/interrupted integration turn. Never stores credentials. */
 		pendingExecution?: {
 			prompt: string;
@@ -133,6 +135,7 @@ export interface CyrusAgentSession {
 			runner: "claude" | "codex" | "gemini" | "cursor" | "opencode";
 			model?: string;
 			replyEvent?: unknown;
+			dashboardMessages?: { id: string; text: string }[];
 		};
 		model?: string;
 		tools?: string[];

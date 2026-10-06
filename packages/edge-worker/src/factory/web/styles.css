@@ -4104,3 +4104,14 @@ kbd {
 	max-width: 65ch;
 	line-height: 1.65;
 }
+
+.queued-message {
+	display: block;
+	width: fit-content;
+	margin-top: 0.5rem;
+	padding: 0.25rem 0.5rem;
+	border: 1px solid currentColor;
+	border-radius: 0.5rem;
+	font-size: 0.8rem;
+	font-weight: 600;
+}

@@ -168,7 +168,11 @@ appear as your chat bubbles and remain available after restart. Failed submissio
 retain the draft. Use ⌘ / Ctrl + Enter to send; Enter adds a newline.
 
 Slack and Zulip sessions listed in the dashboard use the same composer and
-feedback controls. Completed chats continue through their platform handler,
+feedback controls. Send remains available while capacity is full or a continuation
+is being prepared. Accepted messages show **Queued · will be processed later**
+until their turn is admitted. Additional dashboard messages are saved on the server, batched
+in submission order after the current turn, and restored after restart. Stop
+cancels those pending messages. Completed chats continue through their platform handler,
 preserving the native conversation, workspace and title across restart. If a
 chat needs a new workflow instead, its follow-up uses the default repository
 available when the chat was created.

@@ -307,9 +307,14 @@ export class WorkflowRuntime {
 		}
 		return messages!;
 	}
-	recordChatMessage(id: string, text: string, step: string): ChatMessage {
+	recordChatMessage(
+		id: string,
+		text: string,
+		step: string,
+		messageId: string = randomUUID(),
+	): ChatMessage {
 		const message = {
-			id: randomUUID(),
+			id: messageId,
 			text,
 			step,
 			at: new Date().toISOString(),

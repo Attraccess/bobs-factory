@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -28,7 +28,7 @@ import { capacityRunStatus } from "./WorkflowRuntime.js";
 interface ServerHooks {
 	capacity?: MachineCapacity;
 	chat?(id: string): ChatState;
-	message?(id: string, text: string): void;
+	message?(id: string, text: string, messageId?: string): void | Promise<void>;
 	defaultRunner?(): string;
 	subscribe?(listener: (id: string) => void): () => void;
 	repositories(): { id: string; name: string }[];
@@ -500,7 +500,7 @@ export class FactoryServer {
 		);
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/messages",
-			(request, reply) => {
+			async (request, reply) => {
 				const id = request.params.id;
 				if (
 					!runtime.runs.has(id) &&
@@ -515,11 +515,13 @@ export class FactoryServer {
 					throw new Error(
 						state?.reason ?? "Chat is disabled for this workflow",
 					);
-				hooks.message(id, text);
+				const messageId = randomUUID();
+				await hooks.message(id, text, messageId);
 				const message = runtime.recordChatMessage(
 					id,
 					text,
 					state.step ?? "simple",
+					messageId,
 				);
 				return reply.code(202).send({ message, mode: state.mode });
 			},

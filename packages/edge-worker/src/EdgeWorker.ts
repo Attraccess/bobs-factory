@@ -962,7 +962,8 @@ export class EdgeWorker extends EventEmitter {
 					};
 				},
 				chat: (id) => this.factoryChatState(id),
-				message: (id, text) => this.sendFactoryChat(id, text),
+				message: (id, text, messageId) =>
+					this.sendFactoryChat(id, text, messageId),
 				start: (input) => this.startManualFactoryRun(input),
 				followup: (id, feedback) => this.startFactoryFollowup(id, feedback),
 				retryTitle: (id) => this.retryRunTitle(id),
@@ -1392,6 +1393,7 @@ export class EdgeWorker extends EventEmitter {
 				this.activeWebhookCount--;
 			},
 			onStateChange: () => this.savePersistedState(),
+			persistMessage: () => this.savePersistedState(true),
 			isShuttingDown: () => this.stopping,
 			onClaudeError: (error) => this.handleClaudeError(error),
 		};
@@ -7139,14 +7141,17 @@ ${taskSection}`;
 		};
 	}
 
-	private sendFactoryChat(id: string, text: string): void {
+	private sendFactoryChat(
+		id: string,
+		text: string,
+		messageId?: string,
+	): void | Promise<void> {
 		const state = this.factoryChatState(id);
 		if (!state.available) throw new Error(state.reason ?? "Chat unavailable");
 		const chatHandler = this.chatHandlerForSession(id);
 		if (chatHandler) {
 			this.getFactoryRuntime().updateViewState(id, { keptOpen: true });
-			chatHandler.sendMessage(id, text);
-			return;
+			return chatHandler.sendMessage(id, text, messageId);
 		}
 		if (this.askUserQuestionHandler.hasPendingQuestion(id)) {
 			this.askUserQuestionHandler.handleUserResponse(id, text);
@@ -9953,8 +9958,8 @@ ${input.userComment}
 	/**
 	 * Save current EdgeWorker state for all repositories
 	 */
-	private savePersistedState(): Promise<void> {
-		this.stateSaveQueue = this.stateSaveQueue.then(async () => {
+	private savePersistedState(requireSuccess = false): Promise<void> {
+		const save = this.stateSaveQueue.then(async () => {
 			try {
 				const state = this.serializeMappings();
 				await this.persistenceManager.saveEdgeWorkerState(state);
@@ -9963,9 +9968,12 @@ ${input.userComment}
 				);
 			} catch (error) {
 				this.logger.error(`Failed to save persisted EdgeWorker state:`, error);
+				if (requireSuccess) throw error;
 			}
 		});
-		return this.stateSaveQueue;
+		// A failed strict save must not poison later lifecycle saves.
+		this.stateSaveQueue = save.catch(() => {});
+		return save;
 	}
 
 	/**

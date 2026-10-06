@@ -137,11 +137,10 @@ it.each([
 			available: true,
 			mode: "continue",
 		});
-		worker.sendFactoryChat(session.id, "Check reconnects too");
-		expect(() => worker.sendFactoryChat(session.id, "Duplicate")).toThrow(
-			/resuming|starting/,
-		);
-		await vi.waitFor(() => expect(starts).toHaveLength(2));
+		await worker.sendFactoryChat(session.id, "Check reconnects too");
+		await worker.sendFactoryChat(session.id, "Queued follow-up");
+		await vi.waitFor(() => expect(starts).toHaveLength(3));
+		expect(starts[2]).toBe("Queued follow-up");
 		expect(starts[1]).toBe("Check reconnects too");
 		expect(configs[1]).toMatchObject({
 			resumeSessionId: "native-chat",
@@ -253,4 +252,22 @@ it("continues a legacy Cyrus session once, then permits live steering in that sa
 	finish();
 	await Promise.resolve();
 	await Promise.resolve();
+});
+
+it("surfaces failed message persistence without poisoning later state saves", async () => {
+	const worker: any = Object.create(EdgeWorker.prototype);
+	worker.stateSaveQueue = Promise.resolve();
+	worker.serializeMappings = () => ({});
+	worker.logger = { debug: vi.fn(), error: vi.fn() };
+	worker.persistenceManager = {
+		saveEdgeWorkerState: vi
+			.fn()
+			.mockRejectedValueOnce(new Error("Disk full"))
+			.mockResolvedValue(undefined),
+	};
+	await expect(worker.savePersistedState(true)).rejects.toThrow("Disk full");
+	await expect(worker.savePersistedState()).resolves.toBeUndefined();
+	expect(worker.persistenceManager.saveEdgeWorkerState).toHaveBeenCalledTimes(
+		2,
+	);
 });

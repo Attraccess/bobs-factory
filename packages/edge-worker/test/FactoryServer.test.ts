@@ -858,6 +858,7 @@ it("protects chat delivery, validates input, preserves messages and refuses disa
 		expect(message).toHaveBeenCalledExactlyOnceWith(
 			"legacy",
 			"New instruction",
+			expect.any(String),
 		);
 		const detail = (
 			await server.app.inject({
@@ -872,7 +873,7 @@ it("protects chat delivery, validates input, preserves messages and refuses disa
 		enabled = false;
 		expect((await send("No")).statusCode).toBe(409);
 		enabled = true;
-		message.mockImplementation(() => {
+		message.mockImplementation(async () => {
 			throw new Error("Turn ended");
 		});
 		expect((await send("Too late")).json().error).toBe("Turn ended");
