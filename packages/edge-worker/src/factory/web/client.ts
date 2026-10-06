@@ -93,6 +93,12 @@ export async function api<T = any>(
 		(options.method ?? "GET").toUpperCase(),
 	);
 	const finish = write ? beginWrite() : undefined;
+	// Bind the write to the configuration shown when it began, before async checks.
+	const configRevision =
+		write &&
+		["/api/workflows", "/api/title-settings", "/api/runs"].includes(path)
+			? client.getQueryData<any>(["config"])?.configRevision
+			: undefined;
 	try {
 		if ((write || pwaState().status !== "ready") && !(await checkVersion()))
 			throw new Error(
@@ -104,14 +110,7 @@ export async function api<T = any>(
 			headers: {
 				"Content-Type": "application/json",
 				"X-Factory-Request": "1",
-				...(write &&
-				["/api/workflows", "/api/runs"].includes(path) &&
-				client.getQueryData<any>(["config"])?.configRevision
-					? {
-							"X-Factory-Config": client.getQueryData<any>(["config"])!
-								.configRevision,
-						}
-					: {}),
+				...(configRevision ? { "X-Factory-Config": configRevision } : {}),
 				...options.headers,
 				"X-Factory-Build": uiBuild,
 			},

@@ -89,6 +89,7 @@ export class FactoryServer {
 					JSON.stringify([
 						runtime.listWorkflows(),
 						runtime.getDefaultWorkflow(),
+						runtime.getTitleSettings(),
 					]),
 				)
 				.digest("hex");
@@ -121,7 +122,9 @@ export class FactoryServer {
 					});
 				const config = request.headers["x-factory-config"];
 				if (
-					["/api/workflows", "/api/runs"].includes(request.url) &&
+					["/api/workflows", "/api/title-settings", "/api/runs"].includes(
+						request.url.split("?")[0]!,
+					) &&
 					config !== undefined &&
 					config !== configRevision()
 				)
@@ -186,6 +189,7 @@ export class FactoryServer {
 		}));
 		this.app.put("/api/title-settings", (request) => ({
 			titleGeneration: runtime.updateTitleSettings(request.body),
+			configRevision: configRevision(),
 		}));
 
 		this.app.put("/api/workflows", (request) => {

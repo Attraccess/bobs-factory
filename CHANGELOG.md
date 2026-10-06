@@ -38,6 +38,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Reject stale run-title settings saves so another tab’s changes are preserved, while keeping the unsaved draft available for review. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
+
 - Acknowledge chat resume requests without reporting that the conversation has resumed while setup is still pending. ([#11](https://github.com/Attraccess/bobs-factory/pull/11))
 
 - Bob's clarification and implementation-blocker questions now explain the relevant facts, source of the decision and consequences in plain language; optional diagrams and images appear beside the answer box.

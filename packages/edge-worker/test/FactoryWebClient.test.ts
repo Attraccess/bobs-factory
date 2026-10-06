@@ -8,6 +8,7 @@ import {
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
 	api,
+	client,
 	useAction,
 	validateLiveConnection,
 } from "../src/factory/web/client.js";
@@ -46,6 +47,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+	client.clear();
 	vi.unstubAllGlobals();
 	vi.clearAllMocks();
 });
@@ -223,9 +225,36 @@ it("releases a rejected SSE response before retrying or waiting for an update", 
 	expect(cancel).toHaveBeenCalledOnce();
 });
 
+it("sends the original title-settings revision despite a refresh during the version check", async () => {
+	client.setQueryData(["config"], { configRevision: "old-tab" });
+	let sentRevision: string | null = null;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (path: string, options: RequestInit = {}) => {
+			if (path === "/api/version") {
+				client.setQueryData(["config"], { configRevision: "new-tab" });
+				return version();
+			}
+			sentRevision = new Headers(options.headers).get("X-Factory-Config");
+			return factoryResponse(
+				{
+					error:
+						"Recipe settings changed. Refresh and review your draft before sending.",
+				},
+				{ status: 409 },
+			);
+		}),
+	);
+	await expect(
+		api("/api/title-settings", { method: "PUT", body: '{"model":"unsaved"}' }),
+	).rejects.toThrow("settings changed");
+	expect(sentRevision).toBe("old-tab");
+});
+
 it("retains title settings through a stale refresh and unrelated recipe saves", async () => {
 	const cache = new QueryClient();
 	const original = {
+		configRevision: "original",
 		workflows: [{ id: "simple" }],
 		titleGeneration: { runner: "claude" },
 	};
@@ -239,7 +268,10 @@ it("retains title settings through a stale refresh and unrelated recipe saves", 
 				: options.method === "PUT"
 					? factoryResponse(
 							_path === "/api/title-settings"
-								? { titleGeneration: JSON.parse(options.body as string) }
+								? {
+										titleGeneration: JSON.parse(options.body as string),
+										configRevision: "saved",
+									}
 								: JSON.parse(options.body as string),
 						)
 					: new Promise<Response>((resolve) => {
@@ -265,6 +297,7 @@ it("retains title settings through a stale refresh and unrelated recipe saves", 
 		body: { workflows: [{ id: "simple", name: "Updated" }] },
 	});
 	expect(cache.getQueryData(["config"])).toEqual({
+		configRevision: "saved",
 		workflows: [{ id: "simple", name: "Updated" }],
 		titleGeneration: { runner: "codex", model: "cheap" },
 	});

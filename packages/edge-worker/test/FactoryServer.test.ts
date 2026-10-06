@@ -1054,10 +1054,10 @@ it("protects and persists global title settings independently of workflow config
 	});
 	const headers = { host: "localhost", "x-factory-request": "1" };
 	try {
-		expect(
-			(await server.app.inject({ url: "/api/config", headers })).json()
-				.titleGeneration,
-		).toEqual({});
+		const originalConfig = (
+			await server.app.inject({ url: "/api/config", headers })
+		).json();
+		expect(originalConfig.titleGeneration).toEqual({});
 		for (const badHeaders of [
 			{ host: "evil.test", "x-factory-request": "1" },
 			{ host: "localhost" },
@@ -1078,16 +1078,48 @@ it("protects and persists global title settings independently of workflow config
 			model: "cheap",
 			reasoningEffort: "low",
 		};
-		expect(
-			(
-				await server.app.inject({
-					method: "PUT",
-					url: "/api/title-settings",
-					headers,
-					payload: settings,
-				})
-			).json(),
-		).toEqual({ titleGeneration: settings });
+		const saved = await server.app.inject({
+			method: "PUT",
+			url: "/api/title-settings",
+			headers: {
+				...headers,
+				"x-factory-config": originalConfig.configRevision,
+			},
+			payload: settings,
+		});
+		expect(saved.statusCode).toBe(200);
+		const savedConfig = (
+			await server.app.inject({ url: "/api/config", headers })
+		).json();
+		expect(saved.json()).toEqual({
+			titleGeneration: settings,
+			configRevision: savedConfig.configRevision,
+		});
+		expect(savedConfig.configRevision).not.toBe(originalConfig.configRevision);
+		for (const url of [
+			"/api/title-settings",
+			"/api/title-settings?source=tab",
+		]) {
+			const staleSave = await server.app.inject({
+				method: "PUT",
+				url,
+				headers: {
+					...headers,
+					"x-factory-config": originalConfig.configRevision,
+				},
+				payload: { runner: "claude", model: "stale-tab" },
+			});
+			expect(staleSave.statusCode).toBe(409);
+			expect(runtime.getTitleSettings()).toEqual(settings);
+		}
+		const currentSave = await server.app.inject({
+			method: "PUT",
+			url: "/api/title-settings",
+			headers: { ...headers, "x-factory-config": savedConfig.configRevision },
+			payload: settings,
+		});
+		expect(currentSave.statusCode).toBe(200);
+		expect(currentSave.json().configRevision).toBe(savedConfig.configRevision);
 		runtime.updateWorkflows(runtime.listWorkflows());
 		expect(new WorkflowRuntime(home, hooks).getTitleSettings()).toEqual(
 			settings,
