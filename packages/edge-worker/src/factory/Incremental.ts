@@ -74,9 +74,11 @@ export async function roleProgress(
 			historyLength: run.history.length,
 			at: new Date().toISOString(),
 		};
+		// Guide snapshots need runtime-owned revision scope even when the agent's
+		// upstream outputs are restricted by a customized recipe.
 		if (
-			["guide", "visual-scope"].includes(context.step.id) &&
-			!context.step.inputs
+			context.step.id === "guide" ||
+			(context.step.id === "visual-scope" && !context.step.inputs)
 		) {
 			const receipt = (run.outputs["merge-readiness"] ?? run.outputs.ci) as
 				| { baseSha?: string }
