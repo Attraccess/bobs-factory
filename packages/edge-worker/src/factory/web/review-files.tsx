@@ -126,7 +126,11 @@ function Tree({
 										.get(node.file.id)
 										?.filter((i) => i !== owner)
 										.map((i) => (
-											<span key={i} className="chip">
+											<span
+												key={i}
+												className="chip shared-step"
+												style={{ borderColor: chapterColor(i) }}
+											>
 												also step {i + 1}
 											</span>
 										))}
@@ -428,11 +432,20 @@ export function ChangedFiles({
 					<div className="area-chips">
 						{areas.map((area) => (
 							<span
-								className="chip"
+								className={`chip ${exclusive.includes(area) ? "exclusive-area" : ""}`}
 								key={area}
-								style={{ borderColor: areaColor(area) }}
+								title={
+									exclusive.includes(area)
+										? "No other step touches this area"
+										: undefined
+								}
 							>
-								{area}
+								<i
+									className="area-swatch"
+									aria-hidden="true"
+									style={{ background: areaColor(area) }}
+								/>
+								{area} · {files.filter((f) => fileArea(f.path) === area).length}
 								{exclusive.includes(area) && (
 									<span
 										className="exclusive"

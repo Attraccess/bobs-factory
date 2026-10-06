@@ -3490,8 +3490,18 @@ kbd {
 	margin: 10px 0;
 }
 .area-chips .chip {
+	border: 1px solid var(--line);
 	white-space: nowrap;
 	font-size: 0.7rem;
+}
+.area-chips .exclusive-area {
+	border-color: var(--question-text);
+}
+.area-swatch {
+	width: 9px;
+	height: 9px;
+	border-radius: 2px;
+	flex-shrink: 0;
 }
 .review-file-tree {
 	list-style: none;
@@ -3580,6 +3590,10 @@ kbd {
 	font-family: inherit;
 	font-size: 0.6rem;
 	padding: 2px 5px;
+}
+.file-tags .shared-step {
+	border: 1px solid;
+	white-space: nowrap;
 }
 .file-counts {
 	white-space: nowrap;
@@ -3837,6 +3851,37 @@ kbd {
 .map-controls .button,
 .primary-visual > .actions .button {
 	color: var(--text);
+}
+.map-controls .button {
+	border-radius: 999px;
+}
+.map-controls .map-before {
+	--map-tint: var(--red);
+	--map-ink: var(--stuck-text);
+}
+.map-controls .map-after {
+	--map-tint: var(--green);
+	--map-ink: var(--review-text);
+}
+.map-controls .button[aria-pressed="true"] {
+	border-color: var(--map-ink);
+	background: var(--map-tint);
+	color: var(--map-ink);
+}
+.map-check {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 18px;
+	height: 18px;
+	border: 1px solid currentColor;
+	border-radius: 4px;
+	font-size: 12px;
+}
+.map-controls [aria-pressed="true"] .map-check {
+	background: var(--map-ink);
+	border-color: var(--map-ink);
+	color: var(--surface);
 }
 .flow-reveal button:not(.reached) .step-badge {
 	background: var(--track);

@@ -140,16 +140,24 @@ export function SystemMap({
 				<div className="actions map-controls">
 					<Button
 						variant="secondary"
+						className="map-before"
 						aria-pressed={before}
 						onClick={() => setBefore(!before)}
 					>
+						<span className="map-check" aria-hidden="true">
+							{before ? "✓" : ""}
+						</span>
 						Before
 					</Button>
 					<Button
 						variant="secondary"
+						className="map-after"
 						aria-pressed={after}
 						onClick={() => setAfter(!after)}
 					>
+						<span className="map-check" aria-hidden="true">
+							{after ? "✓" : ""}
+						</span>
 						After
 					</Button>
 				</div>
