@@ -30,6 +30,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Factory QA now tests agreed user stories across UI, API and CLI changes, captures representative screenshots during those flows, and requires fixes and retesting for consequential failures. QA evidence and optional improvements remain visible for human review. ([Taskbot #74](https://taskbot.apps.janjaap.de/p/bobs-factory/t/74))
+
 - Review guides open on a dedicated reading page, with a compact entry on Today, saved reading positions and feedback drafts, and a clear empty state when no guide is available. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59), [#9](https://github.com/Attraccess/bobs-factory/pull/9))
 
 - Review the complete PR through feature chapters with before/after cards, processing diagrams, relevant screenshots and expandable code evidence. Reading progress survives updates; guide-only refresh preserves completed work and images. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
