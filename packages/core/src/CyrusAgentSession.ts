@@ -72,6 +72,8 @@ export interface RunTitleJob {
 	state: "pending" | "completed" | "failed" | "cancelled";
 	context: string;
 	prepared?: boolean;
+	/** Persisted timeout retry count; restarting must not reset the retry budget. */
+	retries?: number;
 	settings: Pick<
 		import("./agent-runner-types.js").AgentRunnerConfig,
 		"model" | "modelReasoningEffort" | "effort" | "modelVariant" | "serviceTier"

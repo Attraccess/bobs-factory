@@ -175,8 +175,8 @@ export const icons: Record<string, string> = {
 	ci: "🧪",
 	"ci-fix": "🧪",
 	"visual-scope": "🎯",
-	capture: "📸",
-	"visual-review": "🖼️",
+	capture: "🧪",
+	"visual-review": "👀",
 	"visual-gate": "✅",
 	"visual-fix": "🔧",
 	guide: "📖",
@@ -280,10 +280,10 @@ export const friendly: Record<string, string> = {
 	ci: "CI checks",
 	"merge-readiness": "Merge readiness",
 	"ci-fix": "CI fix report",
-	"visual-scope": "Visual scope",
-	capture: "Screenshots",
-	"visual-review": "Visual review",
-	"visual-gate": "Visual gate",
+	"visual-scope": "QA stories and screenshots",
+	capture: "QA and screenshots",
+	"visual-review": "QA and screenshot review",
+	"visual-gate": "QA gate",
 	guide: "Review guide",
 	handoff: "Hand-off",
 	"human-review": "Human review",
@@ -300,7 +300,24 @@ export function artifactsOf(
 			seen.add(hash);
 			return true;
 		})
-		.map(([name, value]) => ({ name, value, title: friendly[name] ?? name }));
+		.map(([name, value]) => ({
+			name,
+			value,
+			title:
+				!(value as any)?.qaContract &&
+				["capture", "visual-scope", "visual-review", "visual-gate"].includes(
+					name,
+				)
+					? (
+							{
+								capture: "Screenshots",
+								"visual-scope": "Visual scope",
+								"visual-review": "Visual review",
+								"visual-gate": "Visual gate",
+							} as Record<string, string>
+						)[name]!
+					: (friendly[name] ?? name),
+		}));
 }
 export function screenshotUrl(run: any, index: number, artifact = "capture") {
 	const value = run.outputs?.[artifact];

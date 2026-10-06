@@ -1,7 +1,9 @@
 // biome-ignore-all lint/a11y/noNoninteractiveTabindex: scrollable maps need keyboard focus
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { GuideChapter, GuideFlow, GuideSystem } from "../FactoryResults";
 import { LazyImage } from "./media";
+import type { Annotate } from "./review";
+import { useReviewFeedback } from "./review-comments";
 import { mapConnections } from "./review-model";
 import { Button, Modal } from "./ui";
 
@@ -316,11 +318,37 @@ export function SystemMap({
 		</figure>
 	);
 }
-export function FlowReveal({ flow }: { flow: GuideFlow }) {
+export function FlowReveal({
+	flow,
+	path = "",
+	annotate,
+}: {
+	flow: GuideFlow;
+	path?: string;
+	annotate?: Annotate;
+}) {
 	const [stage, setStage] = useState(0);
+	const editing = useReviewFeedback()?.draft.editing;
+	useEffect(() => {
+		if (!editing?.startsWith(`${path}/steps/`)) return;
+		const index = Number(editing.slice(`${path}/steps/`.length));
+		if (Number.isInteger(index) && index >= 0 && index < flow.steps.length)
+			setStage(index);
+	}, [editing, path, flow.steps.length]);
 	return (
 		<section className="flow-reveal">
-			<h3>{flow.title}</h3>
+			{annotate ? (
+				annotate(
+					`${path}/title`,
+					flow.title,
+					"Diagram",
+					flow.title,
+					[4, 0],
+					<h3>{flow.title}</h3>,
+				)
+			) : (
+				<h3>{flow.title}</h3>
+			)}
 			<ol>
 				{flow.steps.map((step, i) => (
 					<li key={i}>
@@ -335,7 +363,18 @@ export function FlowReveal({ flow }: { flow: GuideFlow }) {
 						</button>
 						{stage === i && (
 							<div>
-								<p>{step.detail}</p>
+								{annotate ? (
+									annotate(
+										`${path}/steps/${i}`,
+										step.label,
+										"Diagram step",
+										`${step.label}: ${step.detail}`,
+										[4, 1, i],
+										<p>{step.detail}</p>,
+									)
+								) : (
+									<p>{step.detail}</p>
+								)}
 								{i < flow.steps.length - 1 && (
 									<button
 										type="button"
@@ -373,8 +412,12 @@ export function Screens({
 	error,
 	loading,
 	strip = false,
+	annotate,
+	base = "",
 }: {
 	strip?: boolean;
+	annotate?: Annotate;
+	base?: string;
 	refs: GuideChapter["screenshots"];
 	inventory: any[];
 	runId: string;
@@ -384,6 +427,13 @@ export function Screens({
 	const [index, setIndex] = useState(0),
 		[open, setOpen] = useState(false),
 		[touch, setTouch] = useState<{ x: number; y: number }>();
+	const editing = useReviewFeedback()?.draft.editing;
+	useEffect(() => {
+		if (!editing?.startsWith(`${base}/screenshots/`)) return;
+		const selected = Number(editing.slice(`${base}/screenshots/`.length));
+		if (Number.isInteger(selected) && selected >= 0 && selected < refs.length)
+			setIndex(selected);
+	}, [editing, base, refs.length]);
 	const ref = refs[index]!,
 		shot = inventory.find((s) => s.area === ref.area && s.state === ref.state),
 		src = shot
@@ -475,15 +525,38 @@ export function Screens({
 				</div>
 			) : (
 				<>
-					<button
-						type="button"
-						className="screen-open"
-						onClick={() => setOpen(true)}
-						aria-label={`Enlarge image: ${ref.caption}`}
-					>
-						{picture}
-					</button>
-					<figcaption>{ref.caption}</figcaption>
+					{annotate ? (
+						annotate(
+							`${base}/screenshots/${index}`,
+							ref.caption,
+							"Screenshot",
+							`Area: ${ref.area}; state: ${ref.state}; caption: ${ref.caption}`,
+							[5, index],
+							<>
+								<button
+									type="button"
+									className="screen-open"
+									onClick={() => setOpen(true)}
+									aria-label={`Enlarge image: ${ref.caption}`}
+								>
+									{picture}
+								</button>
+								<figcaption>{ref.caption}</figcaption>
+							</>,
+						)
+					) : (
+						<>
+							<button
+								type="button"
+								className="screen-open"
+								onClick={() => setOpen(true)}
+								aria-label={`Enlarge image: ${ref.caption}`}
+							>
+								{picture}
+							</button>
+							<figcaption>{ref.caption}</figcaption>
+						</>
+					)}
 					{refs.length > 1 && (
 						<>
 							{navigation}
@@ -529,6 +602,8 @@ export function Screens({
 }
 export function ChapterVisual({
 	chapter,
+	annotate,
+	base,
 	system,
 	inventory,
 	runId,
@@ -536,6 +611,8 @@ export function ChapterVisual({
 	loading,
 }: {
 	chapter: GuideChapter;
+	annotate?: Annotate;
+	base?: string;
 	system?: GuideSystem;
 	inventory: any[];
 	runId: string;
@@ -547,6 +624,12 @@ export function ChapterVisual({
 		parts = chapter.systemPartIds ?? [],
 		logic = Boolean(flow || parts.length),
 		[mode, setMode] = useState(visual ? "visual" : "logic");
+	const editing = useReviewFeedback()?.draft.editing;
+	useEffect(() => {
+		if (editing?.startsWith(`${base}/screenshots/`) && visual)
+			setMode("visual");
+		if (editing?.startsWith(`${base}/flow/`) && logic) setMode("logic");
+	}, [editing, base, visual, logic]);
 	if (!visual && !logic) return null;
 	return (
 		<section className="primary-visual">
@@ -571,6 +654,8 @@ export function ChapterVisual({
 			{mode === "visual" ? (
 				<Screens
 					refs={chapter.screenshots}
+					annotate={annotate}
+					base={base}
 					inventory={inventory}
 					runId={runId}
 					error={error}
@@ -591,7 +676,13 @@ export function ChapterVisual({
 							<SystemMap system={system} highlighted={parts} afterOnly />
 						</details>
 					)}
-					{flow && <FlowReveal flow={flow} />}
+					{flow && (
+						<FlowReveal
+							flow={flow}
+							annotate={chapter.flow ? annotate : undefined}
+							path={`${base}/${chapter.flow ? "flow" : "diagrams/0"}`}
+						/>
+					)}
 				</>
 			)}
 		</section>

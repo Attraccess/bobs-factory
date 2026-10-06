@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { CaptureSchema, filterReview } from "./FactoryTools.js";
+import {
+	CaptureSchema,
+	filterReview,
+	QaCaptureSchema,
+} from "./FactoryTools.js";
+
+import { QaScopeFieldsSchema, scopeIssues } from "./Qa.js";
 
 const text = z.string().min(1);
 export const VisualScopeSchema = z
@@ -101,6 +107,13 @@ export const ReviewFilesReferenceSchema = z.object({
 	snapshotId: text,
 	baseSha: text,
 	headSha: text,
+});
+
+export const QaScopeSchema = VisualScopeSchema.and(
+	QaScopeFieldsSchema,
+).superRefine((scope, context) => {
+	for (const message of scopeIssues(scope))
+		context.addIssue({ code: "custom", message });
 });
 export const GuideSchema = z.object({
 	tldr: short(90).optional(),
@@ -237,7 +250,11 @@ export const GeneratedGuideSchema = GuideSchema.extend({
 });
 export type Guide = z.infer<typeof GuideSchema>;
 export type GuideChapter = NonNullable<Guide["chapters"]>[number];
-export function validateFactoryResult(step: string, output: unknown): unknown {
+export function validateFactoryResult(
+	step: string,
+	output: unknown,
+	qaContract?: "qa-v1",
+): unknown {
 	switch (step) {
 		case "clarify":
 			return z
@@ -277,12 +294,25 @@ export function validateFactoryResult(step: string, output: unknown): unknown {
 				)
 				.parse(output);
 		case "code-review":
-		case "visual-review":
-			return filterReview(output);
+		case "visual-review": {
+			const review = filterReview(output);
+			if (step === "visual-review" && qaContract) {
+				z.object({ qaContract: z.literal(qaContract) }).parse(output);
+				return { ...review, qaContract };
+			}
+			// Only the frozen step definition can opt a run into QA.
+			delete review.qaContract;
+			delete review.qaReviewStamp;
+			return review;
+		}
 		case "visual-scope":
-			return VisualScopeSchema.parse(output);
+			return qaContract
+				? QaScopeSchema.parse(output)
+				: VisualScopeSchema.parse(output);
 		case "capture":
-			return CaptureSchema.parse(output);
+			return qaContract
+				? QaCaptureSchema.parse(output)
+				: CaptureSchema.parse(output);
 		case "guide":
 			return GuideSchema.parse(output);
 		case "code-fix":

@@ -191,3 +191,24 @@ it("requires compact fields for every new guide regardless of version or frozen 
 		}).success,
 	).toBe(false);
 });
+
+it("upgrades the saved QA guide to compact content without changing operator settings", () => {
+	const stored = structuredClone(defaultWorkflows);
+	const guide = stored
+		.find((w) => w.id === "factory-pipeline")!
+		.steps.find((s) => s.id === "guide")!;
+	const current = guide.prompt;
+	guide.prompt = current!.split("\nEvery new guide MUST")[0]!;
+	guide.model = "operator-model";
+	const migrated = upgradeWorkflows(stored) as typeof stored;
+	expect(
+		migrated
+			.find((w) => w.id === "factory-pipeline")!
+			.steps.find((s) => s.id === "guide"),
+	).toMatchObject({
+		prompt: current,
+		model: "operator-model",
+		qaContract: "qa-v1",
+	});
+	expect(upgradeWorkflows(migrated)).toEqual(migrated);
+});

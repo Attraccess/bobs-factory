@@ -11,7 +11,9 @@ All notable changes to this project will be documented in this file.
   revision. Incomplete new guides return to the guide agent for correction; older
   guides remain readable. Browser history restores the matching page, map highlights
   follow chapter colours, long map labels fit their boxes and connections without
-  overlap, and file diffs stay limited to the selected file. ([Taskbot #75](https://taskbot.apps.janjaap.de/p/bobs-factory/t/75), [#17](https://github.com/Attraccess/bobs-factory/pull/17))
+  overlap, and file diffs stay limited to the selected file. Item comments and collected
+  feedback remain available in compact steps and expanded evidence. ([Taskbot #75](https://taskbot.apps.janjaap.de/p/bobs-factory/t/75), [#17](https://github.com/Attraccess/bobs-factory/pull/17))
+- Long-press review-guide items to comment in a popover, see a small count badge on commented items, retain drafts across navigation and reloads, and submit them together with additional feedback from any guide page. Keep pending submissions locked when returning to the guide and preserve unsent edits when a request succeeds. ([Taskbot #70](https://taskbot.apps.janjaap.de/p/bobs-factory/t/70), [#15](https://github.com/Attraccess/bobs-factory/pull/15))
 
 - Select workflows from Linear assignments and mentions using `[workflow=<id>]`, retain readable selection/source history, and protect active issues against competing or redelivered launches. Replies respect the accepted run and runner steering capabilities; interrupted startup retains recovery ownership, unassignment releases it and cancels pending runner startup, and native stop redelivery cannot escalate to a full kill. Ticket context includes every comment and attachment page. ([Taskbot #55](https://taskbot.apps.janjaap.de/p/bobs-factory/t/55), [#13](https://github.com/Attraccess/bobs-factory/pull/13))
 - Automatically name new runs in the background with a globally configurable title agent and project context tools, including Cursor, Claude's URL-only HTTP servers, Gemini's URL-only SSE servers and relative server scripts. Show the run ID while naming, update titles live, preserve historical titles during recovery, and keep dashboard feedback usable for Slack/Zulip sessions across restarts and concurrent platform replies. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68), [#11](https://github.com/Attraccess/bobs-factory/pull/11))
@@ -35,6 +37,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Factory QA now tests agreed user stories across UI, API and CLI changes, captures representative screenshots during those flows, and requires fixes and retesting for consequential failures. QA evidence and optional improvements remain visible for human review. ([Taskbot #74](https://taskbot.apps.janjaap.de/p/bobs-factory/t/74))
+
 - Review guides open on a dedicated reading page, with a compact entry on Today, saved reading positions and feedback drafts, and a clear empty state when no guide is available. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59), [#9](https://github.com/Attraccess/bobs-factory/pull/9))
 
 - Review the complete PR through feature chapters with before/after cards, processing diagrams, relevant screenshots and expandable code evidence. Reading progress survives updates; guide-only refresh preserves completed work and images. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
@@ -45,6 +49,12 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Wait through temporary GitHub mergeability calculations and pending checks during factory handoff, and route actionable conflicts, check failures and feedback through the existing fix/review cycle. Saved runs retain completed work and show the current blocker instead of repeatedly failing handoff. ([#18](https://github.com/Attraccess/bobs-factory/pull/18))
+
+- Confirm approved factory PR merges after issue cleanup removes the worktree, and recover the saved final merge step without recreating unfinished work or repeating review. ([#18](https://github.com/Attraccess/bobs-factory/pull/18))
+
+- Retry automatic run-title timeouts once with a longer deadline, show naming failures, and let operators retry naming with current settings without rerunning the workflow.
 
 - Missing visual evidence now waits for capture assistance and retries capture/review in the same run, retaining verified accepted screenshots and completed work across restarts. Retry also recovers existing runs stuck at this gate. ([#14](https://github.com/Attraccess/bobs-factory/pull/14))
 - Acknowledge chat resume requests without reporting that the conversation has resumed while setup is still pending. ([#11](https://github.com/Attraccess/bobs-factory/pull/11))

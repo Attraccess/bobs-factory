@@ -5,17 +5,25 @@ export function signature(value: unknown) {
 	return (hash >>> 0).toString(36);
 }
 
-/** Preserve the progress identity used by both the preview and artifact reader. */
-export function reviewKey(run: any, guide: unknown) {
-	return `factory-review/${run.id}/${run.reviewGate?.headSha ?? run.roleRevisions?.["pipeline/guide"]?.headSha ?? ""}/${signature(guide)}`;
-}
-
-export function guideMatchesGate(run: any) {
-	const revision =
+export function guideRevision(run: any) {
+	return (
 		run.roleRevisions?.["pipeline/guide"] ??
 		Object.entries<any>(run.roleRevisions ?? {}).find(
 			([key]) => key === "guide" || key.endsWith("/guide"),
-		)?.[1];
+		)?.[1]
+	);
+}
+export function reviewRevision(run: any) {
+	return run.reviewGate?.headSha ?? guideRevision(run)?.headSha ?? "";
+}
+
+/** Preserve the progress identity used by both the preview and artifact reader. */
+export function reviewKey(run: any, guide: unknown) {
+	return `factory-review/${run.id}/${reviewRevision(run)}/${signature(guide)}`;
+}
+
+export function guideMatchesGate(run: any) {
+	const revision = guideRevision(run);
 	return !revision || revision.headSha === run.reviewGate?.headSha;
 }
 

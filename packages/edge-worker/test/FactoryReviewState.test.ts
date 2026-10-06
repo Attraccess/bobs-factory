@@ -90,6 +90,17 @@ it("blocks decisions on a guide from a different revision, including custom nest
 			roleRevisions: { "pipeline/guide": { headSha: "new" } },
 		}),
 	).toBe(true);
+	expect(
+		reviewKey(
+			{
+				id: "nested",
+				roleRevisions: { "custom/guide": { headSha: "historical-sha" } },
+			},
+			{},
+		),
+	).toBe(
+		`factory-review/nested/historical-sha/${reviewKey({ id: "other" }, {}).split("/").at(-1)}`,
+	);
 	// Historical guides predate role-revision receipts; their pending gate is still server-validated.
 	expect(guideMatchesGate({ reviewGate: { headSha: "legacy" } })).toBe(true);
 });

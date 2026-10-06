@@ -12,6 +12,7 @@ import {
 	parseAgentOutput,
 	toolArguments,
 } from "../src/factory/FactoryTools.js";
+import { legacyScreenshotSteps } from "../src/factory/legacyScreenshotSteps.js";
 import { validateWorkflows, type Workflow } from "../src/factory/Workflow.js";
 import {
 	type ExecutionContext,
@@ -1376,6 +1377,98 @@ it("upgrades only stock CI routing, retaining customized models and routes", () 
 	).toBe("code-review");
 });
 
+it("upgrades handoff into the existing CI fix route without replacing custom routes", () => {
+	const definitions = structuredClone(defaultWorkflows);
+	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
+	const handoff = shared.steps.find((x) => x.id === "handoff")!;
+	handoff.branches = [];
+	const upgraded = validateWorkflows(upgradeWorkflows(definitions));
+	expect(
+		upgraded
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.find((x) => x.id === "handoff")!.branches,
+	).toEqual([{ when: { path: "fix", equals: true }, next: "ci-fix" }]);
+	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
+	handoff.branches = [
+		{ when: { path: "fix", equals: true }, next: "code-review" },
+	];
+	expect(
+		validateWorkflows(upgradeWorkflows(definitions))
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.find((x) => x.id === "handoff")!.branches,
+	).toEqual(handoff.branches);
+	handoff.branches = [];
+	shared.steps.find((x) => x.id === "ci")!.branches = [];
+	expect(
+		validateWorkflows(upgradeWorkflows(definitions))
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.find((x) => x.id === "handoff")!.branches,
+	).toEqual([]);
+});
+
+it("recovers a saved nested handoff through its existing fixer without replaying completed work", async () => {
+	const called: string[] = [];
+	const { runtime, home } = create({
+		tool: async (ctx) => {
+			called.push(ctx.step.id);
+			if (ctx.step.id === "handoff") return { fix: true };
+			throw new Error("Fixture stops after dispatching the fixer");
+		},
+		agent: async (ctx) => {
+			called.push(ctx.step.id);
+			return { summary: "Conflict resolved", checks: ["Fixture validation"] };
+		},
+	});
+	const run = runtime.create({
+		workflow: defaultWorkflows.find((x) => x.id === "factory")!,
+		repositoryId: "repo",
+		workspace: home,
+		input: "Fixture",
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
+	});
+	run
+		.workflowDefinitions!.find((x) => x.id === "factory-pipeline")!
+		.steps.find((x) => x.id === "handoff")!.branches = [];
+	run.status = "failed";
+	run.step = "pipeline/handoff";
+	run.history = [
+		{
+			step: "pipeline/guide",
+			output: { summary: "Accepted guide" },
+			at: new Date().toISOString(),
+		},
+	];
+	const history = structuredClone(run.history);
+	run.checkpoint = {
+		current: "pipeline",
+		visits: { pipeline: 1 },
+		active: {
+			phase: "executing",
+			children: [
+				{
+					current: "handoff",
+					visits: { handoff: 1 },
+					active: { phase: "executing" },
+				},
+			],
+		},
+	};
+	runtime.save(run);
+	runtime.retry(run.id);
+	await vi.waitFor(() => expect(run.status).toBe("failed"));
+	expect(called).toEqual(["handoff", "ci-fix", "after-ci-fix"]);
+	expect(run.history[0]).toEqual(history[0]);
+	expect(run.history.slice(1).map((x) => x.step)).toEqual([
+		"pipeline/handoff",
+		"pipeline/ci-fix",
+	]);
+	expect(run.step).toBe("pipeline/after-ci-fix");
+});
+
 it("upgrades stock coordination limits without changing agent/custom limits", () => {
 	const definitions = structuredClone(defaultWorkflows);
 	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
@@ -1664,4 +1757,189 @@ it("upgrades stock implementation blockers without replacing custom instructions
 		.steps.find((item) => item.id === "implement")!;
 	expect(custom.prompt).toBe(implementation.prompt);
 	expect(custom.askQuestions).toBe(false);
+});
+
+it("upgrades a coherent screenshot recipe to QA atomically, keeps custom behavior and frozen run definitions", async () => {
+	const saved = structuredClone(defaultWorkflows);
+	const pipeline = saved.find((w) => w.id === "factory-pipeline")!;
+	for (const legacy of legacyScreenshotSteps)
+		pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =
+			structuredClone(legacy);
+	pipeline.steps.find((s) => s.id === "capture")!.model =
+		"custom-capture-model";
+	const upgraded = validateWorkflows(upgradeWorkflows(saved));
+	const qa = upgraded.find((w) => w.id === "factory-pipeline")!;
+	expect(qa.steps.find((s) => s.id === "visual-scope")).toMatchObject({
+		qaContract: "qa-v1",
+		branches: [],
+	});
+	expect(qa.steps.find((s) => s.id === "capture")).toMatchObject({
+		qaContract: "qa-v1",
+		model: "custom-capture-model",
+	});
+	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
+	pipeline.steps.find((s) => s.id === "visual-review")!.prompt =
+		"Custom screenshot requirements";
+	const custom = validateWorkflows(upgradeWorkflows(saved)).find(
+		(w) => w.id === "factory-pipeline",
+	)!;
+	// Handoff recovery is independent of the QA role migration: the existing
+	// CI fixer still handles late conflicts while custom screenshot roles stay intact.
+	expect(custom.steps.find((s) => s.id === "handoff")!.branches).toEqual([
+		{ when: { path: "fix", equals: true }, next: "ci-fix" },
+	]);
+	expect(
+		custom.steps.filter((s) =>
+			legacyScreenshotSteps.some((l) => l.id === s.id && l.id !== "handoff"),
+		),
+	).toEqual(
+		pipeline.steps.filter((s) =>
+			legacyScreenshotSteps.some((l) => l.id === s.id && l.id !== "handoff"),
+		),
+	);
+	const { runtime } = create();
+	const legacyDefinition = {
+		...defaultWorkflows.find((w) => w.id === "factory")!,
+		steps: structuredClone(legacyScreenshotSteps),
+	};
+	const run = start(runtime, legacyDefinition);
+	const frozen = structuredClone(run.workflow);
+	runtime.save(run);
+	const restored = new WorkflowRuntime(
+		runtime.directory.replace(/\/factory$/, ""),
+		{
+			agent: async () => ({}),
+			script: async () => ({}),
+			tool: async () => ({}),
+		},
+	);
+	expect(restored.get(run.id).workflow).toEqual(frozen);
+	await restored.shutdown();
+	await runtime.shutdown();
+});
+
+it("retries blocked nonvisual QA after restart and waits again without waiving criteria", async () => {
+	const tool = vi.fn(async (ctx: ExecutionContext) =>
+		ctx.run.answers.length < 2
+			? {
+					approved: false,
+					qaBlocked: true,
+					questions: [
+						"CLI fixture account is unavailable. Restore access, then explain how QA can run the required save check.",
+					],
+				}
+			: { approved: true },
+	);
+	const agentHook = vi.fn(async (ctx: ExecutionContext) => {
+		if (ctx.step.id === "capture")
+			expect((ctx.input as { answers: unknown[] }).answers).toHaveLength(
+				ctx.run.answers.length,
+			);
+		return { qaContract: "qa-v1", results: [] };
+	});
+	const { home, runtime } = create({ tool, agent: agentHook });
+	const definition = workflow([
+		agent("capture", {
+			inputs: ["visual-scope"],
+			qaContract: "qa-v1",
+			next: "visual-review",
+		}),
+		agent("visual-review", { next: "visual-gate", qaContract: "qa-v1" }),
+		{
+			id: "visual-gate",
+			name: "QA gate",
+			type: "tool",
+			tool: "visual-gate",
+			next: "end",
+			qaContract: "qa-v1",
+		},
+	]);
+	const run = start(runtime, definition);
+	run.outputs["visual-scope"] = { changed: false, areas: [] };
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const prefix = structuredClone(run.history);
+	const frozen = structuredClone(run.workflow);
+	await runtime.shutdown();
+	await execution;
+	const restored = new WorkflowRuntime(home, {
+		tool,
+		agent: agentHook,
+		script: async () => ({}),
+	});
+	const same = restored.get(run.id);
+	restored.resumeAll();
+	await vi.waitFor(() => expect(same.status).toBe("waiting"));
+	expect(same.history).toEqual(prefix);
+	expect(same.workflow).toEqual(frozen);
+	restored.answer(same.id, "Access still unavailable; please approve anyway");
+	await vi.waitFor(() =>
+		expect(
+			same.status === "waiting" && same.history.length > prefix.length,
+		).toBe(true),
+	);
+	expect(same.outputs["visual-gate"]).toMatchObject({
+		approved: false,
+		qaBlocked: true,
+	});
+	restored.answer(
+		same.id,
+		"Account restored; execute CLI save with fixture 42",
+	);
+	await vi.waitFor(() => expect(same.status).toBe("completed"));
+	expect(same.answers).toHaveLength(2);
+	expect(
+		agentHook.mock.calls.filter(([c]) => c.step.id === "capture"),
+	).toHaveLength(3);
+	await restored.shutdown();
+});
+
+it("upgrades the original stock end-at-handoff recipe with QA and its human checkpoint together", () => {
+	const saved = structuredClone(defaultWorkflows);
+	const pipeline = saved.find((w) => w.id === "factory-pipeline")!;
+	for (const legacy of legacyScreenshotSteps)
+		pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =
+			structuredClone(legacy);
+	pipeline.steps = pipeline.steps.filter(
+		(s) => !["human-review", "human-fix", "merge"].includes(s.id),
+	);
+	pipeline.steps.find((s) => s.id === "handoff")!.next = "end";
+	const upgraded = validateWorkflows(upgradeWorkflows(saved));
+	const qa = upgraded.find((w) => w.id === "factory-pipeline")!;
+	expect(qa.steps.find((s) => s.id === "handoff")).toMatchObject({
+		qaContract: "qa-v1",
+		next: "human-review",
+	});
+	expect(qa.steps.some((s) => s.id === "human-review")).toBe(true);
+	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
+});
+
+it("preserves a screenshot recipe with customized result handling or nonvisual routing", () => {
+	for (const customize of [
+		(step: Workflow["steps"][number]) => {
+			step.json = false;
+		},
+		(step: Workflow["steps"][number]) => {
+			step.askQuestions = true;
+		},
+		(step: Workflow["steps"][number]) => {
+			step.branches = [];
+		},
+	]) {
+		const saved = structuredClone(defaultWorkflows),
+			pipeline = saved.find((w) => w.id === "factory-pipeline")!;
+		for (const legacy of legacyScreenshotSteps)
+			pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =
+				structuredClone(legacy);
+		customize(pipeline.steps.find((s) => s.id === "visual-scope")!);
+		const updated = validateWorkflows(upgradeWorkflows(saved)).find(
+			(w) => w.id === "factory-pipeline",
+		)!;
+		expect(updated.steps.find((s) => s.id === "visual-scope")).toEqual(
+			pipeline.steps.find((s) => s.id === "visual-scope"),
+		);
+		expect(
+			updated.steps.find((s) => s.id === "capture")!.qaContract,
+		).toBeUndefined();
+	}
 });
