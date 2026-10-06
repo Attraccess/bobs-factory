@@ -527,6 +527,18 @@ export interface AgentRunnerConfig {
 	 * the Claude runner consumes this.
 	 */
 	additionalEnv?: Record<string, string>;
+	/** Complete child environment. When present, ambient environment and repository .env are not inherited. */
+	childEnvironment?: Record<string, string>;
+	/** Shared private journal directory for runner artifacts in a common workspace. */
+	runnerArtifactLeaseDirectory?: string;
+	/** Scrub private execution credentials before public logs, messages and callbacks. */
+	redact?: (text: string) => string;
+	/** Validated ordinary settings, with authentication and permissions controlled separately. */
+	runnerSettings?: Record<string, unknown>;
+	/** Native system registrations suppressed by an explicit execution context. */
+	codexDisabledMcp?: string[];
+	/** Explicit Claude settings discovery for accepted execution profiles. */
+	settingSources?: ("user" | "project" | "local")[];
 	/**
 	 * Custom directory path for Claude's auto-memory storage. Forwarded to the
 	 * Claude SDK as settings.autoMemoryDirectory. When unset, the SDK falls

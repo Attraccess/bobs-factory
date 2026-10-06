@@ -18,6 +18,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 
 ### Added
+- Add versioned execution snapshots, scoped Git/provider/hook/MCP environments, runner source/version checks, Cursor IPC isolation and recoverable project artifact leases. Add revision-safe profile APIs and runtime/UI coverage. Live runner API and GitLab tests were waived by the operator. ([Taskbot #57](https://taskbot.apps.janjaap.de/p/bobs-factory/t/57))
 - Added workflow/API/MCP regression coverage and a scoped F1 factory lifecycle drive; corrected CLI activity-sink lookup and cancellation of queued factory runners. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Documented native Codex command exceptions and the distinction between runner sandbox modes, egress-proxy settings, and writable directories. ([#1521](https://github.com/cyrusagents/cyrus/pull/1521))
 

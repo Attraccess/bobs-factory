@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Select execution identities and tool profiles independently, configure repository/factory defaults, preview selected accounts and MCP tools, and retain accepted bindings through workflow roles and recovery. Private runner environments use explicit credential references and reject unsupported native configuration. ([Taskbot #57](https://taskbot.apps.janjaap.de/p/bobs-factory/t/57))
+
 - Guided PR review now offers concise chapter steps, system maps, image viewers,
   browser-local reading checks and Changed files with diffs pinned to the reviewed
   revision. Incomplete new guides return to the guide agent for correction; older

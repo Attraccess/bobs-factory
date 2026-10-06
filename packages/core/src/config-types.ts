@@ -152,6 +152,8 @@ export interface EdgeWorkerRuntimeConfig {
 			options?: {
 				baseBranchOverrides?: Map<string, string>;
 				onRepoSetupHookEvent?: RepoSetupHookEventHandler;
+				/** Complete execution environment; implementations must forward it to Git and setup hooks. */
+				childEnvironment?: Record<string, string>;
 			},
 		) => Promise<Workspace>;
 

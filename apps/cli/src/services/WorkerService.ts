@@ -275,9 +275,13 @@ export class WorkerService {
 					options?: {
 						baseBranchOverrides?: Map<string, string>;
 						onRepoSetupHookEvent?: RepoSetupHookEventHandler;
+						childEnvironment?: Record<string, string>;
 					},
 				): Promise<Workspace> => {
-					return this.gitService.createGitWorktree(issue, repositories, {
+					const gitService = options?.childEnvironment
+						? this.gitService.withEnvironment(options.childEnvironment)
+						: this.gitService;
+					return gitService.createGitWorktree(issue, repositories, {
 						globalSetupScript: edgeConfig.global_setup_script,
 						baseBranchOverrides: options?.baseBranchOverrides,
 						onRepoSetupHookEvent: options?.onRepoSetupHookEvent,

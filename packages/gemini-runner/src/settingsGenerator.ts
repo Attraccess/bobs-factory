@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { McpServerConfig } from "cyrus-core";
+import { type McpServerConfig, ProjectArtifactLease } from "cyrus-core";
 import type { GeminiMcpServerConfig } from "./types.js";
 
 interface GeminiSettingsPaths {
@@ -47,6 +47,7 @@ interface GeminiSettings {
  * Options for generating Gemini settings
  */
 export interface GeminiSettingsOptions {
+	ordinarySettings?: Record<string, unknown>;
 	maxSessionTurns?: number;
 	mcpServers?: Record<string, GeminiMcpServerConfig>;
 	allowMCPServers?: string[];
@@ -243,6 +244,7 @@ export function autoDetectMcpConfig(
  */
 function generateSettings(options: GeminiSettingsOptions): GeminiSettings {
 	const settings: GeminiSettings = {
+		...options.ordinarySettings,
 		general: {
 			previewFeatures: true,
 		},
@@ -362,7 +364,24 @@ export function writeGeminiSettings(
 export function setupGeminiSettings(
 	options: GeminiSettingsOptions,
 	projectRoot?: string,
+	leaseDirectory?: string,
+	existingLease?: ProjectArtifactLease,
 ): () => void {
+	if (projectRoot) {
+		const lease =
+			existingLease ??
+			new ProjectArtifactLease(projectRoot, "gemini", leaseDirectory);
+		try {
+			lease.write(
+				".gemini/settings.json",
+				JSON.stringify(generateSettings(options), null, 2),
+			);
+		} catch (error) {
+			lease.release();
+			throw error;
+		}
+		return () => lease.release();
+	}
 	const hadBackup = backupGeminiSettings(projectRoot);
 
 	// Write settings

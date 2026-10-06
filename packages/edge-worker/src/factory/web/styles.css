@@ -4104,3 +4104,28 @@ kbd {
 	max-width: 65ch;
 	line-height: 1.65;
 }
+
+/* Execution profiles use the same fields as other recipes, with nested concerns. */
+.execution-editor {
+	margin: 1rem 0;
+}
+.execution-editor fieldset {
+	margin: 1rem 0;
+	padding: 1rem;
+	border: 1px solid var(--line);
+	border-radius: 1rem;
+}
+.execution-editor legend {
+	padding: 0 0.4rem;
+	font-weight: 700;
+}
+.execution-editor label:has(input[type="checkbox"]) {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.execution-editor input[type="checkbox"] {
+	width: 1.1rem;
+	height: 1.1rem;
+	flex: 0 0 auto;
+}

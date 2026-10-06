@@ -18,7 +18,7 @@ export interface OpenCodeMcpRemoteConfig {
 	type: "remote";
 	url: string;
 	headers?: Record<string, string>;
-	oauth?: Record<string, unknown>;
+	oauth?: Record<string, unknown> | false;
 	enabled?: boolean;
 }
 
@@ -47,7 +47,7 @@ interface CyrusMcpServerConfig {
 	env?: Record<string, string>;
 	url?: string;
 	headers?: Record<string, string>;
-	oauth?: Record<string, unknown>;
+	oauth?: Record<string, unknown> | false;
 }
 
 const ENV_DENY_PATTERNS = ["*.env", "*.env.*"];
@@ -307,6 +307,7 @@ function mapMcpServer(
 	name: string,
 	server: CyrusMcpServerConfig,
 	unsupported: string[],
+	disableOAuth = false,
 ): OpenCodeMcpLocalConfig | OpenCodeMcpRemoteConfig | null {
 	if (!server || typeof server !== "object") return null;
 
@@ -322,7 +323,11 @@ function mapMcpServer(
 			type: "remote",
 			url: server.url,
 			...(server.headers ? { headers: server.headers } : {}),
-			...(isRecord(server.oauth) ? { oauth: server.oauth } : {}),
+			...(disableOAuth
+				? { oauth: false as const }
+				: isRecord(server.oauth)
+					? { oauth: server.oauth }
+					: {}),
 			enabled: true,
 		};
 	}
@@ -426,7 +431,12 @@ export function buildOpenCodeConfig(
 	const mcp: Record<string, OpenCodeMcpLocalConfig | OpenCodeMcpRemoteConfig> =
 		{};
 	for (const [name, server] of Object.entries(mcpServers)) {
-		const mapped = mapMcpServer(name, server, unsupported);
+		const mapped = mapMcpServer(
+			name,
+			server,
+			unsupported,
+			!!config.childEnvironment,
+		);
 		if (mapped) mcp[name] = mapped;
 	}
 

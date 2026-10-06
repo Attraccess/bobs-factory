@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAction, useConfig } from "./client";
+import { ExecutionEditor, ExecutionSelectors } from "./execution";
 import { DraftNotice } from "./pwa-ui";
 import { forgetDraft, revisionOf, useRestorableState } from "./restoration";
 import { Button, Modal, useToast } from "./ui";
@@ -205,6 +206,7 @@ export function Composer({
 			revisionOf([config.repositories, config.workflows]),
 		),
 		[settings, setSettings] = useRestorableState("composer/settings", {}),
+		[execution, setExecution] = useRestorableState("composer/execution", {}),
 		[agentOpen, setAgentOpen] = useRestorableState(
 			"composer/agent-panel",
 			false,
@@ -240,6 +242,7 @@ export function Composer({
 					workflow: workflow.id,
 					inputs,
 					...settings,
+					execution,
 				},
 			});
 			setValues({});
@@ -312,6 +315,15 @@ export function Composer({
 						</div>
 					</details>
 				)}
+				<ExecutionSelectors
+					config={config}
+					repositoryId={repo}
+					workflow={workflow?.id}
+					model={(settings as any).model}
+					value={execution}
+					onChange={setExecution}
+					runner={(settings as any).runner}
+				/>
 				{agentOpen && (
 					<AgentSettings
 						config={config}
@@ -539,6 +551,7 @@ export function Recipes() {
 				recipe is used when nothing else matches. Launch methods apply to new
 				runs; existing runs retain their definitions.
 			</p>
+			<ExecutionEditor config={config} />
 			<RunTitleSettings config={config} />
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (

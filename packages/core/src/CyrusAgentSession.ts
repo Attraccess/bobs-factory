@@ -121,6 +121,8 @@ export interface CyrusAgentSession {
 	opencodeSessionId?: string; // OpenCode-specific session ID (assigned once it initializes)
 	agentRunner?: IAgentRunner;
 	metadata?: {
+		/** Immutable public execution-profile snapshot. Interpreted by the Factory resolver. */
+		executionSnapshot?: unknown;
 		/** Default repository available when a standalone chat was created. */
 		chatRepositoryId?: string;
 		chatPlatform?: "slack" | "zulip";

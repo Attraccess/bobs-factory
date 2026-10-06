@@ -390,8 +390,9 @@ export class OpenCodeRunner extends EventEmitter implements IAgentRunner {
 			const child = spawn(this.config.openCodePath || "opencode", args, {
 				cwd: this.config.workingDirectory || cwd(),
 				env: {
-					...process.env,
+					...(this.config.childEnvironment ?? process.env),
 					...this.config.env,
+					...(this.config.childEnvironment ? this.config.additionalEnv : {}),
 					...runtimeEnv,
 				},
 				stdio: ["pipe", "pipe", "pipe"],
@@ -836,13 +837,18 @@ export class OpenCodeRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	private pushMessage(message: SDKMessage): void {
+		if (this.config.redact)
+			message = JSON.parse(this.config.redact(JSON.stringify(message)));
 		this.messages.push(message);
 		this.emit("message", message);
 	}
 
 	private emitError(error: Error): void {
+		const safeError = this.config.redact
+			? new Error(this.config.redact(error.message))
+			: error;
 		if (this.listenerCount("error") > 0) {
-			this.emit("error", error);
+			this.emit("error", safeError);
 		}
 	}
 }

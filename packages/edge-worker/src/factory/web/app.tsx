@@ -32,6 +32,7 @@ import {
 	useRuns,
 } from "./client";
 import { RunConversation } from "./conversation";
+import { ExecutionDetails } from "./execution";
 import {
 	FocusCard,
 	originLabel,
@@ -864,6 +865,7 @@ function RunPage({
 					)}
 				</div>
 			</header>
+			<ExecutionDetails run={run} />
 			<RunOrigin run={run} />
 			{kind && !reason && (
 				<FocusCard

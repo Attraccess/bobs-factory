@@ -1,15 +1,11 @@
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
-	chmodSync,
-	copyFileSync,
 	createWriteStream,
 	existsSync,
 	mkdirSync,
-	renameSync,
-	unlinkSync,
+	readFileSync,
 	type WriteStream,
-	writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { cwd } from "node:process";
@@ -40,6 +36,8 @@ import type {
 	SDKResultMessage,
 	SDKUserMessage,
 } from "cyrus-core";
+import { ProjectArtifactLease } from "cyrus-core";
+import { CursorWorkerRunner } from "./CursorWorkerRunner.js";
 import { CursorMessageFormatter } from "./formatter.js";
 import {
 	buildCyrusPermissionsConfig,
@@ -58,16 +56,6 @@ type SDKSystemInitMessage = Extract<
 	SDKMessage,
 	{ type: "system"; subtype: "init" }
 >;
-
-interface CursorHooksRestoreState {
-	hooksPath: string;
-	backupPath: string | null;
-}
-
-interface CursorSandboxRestoreState {
-	sandboxPath: string;
-	backupPath: string | null;
-}
 
 function safeStringify(value: unknown): string {
 	try {
@@ -403,6 +391,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	readonly supportsStreamingInput = false;
 
 	private config: CursorRunnerConfig;
+	private worker?: CursorWorkerRunner;
 	private sessionInfo: CursorSessionInfo | null = null;
 	private messages: SDKMessage[] = [];
 	private formatter: IMessageFormatter;
@@ -423,10 +412,9 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	private errorMessages: string[] = [];
 	private emittedToolUseIds = new Set<string>();
 	private logStream: WriteStream | null = null;
-	private hooksRestoreState: CursorHooksRestoreState | null = null;
-	private sandboxRestoreState: CursorSandboxRestoreState | null = null;
 	private sandboxEnvRestoreState: Map<string, string | undefined> | null = null;
-	private permissionsArtifactsInstalled = false;
+	private artifactLease?: ProjectArtifactLease;
+	private artifactAbort?: AbortController;
 
 	constructor(config: CursorRunnerConfig) {
 		super();
@@ -439,6 +427,19 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	async start(prompt: string): Promise<CursorSessionInfo> {
+		if (this.config.childEnvironment) {
+			if (!this.worker) {
+				this.worker = new CursorWorkerRunner(this.config);
+				this.worker.on("message", (message) => this.emit("message", message));
+				this.worker.on("complete", (messages) =>
+					this.emit("complete", messages),
+				);
+				this.worker.on("error", (error) => {
+					if (this.listenerCount("error")) this.emit("error", error);
+				});
+			}
+			return this.worker.start(prompt);
+		}
 		if (this.isRunning()) {
 			throw new Error("Cursor session already running");
 		}
@@ -470,7 +471,8 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 		const workspace = resolve(this.config.workingDirectory || cwd());
 
 		try {
-			this.installPermissionsArtifacts(workspace);
+			this.artifactAbort = new AbortController();
+			await this.installPermissionsArtifacts(workspace);
 
 			// Test/CI fallback for environments where the SDK can't run.
 			if (process.env.CYRUS_CURSOR_MOCK === "1") {
@@ -592,6 +594,11 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	stop(): void {
+		this.artifactAbort?.abort();
+		if (this.worker) {
+			this.worker.stop();
+			return;
+		}
 		this.wasStopped = true;
 		const run = this.currentRun;
 		if (run && typeof run.cancel === "function") {
@@ -609,10 +616,12 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	isRunning(): boolean {
+		if (this.worker) return this.worker.isRunning();
 		return this.sessionInfo?.isRunning ?? false;
 	}
 
 	getMessages(): SDKMessage[] {
+		if (this.worker) return this.worker.getMessages();
 		return [...this.messages];
 	}
 
@@ -765,10 +774,21 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 
 	// ---------- Permission artifacts ----------
 
-	private installPermissionsArtifacts(workspace: string): void {
-		const cursorDir = join(workspace, ".cursor");
-		mkdirSync(cursorDir, { recursive: true });
-
+	private async installPermissionsArtifacts(workspace: string): Promise<void> {
+		this.artifactLease = this.config.runnerArtifactLeaseDirectory
+			? await ProjectArtifactLease.acquire(
+					workspace,
+					"cursor",
+					this.config.runnerArtifactLeaseDirectory,
+					this.artifactAbort?.signal,
+				)
+			: new ProjectArtifactLease(
+					workspace,
+					"cursor",
+					this.config.cyrusHome
+						? join(this.config.cyrusHome, "runner-artifact-leases")
+						: undefined,
+				);
 		// 1. Permissions config (auto-deny is merged in by the helper). Pass
 		// the SDK-shaped MCP server map so the helper can derive a logical
 		// server name (e.g. "linear") from the command/url that the
@@ -781,29 +801,16 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			disallowedTools: this.config.disallowedTools,
 			mcpServers: sdkMcpServers,
 		});
-		writeFileSync(
-			join(cursorDir, "cyrus-permissions.json"),
+		this.artifactLease.write(
+			".cursor/cyrus-permissions.json",
 			`${JSON.stringify(cfg, null, "\t")}\n`,
-			"utf8",
+		);
+		this.artifactLease.write(
+			".cursor/cyrus-permission-check.mjs",
+			readFileSync(this.locatePermissionCheckSource()),
+			0o755,
 		);
 
-		// 2. Permission helper script (copied from package's bundled .mjs)
-		const helperDst = join(cursorDir, "cyrus-permission-check.mjs");
-		const helperSrc = this.locatePermissionCheckSource();
-		copyFileSync(helperSrc, helperDst);
-		try {
-			chmodSync(helperDst, 0o755);
-		} catch {}
-
-		// 3. Hooks config (back up any existing one)
-		const hooksPath = join(cursorDir, "hooks.json");
-		const existed = existsSync(hooksPath);
-		const backupPath = existed
-			? `${hooksPath}.cyrus-backup-${Date.now()}-${process.pid}`
-			: null;
-		if (existed && backupPath) {
-			renameSync(hooksPath, backupPath);
-		}
 		const hooksConfig = {
 			version: 1,
 			hooks: {
@@ -821,16 +828,9 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 				],
 			},
 		};
-		writeFileSync(
-			hooksPath,
+		this.artifactLease.write(
+			".cursor/hooks.json",
 			`${JSON.stringify(hooksConfig, null, "\t")}\n`,
-			"utf8",
-		);
-		this.hooksRestoreState = { hooksPath, backupPath };
-		this.permissionsArtifactsInstalled = true;
-
-		console.log(
-			`[CursorRunner] Installed Cyrus permission hooks at ${hooksPath} (allow=${cfg.allow.length}, deny=${cfg.deny.length}, backup=${backupPath ? "yes" : "no"})`,
 		);
 
 		// 4. Sandbox policy file (only when sandbox is enabled). Cursor's
@@ -850,21 +850,10 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 		});
 		if (!sandboxJson) return;
 
-		const cursorDir = join(workspace, ".cursor");
-		const sandboxPath = join(cursorDir, "sandbox.json");
-		const existed = existsSync(sandboxPath);
-		const backupPath = existed
-			? `${sandboxPath}.cyrus-backup-${Date.now()}-${process.pid}`
-			: null;
-		if (existed && backupPath) {
-			renameSync(sandboxPath, backupPath);
-		}
-		writeFileSync(
-			sandboxPath,
+		this.artifactLease!.write(
+			".cursor/sandbox.json",
 			`${JSON.stringify(sandboxJson, null, "\t")}\n`,
-			"utf8",
 		);
-		this.sandboxRestoreState = { sandboxPath, backupPath };
 
 		// Apply env vars on `process.env` so any child shell process spawned
 		// by the SDK inherits them. We snapshot the previous values and
@@ -879,28 +868,9 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			process.env[k] = env[k];
 		}
 		this.sandboxEnvRestoreState = restore;
-
-		console.log(
-			`[CursorRunner] Installed Cursor sandbox policy at ${sandboxPath} (allowReadwrite=${sandboxJson.additionalReadwritePaths.length}, allowReadonly=${sandboxJson.additionalReadonlyPaths.length}, networkAllow=${sandboxJson.networkPolicy.allow.length}, backup=${backupPath ? "yes" : "no"})`,
-		);
 	}
 
 	private uninstallSandboxArtifacts(): void {
-		const restore = this.sandboxRestoreState;
-		if (restore) {
-			try {
-				if (existsSync(restore.sandboxPath)) unlinkSync(restore.sandboxPath);
-				if (restore.backupPath && existsSync(restore.backupPath)) {
-					renameSync(restore.backupPath, restore.sandboxPath);
-				}
-			} catch (error) {
-				const detail = error instanceof Error ? error.message : String(error);
-				console.warn(
-					`[CursorRunner] Failed to restore sandbox.json at ${restore.sandboxPath}: ${detail}`,
-				);
-			}
-			this.sandboxRestoreState = null;
-		}
 		const envRestore = this.sandboxEnvRestoreState;
 		if (envRestore) {
 			for (const [k, v] of envRestore.entries()) {
@@ -932,36 +902,23 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 
 	private uninstallPermissionsArtifacts(): void {
 		this.uninstallSandboxArtifacts();
-		if (!this.permissionsArtifactsInstalled) return;
-		const workspace = resolve(this.config.workingDirectory || cwd());
-		const cursorDir = join(workspace, ".cursor");
-		const cfgPath = join(cursorDir, "cyrus-permissions.json");
-		const helperPath = join(cursorDir, "cyrus-permission-check.mjs");
-
-		try {
-			if (existsSync(cfgPath)) unlinkSync(cfgPath);
-		} catch {}
-		try {
-			if (existsSync(helperPath)) unlinkSync(helperPath);
-		} catch {}
-
-		const hooks = this.hooksRestoreState;
-		if (hooks) {
+		if (this.artifactLease) {
 			try {
-				if (existsSync(hooks.hooksPath)) unlinkSync(hooks.hooksPath);
-				if (hooks.backupPath && existsSync(hooks.backupPath)) {
-					renameSync(hooks.backupPath, hooks.hooksPath);
-				}
+				this.artifactLease.release();
 			} catch (error) {
-				const detail = error instanceof Error ? error.message : String(error);
+				this.errorMessages.push(
+					"Cursor runner artifacts could not be safely restored. Inspect the private recovery journal before retrying.",
+				);
+				this.pendingResultMessage = this.createErrorResultMessage(
+					this.errorMessages.at(-1)!,
+				);
 				console.warn(
-					`[CursorRunner] Failed to restore hooks at ${hooks.hooksPath}: ${detail}`,
+					"[CursorRunner] Runner artifact recovery requires attention:",
+					error instanceof Error ? error.message : "Unknown recovery failure",
 				);
 			}
+			this.artifactLease = undefined;
 		}
-
-		this.hooksRestoreState = null;
-		this.permissionsArtifactsInstalled = false;
 	}
 
 	// ---------- Internal helpers ----------
@@ -1082,6 +1039,8 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	private pushMessage(message: SDKMessage): void {
+		if (this.config.redact)
+			message = JSON.parse(this.config.redact(JSON.stringify(message)));
 		this.messages.push(message);
 		this.emit("message", message);
 	}
@@ -1148,6 +1107,11 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			this.logStream = null;
 		}
 		this.currentRun = null;
+		try {
+			this.agent?.close();
+		} catch {
+			/* SDK cleanup is best effort. */
+		}
 		this.agent = null;
 		this.pendingResultMessage = null;
 	}

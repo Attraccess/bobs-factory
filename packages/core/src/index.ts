@@ -296,3 +296,5 @@ export type {
 // EdgeWorker and other high-level code should use these generic names via issue-tracker exports
 
 export type { RunTitleJob } from "./CyrusAgentSession.js";
+export type { JsonObject } from "./config-schemas.js";
+export { ProjectArtifactLease } from "./ProjectArtifactLease.js";

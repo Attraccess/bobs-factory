@@ -33,7 +33,9 @@ export function titleMcpConfig(
 		...(runner === "cursor" ? [".cursor", "mcp.json"] : [".mcp.json"]),
 	);
 	const paths = [
-		...(existsSync(projectPath) ? [projectPath] : []),
+		...(!config.childEnvironment && existsSync(projectPath)
+			? [projectPath]
+			: []),
 		...(config.mcpConfigPath
 			? Array.isArray(config.mcpConfigPath)
 				? config.mcpConfigPath

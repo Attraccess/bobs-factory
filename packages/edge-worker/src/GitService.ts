@@ -38,6 +38,8 @@ export interface CreateGitWorktreeOptions {
 
 export interface GitServiceOptions {
 	cyrusHome?: string;
+	/** Complete process environment for a single accepted execution context. */
+	childEnvironment?: Record<string, string>;
 }
 
 export interface DeleteWorktreeOptions {
@@ -215,11 +217,23 @@ export class GitService {
 	private logger: ILogger;
 	private worktreeIncludeService: WorktreeIncludeService;
 	private cyrusHome: string;
+	private childEnvironment?: Record<string, string>;
 
 	constructor(options?: GitServiceOptions, logger?: ILogger) {
 		this.logger = logger ?? createLogger({ component: "GitService" });
 		this.worktreeIncludeService = new WorktreeIncludeService(this.logger);
 		this.cyrusHome = options?.cyrusHome ?? join(homedir(), ".cyrus");
+		this.childEnvironment = options?.childEnvironment
+			? { ...options.childEnvironment }
+			: undefined;
+	}
+
+	/** A scoped service avoids account/env switches on the shared service instance. */
+	withEnvironment(environment: Record<string, string>): GitService {
+		return new GitService(
+			{ cyrusHome: this.cyrusHome, childEnvironment: environment },
+			this.logger,
+		);
 	}
 
 	/**
@@ -229,6 +243,7 @@ export class GitService {
 		try {
 			// Check if branch exists locally
 			execSync(`git rev-parse --verify "${branchName}"`, {
+				env: this.childEnvironment,
 				cwd: repoPath,
 				stdio: "pipe",
 			});
@@ -239,6 +254,7 @@ export class GitService {
 				const remoteOutput = execSync(
 					`git ls-remote --heads origin "${branchName}"`,
 					{
+						env: this.childEnvironment,
 						cwd: repoPath,
 						stdio: "pipe",
 					},
@@ -281,6 +297,7 @@ export class GitService {
 		): string | null => {
 			try {
 				const output = execSync(`git rev-parse ${flag}`, {
+					env: this.childEnvironment,
 					cwd: workingDirectory,
 					encoding: "utf8",
 					stdio: "pipe",
@@ -341,6 +358,7 @@ export class GitService {
 	findWorktreeByBranch(branchName: string, repoPath: string): string | null {
 		try {
 			const output = execSync("git worktree list --porcelain", {
+				env: this.childEnvironment,
 				cwd: repoPath,
 				encoding: "utf-8",
 			});
@@ -665,6 +683,7 @@ export class GitService {
 					);
 				}
 			} catch (error) {
+				if (this.childEnvironment) throw error;
 				this.logger.error(
 					`Failed to create worktree for repo '${repository.name}': ${(error as Error).message}`,
 				);
@@ -713,6 +732,7 @@ export class GitService {
 			// Verify this is a git repository
 			try {
 				execSync("git rev-parse --git-dir", {
+					env: this.childEnvironment,
 					cwd: repository.repositoryPath,
 					stdio: "pipe",
 				});
@@ -755,6 +775,7 @@ export class GitService {
 			// Check if worktree already exists
 			try {
 				const worktrees = execSync("git worktree list --porcelain", {
+					env: this.childEnvironment,
 					cwd: repository.repositoryPath,
 					encoding: "utf-8",
 				});
@@ -785,6 +806,7 @@ export class GitService {
 					);
 					try {
 						execSync("git worktree prune", {
+							env: this.childEnvironment,
 							cwd: repository.repositoryPath,
 							stdio: "pipe",
 						});
@@ -800,6 +822,7 @@ export class GitService {
 			let createBranch = true;
 			try {
 				execSync(`git rev-parse --verify "${branchName}"`, {
+					env: this.childEnvironment,
 					cwd: repository.repositoryPath,
 					stdio: "pipe",
 				});
@@ -831,10 +854,15 @@ export class GitService {
 			let hasRemote = true;
 			try {
 				execSync("git fetch origin", {
+					env: this.childEnvironment,
 					cwd: repository.repositoryPath,
 					stdio: "pipe",
 				});
 			} catch (e) {
+				if (this.childEnvironment)
+					throw new Error(
+						"Selected execution account could not fetch the repository. Restore authentication or connectivity before retrying.",
+					);
 				this.logger.warn(
 					"Warning: git fetch failed, proceeding with local branch:",
 					(e as Error).message,
@@ -852,6 +880,7 @@ export class GitService {
 						const remoteOutput = execSync(
 							`git ls-remote --heads origin "${baseBranch}"`,
 							{
+								env: this.childEnvironment,
 								cwd: repository.repositoryPath,
 								stdio: "pipe",
 							},
@@ -882,6 +911,7 @@ export class GitService {
 						// Check if base branch exists locally
 						try {
 							execSync(`git rev-parse --verify "${baseBranch}"`, {
+								env: this.childEnvironment,
 								cwd: repository.repositoryPath,
 								stdio: "pipe",
 							});
@@ -915,6 +945,7 @@ export class GitService {
 			}
 
 			execSync(worktreeCmd, {
+				env: this.childEnvironment,
 				cwd: repository.repositoryPath,
 				stdio: "pipe",
 			});
@@ -950,6 +981,10 @@ export class GitService {
 				resolvedBaseBranches: { [repository.id]: resolution },
 			};
 		} catch (error) {
+			if (this.childEnvironment)
+				throw new Error(
+					`Failed to prepare the selected execution worktree. No fallback workspace was created. ${redactHookOutput(error instanceof Error ? error.message : "Git preparation failed", { cwd: repository.repositoryPath, env: this.childEnvironment })}`,
+				);
 			const errorMessage = (error as Error).message;
 			this.logger.error("Failed to create git worktree:", errorMessage);
 
@@ -1045,6 +1080,7 @@ export class GitService {
 				// Fall back to the worktree path itself (git reads its .git file to find the parent)
 				const cwd = mainRepoPath ?? wtPath;
 				execSync(`git worktree remove --force "${wtPath}"`, {
+					env: this.childEnvironment,
 					cwd,
 					stdio: "pipe",
 					timeout: 30_000,
@@ -1073,6 +1109,7 @@ export class GitService {
 		for (const repoPath of parentRepoPaths) {
 			try {
 				execSync("git worktree prune", {
+					env: this.childEnvironment,
 					cwd: repoPath,
 					stdio: "pipe",
 					timeout: 10_000,
@@ -1417,7 +1454,7 @@ export class GitService {
 		}
 
 		try {
-			if (!shouldPostRepoSetupActivity) {
+			if (!shouldPostRepoSetupActivity && !this.childEnvironment) {
 				this.runHookScriptInherited({
 					scriptPath,
 					expandedPath,
@@ -1455,7 +1492,7 @@ export class GitService {
 				const child = spawn(command, args, {
 					cwd,
 					env: {
-						...process.env,
+						...(this.childEnvironment ?? process.env),
 						...env,
 					},
 					shell,
@@ -1468,11 +1505,11 @@ export class GitService {
 
 				child.stdout?.on("data", (chunk: Buffer) => {
 					stdoutCollector.append(chunk);
-					process.stdout.write(chunk);
+					if (!this.childEnvironment) process.stdout.write(chunk);
 				});
 				child.stderr?.on("data", (chunk: Buffer) => {
 					stderrCollector.append(chunk);
-					process.stderr.write(chunk);
+					if (!this.childEnvironment) process.stderr.write(chunk);
 				});
 				child.on("error", (error) => {
 					clearTimeout(timeout);
@@ -1493,8 +1530,14 @@ export class GitService {
 						NodeExecError & { stdoutTail?: string; stderrTail?: string };
 					error.code = code === null ? undefined : code;
 					error.signal = timedOut ? "SIGTERM" : (signal ?? undefined);
-					const stdoutTail = stdoutCollector.tail({ cwd, env });
-					const stderrTail = stderrCollector.tail({ cwd, env });
+					const stdoutTail = stdoutCollector.tail({
+						cwd,
+						env: { ...this.childEnvironment, ...env },
+					});
+					const stderrTail = stderrCollector.tail({
+						cwd,
+						env: { ...this.childEnvironment, ...env },
+					});
 					error.stdoutTail = stdoutTail.text;
 					error.stderrTail = stderrTail.text;
 					(
@@ -1581,7 +1624,7 @@ export class GitService {
 			cwd,
 			stdio: "inherit",
 			env: {
-				...process.env,
+				...(this.childEnvironment ?? process.env),
 				...env,
 			},
 			timeout: timeoutMs,
