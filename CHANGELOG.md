@@ -43,7 +43,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Keep Factory ticket progress and PR links synchronized for native and Taskbot launches, retain the originating ticket through follow-ups, and recover pending tracking after provider failures. Use configured base branches for new native-ticket work, respect the selected runner’s MCP configuration, and mark coding tickets Done only after confirmed merge. ([Taskbot #77](https://taskbot.apps.janjaap.de/p/bobs-factory/t/77), [#19](https://github.com/Attraccess/bobs-factory/pull/19))
+- Keep Factory ticket progress and PR links synchronized for native and Taskbot launches, retain the originating ticket through follow-ups, and recover pending tracking after provider failures. Use configured base branches for new native-ticket work, respect the selected runner’s MCP configuration, keep blocked handoffs In Progress with their corrective-work blockers, and mark coding tickets Done only after confirmed merge. ([Taskbot #77](https://taskbot.apps.janjaap.de/p/bobs-factory/t/77), [#19](https://github.com/Attraccess/bobs-factory/pull/19))
 
 - Wait through temporary GitHub mergeability calculations and pending checks during factory handoff, and route actionable conflicts, check failures and feedback through the existing fix/review cycle. Saved runs retain completed work and show the current blocker instead of repeatedly failing handoff. ([#18](https://github.com/Attraccess/bobs-factory/pull/18))
 

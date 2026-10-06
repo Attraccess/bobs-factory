@@ -884,10 +884,14 @@ export class WorkflowRuntime {
 				const pr = readPath(output, "url");
 				const merged =
 					step.tool === "merge" && readPath(output, "merged") === true;
+				const handoffFix =
+					step.tool === "handoff" && readPath(output, "fix") === true;
 				const stage = merged
 					? "done"
 					: step.tool === "handoff"
-						? "in_review"
+						? handoffFix
+							? "in_progress"
+							: "in_review"
 						: step.tool === "merge"
 							? readPath(output, "fix") === true
 								? "in_progress"
@@ -896,10 +900,19 @@ export class WorkflowRuntime {
 				let body = merged
 					? `Git provider confirmed merge: ${pr}. Run ${run.id}.`
 					: step.tool === "handoff"
-						? `Ready for human review: ${pr}. Review the guide and explicitly approve this revision or request changes in Factory. ${String(readPath(outputs, "guide.summary") ?? "")}`
+						? handoffFix
+							? `Handoff requires corrections: ${pr}. Corrective work continues in Factory.`
+							: `Ready for human review: ${pr}. Review the guide and explicitly approve this revision or request changes in Factory. ${String(readPath(outputs, "guide.summary") ?? "")}`
 						: step.tool === "draft-pr"
 							? `Draft PR created or continued: ${pr}. Review and validation are underway.`
 							: `${step.name}: ${String(readPath(output, "summary") ?? (step.id === "plan" ? "Implementation direction recorded in the accepted plan." : "Inspect the implementation receipts and checks in Factory."))}`;
+				const blockers = readPath(output, "blockers");
+				if (handoffFix && Array.isArray(blockers))
+					body += `\n\nBlockers:\n${blockers
+						.map((blocker) => readPath(blocker, "message"))
+						.filter((message) => typeof message === "string")
+						.map((message) => `- ${message}`)
+						.join("\n")}`;
 				const checks = readPath(output, "checks");
 				if (step.id === "implement" && Array.isArray(checks))
 					body += `\n\nChecks:\n${checks
