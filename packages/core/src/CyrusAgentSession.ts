@@ -69,6 +69,8 @@ export interface RepositoryContext {
 
 export interface CyrusAgentSession {
 	triggerOrigin?: import("./WorkflowTrigger.js").WorkflowTriggerOrigin;
+	/** Accepted Simple chat setting, retained across recipe edits and restarts. */
+	workflowChat?: boolean;
 	/** Unique session identifier (was linearAgentActivitySessionId in v2.0) */
 	id: string;
 	/** External session ID from the issue tracker (e.g., Linear's AgentSession ID) */

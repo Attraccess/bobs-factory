@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Select workflows from Linear assignments and mentions using `[workflow=<id>]`, retain readable selection/source history, and protect active issues against competing or redelivered launches. Replies continue the accepted run, and ticket context includes every comment and attachment page. ([Taskbot #55](https://taskbot.apps.janjaap.de/p/bobs-factory/t/55))
+
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
 - Configure workflow launch methods independently in Recipes, preserve saved permissions even when a configuration refresh fails, filter manual choices, reject disallowed workflow selections with actionable feedback, and retain launch/source and nested caller context across restarts. (Taskbot bobs-factory #35, [#2](https://github.com/Attraccess/bobs-factory/pull/2))
 

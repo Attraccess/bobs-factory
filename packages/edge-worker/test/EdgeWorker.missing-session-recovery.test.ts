@@ -1,3 +1,5 @@
+import { rmSync } from "node:fs";
+import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import { ClaudeRunner } from "cyrus-claude-runner";
 import { LinearEventTransport } from "cyrus-linear-event-transport";
@@ -62,6 +64,9 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 	};
 
 	beforeEach(() => {
+		rmSync(join(TEST_CYRUS_HOME, "factory", "ticket-deliveries.json"), {
+			force: true,
+		});
 		vi.clearAllMocks();
 		vi.spyOn(console, "log").mockImplementation(() => {});
 		vi.spyOn(console, "error").mockImplementation(() => {});
@@ -166,6 +171,11 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 
 		// Mock issue tracker
 		const mockIssueTracker = {
+			createAgentActivity: vi.fn().mockResolvedValue({ success: true }),
+			fetchComments: vi
+				.fn()
+				.mockResolvedValue({ nodes: [], pageInfo: { hasNextPage: false } }),
+			fetchIssueAttachments: vi.fn().mockResolvedValue([]),
 			getClient: vi.fn().mockReturnValue({}),
 			fetchIssue: vi.fn().mockResolvedValue({
 				id: "issue-123",
@@ -308,7 +318,14 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 	// 1. PROMPTED WEBHOOK — Missing repository cache mapping
 	// =========================================================================
 	describe("Prompted webhook with missing repository cache", () => {
-		it("should attempt fallback repository resolution instead of returning silently", async () => {
+		it("should recover repository routing for an existing accepted session", async () => {
+			mockAgentSessionManager.getSession.mockReturnValue({
+				id: "agent-session-legacy-123",
+				issueContext: { issueId: "issue-123" },
+				repositories: [],
+				workspace: { path: "/test/workspaces/TEST-123" },
+				status: "active",
+			});
 			// Arrange: Ensure the issue-to-repository cache is EMPTY
 			// (simulates post-restart/migration scenario)
 			const repositoryRouter = (edgeWorker as any).repositoryRouter;
@@ -331,7 +348,14 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 			expect(determineRepoSpy).toHaveBeenCalled();
 		});
 
-		it("should re-establish the repository cache mapping after fallback resolution", async () => {
+		it("should re-establish the repository cache mapping for an accepted session", async () => {
+			mockAgentSessionManager.getSession.mockReturnValue({
+				id: "agent-session-legacy-123",
+				issueContext: { issueId: "issue-123" },
+				repositories: [],
+				workspace: { path: "/test/workspaces/TEST-123" },
+				status: "active",
+			});
 			// Arrange: Empty cache
 			const repositoryRouter = (edgeWorker as any).repositoryRouter;
 			const cache = repositoryRouter.getIssueRepositoryCache();
@@ -378,7 +402,17 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 			// Assert: Should NOT silently return — should post a visible response
 			// Currently FAILS because the code returns early with just a log.warn
 			// The user should see feedback that their prompt couldn't be processed
-			expect(mockAgentSessionManager.createResponseActivity).toHaveBeenCalled();
+			expect(
+				(edgeWorker as any).issueTrackers.get("test-workspace")
+					.createAgentActivity,
+			).toHaveBeenCalledWith(
+				expect.objectContaining({
+					content: expect.objectContaining({
+						type: "response",
+						body: expect.stringContaining("No accepted session"),
+					}),
+				}),
+			);
 		});
 	});
 
@@ -499,7 +533,7 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 	//     but we verify the recovery path works end-to-end)
 	// =========================================================================
 	describe("Prompted webhook with cached repository but missing session", () => {
-		it("should create a replacement session and continue processing", async () => {
+		it("should reject missing session context without launching a replacement workflow", async () => {
 			// Arrange: Repository IS cached, but session is NOT found
 			const repositoryRouter = (edgeWorker as any).repositoryRouter;
 			const cache = repositoryRouter.getIssueRepositoryCache();
@@ -508,7 +542,7 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 			// Session not found initially
 			mockAgentSessionManager.getSession.mockReturnValue(null);
 
-			// A genuinely new launch goes through trigger validation and workflow selection.
+			// Replies cannot become new launches when the accepted context is missing.
 			const initializeSpy = vi
 				.spyOn(edgeWorker as any, "initializeAgentRunner")
 				.mockResolvedValue(undefined);
@@ -518,12 +552,17 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 			// Act
 			await (edgeWorker as any).handleWebhook(webhook, [mockRepository]);
 
-			expect(initializeSpy).toHaveBeenCalledWith(
-				webhook.agentSession,
-				[mockRepository],
-				"test-workspace",
-				webhook.guidance,
-				webhook.agentActivity?.content.body,
+			expect(initializeSpy).not.toHaveBeenCalled();
+			expect(
+				(edgeWorker as any).issueTrackers.get("test-workspace")
+					.createAgentActivity,
+			).toHaveBeenCalledWith(
+				expect.objectContaining({
+					content: expect.objectContaining({
+						type: "response",
+						body: expect.stringContaining("No accepted session"),
+					}),
+				}),
 			);
 		});
 	});

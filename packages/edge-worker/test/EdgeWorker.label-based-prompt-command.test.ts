@@ -1,4 +1,6 @@
+import { rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import { ClaudeRunner } from "cyrus-claude-runner";
 import type { LinearAgentSessionCreatedWebhook } from "cyrus-core";
@@ -71,6 +73,9 @@ describe("EdgeWorker - Label-Based Prompt Command", () => {
 	};
 
 	beforeEach(() => {
+		rmSync(join(TEST_CYRUS_HOME, "factory", "ticket-deliveries.json"), {
+			force: true,
+		});
 		vi.clearAllMocks();
 		capturedPrompt = null;
 		capturedClaudeRunnerConfig = null;
@@ -134,6 +139,7 @@ describe("EdgeWorker - Label-Based Prompt Command", () => {
 		// Mock AgentSessionManager
 		mockAgentSessionManager = {
 			createCyrusAgentSession: vi.fn(),
+			getSessionsByIssueId: vi.fn().mockReturnValue([]),
 			getSession: vi.fn().mockReturnValue({
 				claudeSessionId: "claude-session-123",
 				workspace: { path: "/test/workspaces/TEST-123" },
@@ -220,6 +226,10 @@ Issue: {{issue_identifier}}`;
 
 		// Inject mock issue tracker for the test repository
 		const mockIssueTracker = {
+			fetchComments: vi
+				.fn()
+				.mockResolvedValue({ nodes: [], pageInfo: { hasNextPage: false } }),
+			fetchIssueAttachments: vi.fn().mockResolvedValue([]),
 			fetchIssue: vi.fn().mockImplementation(async (issueId: string) => {
 				return mockLinearClient.issue(issueId);
 			}),

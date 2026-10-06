@@ -1,4 +1,6 @@
+import { rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import { ClaudeRunner } from "cyrus-claude-runner";
 import type {
@@ -73,6 +75,9 @@ describe("EdgeWorker - System Prompt Resume", () => {
 	};
 
 	beforeEach(() => {
+		rmSync(join(TEST_CYRUS_HOME, "factory", "ticket-deliveries.json"), {
+			force: true,
+		});
 		vi.clearAllMocks();
 
 		// Mock console methods
@@ -130,8 +135,11 @@ describe("EdgeWorker - System Prompt Resume", () => {
 		// Mock AgentSessionManager
 		mockAgentSessionManager = {
 			createCyrusAgentSession: vi.fn(),
-			getSession: vi.fn().mockReturnValue({
-				id: "agent-session-123",
+			getSessionsByIssueId: vi.fn().mockReturnValue([]),
+			getSession: vi.fn().mockImplementation(() => ({
+				id: mockAgentSessionManager.createCyrusAgentSession.mock.calls.length
+					? "agent-session-123"
+					: undefined,
 				externalSessionId: "agent-session-123",
 				claudeSessionId: "claude-session-123",
 				issueId: "issue-123",
@@ -148,7 +156,7 @@ describe("EdgeWorker - System Prompt Resume", () => {
 				},
 				workspace: { path: "/test/workspaces/TEST-123" },
 				claudeRunner: mockClaudeRunner,
-			}),
+			})),
 			addAgentRunner: vi.fn(),
 			getAllClaudeRunners: vi.fn().mockReturnValue([]),
 			serializeState: vi.fn().mockReturnValue({ sessions: {}, entries: {} }),
@@ -221,6 +229,10 @@ Issue: {{issue_identifier}}`;
 
 		// Inject mock issue tracker for the test repository
 		const mockIssueTracker = {
+			fetchComments: vi
+				.fn()
+				.mockResolvedValue({ nodes: [], pageInfo: { hasNextPage: false } }),
+			fetchIssueAttachments: vi.fn().mockResolvedValue([]),
 			fetchIssue: vi.fn().mockImplementation(async (issueId: string) => {
 				return mockLinearClient.issue(issueId);
 			}),
@@ -290,6 +302,7 @@ Issue: {{issue_identifier}}`;
 				},
 			},
 			agentActivity: {
+				id: "prompted-activity-1",
 				content: {
 					type: "user",
 					body: "Please fix this bug",
