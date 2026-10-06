@@ -41,7 +41,7 @@ export function usePwa() {
 	}, pwaState);
 }
 export function disconnected(
-	message = "The server or tailnet connection is unavailable.",
+	message = "The factory connection is unavailable.",
 ) {
 	if (state.status !== "mismatch")
 		change({ status: "offline", error: message });

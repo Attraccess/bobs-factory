@@ -40,11 +40,7 @@ export function InstallControl() {
 			>
 				{pwa.installed ? "App help" : "Install app"}
 			</Button>
-			<Modal
-				open={help}
-				onOpenChange={setHelp}
-				title="Bob’s Factory on your device"
-			>
+			<Modal open={help} onOpenChange={setHelp} title="Install Bob’s Factory">
 				<div className="modal-body install-help">
 					{pwa.install && !pwa.installed && (
 						<Button
@@ -57,11 +53,6 @@ export function InstallControl() {
 							Install Bob’s Factory
 						</Button>
 					)}
-					{pwa.installed && <p>You’re using the standalone app.</p>}
-					<p>
-						Open the factory’s stable HTTPS address with the server running and
-						Tailscale connected, then use your browser’s installation menu.
-					</p>
 					<ul>
 						<li>
 							<strong>Mac Chrome:</strong> use the address bar install icon or
@@ -88,16 +79,6 @@ export function InstallControl() {
 							shortcut → Install.
 						</li>
 					</ul>
-					<p>
-						Offline mode opens only the app shell. Current runs and actions need
-						the server and tailnet. Installing or updating leaves backend runs
-						running. Push notifications will follow separately.
-					</p>
-					<p>
-						To uninstall, remove the app from your Dock or Home Screen, or use
-						the browser’s app settings. Site data may differ between Safari and
-						its installed app.
-					</p>
 					{error && <p role="alert">{error}</p>}
 				</div>
 			</Modal>
@@ -110,7 +91,7 @@ export function ConnectionNotice({ hasData }: { hasData: boolean }) {
 	const update = pwa.status === "mismatch" || pwa.waiting;
 	const connectionDetail =
 		pwa.error &&
-		!/Failed to fetch|Load failed|NetworkError|The server or tailnet connection is unavailable/.test(
+		!/Failed to fetch|Load failed|NetworkError|The factory connection is unavailable/.test(
 			pwa.error,
 		)
 			? pwa.error
@@ -123,7 +104,7 @@ export function ConnectionNotice({ hasData }: { hasData: boolean }) {
 						? "Factory updated. Actions are paused until you update."
 						: pwa.status === "checking"
 							? "Checking the factory connection and refreshing current state…"
-							: "Can’t reach the factory. The server and tailnet connection are required for current runs and actions."}
+							: "Can’t reach the factory. Check your connection and try again. Current runs and actions need the factory server."}
 					{hasData && pwa.status !== "checking" && (
 						<p>
 							Already-loaded information may be stale. Your drafts stay here; no

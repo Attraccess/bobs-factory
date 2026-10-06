@@ -28,10 +28,9 @@ trusted local operator.
 
 ## Install Bob’s Factory
 
-Open your usual **stable HTTPS Tailscale address** while Tailscale is connected
-and the factory server is running. Keep using the same origin: changing the
-hostname or port creates a separate app and separate browser data. The existing
-tailnet-only Serve deployment and its validating loopback proxy remain in place.
+Open your usual **stable HTTPS factory address** with the factory server running.
+Keep using the same origin: changing the hostname or port creates a separate app
+and separate browser data. Keep your existing access protections in place.
 Installation does not make the factory public or keep its server online.
 Loopback addresses also work as secure development contexts.
 
