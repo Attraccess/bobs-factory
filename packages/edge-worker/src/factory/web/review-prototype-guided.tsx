@@ -1,14 +1,20 @@
+// biome-ignore-all lint/a11y/noStaticElementInteractions: throwaway prototype
+// biome-ignore-all lint/complexity/noCommaOperator: throwaway prototype
 // biome-ignore-all lint/a11y/useKeyWithClickEvents: throwaway prototype
 // PROTOTYPE (throwaway) — bobs-factory#71, variant G "Guided Atlas".
 // Step-by-step: one Atlas-style overview, then ONE focus area per step (a chapter), then
 // the decision. Each chapter page shows a single primary visual at a time (screens OR how
 // it works), with the rest folded away. Single column, sticky nav, works on mobile.
 // The current step lives in the URL (`&step=`), so it is shareable and reload-stable.
+
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { api } from "./client";
 import { DecisionActions } from "./focus";
 import { LazyImage } from "./media";
 import {
+	areaOf,
 	BeforeAfter,
 	type Chapter,
 	Checks,
@@ -37,7 +43,8 @@ export function VariantG({
 }) {
 	const [params, setParams] = useSearchParams(),
 		n = model.chapters.length,
-		total = n + 2, // overview + chapters + decide
+		total = n + 3, // overview + chapters + files + decide
+		FILES = n + 1,
 		step = Math.max(0, Math.min(total - 1, Number(params.get("step") ?? 0))),
 		[done, toggle] = useChecks(),
 		[reviewed, setReviewed] = useState<Record<string, boolean>>({}),
@@ -90,6 +97,12 @@ export function VariantG({
 				))}
 				<button
 					type="button"
+					className={step === FILES ? "on" : step > FILES ? "seen" : ""}
+					onClick={() => go(FILES)}
+					title="Changed files"
+				/>
+				<button
+					type="button"
 					className={step === total - 1 ? "on" : ""}
 					onClick={() => go(total - 1)}
 					title="Decide"
@@ -107,6 +120,7 @@ export function VariantG({
 					setReviewed={(v) => setReviewed((r) => ({ ...r, [c.id]: v }))}
 				/>
 			)}
+			{step === FILES && <FilesStep model={model} run={run} go={go} />}
 			{step === total - 1 && (
 				<section className="rp-g-page">
 					<small className="rp-g-kicker">LAST STEP · DECIDE</small>
@@ -174,7 +188,9 @@ export function VariantG({
 						? "Overview"
 						: step === total - 1
 							? "Decide"
-							: `${step} / ${n}`}
+							: step === FILES
+								? "Files"
+								: `${step} / ${n}`}
 				</span>
 				{step < total - 1 ? (
 					<button
@@ -185,7 +201,13 @@ export function VariantG({
 							go(step + 1);
 						}}
 					>
-						{step === 0 ? "Start →" : step === n ? "Decide →" : "Next →"}
+						{step === 0
+							? "Start →"
+							: step === n
+								? "Files →"
+								: step === FILES
+									? "Decide →"
+									: "Next →"}
 					</button>
 				) : (
 					<span />
@@ -497,7 +519,601 @@ function HowItWorks({ model, c }: { model: Model; c: Chapter }) {
 	);
 }
 
-export const GUIDED_CSS = `
+/* ---- step n+1: changed files grouped by step, with a diff viewer ---- */
+
+type PrFile = {
+	path: string;
+	previous?: string;
+	status: string;
+	additions: number;
+	deletions: number;
+	patch: string | null;
+	demo?: boolean;
+};
+const AREA_HUES = [262, 200, 150, 32, 330, 95, 12, 230, 300, 175];
+const areaColor = (area: string, all: string[]) =>
+	`hsl(${AREA_HUES[all.indexOf(area) % AREA_HUES.length]} 60% 58%)`;
+const STATUS: Record<string, [string, string]> = {
+	added: ["A", "added"],
+	modified: ["M", "modified"],
+	removed: ["D", "deleted"],
+	renamed: ["R", "renamed"],
+	copied: ["C", "copied"],
+	changed: ["M", "modified"],
+};
+// PROTOTYPE-only demo data so the "went rogue" UI can be judged on PRs that are clean.
+const DEMO_ROGUE: PrFile[] = [
+	{
+		path: "libs/ui-kit/src/theme/colors.ts",
+		status: "modified",
+		additions: 48,
+		deletions: 52,
+		demo: true,
+		patch:
+			"@@ -1,8 +1,8 @@\n-export const primary = '#2b2346';\n-export const accent = '#7b61ff';\n+export const primary = palette.ink[900];\n+export const accent = palette.violet[500];\n import { palette } from './palette';\n \n export const surface = '#fff';\n-export const muted = '#6f6889';\n+export const muted = palette.ink[400];",
+	},
+	{
+		path: "libs/date-utils/src/format.ts",
+		status: "modified",
+		additions: 31,
+		deletions: 27,
+		demo: true,
+		patch:
+			"@@ -10,6 +10,7 @@ export function formatDate(d: Date) {\n-  return d.toLocaleDateString();\n+  // Unrelated refactor slipped into this PR\n+  return new Intl.DateTimeFormat(locale(), { dateStyle: 'medium' }).format(d);\n }",
+	},
+];
+
+function FilesStep({
+	model,
+	run,
+	go,
+}: {
+	model: Model;
+	run: any;
+	go: (i: number) => void;
+}) {
+	const [params] = useSearchParams(),
+		pr = run.reviewGate?.url ?? run.outputs?.["draft-pr"]?.url,
+		q = useQuery({
+			queryKey: ["prototype-pr-files", pr],
+			enabled: Boolean(pr),
+			queryFn: ({ signal }) =>
+				api<PrFile[]>(`/prototype-api/pr-files?pr=${encodeURIComponent(pr)}`, {
+					signal,
+				}),
+			staleTime: Infinity,
+		}),
+		demo = params.get("demoRogue") === "1",
+		[open, setOpen] = useState<Record<string, boolean>>({ unassigned: true }),
+		[viewer, setViewer] = useState<{ list: PrFile[]; i: number }>();
+	if (!pr)
+		return (
+			<section className="rp-g-page">
+				<p>No pull request is linked to this run.</p>
+			</section>
+		);
+	if (!q.data)
+		return (
+			<section className="rp-g-page">
+				<p role={q.error ? "alert" : "status"}>
+					{q.error
+						? `Could not load changed files: ${q.error.message}`
+						: "Loading changed files…"}
+				</p>
+			</section>
+		);
+	const files = [...q.data, ...(demo ? DEMO_ROGUE : [])],
+		byPath = new Map(files.map((f) => [f.path, f])),
+		claimed = new Map<string, number[]>();
+	for (const c of model.chapters)
+		for (const f of c.files)
+			claimed.set(f.path, [...(claimed.get(f.path) ?? []), c.index]);
+	if (demo) claimed.set(DEMO_ROGUE[0]!.path, [1]); // pretend step 2 also touched a UI lib
+	const groups = model.chapters.map((c: Chapter) => ({
+		key: c.id,
+		chapter: c,
+		files: [...claimed.entries()]
+			.filter(([, owners]) => owners.includes(c.index))
+			.map(([path]) => byPath.get(path))
+			.filter(Boolean) as PrFile[],
+	}));
+	const unassigned = files.filter((f) => !claimed.has(f.path));
+	const areas = [...new Set(files.map((f) => areaOf(f.path).area))];
+	// Areas touched by exactly one step: the cheapest "did this step wander off?" signal.
+	const areaSteps = new Map<string, Set<number>>();
+	for (const g of groups)
+		for (const f of g.files) {
+			const a = areaOf(f.path).area;
+			areaSteps.set(a, (areaSteps.get(a) ?? new Set()).add(g.chapter.index));
+		}
+	const adds = files.reduce((n, f) => n + f.additions, 0),
+		dels = files.reduce((n, f) => n + f.deletions, 0);
+	const group = (
+		key: string,
+		title: string,
+		list: PrFile[],
+		c?: Chapter,
+		warn?: boolean,
+	) => {
+		const a = list.reduce((n, f) => n + f.additions, 0),
+			d = list.reduce((n, f) => n + f.deletions, 0),
+			byArea = areas
+				.map((x) => [x, list.filter((f) => areaOf(f.path).area === x)] as const)
+				.filter(([, fs]) => fs.length),
+			isOpen = !!open[key];
+		const n = model.chapters.length;
+		const soloCount = c
+			? byArea.filter(([x]) => areaSteps.get(x)?.size === 1).length
+			: 0;
+		const sorted = [...list].sort(
+			(x, y) =>
+				Number(areaOf(x.path).test) - Number(areaOf(y.path).test) ||
+				x.path.localeCompare(y.path),
+		);
+		return (
+			<section
+				key={key}
+				className={`rp-f-group ${warn ? "warn" : ""}`}
+				style={{ "--c": c?.color ?? "#ff5d73" } as any}
+			>
+				<button
+					type="button"
+					className="rp-f-head"
+					aria-expanded={isOpen}
+					onClick={() => setOpen((o) => ({ ...o, [key]: !o[key] }))}
+				>
+					<span className="rp-num">{c ? c.index + 1 : "!"}</span>
+					<span className="rp-f-title">
+						<b>{title}</b>
+						<small>
+							{list.length} file{list.length === 1 ? "" : "s"} ·{" "}
+							<i className="add">+{a}</i> <i className="del">−{d}</i>
+							{soloCount > 0 && n > 1 && (
+								<span className="rp-f-solo-count">
+									{" "}
+									· {soloCount} area{soloCount === 1 ? "" : "s"} only this step
+									touches
+								</span>
+							)}
+						</small>
+					</span>
+					<span className="rp-f-areabar" aria-hidden>
+						{byArea.map(([x, fs]) => (
+							<i
+								key={x}
+								style={{
+									flexGrow: fs.length,
+									background: areaColor(x, areas),
+								}}
+								title={`${x}: ${fs.length}`}
+							/>
+						))}
+					</span>
+					<span className="rp-f-chev">{isOpen ? "▾" : "▸"}</span>
+				</button>
+				{isOpen && (
+					<div className="rp-f-body">
+						<div className="rp-f-areas">
+							{byArea.map(([x, fs]) => {
+								const solo = c && areaSteps.get(x)?.size === 1 && n > 1;
+								return (
+									<span
+										key={x}
+										className={solo ? "solo" : ""}
+										title={solo ? "No other step touches this area" : undefined}
+									>
+										<i style={{ background: areaColor(x, areas) }} />
+										{x} · {fs.length}
+										{solo && <em>only this step</em>}
+									</span>
+								);
+							})}
+							{c && (
+								<button
+									type="button"
+									className="rp-link"
+									onClick={() => go(c.index + 1)}
+								>
+									back to this step
+								</button>
+							)}
+						</div>
+						<ul className="rp-f-list">
+							{sorted.map((f, i) => {
+								const { test } = areaOf(f.path),
+									dir = f.path.slice(0, f.path.lastIndexOf("/") + 1),
+									name = f.path.slice(dir.length),
+									others = (claimed.get(f.path) ?? []).filter(
+										(o) => o !== c?.index,
+									),
+									[letter, label] = STATUS[f.status] ?? ["M", f.status];
+								return (
+									<li key={f.path}>
+										<button
+											type="button"
+											onClick={() => setViewer({ list: sorted, i })}
+										>
+											<span className={`rp-f-status ${f.status}`} title={label}>
+												{letter}
+											</span>
+											<span className="rp-f-path">
+												<span className="dir">{dir}</span>
+												<b>{name}</b>
+												{test && <span className="rp-f-tag">TEST</span>}
+												{f.demo && <span className="rp-f-tag demo">DEMO</span>}
+												{others.map((o) => (
+													<span
+														key={o}
+														className="rp-f-also"
+														style={{ "--c": model.chapters[o]!.color } as any}
+													>
+														also step {o + 1}
+													</span>
+												))}
+											</span>
+											<span className="rp-f-stat">
+												<i className="add">+{f.additions}</i>{" "}
+												<i className="del">−{f.deletions}</i>
+												<span className="rp-f-mini" aria-hidden>
+													<i
+														className="add"
+														style={{ flexGrow: f.additions || 0.01 }}
+													/>
+													<i
+														className="del"
+														style={{ flexGrow: f.deletions || 0.01 }}
+													/>
+												</span>
+											</span>
+										</button>
+									</li>
+								);
+							})}
+						</ul>
+					</div>
+				)}
+			</section>
+		);
+	};
+	return (
+		<section className="rp-g-page">
+			<small className="rp-g-kicker">CHANGED FILES</small>
+			<h2>What each step touched</h2>
+			<p className="rp-g-lead">
+				Every changed file, grouped by step. Look for files that don’t fit their
+				step.
+			</p>
+			<div className="rp-u-kpis">
+				<span>
+					<b>{files.length}</b> files
+				</span>
+				<span>
+					<b className="add">+{adds}</b> <b className="del">−{dels}</b>
+				</span>
+				<span>
+					<b>{files.filter((f) => areaOf(f.path).test).length}</b> tests
+				</span>
+				<span className={unassigned.length ? "bad" : "good"}>
+					{unassigned.length ? (
+						<>
+							⚠ <b>{unassigned.length}</b> not explained by any step
+						</>
+					) : (
+						<>✓ every file belongs to a step</>
+					)}
+				</span>
+			</div>
+			{unassigned.length > 0 &&
+				group(
+					"unassigned",
+					"Not explained by any step",
+					unassigned,
+					undefined,
+					true,
+				)}
+			{groups.map((g) => group(g.key, g.chapter.title, g.files, g.chapter))}
+			{viewer && (
+				<DiffViewer
+					viewer={viewer}
+					prUrl={pr}
+					onClose={(next) => setViewer(next)}
+				/>
+			)}
+		</section>
+	);
+}
+
+type Row = {
+	kind: "hunk" | "ctx" | "add" | "del" | "note";
+	old?: number;
+	new?: number;
+	text: string;
+};
+function parsePatch(patch: string): Row[] {
+	const rows: Row[] = [];
+	let o = 0,
+		n = 0;
+	for (const line of patch.split("\n")) {
+		const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(line);
+		if (h) {
+			o = Number(h[1]);
+			n = Number(h[2]);
+			rows.push({ kind: "hunk", text: line });
+		} else if (line.startsWith("+"))
+			rows.push({ kind: "add", new: n++, text: line.slice(1) });
+		else if (line.startsWith("-"))
+			rows.push({ kind: "del", old: o++, text: line.slice(1) });
+		else if (line.startsWith("\\"))
+			rows.push({ kind: "note", text: line.slice(2) });
+		else rows.push({ kind: "ctx", old: o++, new: n++, text: line.slice(1) });
+	}
+	return rows;
+}
+/** Pair deletions with following additions so a split view lines them up. */
+function toSplit(rows: Row[]) {
+	const out: { left?: Row; right?: Row; full?: Row }[] = [];
+	for (let i = 0; i < rows.length; ) {
+		const r = rows[i]!;
+		if (r.kind === "hunk" || r.kind === "note") {
+			out.push({ full: r });
+			i++;
+		} else if (r.kind === "ctx") {
+			out.push({ left: r, right: r });
+			i++;
+		} else {
+			const dels: Row[] = [],
+				adds: Row[] = [];
+			while (rows[i]?.kind === "del") dels.push(rows[i++]!);
+			while (rows[i]?.kind === "add") adds.push(rows[i++]!);
+			for (let k = 0; k < Math.max(dels.length, adds.length); k++)
+				out.push({ left: dels[k], right: adds[k] });
+		}
+	}
+	return out;
+}
+
+function DiffViewer({
+	viewer,
+	prUrl,
+	onClose,
+}: {
+	viewer: { list: PrFile[]; i: number };
+	prUrl: string;
+	onClose: (next?: { list: PrFile[]; i: number }) => void;
+}) {
+	const f = viewer.list[viewer.i]!,
+		[split, setSplit] = useState(
+			() => typeof window !== "undefined" && window.innerWidth >= 900,
+		),
+		[all, setAll] = useState(false),
+		rows = f.patch ? parsePatch(f.patch) : [],
+		LIMIT = 500,
+		shown = all ? rows : rows.slice(0, LIMIT),
+		go = (d: number) =>
+			onClose({
+				...viewer,
+				i: (viewer.i + d + viewer.list.length) % viewer.list.length,
+			});
+	useEffect(() => {
+		const onKey = (e: KeyboardEvent) => {
+			if (!["Escape", "ArrowLeft", "ArrowRight"].includes(e.key)) return;
+			e.stopImmediatePropagation();
+			e.preventDefault();
+			if (e.key === "Escape") onClose();
+			else go(e.key === "ArrowLeft" ? -1 : 1);
+		};
+		window.addEventListener("keydown", onKey, true);
+		return () => window.removeEventListener("keydown", onKey, true);
+	});
+	useEffect(() => setAll(false), []);
+	const dir = f.path.slice(0, f.path.lastIndexOf("/") + 1);
+	const num = (v?: number) => <td className="ln">{v ?? ""}</td>;
+	return (
+		<div className="rp-diff-overlay" onClick={() => onClose()}>
+			<div
+				className="rp-diff"
+				role="dialog"
+				aria-label={`Diff of ${f.path}`}
+				onClick={(e) => e.stopPropagation()}
+			>
+				<header>
+					<div className="rp-diff-file">
+						<span className={`rp-f-status ${f.status}`}>
+							{(STATUS[f.status] ?? ["M"])[0]}
+						</span>
+						<span className="rp-f-path">
+							<span className="dir">{dir}</span>
+							<b>{f.path.slice(dir.length)}</b>
+						</span>
+						<span className="rp-f-stat">
+							<i className="add">+{f.additions}</i>{" "}
+							<i className="del">−{f.deletions}</i>
+						</span>
+					</div>
+					<div className="rp-diff-tools">
+						<div className="rp-seg rp-diff-mode">
+							<button
+								type="button"
+								className={!split ? "on" : ""}
+								onClick={() => setSplit(false)}
+							>
+								Unified
+							</button>
+							<button
+								type="button"
+								className={split ? "on" : ""}
+								onClick={() => setSplit(true)}
+							>
+								Split
+							</button>
+						</div>
+						<button
+							type="button"
+							onClick={() => go(-1)}
+							aria-label="Previous file"
+						>
+							←
+						</button>
+						<span className="muted">
+							{viewer.i + 1} / {viewer.list.length}
+						</span>
+						<button type="button" onClick={() => go(1)} aria-label="Next file">
+							→
+						</button>
+						<a href={`${prUrl}/files`} target="_blank" rel="noreferrer">
+							PR ↗
+						</a>
+						<button type="button" onClick={() => onClose()} aria-label="Close">
+							✕
+						</button>
+					</div>
+				</header>
+				{f.previous && (
+					<p className="rp-diff-note">Renamed from {f.previous}</p>
+				)}
+				<div className="rp-diff-body">
+					{!f.patch ? (
+						<p className="rp-diff-note">
+							No inline diff available (binary or too large). Open it in the
+							pull request.
+						</p>
+					) : split ? (
+						<table className="rp-diff-table split">
+							<tbody>
+								{toSplit(shown).map((r, i) =>
+									r.full ? (
+										<tr key={i} className={r.full.kind}>
+											<td colSpan={4}>{r.full.text}</td>
+										</tr>
+									) : (
+										<tr key={i}>
+											{num(r.left?.old)}
+											<td className={`code ${r.left ? r.left.kind : "empty"}`}>
+												{r.left?.text}
+											</td>
+											{num(r.right?.new)}
+											<td
+												className={`code ${r.right ? r.right.kind : "empty"}`}
+											>
+												{r.right?.text}
+											</td>
+										</tr>
+									),
+								)}
+							</tbody>
+						</table>
+					) : (
+						<table className="rp-diff-table">
+							<tbody>
+								{shown.map((r, i) =>
+									r.kind === "hunk" || r.kind === "note" ? (
+										<tr key={i} className={r.kind}>
+											<td colSpan={3}>{r.text}</td>
+										</tr>
+									) : (
+										<tr key={i} className={r.kind}>
+											{num(r.old)}
+											{num(r.new)}
+											<td className="code">
+												<span className="sign">
+													{r.kind === "add"
+														? "+"
+														: r.kind === "del"
+															? "−"
+															: " "}
+												</span>
+												{r.text}
+											</td>
+										</tr>
+									),
+								)}
+							</tbody>
+						</table>
+					)}
+					{rows.length > shown.length && (
+						<button
+							type="button"
+							className="rp-diff-more"
+							onClick={() => setAll(true)}
+						>
+							Show remaining {rows.length - shown.length} lines
+						</button>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+}
+
+const FILES_CSS = `
+.page:has(.rp-f-group){max-width:980px}
+.rp-u-kpis .bad{background:var(--red);color:var(--stuck-text)}
+.rp-u-kpis b.add,.rp-f-stat .add,.rp-f-title .add{color:#2fbf7f;font-style:normal}
+.rp-u-kpis b.del,.rp-f-stat .del,.rp-f-title .del{color:#ff5d73;font-style:normal}
+.rp-f-group{border:1px solid var(--line);border-left:5px solid var(--c);border-radius:14px;margin-top:8px;background:var(--surface);overflow:hidden}
+.rp-f-group.warn{border-color:#ff5d73;background:color-mix(in srgb,#ff5d73 8%,var(--surface))}
+.rp-f-head{width:100%;display:grid;grid-template-columns:28px minmax(0,1fr) minmax(60px,160px) 16px;gap:10px;align-items:center;text-align:left;background:none;border:0;color:var(--text);padding:10px 12px;cursor:pointer}
+.rp-f-head .rp-num{background:var(--c);color:#fff}
+.rp-f-title b{display:block;font-size:14.5px}
+.rp-f-title small{color:var(--muted)}
+.rp-f-areabar{display:flex;height:8px;border-radius:4px;overflow:hidden;gap:1px}
+.rp-f-chev{color:var(--muted)}
+.rp-f-body{padding:0 12px 10px}
+.rp-f-areas{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;font-size:12.5px;color:var(--secondary);margin-bottom:6px}
+.rp-f-areas i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px}
+.rp-f-areas .solo{background:color-mix(in srgb,#ffb020 18%,transparent);border:1px solid #ffb020;border-radius:999px;padding:1px 8px;color:var(--text)}
+.rp-f-areas .solo em{font-style:normal;font-weight:800;font-size:10.5px;color:#d08a00;margin-left:6px;text-transform:uppercase;letter-spacing:.04em}
+.rp-f-solo-count{color:#d08a00;font-weight:700}
+.rp-f-areas .rp-link{margin-left:auto;font-size:12.5px}
+.rp-f-list{list-style:none;padding:0;margin:0;display:grid;gap:2px}
+.rp-f-list button{width:100%;display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:8px;align-items:center;text-align:left;background:none;border:1px solid transparent;border-radius:8px;padding:6px 8px;color:var(--text);cursor:pointer;font-size:13px}
+.rp-f-list button:hover,.rp-f-list button:focus-visible{background:var(--quiet);border-color:var(--line)}
+.rp-f-status{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:5px;font-size:11px;font-weight:800;background:var(--quiet);color:var(--secondary)}
+.rp-f-status.added{background:color-mix(in srgb,#3ddc97 25%,transparent);color:#2fbf7f}
+.rp-f-status.removed{background:color-mix(in srgb,#ff5d73 25%,transparent);color:#ff5d73}
+.rp-f-status.modified,.rp-f-status.changed{background:color-mix(in srgb,#ffb020 22%,transparent);color:#d08a00}
+.rp-f-status.renamed{background:color-mix(in srgb,#4cc9f0 25%,transparent);color:#2aa5cc}
+.rp-f-path{min-width:0;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px}
+.rp-f-path .dir{color:var(--muted)}
+.rp-f-tag{margin-left:6px;font-family:inherit;font-size:9.5px;font-weight:800;letter-spacing:.05em;border-radius:4px;padding:1px 5px;background:var(--quiet);color:var(--secondary)}
+.rp-f-tag.demo{background:#ff5d73;color:#fff}
+.rp-f-also{margin-left:6px;font-family:ui-rounded,sans-serif;font-size:10.5px;font-weight:700;border:1px solid var(--c);color:var(--text);border-radius:999px;padding:0 6px}
+.rp-f-stat{display:flex;gap:4px;align-items:center;font-size:12px;font-weight:700;white-space:nowrap}
+.rp-f-mini{display:flex;width:44px;height:6px;border-radius:3px;overflow:hidden;gap:1px;margin-left:4px}
+.rp-f-mini .add{background:#3ddc97}.rp-f-mini .del{background:#ff5d73}
+.rp-diff-overlay{position:fixed;inset:0;z-index:950;background:#000b;display:grid;place-items:center;padding:20px}
+.rp-diff{width:min(1400px,96vw);height:min(90vh,1100px);display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--pop)}
+.rp-diff header{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
+.rp-diff-file{display:flex;gap:8px;align-items:center;min-width:0;flex:1 1 320px}
+.rp-diff-tools{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.rp-diff-tools > button,.rp-diff-tools > a{border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:10px;padding:5px 10px;font-weight:700;text-decoration:none}
+.rp-diff-body{flex:1;overflow:auto}
+.rp-diff-note{margin:10px 14px;color:var(--muted)}
+.rp-diff-table{border-collapse:collapse;width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.5}
+.rp-diff-table td{padding:0 8px;vertical-align:top;white-space:pre}
+.rp-diff-table td.code{width:100%}
+.rp-diff-table.split td.code{width:50%;white-space:pre-wrap;overflow-wrap:anywhere}
+.rp-diff-table .ln{color:var(--muted);text-align:right;user-select:none;min-width:44px;border-right:1px solid var(--line);opacity:.8}
+.rp-diff-table tr.hunk td{background:color-mix(in srgb,#4cc9f0 14%,var(--surface));color:var(--secondary);padding:4px 10px}
+.rp-diff-table tr.note td{color:var(--muted);font-style:italic}
+.rp-diff-table tr.add td,.rp-diff-table td.code.add{background:color-mix(in srgb,#3ddc97 16%,transparent)}
+.rp-diff-table tr.del td,.rp-diff-table td.code.del{background:color-mix(in srgb,#ff5d73 16%,transparent)}
+.rp-diff-table tr.add .ln,.rp-diff-table tr.del .ln{opacity:1}
+.rp-diff-table td.code.empty{background:var(--quiet)}
+.rp-diff-table .sign{display:inline-block;width:14px;color:var(--muted);user-select:none}
+.rp-diff-more{display:block;margin:10px auto;border:1px solid var(--line);background:var(--surface);color:var(--text);border-radius:10px;padding:6px 14px}
+@media (max-width:640px){
+ .rp-f-head{grid-template-columns:28px minmax(0,1fr) 16px}
+ .rp-f-areabar{grid-column:2;height:6px}
+ .rp-f-list button{grid-template-columns:22px minmax(0,1fr)}
+ .rp-f-stat{grid-column:2}
+ .rp-diff-overlay{padding:0}
+ .rp-diff{width:100vw;height:100dvh;border-radius:0}
+ .rp-diff-mode{display:none}
+}
+`;
+
+export const GUIDED_CSS = `${FILES_CSS}
 .page:has(.rp-guided){max-width:820px}
 .page:has(.rp-g-diff){max-width:1120px}
 .rp-guided{scroll-margin-top:80px;padding-bottom:40px}

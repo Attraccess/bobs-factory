@@ -46,7 +46,7 @@ export function shorten(text = "", max = 70) {
 	const first = text.split(/(?<=[.;])\s/)[0]!.replace(/[.;]$/, "");
 	return first.length <= max ? first : `${first.slice(0, max - 1).trimEnd()}…`;
 }
-function areaOf(file: string) {
+export function areaOf(file: string) {
 	const p = file.split("/"),
 		test = /\.(spec|test)\.|\/tests?\//.test(file);
 	let area = p.slice(0, 2).join("/");
