@@ -31,6 +31,8 @@ export type ReviewProgress = {
 	page: number;
 	reviewed: Record<string, boolean>;
 	disclosures?: Record<string, boolean>;
+	checked?: Record<string, boolean>;
+	visited?: Record<string, boolean>;
 };
 
 export function readProgress(saved: unknown, pages: number): ReviewProgress {
@@ -56,6 +58,8 @@ export function readProgress(saved: unknown, pages: number): ReviewProgress {
 		page: value.page,
 		reviewed: booleans(value.reviewed),
 		disclosures: booleans(value.disclosures),
+		...(value.checked ? { checked: booleans(value.checked) } : {}),
+		...(value.visited ? { visited: booleans(value.visited) } : {}),
 	};
 }
 

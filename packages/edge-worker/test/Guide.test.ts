@@ -117,3 +117,98 @@ it("upgrades the original saved guide prompt while preserving its selected model
 			.steps.find((s) => s.id === "guide")!.prompt,
 	).toBe(guide.prompt);
 });
+
+it("requires compact fields for every new guide regardless of version or frozen prompt, while reading legacy guides", async () => {
+	const { GuideSchema, GeneratedGuideSchema } = await import(
+		"../src/factory/FactoryResults.js"
+	);
+	const { guide } = fixture();
+	expect(GuideSchema.parse(guide)).toEqual(guide);
+	const old = GeneratedGuideSchema.safeParse(guide);
+	expect(old.success).toBe(false);
+	if (!old.success)
+		expect(old.error.issues.map((i) => i.path)).toEqual(
+			expect.arrayContaining([
+				["tldr"],
+				["decision", "summaryShort"],
+				["chapters", 0, "tldr"],
+				["chapters", 0, "risk"],
+				["chapters", 0, "keyChecks"],
+			]),
+		);
+	const compact = {
+		...guide,
+		tldr: "Counters measure each resource",
+		decision: { ...guide.decision, summaryShort: "Review the counters" },
+		chapters: guide.chapters.map((c) => ({
+			...c,
+			tldr: "Each counter is named",
+			beforeShort: "Energy only",
+			afterShort: "Named counters",
+			risk: { level: "medium", text: "Check saved counters" },
+			keyChecks: [{ do: "Create a counter", expect: "It appears by name" }],
+		})),
+	};
+	expect(GeneratedGuideSchema.safeParse(compact).success).toBe(true);
+	expect(
+		GeneratedGuideSchema.safeParse({
+			...compact,
+			tldr: " ",
+			chapters: [{ ...compact.chapters[0], keyChecks: [] }],
+		}).success,
+	).toBe(false);
+	const system = {
+		lanes: [{ id: "app", name: "Application" }],
+		parts: [{ id: "counter", label: "Counter", laneId: "app", status: "new" }],
+		before: [],
+		after: [],
+	};
+	const mapped = {
+		...compact,
+		system,
+		chapters: [{ ...compact.chapters[0], systemPartIds: ["counter"] }],
+	};
+	expect(GeneratedGuideSchema.safeParse(mapped).success).toBe(true);
+	for (const bad of [
+		{ ...system, lanes: [...system.lanes, ...system.lanes] },
+		{ ...system, parts: [{ ...system.parts[0], laneId: "missing" }] },
+		{ ...system, after: [{ source: "missing", target: "counter" }] },
+		{
+			...system,
+			after: [
+				{ source: "counter", target: "counter", label: "first" },
+				{ source: "counter", target: "counter", label: "second" },
+			],
+		},
+	])
+		expect(
+			GeneratedGuideSchema.safeParse({ ...mapped, system: bad }).success,
+		).toBe(false);
+	expect(
+		GeneratedGuideSchema.safeParse({
+			...mapped,
+			chapters: [{ ...mapped.chapters[0], systemPartIds: ["missing"] }],
+		}).success,
+	).toBe(false);
+});
+
+it("upgrades the saved QA guide to compact content without changing operator settings", () => {
+	const stored = structuredClone(defaultWorkflows);
+	const guide = stored
+		.find((w) => w.id === "factory-pipeline")!
+		.steps.find((s) => s.id === "guide")!;
+	const current = guide.prompt;
+	guide.prompt = current!.split("\nEvery new guide MUST")[0]!;
+	guide.model = "operator-model";
+	const migrated = upgradeWorkflows(stored) as typeof stored;
+	expect(
+		migrated
+			.find((w) => w.id === "factory-pipeline")!
+			.steps.find((s) => s.id === "guide"),
+	).toMatchObject({
+		prompt: current,
+		model: "operator-model",
+		qaContract: "qa-v1",
+	});
+	expect(upgradeWorkflows(migrated)).toEqual(migrated);
+});

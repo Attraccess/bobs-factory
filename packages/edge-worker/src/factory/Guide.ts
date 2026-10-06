@@ -1,5 +1,5 @@
 import { defaultWorkflows } from "./defaultWorkflows.js";
-import { GuideSchema } from "./FactoryResults.js";
+import { GeneratedGuideSchema, GuideSchema } from "./FactoryResults.js";
 import { OutputValidationError } from "./OutputValidation.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
@@ -84,4 +84,8 @@ export function validateGuideCoverage(
 		throw new Error(
 			"A revision summary requires a previous human-reviewed guide",
 		);
+}
+
+export function validateGuideGeneration(value: unknown): void {
+	GeneratedGuideSchema.parse(value);
 }
