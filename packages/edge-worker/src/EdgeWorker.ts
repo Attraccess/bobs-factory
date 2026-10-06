@@ -56,6 +56,7 @@ import type {
 	WebhookAgentSession,
 	WebhookIssue,
 	WorkflowTriggerOrigin,
+	Workspace,
 } from "cyrus-core";
 import {
 	AgentSessionStatus,
@@ -258,6 +259,7 @@ import {
 	resolveIssueMcpConfigPath,
 } from "./RunnerConfigBuilder.js";
 import { RunnerSelectionService } from "./RunnerSelectionService.js";
+import { persistReplyEvent } from "./SessionRecovery.js";
 import { SharedApplicationServer } from "./SharedApplicationServer.js";
 import {
 	type SkillSessionContext,
@@ -323,6 +325,7 @@ export class EdgeWorker extends EventEmitter {
 	private titleStarted = new Set<string>();
 	private stateSaveQueue: Promise<void> = Promise.resolve();
 	private recoveryAbort = new AbortController();
+	private preparationStarts = new Map<string, AbortController>();
 	private stopping = false;
 	private factoryServer?: FactoryServer;
 	private factoryChat = new SessionChat();
@@ -775,14 +778,25 @@ export class EdgeWorker extends EventEmitter {
 		// Load persisted state for each repository
 		await this.loadPersistedState();
 		await this.runnerSlots.reconcileQueue((identity) => {
+			const preparationPrefix = `${this.cyrusHome}:preparation:`;
+			if (identity.startsWith(preparationPrefix)) {
+				const receipt = this.getLaunchAdmission()
+					.values()
+					.find(
+						(r) => r.sessionId === identity.slice(preparationPrefix.length),
+					);
+				return !receipt || receipt.phase === "settled";
+			}
 			const prefix = `${this.cyrusHome}:session:`;
 			if (!identity.startsWith(prefix)) return false;
 			const session = this.titleSession(identity.slice(prefix.length));
-			return Boolean(
-				session &&
+			return (
+				!session ||
+				Boolean(
 					[AgentSessionStatus.Complete, AgentSessionStatus.Error].includes(
 						session.status,
 					),
+				)
 			);
 		});
 
@@ -1369,6 +1383,7 @@ export class EdgeWorker extends EventEmitter {
 				this.activeWebhookCount--;
 			},
 			onStateChange: () => this.savePersistedState(),
+			isShuttingDown: () => this.stopping,
 			onClaudeError: (error) => this.handleClaudeError(error),
 		};
 	}
@@ -2001,6 +2016,13 @@ export class EdgeWorker extends EventEmitter {
 
 			// Store the runner in the session manager
 			agentSessionManager.addAgentRunner(githubSessionId, runner);
+			session.metadata!.pendingExecution = {
+				prompt: taskInstructions,
+				systemPrompt,
+				runner: runnerType,
+				model: runnerConfig.model,
+				replyEvent: persistReplyEvent(event),
+			};
 
 			// Save persisted state
 			await this.savePersistedState();
@@ -2734,6 +2756,13 @@ ${taskSection}`;
 
 			// Store the runner in the session manager
 			agentSessionManager.addAgentRunner(gitlabSessionId, runner);
+			session.metadata!.pendingExecution = {
+				prompt: taskInstructions,
+				systemPrompt,
+				runner: runnerType,
+				model: runnerConfig.model,
+				replyEvent: persistReplyEvent(event),
+			};
 
 			// Save persisted state
 			await this.savePersistedState();
@@ -4698,25 +4727,55 @@ ${taskSection}`;
 		this.logger.info(
 			`createCyrusAgentSession: passing baseBranchOverrides=${baseBranchOverrides ? `Map(size=${baseBranchOverrides.size}, keys=[${Array.from(baseBranchOverrides.keys()).join(",")}])` : "undefined"}, useCustomHandler=${!!this.config.handlers?.createWorkspace}`,
 		);
-		const workspace = this.config.handlers?.createWorkspace
-			? await this.config.handlers.createWorkspace(fullIssue, repositories, {
-					baseBranchOverrides,
-					onRepoSetupHookEvent: (activity) =>
-						this.activityPoster.postRepoSetupHookActivity(
-							sessionId,
-							linearWorkspaceId,
-							activity,
-						),
-				})
-			: await this.gitService.createGitWorktree(fullIssue, repositories, {
-					baseBranchOverrides,
-					onRepoSetupHookEvent: (activity) =>
-						this.activityPoster.postRepoSetupHookActivity(
-							sessionId,
-							linearWorkspaceId,
-							activity,
-						),
-				});
+		const preparation = new AbortController();
+		this.preparationStarts.set(sessionId, preparation);
+		const restart = () => preparation.abort();
+		this.recoveryAbort.signal.addEventListener("abort", restart, {
+			once: true,
+		});
+		let workspace: Workspace;
+		try {
+			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
+			this.recoveryAbort.signal.throwIfAborted();
+			workspace = await setupExecutionScope.run(
+				{
+					signal: preparation.signal,
+					service: this.runnerSlots,
+					capacity: {
+						identity: `${this.cyrusHome}:preparation:${sessionId}`,
+						recoverable: true,
+					},
+				},
+				async () =>
+					this.config.handlers?.createWorkspace
+						? await this.config.handlers.createWorkspace(
+								fullIssue,
+								repositories,
+								{
+									baseBranchOverrides,
+									onRepoSetupHookEvent: (activity) =>
+										this.activityPoster.postRepoSetupHookActivity(
+											sessionId,
+											linearWorkspaceId,
+											activity,
+										),
+								},
+							)
+						: await this.gitService.createGitWorktree(fullIssue, repositories, {
+								baseBranchOverrides,
+								onRepoSetupHookEvent: (activity) =>
+									this.activityPoster.postRepoSetupHookActivity(
+										sessionId,
+										linearWorkspaceId,
+										activity,
+									),
+							}),
+			);
+			preparation.signal.throwIfAborted();
+		} finally {
+			this.preparationStarts.delete(sessionId);
+			this.recoveryAbort.signal.removeEventListener("abort", restart);
+		}
 
 		if (
 			takeover &&
@@ -5037,6 +5096,7 @@ ${taskSection}`;
 	}
 
 	private settleTicketLaunch(sessionId: string): void {
+		this.preparationStarts.get(sessionId)?.abort();
 		for (const receipt of this.getLaunchAdmission().values()) {
 			if (receipt.sessionId !== sessionId) continue;
 			this.getLaunchAdmission().update(receipt, { phase: "settled" });
@@ -7814,6 +7874,69 @@ ${taskSection}`;
 		this.getFactoryRuntime().save(run);
 	}
 
+	private async recoverIntegrationSession(
+		session: CyrusAgentSession,
+		repository: RepositoryConfig,
+	): Promise<void> {
+		const pending = session.metadata?.pendingExecution;
+		if (!pending)
+			throw new Error(
+				"No saved integration execution input; manual recovery required",
+			);
+		const platform = session.issueContext!.trackerId as "github" | "gitlab";
+		const nativeId =
+			session.claudeSessionId ??
+			session.codexSessionId ??
+			session.geminiSessionId ??
+			session.cursorSessionId ??
+			session.opencodeSessionId;
+		const built = await this.buildAgentRunnerConfig(
+			session,
+			repository,
+			session.id,
+			pending.systemPrompt,
+			this.toolPermissionResolver.buildGithubAllowedTools(repository),
+			[repository.repositoryPath],
+			this.buildDisallowedTools(repository),
+			nativeId,
+			undefined,
+			undefined,
+			200,
+			undefined,
+			this.buildSkillSessionContext(repository, undefined, session),
+			platform,
+		);
+		built.config.model = pending.model ?? built.config.model;
+		built.config.fallbackModel = this.getDefaultFallbackModelForRunner(
+			pending.runner,
+		);
+		const runner = this.createRunnerForType(
+			pending.runner,
+			built.config,
+			this.recoveryAbort.signal,
+			session.id,
+		);
+		this.agentSessionManager.addAgentRunner(session.id, runner);
+		await this.savePersistedState();
+		this.recoveryAbort.signal.throwIfAborted();
+		await runner.start(pending.prompt);
+		if (pending.replyEvent) {
+			if (platform === "github")
+				await this.postGitHubReply(
+					pending.replyEvent as GitHubCommentWebhookEvent,
+					runner,
+					repository,
+				);
+			else
+				await this.postGitLabReply(
+					pending.replyEvent as GitLabWebhookEvent,
+					runner,
+					repository,
+				);
+		}
+		await this.savePersistedState();
+	}
+
 	private recoverFactoryRuns(): void {
 		const runtime = this.getFactoryRuntime();
 		const admission = this.getLaunchAdmission();
@@ -7833,7 +7956,9 @@ ${taskSection}`;
 				!session.issue ||
 				!session.workspace?.path ||
 				(session.issueContext?.trackerId &&
-					!["linear", "cli"].includes(session.issueContext.trackerId))
+					!["linear", "cli", "github", "gitlab"].includes(
+						session.issueContext.trackerId,
+					))
 			)
 				continue;
 			const repositoryId =
@@ -7844,20 +7969,25 @@ ${taskSection}`;
 				: undefined;
 			if (!repository?.isActive) continue;
 			resumingSessions.add(session.id);
-			void this.resumeAgentSession(
-				session,
-				repository,
-				session.id,
-				this.agentSessionManager,
-				"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
-				"",
-				false,
-				[],
-				repository.linearWorkspaceId,
-				undefined,
-				undefined,
-				undefined,
-				this.recoveryAbort.signal,
+			void (
+				session.issueContext?.trackerId === "github" ||
+				session.issueContext?.trackerId === "gitlab"
+					? this.recoverIntegrationSession(session, repository)
+					: this.resumeAgentSession(
+							session,
+							repository,
+							session.id,
+							this.agentSessionManager,
+							"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
+							"",
+							false,
+							[],
+							repository.linearWorkspaceId,
+							undefined,
+							undefined,
+							undefined,
+							this.recoveryAbort.signal,
+						)
 			).catch(async (error) => {
 				if (this.stopping) return;
 				session.status = AgentSessionStatus.Error;
@@ -7869,6 +7999,8 @@ ${taskSection}`;
 				);
 			});
 		}
+		for (const handler of this.activeChatSessionHandlers)
+			void handler.recoverQueuedSessions();
 		// Persist legacy role's conversation on the migrated unfinished leaf before
 		// the runtime upgrades its history to a graph checkpoint.
 		for (const run of runtime.runs.values()) {

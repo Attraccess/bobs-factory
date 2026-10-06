@@ -1,5 +1,11 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -213,4 +219,24 @@ it("retains unverified external cancellation, but releases grants cancelled befo
 	running.abort();
 	await expect(external.release()).rejects.toThrow(/remains reserved/);
 	expect((await service.snapshot()).stopping).toBe(1);
+});
+
+it("recovers a crash during stale-lock reclamation under concurrent startup", async () => {
+	const directory = root();
+	const dead = JSON.stringify({
+		pid: process.pid,
+		start: "previous incarnation",
+		incarnation: "dead",
+	});
+	for (const name of ["lock", "reclaim", "reclaim.reclaim"])
+		symlinkSync(dead, join(directory, name));
+	const a = new MachineCapacity(1, directory);
+	const b = new MachineCapacity(1, directory);
+	await Promise.all([a.ready(), b.ready()]);
+	const first = await a.acquireLease();
+	const second = b.acquireLease();
+	await vi.waitFor(async () => expect((await a.snapshot()).queued).toBe(1));
+	await first.release();
+	await (await second).release();
+	expect((await a.snapshot()).requests).toEqual([]);
 });

@@ -5,6 +5,7 @@ import type {
 import { ZulipMessageService } from "cyrus-zulip-event-transport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatRepositoryProvider } from "../src/ChatRepositoryProvider.js";
+import { persistReplyEvent } from "../src/SessionRecovery.js";
 import { ZulipChatAdapter } from "../src/ZulipChatAdapter.js";
 
 const credentials = {
@@ -398,4 +399,24 @@ describe("ZulipChatAdapter", () => {
 			expect(prompt).toContain("/repos/alean");
 		});
 	});
+});
+
+it("restores reply routing with current credentials rather than the saved event key", () => {
+	vi.stubEnv("ZULIP_SITE", credentials.site);
+	vi.stubEnv("ZULIP_BOT_EMAIL", credentials.botEmail);
+	vi.stubEnv("ZULIP_API_KEY", "current-key");
+	try {
+		const original = event(streamMessage());
+		const saved = persistReplyEvent(original);
+		expect(JSON.stringify(saved)).not.toContain('"apiKey"');
+		const adapter = adapterWith(new ZulipMessageService());
+		const restored = adapter.restoreReplyEvent(saved);
+		expect(restored.credentials).toEqual({
+			...credentials,
+			apiKey: "current-key",
+		});
+		expect(adapter.getThreadKey(restored)).toBe(adapter.getThreadKey(original));
+	} finally {
+		vi.unstubAllEnvs();
+	}
 });

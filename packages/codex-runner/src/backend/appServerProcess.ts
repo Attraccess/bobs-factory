@@ -1,3 +1,4 @@
+import { executionEnvironment } from "cyrus-core";
 import type { CodexConfigValue } from "../types.js";
 import {
 	AppServerClient,
@@ -294,7 +295,14 @@ export class AppServerProcessManager {
 		const launchOptions: LaunchOptions = {
 			command,
 			args,
-			...(config.env ? { env: config.env } : {}),
+			...(config.env || Object.keys(executionEnvironment()).length
+				? {
+						env: {
+							...(config.env ?? (process.env as Record<string, string>)),
+							...executionEnvironment(),
+						},
+					}
+				: {}),
 			// A live thread/resume rejoins cached thread resources. Changed MCP
 			// endpoints need a fresh process so the resumed thread loads the new tools.
 			...(config.configOverrides?.mcp_servers !== undefined
@@ -313,7 +321,9 @@ export class AppServerProcessManager {
 				this.clientFactory,
 				// MCP endpoints can be ephemeral. Release cached transports and the
 				// thread's writer lock before a later invocation resumes from disk.
-				launchOptions.mcpServers ? 0 : this.idleCloseMs,
+				launchOptions.mcpServers || launchOptions.env?.CYRUS_EXECUTION_LEASE
+					? 0
+					: this.idleCloseMs,
 				() => {
 					// Only drop the entry if it still points at this instance — a
 					// replacement may already have taken its place.

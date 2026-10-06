@@ -151,10 +151,15 @@ export class RunTitleGenerator {
 		job: RunTitleJob,
 		signal: AbortSignal,
 	): Promise<boolean> {
+		const executionAbort = new AbortController();
+		const cancelExecution = () => executionAbort.abort();
+		signal.addEventListener("abort", cancelExecution, { once: true });
+		if (signal.aborted) cancelExecution();
 		let runner: IAgentRunner | undefined;
 		let lease: CapacityLease | undefined;
 		let execution: Promise<string> | undefined;
 		let finished = false;
+		let retry = false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
 		const directory = join(
 			this.home,
@@ -163,7 +168,7 @@ export class RunTitleGenerator {
 			encodeURIComponent(id).replace(/\./g, "%2E"),
 		);
 		try {
-			lease = await this.slots.acquireLease(signal, {
+			lease = await this.slots.acquireLease(executionAbort.signal, {
 				background: true,
 				remote: job.settings.runner === "cursor",
 				identity: `${this.home}:title:${id}`,
@@ -213,7 +218,10 @@ export class RunTitleGenerator {
 			signal.addEventListener("abort", abort, { once: true });
 			try {
 				timer = setTimeout(
-					() => rejectFailure(new Error("Title generation timed out")),
+					() => {
+						executionAbort.abort();
+						rejectFailure(new Error("Title generation timed out"));
+					},
 					this.deadlineMs * (job.retries ? 2 : 1),
 				);
 				execution = lease.run(task);
@@ -232,8 +240,8 @@ export class RunTitleGenerator {
 				error instanceof Error &&
 				error.message === "Title generation timed out"
 			)
-				return true;
-			if (!this.shuttingDown && job.state === "pending")
+				retry = true;
+			if (!retry && !this.shuttingDown && job.state === "pending")
 				this.hooks.update(id, {
 					...job,
 					state: signal.aborted ? "cancelled" : "failed",
@@ -245,6 +253,7 @@ export class RunTitleGenerator {
 							).slice(0, 240),
 				});
 		} finally {
+			signal.removeEventListener("abort", cancelExecution);
 			finished = true;
 			if (timer) clearTimeout(timer);
 			try {
@@ -253,7 +262,22 @@ export class RunTitleGenerator {
 				/* Cleanup must never fail the workflow. */
 			} finally {
 				if (execution) await execution.catch(() => {});
-				if (lease) await lease.release();
+				if (lease) {
+					try {
+						await lease.release();
+					} catch (error) {
+						retry = false;
+						if (!this.shuttingDown)
+							this.hooks.update(id, {
+								...job,
+								state: "failed",
+								error: (error instanceof Error
+									? error.message
+									: String(error)
+								).slice(0, 240),
+							});
+					}
+				}
 				try {
 					rmSync(directory, { recursive: true, force: true });
 				} catch {
@@ -261,6 +285,6 @@ export class RunTitleGenerator {
 				}
 			}
 		}
-		return false;
+		return retry;
 	}
 }

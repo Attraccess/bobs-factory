@@ -477,10 +477,12 @@ function MachineCapacitySettings({ config }: { config: any }) {
 	);
 }
 function CapacityClassification({
+	disabled,
 	steps,
 	onSave,
 	path = "",
 }: {
+	disabled: boolean;
 	steps: any[];
 	onSave: (path: string, value: boolean | undefined) => Promise<unknown>;
 	path?: string;
@@ -497,6 +499,7 @@ function CapacityClassification({
 								{step.name} capacity{" "}
 								<select
 									aria-label={`${step.name} capacity`}
+									disabled={disabled}
 									value={
 										step.computeIntensive === undefined
 											? "default"
@@ -526,6 +529,7 @@ function CapacityClassification({
 						)}
 						{(step.groups ?? []).map((group: any[], branch: number) => (
 							<CapacityClassification
+								disabled={disabled}
 								key={branch}
 								steps={group}
 								path={`${key}/groups/${branch}/`}
@@ -817,6 +821,7 @@ export function Recipes() {
 							</section>
 						</div>
 						<CapacityClassification
+							disabled={action.isPending}
 							steps={workflow.steps}
 							onSave={async (path, computeIntensive) => {
 								const definitions = structuredClone(config.workflows);

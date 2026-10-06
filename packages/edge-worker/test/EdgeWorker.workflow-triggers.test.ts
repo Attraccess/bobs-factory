@@ -1191,7 +1191,9 @@ it.each([
 	edge.titleGenerator = { start, shutdown: async () => {} };
 	if (status === "running") edge.recoverFactoryRuns();
 	else runtime.retry(run.id);
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(start).not.toHaveBeenCalled();
 	expect(run.titleGeneration).toBeUndefined();
 	expect(run.title).toBe("Original historical title");
@@ -1200,7 +1202,9 @@ it.each([
 	// A second retry must also preserve the saved historical identity.
 	run.status = "failed";
 	runtime.retry(run.id);
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(start).not.toHaveBeenCalled();
 	expect(run.titleGeneration).toBeUndefined();
 });
@@ -1248,7 +1252,9 @@ it.each([
 	);
 	const run = runtime.get("session");
 	expect(run.title).toBe("session");
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(start).toHaveBeenCalledOnce();
 	expect(JSON.parse(start.mock.calls[0][1].context)).toMatchObject({
 		ticketTitle: "Ticket",

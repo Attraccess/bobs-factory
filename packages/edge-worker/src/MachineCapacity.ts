@@ -207,53 +207,57 @@ export class MachineCapacity implements ExecutionCapacity {
 		);
 		return pending;
 	}
+	/** Reclaim guards use the same owner-fenced recovery as the primary lock.
+	 * A crash can leave a finite chain of guards; the next worker recovers it
+	 * from the deepest stale guard before inspecting its parent again. */
+	private async acquireLock(
+		lock: string,
+		lockOwner: string,
+		deadline: number,
+	): Promise<void> {
+		while (true) {
+			try {
+				await symlink(lockOwner, lock);
+				return;
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			}
+			let holderText: string;
+			try {
+				holderText = await readlink(lock);
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+				throw error;
+			}
+			const holder = Owner.parse(JSON.parse(holderText));
+			if (!(await living(holder))) {
+				const guard =
+					lock === join(this.directory, "lock")
+						? join(this.directory, "reclaim")
+						: `${lock}.reclaim`;
+				await this.acquireLock(guard, lockOwner, deadline);
+				try {
+					if ((await readlink(lock)) === holderText) await unlink(lock);
+				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+				} finally {
+					await unlink(guard);
+				}
+			}
+			if (Date.now() > deadline)
+				throw new Error(
+					"Machine capacity coordinator lock unavailable; no workload was started",
+				);
+			await delay(25);
+		}
+	}
 	private async lockedTransaction<T>(
 		update: (state: z.infer<typeof State>) => T | Promise<T>,
 	): Promise<T> {
 		const lock = join(this.directory, "lock");
 		const lockOwner = JSON.stringify(this.owner);
 		const deadline = Date.now() + 15000;
-		while (true) {
-			try {
-				await symlink(lockOwner, lock);
-				break;
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-				let holder: z.infer<typeof Owner>;
-				try {
-					holder = Owner.parse(JSON.parse(await readlink(lock)));
-				} catch (readError) {
-					if ((readError as NodeJS.ErrnoException).code === "ENOENT") continue;
-					throw readError;
-				}
-				if (!(await living(holder))) {
-					// Stale-lock reclamation itself must serialize. An atomic rename would
-					// race a newly acquired lock; use a separate, non-reclaimed claim lock.
-					const claim = join(this.directory, "reclaim");
-					try {
-						await symlink(lockOwner, claim);
-						try {
-							if ((await readlink(lock)) === JSON.stringify(holder))
-								await unlink(lock);
-						} finally {
-							await unlink(claim);
-						}
-					} catch (claimError) {
-						if (
-							!["EEXIST", "ENOENT"].includes(
-								(claimError as NodeJS.ErrnoException).code ?? "",
-							)
-						)
-							throw claimError;
-					}
-				}
-				if (Date.now() > deadline)
-					throw new Error(
-						"Machine capacity coordinator lock unavailable; no workload was started",
-					);
-				await delay(25);
-			}
-		}
+		await this.acquireLock(lock, lockOwner, deadline);
 		try {
 			let state: z.infer<typeof State>;
 			let original: string | undefined;

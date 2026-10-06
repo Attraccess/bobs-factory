@@ -126,6 +126,14 @@ export interface CyrusAgentSession {
 		chatPlatform?: "slack" | "zulip";
 		chatThreadKey?: string;
 		chatSystemPrompt?: string;
+		/** Durable input for a queued/interrupted integration turn. Never stores credentials. */
+		pendingExecution?: {
+			prompt: string;
+			systemPrompt?: string;
+			runner: "claude" | "codex" | "gemini" | "cursor" | "opencode";
+			model?: string;
+			replyEvent?: unknown;
+		};
 		model?: string;
 		tools?: string[];
 		permissionMode?: string;

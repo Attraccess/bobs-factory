@@ -17,6 +17,7 @@ import type { ChatRepositoryProvider } from "./ChatRepositoryProvider.js";
 import { type ChatState, steeringState } from "./factory/SessionChat.js";
 import { runnerCapacityState } from "./RunnerConcurrency.js";
 import type { RunnerConfigBuilder } from "./RunnerConfigBuilder.js";
+import { persistReplyEvent } from "./SessionRecovery.js";
 
 /**
  * Defines what each chat platform must provide for the generic session lifecycle.
@@ -28,6 +29,9 @@ import type { RunnerConfigBuilder } from "./RunnerConfigBuilder.js";
 export type ChatPlatformName = "slack" | "linear" | "github" | "zulip";
 
 export interface ChatPlatformAdapter<TEvent> {
+	/** Rehydrate saved reply context using current platform credentials. */
+	restoreReplyEvent?(event: unknown): TEvent;
+
 	readonly platformName: ChatPlatformName;
 
 	/** Extract the user's task text from the raw event */
@@ -92,6 +96,7 @@ export interface ChatPlatformAdapter<TEvent> {
  */
 export interface ChatSessionHandlerDeps {
 	onSessionChange?: (id: string) => void;
+	isShuttingDown?: () => boolean;
 	onNewSession?: (
 		session: CyrusAgentSession,
 		instructions: string,
@@ -415,6 +420,16 @@ export class ChatSessionHandler<TEvent> {
 			// completion here, because with warm sessions the streaming prompt
 			// stays open and the start() promise doesn't resolve until the
 			// whole session ends.
+			session.metadata!.pendingExecution = {
+				prompt: userPrompt,
+				systemPrompt,
+				runner:
+					(runnerConfig as AgentRunnerConfig & { runnerType?: RunnerType })
+						.runnerType ?? "claude",
+				model: runnerConfig.model,
+				replyEvent: persistReplyEvent(event),
+			};
+			await this.deps.onStateChange();
 			this.enqueueReply(sessionId, event);
 			const startPromise =
 				runner.supportsStreamingInput && runner.startStreaming
@@ -579,6 +594,41 @@ export class ChatSessionHandler<TEvent> {
 			if (threadKey) this.threadSessions.set(threadKey, session.id);
 		}
 	}
+	/** Resume only unfinished turns, through the same capacity-gated start path. */
+	async recoverQueuedSessions(): Promise<void> {
+		for (const session of this.sessionManager.getActiveSessions()) {
+			const pending = session.metadata?.pendingExecution;
+			const resume = this.getResumeInfo(session);
+			if (
+				!pending ||
+				!resume ||
+				session.agentRunner ||
+				this.continuationStarts.has(session.id)
+			)
+				continue;
+			try {
+				// The saved prompt already includes thread catchup; do not assemble it twice.
+				await this.resumeSession(
+					undefined,
+					session,
+					session.id,
+					resume.sessionId,
+					resume.runnerType,
+					pending.prompt,
+					undefined,
+					true,
+				);
+			} catch (error) {
+				if (this.deps.isShuttingDown?.()) continue;
+				session.status = AgentSessionStatus.Error;
+				await this.sessionManager.createResponseActivity(
+					session.id,
+					`Chat recovery failed: ${error instanceof Error ? error.message : String(error)}`,
+				);
+				await this.deps.onStateChange();
+			}
+		}
+	}
 	get platformName(): ChatPlatformName {
 		return this.adapter.platformName;
 	}
@@ -689,15 +739,18 @@ export class ChatSessionHandler<TEvent> {
 		event: TEvent | undefined,
 		existingSession: CyrusAgentSession,
 		sessionId: string,
-		resumeSessionId: string,
+		resumeSessionId: string | undefined,
 		runnerType: RunnerType,
 		taskInstructions: string,
 		cancelled?: () => boolean,
+		recovering = false,
 	): Promise<void> {
 		if (this.continuationStarts.has(sessionId))
 			throw new Error("The conversation is resuming.");
 		const isCancelled = () =>
-			cancelled?.() || existingSession.status === AgentSessionStatus.Error;
+			cancelled?.() ||
+			this.deps.isShuttingDown?.() ||
+			existingSession.status === AgentSessionStatus.Error;
 		const controller = new AbortController();
 		this.continuationStarts.set(sessionId, controller);
 		existingSession.status = AgentSessionStatus.Active;
@@ -727,6 +780,8 @@ export class ChatSessionHandler<TEvent> {
 				runnerType,
 			);
 			if (isCancelled()) return;
+			if (recovering && existingSession.metadata?.pendingExecution?.model)
+				runnerConfig.model = existingSession.metadata.pendingExecution.model;
 
 			const runner = this.deps.createRunner(
 				runnerConfig,
@@ -748,7 +803,30 @@ export class ChatSessionHandler<TEvent> {
 			// (see handleAgentMessage). We must not await turn completion here —
 			// warm sessions hold the streaming prompt open across turns so the
 			// start() promise only resolves when the whole session ends.
-			if (event) this.enqueueReply(sessionId, event);
+			existingSession.metadata ??= {};
+			existingSession.metadata.pendingExecution = {
+				prompt: resumePrompt,
+				systemPrompt,
+				runner: runnerType,
+				model: runnerConfig.model,
+				replyEvent: persistReplyEvent(
+					event ?? existingSession.metadata.pendingExecution?.replyEvent,
+				),
+			};
+			await this.deps.onStateChange();
+			if (isCancelled()) return;
+			const replyEvent =
+				event ??
+				(existingSession.metadata.pendingExecution.replyEvent as
+					| TEvent
+					| undefined);
+			if (replyEvent)
+				this.enqueueReply(
+					sessionId,
+					event
+						? event
+						: (this.adapter.restoreReplyEvent?.(replyEvent) ?? replyEvent),
+				);
 			const startPromise =
 				runner.supportsStreamingInput && runner.startStreaming
 					? runner.startStreaming(resumePrompt)
@@ -765,6 +843,7 @@ export class ChatSessionHandler<TEvent> {
 						`${this.adapter.platformName} resume session error for ${sessionId}`,
 						error instanceof Error ? error : new Error(String(error)),
 					);
+					if (this.deps.isShuttingDown?.()) return;
 					existingSession.status = AgentSessionStatus.Error;
 					this.sessionManager.emit("sessionChanged", sessionId);
 					void this.deps.onStateChange();
@@ -772,11 +851,15 @@ export class ChatSessionHandler<TEvent> {
 				})
 				.finally(() => {
 					releaseStart();
-					if (existingSession.status !== AgentSessionStatus.Error)
+					if (
+						!this.deps.isShuttingDown?.() &&
+						existingSession.status !== AgentSessionStatus.Error
+					)
 						this.drainPendingFollowups(sessionId);
 				});
 		} catch (error) {
-			existingSession.status = AgentSessionStatus.Error;
+			if (!this.deps.isShuttingDown?.())
+				existingSession.status = AgentSessionStatus.Error;
 			throw error;
 		} finally {
 			// start() can await concurrency admission before isRunning() is true.
@@ -787,7 +870,7 @@ export class ChatSessionHandler<TEvent> {
 
 	private getResumeInfo(
 		session: CyrusAgentSession,
-	): { sessionId: string; runnerType: RunnerType } | undefined {
+	): { sessionId?: string; runnerType: RunnerType } | undefined {
 		if (session.claudeSessionId) {
 			return { sessionId: session.claudeSessionId, runnerType: "claude" };
 		}
@@ -803,6 +886,8 @@ export class ChatSessionHandler<TEvent> {
 		if (session.opencodeSessionId) {
 			return { sessionId: session.opencodeSessionId, runnerType: "opencode" };
 		}
+		if (session.metadata?.pendingExecution)
+			return { runnerType: session.metadata.pendingExecution.runner };
 		return undefined;
 	}
 

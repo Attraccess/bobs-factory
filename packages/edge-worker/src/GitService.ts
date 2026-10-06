@@ -3,6 +3,7 @@ import { spawnExecution as spawn } from "cyrus-core";
 import type { CapacityOptions, ExecutionCapacity } from "./MachineCapacity.js";
 export const setupExecutionScope = new AsyncLocalStorage<{
 	signal: AbortSignal;
+	service?: ExecutionCapacity;
 	capacity?: CapacityOptions;
 }>();
 
@@ -848,11 +849,12 @@ export class GitService {
 			this.logger.debug("Fetching latest changes from remote...");
 			let hasRemote = true;
 			try {
-				if (this.options?.capacity) {
+				if (this.executionCapacity()) {
 					const scope = setupExecutionScope.getStore();
-					const lease = await this.options
-						.capacity()
-						.acquireLease(scope?.signal, scope?.capacity);
+					const lease = await this.executionCapacity()!.acquireLease(
+						scope?.signal,
+						scope?.capacity,
+					);
 					try {
 						await lease.run(() =>
 							promisify(execFile)("git", ["fetch", "origin"], {
@@ -1370,15 +1372,20 @@ export class GitService {
 	 * Run a hook script (setup or teardown) with proper error handling and logging.
 	 * Failure is non-blocking — errors are logged and execution continues.
 	 */
+	private executionCapacity(): ExecutionCapacity | undefined {
+		return (
+			setupExecutionScope.getStore()?.service ?? this.options?.capacity?.()
+		);
+	}
 	private async runHookScript(opts: HookScriptOptions): Promise<void> {
-		if (!this.options?.capacity) return this.runHookScriptUnlocked(opts);
+		const service = this.executionCapacity();
+		if (!service) return this.runHookScriptUnlocked(opts);
 		const scope = setupExecutionScope.getStore();
-		const lease = await this.options
-			.capacity()
-			.acquireLease(scope?.signal, scope?.capacity);
+		const lease = await service.acquireLease(scope?.signal, scope?.capacity);
 		try {
 			scope?.signal.throwIfAborted();
 			await lease.run(() => this.runHookScriptUnlocked(opts));
+			scope?.signal.throwIfAborted();
 		} finally {
 			await lease.release();
 		}
@@ -1469,7 +1476,7 @@ export class GitService {
 		try {
 			// Standalone callers retain the inherited-stdio contract. EdgeWorker
 			// always supplies capacity and uses asynchronous cancellable execution.
-			if (!this.options?.capacity && !shouldPostRepoSetupActivity) {
+			if (!this.executionCapacity() && !shouldPostRepoSetupActivity) {
 				this.runHookScriptInherited({
 					scriptPath,
 					expandedPath,

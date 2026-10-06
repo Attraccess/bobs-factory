@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Share a durable machine-wide pool across workers, agents and intensive workflow steps, with four slots by default, live capacity settings, separate queue states and cancellable queued work. Recipes can classify scripts and tools, including fanout branches. Managed conversations resume through admission after each completed turn. ([Taskbot #37](https://taskbot.apps.janjaap.de/p/bobs-factory/t/37))
+- Share a durable machine-wide pool across workers, agents and intensive workflow steps, with four slots by default, live capacity settings, separate queue states and cancellable queued work. Recipes can classify scripts and tools, including fanout branches. Managed conversations resume through admission after each completed turn. ([Taskbot #37](https://taskbot.apps.janjaap.de/p/bobs-factory/t/37), [#20](https://github.com/Attraccess/bobs-factory/pull/20))
 - Select workflows from Linear assignments and mentions using `[workflow=<id>]`, retain readable selection/source history, and protect active issues against competing or redelivered launches. Replies respect the accepted run and runner steering capabilities; interrupted startup retains recovery ownership, unassignment releases it and cancels pending runner startup, and native stop redelivery cannot escalate to a full kill. Ticket context includes every comment and attachment page. ([Taskbot #55](https://taskbot.apps.janjaap.de/p/bobs-factory/t/55), [#13](https://github.com/Attraccess/bobs-factory/pull/13))
 - Automatically name new runs in the background with a globally configurable title agent and project context tools, including Cursor, Claude's URL-only HTTP servers, Gemini's URL-only SSE servers and relative server scripts. Show the run ID while naming, update titles live, preserve historical titles during recovery, and keep dashboard feedback usable for Slack/Zulip sessions across restarts and concurrent platform replies. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68), [#11](https://github.com/Attraccess/bobs-factory/pull/11))
 
@@ -39,6 +39,8 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Keep concurrent Codex executions isolated, gate and cancel integration setup, recover queued chat and PR work after restart, reclaim abandoned coordinator locks, retain unverified remote title capacity, and prevent recipe classification edits from overwriting one another. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
 - Retry automatic run-title timeouts once with a longer deadline, show naming failures, and let operators retry naming with current settings without rerunning the workflow.
 

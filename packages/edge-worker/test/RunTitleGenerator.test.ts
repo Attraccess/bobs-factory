@@ -28,6 +28,7 @@ import {
 } from "../src/factory/RunTitleGenerator.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
+import { MachineCapacity } from "../src/MachineCapacity.js";
 import { SessionSemaphore } from "../src/RunnerConcurrency.js";
 
 const homes: string[] = [];
@@ -503,4 +504,46 @@ it("keeps primary launches available when inherited title provider settings beco
 	});
 	expect(run.titleGeneration?.error).toMatch(/not supported/);
 	await runtime.shutdown();
+});
+
+it("retains timed-out remote execution capacity and does not start an unsafe retry", async () => {
+	const directory = home();
+	const slots = new MachineCapacity(1, join(directory, "pool"));
+	let done!: () => void;
+	const start = vi.fn(
+		() =>
+			new Promise<void>((resolve) => {
+				done = resolve;
+			}),
+	);
+	const update = vi.fn();
+	const generator = new RunTitleGenerator(
+		directory,
+		slots,
+		{
+			buildConfig: async () => ({ workingDirectory: directory }),
+			createRunner: () =>
+				({ start, stop: () => done() }) as unknown as IAgentRunner,
+			update,
+		},
+		20,
+	);
+	generator.start("remote", {
+		...job(),
+		settings: { runner: "cursor", model: "remote" },
+	});
+	await vi.waitFor(
+		() =>
+			expect(update).toHaveBeenCalledWith(
+				"remote",
+				expect.objectContaining({
+					state: "failed",
+					error: expect.stringMatching(/remains reserved/),
+				}),
+			),
+		{ timeout: 10000 },
+	);
+	expect(start).toHaveBeenCalledOnce();
+	expect((await slots.snapshot()).stopping).toBe(1);
+	await generator.shutdown();
 });

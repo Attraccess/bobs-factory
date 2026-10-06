@@ -610,7 +610,14 @@ after at most eight primary admissions while it is eligible. Queue identities an
 ordering survive restart; graceful shutdown parks recoverable work without recording
 user termination. Startup reconciles surviving local descendants before admission.
 Completed graph receipts and saved conversations retain their existing recovery
-behavior. Scripts and tools can retry after a crash: external effects still require
+behavior. Queued GitHub/GitLab and Slack/Zulip turns save their prompt, runner,
+model and reply routing before admission, then rejoin their original queue position
+after restart. Replies use current platform credentials; webhook credentials are
+excluded from saved session records. Integration workspace preparation shares the
+worker pool even when the CLI supplies a custom workspace handler; stop or
+unassignment cancels pending preparation before it can run. Managed Codex
+executions use separate app-server processes per lease, so completing one execution
+cannot terminate another. Scripts and tools can retry after a crash: external effects still require
 idempotency or reconciliation, and execution is not exactly once.
 
 Warm session prewarming and idle streams are disabled for managed workers. After a
