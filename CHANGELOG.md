@@ -43,6 +43,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve this tab’s unsent review comments and additional feedback when the PR revision, guide or review gate changes; require acknowledgment before sending the recovered draft. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
+
 - Reject stale run-title settings saves so another tab’s changes are preserved, while keeping the unsaved draft available for review. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
 
 - Wait through temporary GitHub mergeability calculations and pending checks during factory handoff, and route actionable conflicts, check failures and feedback through the existing fix/review cycle. Saved runs retain completed work and show the current blocker instead of repeatedly failing handoff. ([#18](https://github.com/Attraccess/bobs-factory/pull/18))

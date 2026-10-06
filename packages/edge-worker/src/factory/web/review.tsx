@@ -198,7 +198,12 @@ export function GuidedReview({
 function ReviewSession(props: any) {
 	const controller = useFeedbackController(
 		feedbackKey(props.storageKey, props.run.reviewGate?.id),
-		revisionOf([props.run.reviewGate, props.run.status, props.run.chat?.mode]),
+		revisionOf([
+			feedbackKey(props.storageKey, props.run.reviewGate?.id),
+			props.run.reviewGate,
+			props.run.status,
+			props.run.chat?.mode,
+		]),
 	);
 	return (
 		<FeedbackContext.Provider value={props.controls ? controller : null}>

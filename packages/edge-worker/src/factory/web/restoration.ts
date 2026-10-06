@@ -225,6 +225,22 @@ export function restoredDraft<T>(key: string): T | undefined {
 export function draftRevision(key: string): string | undefined {
 	return drafts.get(key)?.revision;
 }
+/** Move this tab's latest draft to a replacement identity, retaining its old context. */
+export function recoverDraft<T>(
+	key: string,
+	previousPrefix?: string,
+): T | undefined {
+	if (drafts.has(key)) return restoredDraft<T>(key);
+	if (!previousPrefix) return;
+	const previous = [...drafts.entries()]
+		.reverse()
+		.find(([candidate]) => candidate.startsWith(previousPrefix));
+	if (!previous) return;
+	const [source, draft] = previous;
+	rememberDraft(key, draft.value, draft.revision ?? source);
+	forgetDraft(source);
+	return draft.value;
+}
 function pristineDraft(key: string, value: any): boolean {
 	if (value === undefined) return true;
 	if (key.startsWith("feedback/draft/"))

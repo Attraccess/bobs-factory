@@ -100,6 +100,11 @@ acknowledging the draft. Recovered copies remain available when a former gate is
 no longer open. Reading restoration fetches the relevant bounded history page;
 if its anchor is no longer retained, the app explains that limitation.
 
+Unsent guided-review comments and additional feedback from this tab survive
+changes to the same run's commit, guide or gate. They retain their old context
+and require acknowledgment before submission to the current review. Old drafts
+from another tab's shared storage are not imported across review identities.
+
 For damaged browser caches, first copy unsent drafts and reconnect. Try **Retry
 connection**, then **Update now**. If that fails, remove this origin’s service
 worker and `bobs-factory-shell-*` caches in browser developer tools, then reload

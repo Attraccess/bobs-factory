@@ -38,11 +38,13 @@ import {
 } from "../src/factory/web/restoration.js";
 import {
 	emptyFeedback,
+	feedbackKey,
 	loadFeedback,
 	normalizeFeedback,
 	serializeFeedback,
 } from "../src/factory/web/review-feedback.js";
 import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
+import { reviewKey } from "../src/factory/web/review-state.js";
 
 const build = "b".repeat(24),
 	oldBuild = "a".repeat(24),
@@ -644,6 +646,82 @@ it("marks changed questions/gates/recipes as stale drafts instead of accepting t
 	);
 	acknowledgeDraft("answers/conflict");
 	expect(window.dispatchEvent).toHaveBeenCalledOnce();
+});
+
+it.each([
+	"head",
+	"guide",
+	"gate",
+])("recovers this tab's feedback as stale when the review %s changes", (changed) => {
+	browserState();
+	vi.stubGlobal("localStorage", storage());
+	const run = {
+		id: `revision-${changed}`,
+		status: "waiting",
+		reviewGate: { id: "old-gate", headSha: "old-head", status: "pending" },
+	};
+	const guide = { summary: "Original guide" };
+	const key = feedbackKey(reviewKey(run, guide), run.reviewGate.id);
+	const revision = revisionOf([key, run.reviewGate, run.status, undefined]);
+	const draft = {
+		...emptyFeedback(),
+		feedback: "Keep my additional feedback",
+		items: [
+			{
+				text: "Keep my item comment",
+				target: {
+					path: "/summary",
+					page: 0,
+					pageTitle: "Overview",
+					kind: "Text block",
+					label: "Summary",
+					context: "Original guide",
+					order: [0, 0],
+				},
+			},
+		],
+	};
+	const snapshotKey = `feedback/draft/${key}`;
+	rememberDraft(snapshotKey, draft, revision);
+	const saved = storage();
+	preserveForUpdate(build, saved);
+	forgetDraft(snapshotKey);
+	loadRestoration(build, saved);
+	const current = structuredClone(run);
+	if (changed === "head") current.reviewGate.headSha = "new-head";
+	if (changed === "gate") current.reviewGate.id = "new-gate";
+	const currentGuide =
+		changed === "guide" ? { summary: "Revised guide" } : guide;
+	const currentKey = feedbackKey(
+		reviewKey(current, currentGuide),
+		current.reviewGate.id,
+	);
+	const recovered = feedbackSession(currentKey).getSnapshot().draft;
+	let stale = false;
+	function Probe() {
+		const [, , conflict] = useRestorableState(
+			`feedback/draft/${currentKey}`,
+			recovered,
+			revisionOf([currentKey, current.reviewGate, current.status, undefined]),
+		);
+		stale = conflict;
+		return null;
+	}
+	renderToStaticMarkup(createElement(Probe));
+	expect(recovered).toEqual(normalizeFeedback(draft));
+	expect(stale).toBe(true);
+	expect(draftRevision(`feedback/draft/${currentKey}`)).toBe(revision);
+	expect(
+		loadFeedback(
+			feedbackKey(
+				reviewKey({ ...current, id: "other-run" }, currentGuide),
+				current.reviewGate.id,
+			),
+		),
+	).toEqual(emptyFeedback());
+	forgetDraft(`feedback/draft/${currentKey}`);
+	forgetDraft(snapshotKey);
+	completeRestoration();
 });
 
 it("preserves collected feedback per tab through updates and migrates earlier text snapshots", () => {

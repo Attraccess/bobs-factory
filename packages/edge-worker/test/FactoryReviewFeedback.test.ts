@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { forgetDraft } from "../src/factory/web/restoration.js";
 import {
 	emptyFeedback,
 	type FeedbackDraft,
@@ -71,7 +72,7 @@ it("migrates single-text drafts and discards invalid stored comments", () => {
 		expect(normalizeFeedback(value).items).toEqual([]);
 });
 
-it("isolates run, revision, guide and gate identities while retaining legacy keys", () => {
+it("isolates shared storage by run, revision, guide and gate while retaining legacy keys", () => {
 	const data = new Map<string, string>();
 	vi.stubGlobal("localStorage", {
 		getItem: (key: string) => data.get(key) ?? null,
@@ -84,6 +85,8 @@ it("isolates run, revision, guide and gate identities while retaining legacy key
 	const draft = { ...emptyFeedback(), feedback: "Old draft" };
 	saveFeedback(key, draft);
 	expect(loadFeedback(key).feedback).toBe("Old draft");
+	// Another tab's shared storage is not a draft mounted in this tab or saved by its update.
+	forgetDraft(`feedback/draft/${key}`);
 	for (const other of [
 		feedbackKey(reviewKey({ ...run, id: "b" }, guide), "gate1"),
 		feedbackKey(

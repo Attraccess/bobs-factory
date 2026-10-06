@@ -1,8 +1,8 @@
 import {
 	draftRevision,
 	forgetDraft,
+	recoverDraft,
 	rememberDraft,
-	restoredDraft,
 } from "./restoration";
 import { readStored, writeStored } from "./review-state";
 
@@ -64,13 +64,21 @@ export function normalizeFeedback(value: unknown): FeedbackDraft {
 	};
 }
 export function loadFeedback(key: string) {
-	const snapshot = restoredDraft(`feedback/draft/${key}`);
+	// Revision-scoped shared storage must never supply another tab's old edits.
+	// Only this tab's mounted drafts or explicit update snapshot can cross revisions.
+	const runPrefix = key.match(/^factory-review\/[^/]+\//)?.[0];
+	const recover = <T>(kind: string) =>
+		recoverDraft<T>(
+			`feedback/${kind}/${key}`,
+			runPrefix ? `feedback/${kind}/${runPrefix}` : undefined,
+		);
+	const snapshot = recover<FeedbackDraft>("draft");
 	if (snapshot !== undefined) return normalizeFeedback(snapshot);
 	// Updates from the original single-text shell carry the tab's draft under
 	// these keys. Shared storage may belong to another tab, including comments
 	// the original shell could never have collected.
-	const text = restoredDraft<string>(`feedback/text/${key}`);
-	const open = restoredDraft<boolean>(`feedback/open/${key}`);
+	const text = recover<string>("text");
+	const open = recover<boolean>("open");
 	if (text === undefined && open === undefined)
 		return normalizeFeedback(readStored(key, null));
 	const migrated = normalizeFeedback({
