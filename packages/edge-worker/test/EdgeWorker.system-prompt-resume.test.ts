@@ -141,6 +141,7 @@ describe("EdgeWorker - System Prompt Resume", () => {
 					? "agent-session-123"
 					: undefined,
 				externalSessionId: "agent-session-123",
+				status: "complete",
 				claudeSessionId: "claude-session-123",
 				issueId: "issue-123",
 				issueContext: {

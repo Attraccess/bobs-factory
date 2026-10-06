@@ -324,7 +324,7 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 				issueContext: { issueId: "issue-123" },
 				repositories: [],
 				workspace: { path: "/test/workspaces/TEST-123" },
-				status: "active",
+				status: "complete",
 			});
 			// Arrange: Ensure the issue-to-repository cache is EMPTY
 			// (simulates post-restart/migration scenario)
@@ -354,7 +354,7 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 				issueContext: { issueId: "issue-123" },
 				repositories: [],
 				workspace: { path: "/test/workspaces/TEST-123" },
-				status: "active",
+				status: "complete",
 			});
 			// Arrange: Empty cache
 			const repositoryRouter = (edgeWorker as any).repositoryRouter;

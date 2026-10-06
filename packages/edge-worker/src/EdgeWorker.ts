@@ -4811,6 +4811,20 @@ ${taskSection}`;
 		);
 	}
 
+	private ticketStartupIsIncomplete(session: CyrusAgentSession): boolean {
+		if (this.factoryRuntime?.runs.has(session.id)) return false;
+		const receipt = this.launchAdmission
+			?.values()
+			.find((item) => item.sessionId === session.id);
+		return (
+			receipt?.phase === "recovery" ||
+			Boolean(
+				session.triggerOrigin?.workflowId &&
+					session.triggerOrigin.workflowId !== "simple",
+			)
+		);
+	}
+
 	private activeTicketRun(
 		workspace: string,
 		issue: string,
@@ -4927,19 +4941,26 @@ ${taskSection}`;
 
 	private recoverPendingTicketLaunches(): void {
 		for (const receipt of this.getLaunchAdmission().values()) {
-			if (receipt.phase === "pending")
+			if (receipt.phase === "pending") {
 				void this.startAcceptedTicketLaunch(receipt, [
 					...this.repositories.values(),
 				]);
-			else if (
-				["starting", "started"].includes(receipt.phase) &&
-				!this.agentSessionManager.getSession(receipt.sessionId) &&
-				!this.getFactoryRuntime().runs.has(receipt.sessionId)
+				continue;
+			}
+			const session = this.agentSessionManager.getSession(receipt.sessionId);
+			if (
+				receipt.phase !== "settled" &&
+				!this.getFactoryRuntime().runs.has(receipt.sessionId) &&
+				(receipt.phase === "recovery" ||
+					(["starting", "started"].includes(receipt.phase) &&
+						(!session || this.ticketStartupIsIncomplete(session))))
 			) {
 				this.getLaunchAdmission().update(receipt, { phase: "recovery" });
+				if (session) session.status = AgentSessionStatus.Error;
+				void this.savePersistedState();
 				void this.ticketLaunchFeedback(
 					receipt.webhook,
-					"Startup was interrupted before a session checkpoint was saved. Ownership is retained to prevent duplicate work. Send stop to settle this launch, then start a new session.",
+					"Startup was interrupted before the accepted workflow was ready. Ownership is retained to prevent duplicate work. Send stop to settle this launch, then start a new session.",
 				);
 			}
 		}
@@ -5961,8 +5982,19 @@ ${taskSection}`;
 
 		const promptBody = webhook.agentActivity.content.body;
 
-		// Use centralized streaming check and routing logic
+		// Recheck after attachment IO. A rejected steer must never interrupt
+		// active work by falling through to the legacy stop/resume path.
 		try {
+			const chat = this.factoryChatState(sessionId);
+			if (!chat.available) throw new Error(chat.reason ?? "Chat unavailable");
+			if (chat.mode === "steer") {
+				session.agentRunner!.addStreamMessage!(
+					attachmentManifest
+						? `${promptBody}\n\n${attachmentManifest}`
+						: promptBody,
+				);
+				return;
+			}
 			await this.handlePromptWithStreamingCheck(
 				session,
 				repository,
@@ -5996,14 +6028,9 @@ ${taskSection}`;
 		webhook: AgentSessionPromptedWebhook,
 	): Promise<void> {
 		const body = webhook.agentActivity?.content?.body ?? "";
-		// Stop remains responsive and repeatable (including warm-session double stop).
-		if (
+		const isStop =
 			webhook.agentActivity?.signal === "stop" ||
-			/^\s*stop(\s+session|\s+working)?[\s.!?]*$/i.test(body)
-		) {
-			await this.handleStopSignal(webhook);
-			return;
-		}
+			/^\s*stop(\s+session|\s+working)?[\s.!?]*$/i.test(body);
 		const { organizationId: workspace, agentSession } = webhook;
 		const receipt = this.getLaunchAdmission().get(workspace, agentSession.id);
 		if (receipt && receipt.origin.ticket!.issueId !== agentSession.issue?.id) {
@@ -6015,7 +6042,7 @@ ${taskSection}`;
 		}
 		const id =
 			webhook.agentActivity?.id ?? webhook.agentActivity?.sourceCommentId;
-		if (!id && this.config.platform !== "cli") {
+		if (!id && !isStop && this.config.platform !== "cli") {
 			await this.ticketLaunchFeedback(
 				webhook,
 				"Reply cannot be delivered safely: no native activity or source comment identity was supplied. Send a new reply in the original Linear session.",
@@ -6039,6 +6066,18 @@ ${taskSection}`;
 		}
 		let resuming = false;
 		try {
+			// Native redeliveries are one stop. Distinct activities still retain
+			// the warm runner's interrupt-then-double-stop behavior.
+			if (isStop) {
+				await this.handleStopSignal(webhook);
+				if (id)
+					this.getLaunchAdmission().finishPrompt(
+						workspace,
+						agentSession.id,
+						id,
+					);
+				return;
+			}
 			const session = this.agentSessionManager.getSession(agentSession.id);
 			if (receipt && session?.status === AgentSessionStatus.Complete) {
 				const owner =
@@ -6192,9 +6231,13 @@ ${taskSection}`;
 			(acceptedWorkspace && acceptedWorkspace !== webhook.organizationId)
 		)
 			throw new Error("Session belongs to another workspace or issue");
-		if (acceptedSession.workflowChat === false)
+		const chat = this.factoryChatState(agentSessionId);
+		if (!chat.available)
 			throw new Error(
-				"Chat was disabled in this session's accepted recipe. Use the existing run's question or recovery controls",
+				chat.reason ??
+					(acceptedSession.workflowChat === false
+						? "Chat was disabled in this session's accepted recipe. Use the existing run's question or recovery controls"
+						: "Chat unavailable"),
 			);
 		const otherRun =
 			this.activeTicketRun(
@@ -6326,6 +6369,15 @@ ${taskSection}`;
 		const sessions = this.agentSessionManager.getSessionsByIssueId(issue.id);
 		const activeThreadCount = sessions.length;
 
+		// Settle reservations too: unassignment can arrive during repository
+		// selection, a blocker wait, or asynchronous startup without a session.
+		for (const receipt of this.getLaunchAdmission().values()) {
+			if (
+				receipt.origin.ticket?.workspaceId === linearWorkspaceId &&
+				receipt.origin.ticket.issueId === issue.id
+			)
+				this.settleTicketLaunch(receipt.sessionId);
+		}
 		// Stop all agent runners for this issue
 		for (const session of sessions) {
 			this.logger.info(`Stopping agent runner for issue ${issue.identifier}`);
@@ -6334,6 +6386,8 @@ ${taskSection}`;
 			this.agentSessionManager.requestSessionStop(session.id);
 			session.agentRunner?.stop();
 		}
+
+		await this.savePersistedState();
 
 		// Post ONE farewell comment on the issue (not in any thread) if there were active sessions
 		if (activeThreadCount > 0) {
@@ -6577,6 +6631,13 @@ ${taskSection}`;
 				};
 			return this.factoryChat.state(id, run.workflow.chat ?? false);
 		}
+		if (this.ticketStartupIsIncomplete(session))
+			return {
+				enabled: session.workflowChat ?? false,
+				available: false,
+				reason:
+					"Startup was interrupted before the accepted workflow was ready. Send stop to settle this launch, then start a new session.",
+			};
 		const enabled =
 			session.workflowChat ??
 			(
@@ -7302,11 +7363,19 @@ ${taskSection}`;
 
 	private recoverFactoryRuns(): void {
 		const runtime = this.getFactoryRuntime();
+		const admission = this.getLaunchAdmission();
 		// Original Simple issue sessions retain Cyrus's continuation path and timeline.
 		// Factory/manual Simple runs use their own checkpoint below.
 		for (const session of this.agentSessionManager.getActiveSessions()) {
 			if (
 				runtime.runs.has(session.id) ||
+				this.ticketStartupIsIncomplete(session) ||
+				admission
+					.values()
+					.some(
+						(receipt) =>
+							receipt.sessionId === session.id && receipt.phase === "settled",
+					) ||
 				!session.issue ||
 				!session.workspace?.path ||
 				(session.issueContext?.trackerId &&

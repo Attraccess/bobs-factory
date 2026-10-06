@@ -416,7 +416,7 @@ it("holds interrupted startup ownership until stop and permits a later distinct 
 	);
 	expect(route).toHaveBeenCalledTimes(2);
 });
-it("applies prompted activities once across restart and leaves repeated stops responsive", async () => {
+it("applies prompted activities and stops once across restart", async () => {
 	const { edge } = setup();
 	const deliver = vi
 		.spyOn(edge, "deliverUserPromptedAgentActivity")
@@ -442,7 +442,7 @@ it("applies prompted activities once across restart and leaves repeated stops re
 	};
 	await edge.handleUserPromptedAgentActivity(stopped);
 	await edge.handleUserPromptedAgentActivity(stopped);
-	expect(stop).toHaveBeenCalledTimes(2);
+	expect(stop).toHaveBeenCalledOnce();
 });
 it("releases completed-session ownership when a reply is rejected by its saved chat setting", async () => {
 	const { edge, repository, activity } = setup();
@@ -526,4 +526,274 @@ it("uses the graph's terminal state instead of its retained native session's act
 		[repository],
 	);
 	expect(route).toHaveBeenCalledTimes(2);
+});
+
+it.each([
+	"recovery",
+	"starting",
+])("quarantines partial Factory startup after restoration (%s receipt)", async (phase) => {
+	const { edge, worker, runtime, repository, activity } = setup();
+	const event = webhook("@Bob [workflow=factory]");
+	vi.spyOn(edge, "assemblePrompt").mockResolvedValue({
+		userPrompt: "Original instructions",
+	});
+	edge.issueTrackers.get("cli-workspace").fetchComments = vi.fn(async () => {
+		throw new Error("comments API unavailable");
+	});
+	vi.spyOn(edge, "routeAcceptedTicketLaunch").mockImplementation(async () => {
+		await edge.initializeAgentRunner(
+			event.agentSession,
+			[repository],
+			event.organizationId,
+		);
+	});
+	await edge.handleAgentSessionCreatedWebhook(event, [repository]);
+	const receipt = edge.getLaunchAdmission().get("cli-workspace", "session");
+	expect(receipt.phase).toBe("recovery");
+	expect(runtime.runs.has("session")).toBe(false);
+	expect(
+		edge.agentSessionManager.getSession("session").triggerOrigin.workflowId,
+	).toBe("factory");
+	edge.getLaunchAdmission().update(receipt, { phase });
+	const saved = edge.agentSessionManager.serializeState();
+	edge.agentSessionManager = new AgentSessionManager();
+	edge.agentSessionManager.restoreState(saved.sessions, saved.entries);
+	worker.restoreMappings(worker.serializeMappings());
+	edge.launchAdmission = undefined;
+	const resume = vi
+		.spyOn(edge, "resumeAgentSession")
+		.mockResolvedValue(undefined);
+	edge.recoverFactoryRuns();
+	edge.recoverPendingTicketLaunches();
+	await vi.waitFor(() =>
+		expect(activity).toHaveBeenLastCalledWith(
+			expect.objectContaining({
+				content: {
+					type: "response",
+					body: expect.stringMatching(/accepted workflow.*Send stop/),
+				},
+			}),
+		),
+	);
+	expect(resume).not.toHaveBeenCalled();
+	expect(edge.getLaunchAdmission().get("cli-workspace", "session").phase).toBe(
+		"recovery",
+	);
+	await edge.handleUserPromptedAgentActivity({
+		...event,
+		action: "prompted",
+		agentActivity: { id: "reply-after-restart", content: { body: "Continue" } },
+	});
+	expect(resume).not.toHaveBeenCalled();
+	expect(activity).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			content: {
+				type: "response",
+				body: expect.stringMatching(/accepted workflow.*Send stop/),
+			},
+		}),
+	);
+	expect(runtime.runs.size).toBe(0);
+	await edge.handleUserPromptedAgentActivity({
+		...event,
+		action: "prompted",
+		agentActivity: {
+			id: "stop-partial",
+			signal: "stop",
+			content: { body: "stop" },
+		},
+	});
+	expect(edge.getLaunchAdmission().get("cli-workspace", "session").phase).toBe(
+		"settled",
+	);
+});
+
+it("settles Simple and pending launch ownership on unassignment, durably allowing a new assignment", async () => {
+	const { edge, repository, fullIssue } = setup();
+	const route = vi
+		.spyOn(edge, "routeAcceptedTicketLaunch")
+		.mockResolvedValue(undefined);
+	const original = webhook("This thread is for an agent session");
+	await edge.handleAgentSessionCreatedWebhook(original, [repository]);
+	const { session } = await edge.createCyrusAgentSession(
+		"session",
+		original.agentSession.issue,
+		[repository],
+		edge.agentSessionManager,
+		"cli-workspace",
+	);
+	const stop = vi.fn();
+	session.agentRunner = { stop, isRunning: () => true };
+	edge
+		.getLaunchAdmission()
+		.update(edge.getLaunchAdmission().get("cli-workspace", "session"), {
+			phase: "started",
+		});
+	vi.spyOn(edge, "postComment").mockResolvedValue(undefined);
+	await edge.handleIssueUnassigned(fullIssue, "cli-workspace");
+	expect(stop).toHaveBeenCalledOnce();
+	expect(session.status).toBe("error");
+	edge.launchAdmission = undefined;
+	expect(edge.getLaunchAdmission().get("cli-workspace", "session").phase).toBe(
+		"settled",
+	);
+	await edge.handleAgentSessionCreatedWebhook(
+		{ ...original, agentSession: { ...original.agentSession, id: "fresh" } },
+		[repository],
+	);
+	expect(route).toHaveBeenCalledTimes(2);
+	await edge.handleIssueUnassigned(fullIssue, "cli-workspace");
+	edge.launchAdmission = undefined;
+	edge.recoverPendingTicketLaunches();
+	expect(edge.getLaunchAdmission().get("cli-workspace", "fresh").phase).toBe(
+		"settled",
+	);
+	expect(route).toHaveBeenCalledTimes(2);
+});
+
+it("deduplicates warm-runner stop redelivery while distinct stops still fully terminate", async () => {
+	const { edge, repository } = setup();
+	const event = webhook("@Bob [workflow=simple]");
+	edge.captureTicketOrigin(event, true);
+	const { session } = await edge.createCyrusAgentSession(
+		"session",
+		event.agentSession.issue,
+		[repository],
+		edge.agentSessionManager,
+		"cli-workspace",
+	);
+	const interrupt = vi.fn(async () => {});
+	const stop = vi.fn();
+	session.agentRunner = {
+		interrupt,
+		stop,
+		isWarm: () => true,
+		isRunning: () => true,
+	};
+	const first = {
+		...event,
+		action: "prompted",
+		agentActivity: {
+			id: "first-stop",
+			signal: "stop",
+			content: { body: "stop" },
+		},
+	};
+	await edge.handleUserPromptedAgentActivity(first);
+	edge.launchAdmission = undefined;
+	await edge.handleUserPromptedAgentActivity(first);
+	expect(interrupt).toHaveBeenCalledOnce();
+	expect(stop).not.toHaveBeenCalled();
+	await edge.handleUserPromptedAgentActivity({
+		...first,
+		agentActivity: { ...first.agentActivity, id: "second-stop" },
+	});
+	expect(stop).toHaveBeenCalledOnce();
+	expect(session.status).toBe("error");
+});
+
+it.each([
+	"no-streaming",
+	"no-input-method",
+	"finishing",
+	"stream-rejected",
+])("rejects unsupported Simple steering without stopping active work: %s", async (kind) => {
+	const { edge, repository, activity } = setup();
+	const event = webhook("@Bob [workflow=simple]");
+	edge.captureTicketOrigin(event, true);
+	const { session } = await edge.createCyrusAgentSession(
+		"session",
+		event.agentSession.issue,
+		[repository],
+		edge.agentSessionManager,
+		"cli-workspace",
+	);
+	const stop = vi.fn();
+	const add = vi.fn(() => {
+		if (kind === "stream-rejected")
+			throw new Error("Turn no longer accepts steering");
+	});
+	session.agentRunner = {
+		stop,
+		isRunning: () => true,
+		isStreaming: () => kind !== "finishing",
+		supportsStreamingInput: kind !== "no-streaming",
+		addStreamMessage: kind === "no-input-method" ? undefined : add,
+	};
+	vi.spyOn(edge, "postInstantPromptedAcknowledgment").mockResolvedValue(
+		undefined,
+	);
+	edge.repositoryRouter.getIssueRepositoryCache().set("issue", [repository.id]);
+	const resume = vi
+		.spyOn(edge, "resumeAgentSession")
+		.mockResolvedValue(undefined);
+	await edge.handleUserPromptedAgentActivity({
+		...event,
+		action: "prompted",
+		agentActivity: {
+			id: "unsupported-reply",
+			content: { body: "Change direction" },
+		},
+	});
+	expect(stop).not.toHaveBeenCalled();
+	expect(resume).not.toHaveBeenCalled();
+	expect(activity).toHaveBeenLastCalledWith(
+		expect.objectContaining({
+			content: {
+				type: "response",
+				body: expect.stringMatching(
+					/cannot receive|finishing|no longer accepts/,
+				),
+			},
+		}),
+	);
+});
+
+it("keeps supported steering and completed Simple continuation available", async () => {
+	const { edge, repository } = setup();
+	const event = webhook("@Bob [workflow=simple]");
+	edge.captureTicketOrigin(event, true);
+	const { session } = await edge.createCyrusAgentSession(
+		"session",
+		event.agentSession.issue,
+		[repository],
+		edge.agentSessionManager,
+		"cli-workspace",
+	);
+	let running = true;
+	const stop = vi.fn();
+	const add = vi.fn();
+	session.agentRunner = {
+		stop,
+		isRunning: () => running,
+		isStreaming: () => true,
+		supportsStreamingInput: true,
+		addStreamMessage: add,
+	};
+	vi.spyOn(edge, "postInstantPromptedAcknowledgment").mockResolvedValue(
+		undefined,
+	);
+	edge.repositoryRouter.getIssueRepositoryCache().set("issue", [repository.id]);
+	const resume = vi
+		.spyOn(edge, "resumeAgentSession")
+		.mockResolvedValue(undefined);
+	const reply = {
+		...event,
+		action: "prompted",
+		agentActivity: {
+			id: "supported-reply",
+			content: { body: "Change direction" },
+		},
+	};
+	await edge.handleUserPromptedAgentActivity(reply);
+	expect(add).toHaveBeenCalledExactlyOnceWith("Change direction");
+	expect(stop).not.toHaveBeenCalled();
+	expect(resume).not.toHaveBeenCalled();
+	running = false;
+	session.status = "complete";
+	await edge.handleUserPromptedAgentActivity({
+		...reply,
+		agentActivity: { ...reply.agentActivity, id: "completed-reply" },
+	});
+	expect(resume).toHaveBeenCalledOnce();
 });
