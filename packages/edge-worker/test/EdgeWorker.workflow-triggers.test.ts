@@ -651,6 +651,90 @@ it("settles Simple and pending launch ownership on unassignment, durably allowin
 	expect(route).toHaveBeenCalledTimes(2);
 });
 
+it.each([
+	false,
+	true,
+])("does not start a cancelled Simple runner after persistence (streaming: %s)", async (streaming) => {
+	const { edge, repository, fullIssue } = setup();
+	const event = webhook("@Bob [workflow=simple]");
+	vi.spyOn(edge, "assemblePrompt").mockResolvedValue({
+		userPrompt: "Original instructions",
+		metadata: { components: [], promptType: "initial" },
+	});
+	edge.issueTrackers.get("cli-workspace").fetchComments = vi.fn(async () => ({
+		nodes: [],
+	}));
+	edge.issueTrackers.get("cli-workspace").fetchIssueAttachments = vi.fn(
+		async () => [],
+	);
+	vi.spyOn(edge, "buildAgentRunnerConfig").mockResolvedValue({
+		config: {},
+		runnerType: "claude",
+	});
+	let running = false;
+	const start = vi.fn(async () => {
+		running = true;
+		return { sessionId: "conversation" };
+	});
+	const stop = vi.fn(() => {
+		running = false;
+	});
+	const runner = {
+		supportsStreamingInput: streaming,
+		isRunning: () => running,
+		start,
+		startStreaming: start,
+		stop,
+	};
+	vi.spyOn(edge, "createRunnerForType").mockReturnValue(runner);
+	vi.spyOn(edge, "postComment").mockResolvedValue(undefined);
+	const route = vi
+		.spyOn(edge, "routeAcceptedTicketLaunch")
+		.mockImplementation(async () =>
+			edge.initializeAgentRunner(
+				event.agentSession,
+				[repository],
+				"cli-workspace",
+			),
+		);
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const save = edge.savePersistedState.bind(edge);
+	let paused = false;
+	vi.spyOn(edge, "savePersistedState").mockImplementation(async () => {
+		if (
+			!paused &&
+			edge.agentSessionManager.getSession("session")?.agentRunner === runner
+		) {
+			paused = true;
+			await gate;
+		}
+		await save();
+	});
+	const launch = edge.handleAgentSessionCreatedWebhook(event, [repository]);
+	await vi.waitFor(() => expect(paused).toBe(true));
+	await edge.handleIssueUnassigned(fullIssue, "cli-workspace");
+	expect(stop).toHaveBeenCalledOnce();
+	release();
+	await launch;
+	expect(start).not.toHaveBeenCalled();
+	expect(running).toBe(false);
+	edge.launchAdmission = undefined;
+	expect(edge.getLaunchAdmission().get("cli-workspace", "session").phase).toBe(
+		"settled",
+	);
+	await edge.handleAgentSessionCreatedWebhook(event, [repository]);
+	expect(route).toHaveBeenCalledOnce();
+	route.mockResolvedValue(undefined);
+	await edge.handleAgentSessionCreatedWebhook(
+		{ ...event, agentSession: { ...event.agentSession, id: "fresh-session" } },
+		[repository],
+	);
+	expect(route).toHaveBeenCalledTimes(2);
+});
+
 it("deduplicates warm-runner stop redelivery while distinct stops still fully terminate", async () => {
 	const { edge, repository } = setup();
 	const event = webhook("@Bob [workflow=simple]");

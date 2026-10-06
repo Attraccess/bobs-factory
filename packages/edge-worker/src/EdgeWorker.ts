@@ -5592,6 +5592,8 @@ ${taskSection}`;
 			);
 
 			// Start session - use streaming mode if supported for ability to add messages later
+			// Unassignment or stop can settle ownership while persistence is awaiting.
+			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 			if (runner.supportsStreamingInput && runner.startStreaming) {
 				log.debug(`Starting streaming session`);
 				const sessionInfo = await runner.startStreaming(assembly.userPrompt);
