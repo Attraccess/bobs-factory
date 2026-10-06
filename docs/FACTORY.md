@@ -85,7 +85,7 @@ their UI and receive their own update notice. Installation and frontend updates
 do not stop, restart, approve or replace backend runs.
 
 An explicit update saves a bounded, tab-local snapshot of unsent launch/chat/
-answer/feedback/recipe edits (including global title-agent settings), selected
+answer/feedback/recipe edits (including machine capacity and global title-agent settings), selected
 route, open panels, inspector selection
 and stable conversation reading anchors. It contains no query cache, transcript,
 artifact or screenshot. The snapshot expires after 30 minutes, is limited to
@@ -95,7 +95,7 @@ guarantee preservation. Denied/full session storage postpones the update with
 edits still on screen. Copy unusually large drafts before retrying.
 
 Restored drafts are never sent automatically. If questions, review gates or
-recipe or title-agent settings changed, review the warning and current state before explicitly
+recipe, machine-capacity or title-agent settings changed, review the warning and current state before explicitly
 acknowledging the draft. Recovered copies remain available when a former gate is
 no longer open. Reading restoration fetches the relevant bounded history page;
 if its anchor is no longer retained, the app explains that limitation.
@@ -754,7 +754,7 @@ Agents always use one slot. Script steps and `tool: exec` are intensive by defau
 `computeIntensive: false` exempts lightweight commands. Other tools, including custom
 MCP calls, are lightweight unless marked `computeIntensive: true`. Recipes exposes
 this control for nested fanout branches, and JSON editing preserves it. Classification
-on agent/orchestration steps is rejected. Passive CI, merge and human-review waits
+on agent/orchestration steps is rejected. Passive CI, handoff, merge and human-review waits
 cannot be classified intensive. Setup/teardown scripts also pass through admission.
 Normal tool calls within an admitted agent share its slot.
 

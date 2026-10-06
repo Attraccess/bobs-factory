@@ -441,15 +441,16 @@ function ownRoles(
 function MachineCapacitySettings({ config }: { config: any }) {
 	const capacity = config.capacity;
 	const action = useAction();
-	const [limit, setLimit] = useState(String(capacity?.limit ?? 4));
-	const [dirty, setDirty] = useState(false);
-	useEffect(() => {
-		if (!dirty) setLimit(String(capacity?.limit ?? 4));
-	}, [capacity?.limit, dirty]);
+	const draftKey = "recipe/machine-capacity";
+	const [draft, setDraft, stale] = useRestorableState<
+		{ limit: string } | undefined
+	>(draftKey, undefined, revisionOf(capacity?.limit));
+	const limit = draft?.limit ?? String(capacity?.limit ?? 4);
 	if (!capacity) return null;
 	return (
 		<section className="recipe" aria-labelledby="machine-capacity">
 			<h2 id="machine-capacity">Machine capacity</h2>
+			<DraftNotice conflict={stale} draftKey={draftKey} />
 			<p>
 				One shared pool for agents and intensive workflow steps. Default:{" "}
 				{capacity.defaultLimit} slots.
@@ -464,13 +465,15 @@ function MachineCapacitySettings({ config }: { config: any }) {
 			<form
 				onSubmit={async (event) => {
 					event.preventDefault();
+					if (stale || action.isPending) return;
 					try {
 						await action.mutateAsync({
 							path: "/api/capacity",
 							method: "PUT",
 							body: { limit: Number(limit) },
 						});
-						setDirty(false);
+						setDraft(undefined);
+						forgetDraft(draftKey);
 					} catch {}
 				}}
 			>
@@ -481,14 +484,18 @@ function MachineCapacitySettings({ config }: { config: any }) {
 						min="1"
 						step="1"
 						required
+						disabled={action.isPending}
 						value={limit}
 						onChange={(event) => {
-							setDirty(true);
-							setLimit(event.target.value);
+							setDraft({ limit: event.target.value });
 						}}
 					/>
 				</label>
-				<Button type="submit" disabled={action.isPending}>
+				<Button
+					type="submit"
+					requiresConnection
+					disabled={draft === undefined || stale || action.isPending}
+				>
 					Save machine limit
 				</Button>
 				{action.error && <p role="alert">{action.error.message}</p>}

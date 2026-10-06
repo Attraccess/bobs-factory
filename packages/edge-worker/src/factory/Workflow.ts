@@ -266,6 +266,7 @@ export const workflowTriggerInstructions =
 
 export const passiveTools = [
 	"human-review",
+	"handoff",
 	"ci",
 	"merge-readiness",
 	"wait-ci",

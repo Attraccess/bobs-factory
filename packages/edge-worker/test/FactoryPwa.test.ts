@@ -397,6 +397,7 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	rememberDraft("answers/r", { 0: "clarification draft" }, "old-question");
 	rememberDraft("feedback/text/r", "feedback", "old-gate");
 	rememberDraft("recipe/json/test", "{}", "old-recipe");
+	rememberDraft("recipe/machine-capacity", { limit: "7" }, "old-limit");
 	rememberDraft(
 		"recipe/title-settings",
 		{ value: { runner: "codex", model: "cheap" } },
@@ -420,6 +421,10 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	});
 	loadRestoration(build, saved);
 	expect(restoredDraft("chat/r")).toBe("chat draft");
+	expect(restoredDraft("recipe/machine-capacity")).toEqual({ limit: "7" });
+	expect(snapshot?.drafts["recipe/machine-capacity"]?.revision).toBe(
+		"old-limit",
+	);
 	expect(restoredDraft("recipe/title-settings")).toEqual({
 		value: { runner: "codex", model: "cheap" },
 	});
@@ -577,6 +582,7 @@ it("rejects expired, malformed and unexpected snapshot surfaces", () => {
 	for (const [key, value] of [
 		["recipe/role", { workflowId: "r" }],
 		["recipe/title-settings", { value: { model: 4 } }],
+		["recipe/machine-capacity", { limit: 7 }],
 		["today/skipped", 4],
 		["reading/r", { following: false, groups: 2 }],
 		["position/review", -1],

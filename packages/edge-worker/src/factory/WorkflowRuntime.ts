@@ -868,7 +868,9 @@ export class WorkflowRuntime {
 					run.capacityLeaves ??= {};
 					run.capacityLeaves[key] = {
 						phase:
-							step.tool === "ci" || step.tool === "merge-readiness"
+							step.tool === "ci" ||
+							step.tool === "merge-readiness" ||
+							step.tool === "handoff"
 								? "waiting-ci"
 								: step.tool === "human-review"
 									? "waiting-human"

@@ -1801,14 +1801,17 @@ it("runs nested intensive fanout at limit one and cancels queued leaves without 
 	expect(script).toHaveBeenCalledOnce();
 	expect((await capacity.snapshot()).active).toBe(0);
 });
-it("rejects intensive passive waits and preserves explicit lightweight scripts in nested recipes", () => {
+it.each([
+	"ci",
+	"handoff",
+])("rejects intensive %s waits and preserves explicit lightweight scripts in nested recipes", (tool) => {
 	expect(() =>
 		workflow([
 			{
 				id: "wait",
 				name: "CI",
 				type: "tool",
-				tool: "ci",
+				tool,
 				computeIntensive: true,
 			},
 		]),
@@ -1836,7 +1839,10 @@ it("rejects intensive passive waits and preserves explicit lightweight scripts i
 	expect(definition.steps[0]!.computeIntensive).toBe(false);
 });
 
-it("admits nested workflow leaves at limit one while passive CI consumes no slot", async () => {
+it.each([
+	"ci",
+	"handoff",
+])("admits nested workflow leaves at limit one while passive %s consumes no slot", async (passiveTool) => {
 	const { MachineCapacity } = await import("../src/MachineCapacity.js");
 	const directory = mkdtempSync(join(tmpdir(), "nested-capacity-"));
 	homes.push(directory);
@@ -1864,15 +1870,18 @@ it("admits nested workflow leaves at limit one while passive CI consumes no slot
 				type: "fanout",
 				groups: [
 					[{ id: "call", name: "Child", type: "workflow", workflow: "child" }],
-					[{ id: "ci", name: "CI", type: "tool", tool: "ci" }],
+					[{ id: "ci", name: "CI", type: "tool", tool: passiveTool }],
 				],
 			},
 		],
 		[child],
 	);
 	runtime.updateWorkflows([...defaultWorkflows, parent, child]);
-	const run = start(runtime, parent),
-		done = runtime.launch(run);
+	const run = start(runtime, parent);
+	// Previously accepted handoff snapshots may carry an intensive flag.
+	if (passiveTool === "handoff")
+		run.workflow.steps[0]!.groups![1]![0]!.computeIntensive = true;
+	const done = runtime.launch(run);
 	await vi.waitFor(() => expect(script).toHaveBeenCalledOnce());
 	await vi.waitFor(() =>
 		expect(run.capacityLeaves).toMatchObject({
