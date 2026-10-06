@@ -61,6 +61,13 @@ import {
 	writeTextStored,
 } from "./review-state";
 import {
+	applyTheme,
+	readThemeChoice,
+	resolveTheme,
+	themeChoice,
+	themeQuery,
+} from "./theme";
+import {
 	Bob,
 	Button,
 	ConfirmStop,
@@ -121,27 +128,25 @@ function useSettle() {
 	};
 }
 function useTheme() {
-	const [choice, setChoice] = useState(() =>
-			readTextStored("factory-theme", "system"),
-		),
+	const [choice, setChoice] = useState(readThemeChoice),
 		[systemDark, setSystemDark] = useState(
-			() => matchMedia("(prefers-color-scheme: dark)").matches,
+			() => matchMedia(themeQuery).matches,
 		);
-	useEffect(() => {
-		const media = matchMedia("(prefers-color-scheme: dark)"),
+	useLayoutEffect(() => {
+		const media = matchMedia(themeQuery),
 			changed = (event: MediaQueryListEvent) => setSystemDark(event.matches);
 		media.addEventListener("change", changed);
+		setSystemDark(media.matches);
 		return () => media.removeEventListener("change", changed);
 	}, []);
-	const dark = choice === "dark" || (choice === "system" && systemDark);
-	useEffect(() => {
-		document.documentElement.dataset.theme = dark ? "dark" : "light";
+	useLayoutEffect(() => {
+		applyTheme(resolveTheme(choice, systemDark));
 		writeTextStored("factory-theme", choice);
-		document
-			.querySelector('meta[name="theme-color"]')
-			?.setAttribute("content", dark ? "#16122a" : "#fff4f6");
-	}, [dark, choice]);
-	return { choice, setChoice };
+	}, [systemDark, choice]);
+	return {
+		choice,
+		setChoice: (value: string) => setChoice(themeChoice(value)),
+	};
 }
 function Header({
 	count,

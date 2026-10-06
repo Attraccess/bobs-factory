@@ -132,6 +132,79 @@ it("resolves only designated origins, preserves instance/project, and rejects am
 		}),
 	).toThrow(/found 0/);
 });
+it("resolves uploaded Taskbot files and retains metadata through lifecycle synchronization", async () => {
+	const f = fixture();
+	const file = {
+		id: 100,
+		ticket_id: 77,
+		kind: "file",
+		url: null,
+		filename: "screenshot.png",
+		mime: "image/png",
+		size: 1471794,
+		title: "Screenshot",
+	};
+	const original = f.call.getMockImplementation()!;
+	f.call.mockImplementation(async (tool, args) => {
+		if (tool === "get_ticket")
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify({
+							...f.ticket,
+							attachments: [file, ...f.ticket.attachments],
+						}),
+					},
+				],
+			};
+		return original(tool, args);
+	});
+	expect(await f.adapter.read()).toEqual({
+		...f.ticket,
+		url: source,
+		attachments: [
+			{ ...file, url: "https://taskbot.example/api/project-a/files/100" },
+		],
+	});
+	const pr = "https://github.com/org/repo/pull/1";
+	await f.service.record(f.run, {
+		key: "start",
+		body: "Started",
+		stage: "in_progress",
+		pr,
+	});
+	await f.service.record(f.run, {
+		key: "review",
+		body: "Review underway",
+		stage: "in_review",
+		pr,
+	});
+	expect(f.ticket.status).toBe("in_review");
+	expect(f.run.ticketSync?.error).toBeUndefined();
+	expect((await f.adapter.read()).attachments).toEqual([
+		{ ...file, url: "https://taskbot.example/api/project-a/files/100" },
+		{ url: pr },
+	]);
+	expect(f.calls.filter((c) => c.tool === "add_attachment")).toHaveLength(1);
+});
+it.each([
+	{ kind: "link", url: null },
+	{ kind: "pr", url: null },
+	{ kind: "file", id: 0, url: null },
+	{ kind: "file", url: null },
+])("rejects attachments without a resolvable URL: %j", async (attachment) => {
+	const f = fixture();
+	f.call.mockResolvedValue({
+		content: [
+			{
+				type: "text",
+				text: JSON.stringify({ ...f.ticket, attachments: [attachment] }),
+			},
+		],
+	});
+	await expect(f.adapter.read()).rejects.toThrow();
+});
 it("delivers progress and one canonical PR attachment; only confirmed merge establishes Done", async () => {
 	const f = fixture();
 	await f.service.record(f.run, {

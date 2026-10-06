@@ -6,6 +6,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Restore CI coverage for authenticated Factory review drafts and the complete passkey-aware routing prompt; format the authentication CSS for the repository-wide Biome gate. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
+
 - Integrate the latest review-comment controller with PWA update snapshots, retaining item comments, additional feedback, revision checks and pending-request locks; migrate snapshots from the earlier single-text feedback UI. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
 
 - Integrate automatic run naming into the PWA branch, retain both sets of API/cache checks, and preserve unsaved title-agent settings through explicit updates with stale-draft acknowledgement. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))

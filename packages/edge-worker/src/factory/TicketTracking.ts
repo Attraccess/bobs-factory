@@ -217,7 +217,24 @@ export function taskbotAdapter(
 					"cancelled",
 				]),
 				comments: z.array(z.object({ body: z.string() }).passthrough()),
-				attachments: z.array(z.object({ url: z.string() }).passthrough()),
+				attachments: z.array(
+					z.union([
+						z.object({ url: z.string() }).passthrough(),
+						// Uploaded files have no external URL; their ID names a download
+						// on the verified Taskbot instance and project.
+						z
+							.object({
+								kind: z.literal("file"),
+								id: z.number().int().positive(),
+								url: z.null(),
+							})
+							.passthrough()
+							.transform((file) => ({
+								...file,
+								url: `${ref.instance}/api/${ref.project}/files/${file.id}`,
+							})),
+					]),
+				),
 			})
 			.passthrough()
 			.parse(raw);
