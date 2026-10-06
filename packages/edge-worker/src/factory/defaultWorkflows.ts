@@ -1,7 +1,7 @@
 import { takeoverLaunchFields } from "./LaunchFields.js";
 import { legacyScreenshotSteps } from "./legacyScreenshotSteps.js";
 import { QA_CONTRACT } from "./Qa.js";
-import { validateWorkflows } from "./Workflow.js";
+import { validateWorkflows, type WorkflowStep } from "./Workflow.js";
 
 const agent = (id: string, name: string, prompt: string, extra = {}) => ({
 	id,
@@ -147,6 +147,7 @@ On repeats, update affected chapters and retain unchanged feature chapters, requ
 				{ next: "handoff", qaContract: QA_CONTRACT },
 			),
 			tool("handoff", "Verify revision and hand off", "handoff", {
+				branches: [{ when: { path: "fix", equals: true }, next: "ci-fix" }],
 				next: "human-review",
 				qaContract: QA_CONTRACT,
 			}),
@@ -309,7 +310,9 @@ export function upgradeWorkflows(value: unknown): unknown {
 					(id === "handoff" && step.next === "end")) &&
 				[
 					JSON.stringify(old.branches),
-					...(step.qaContract ? [JSON.stringify(current.branches)] : []),
+					...(step.qaContract || id === "handoff"
+						? [JSON.stringify(current.branches)]
+						: []),
 				].includes(JSON.stringify(step.branches ?? []));
 			return (
 				promptMatches &&
@@ -325,7 +328,9 @@ export function upgradeWorkflows(value: unknown): unknown {
 				Object.assign(step, {
 					name: stock.name,
 					qaContract: stock.qaContract,
-					branches: structuredClone(stock.branches),
+					branches: structuredClone(
+						step.id === "handoff" ? (step.branches ?? []) : stock.branches,
+					),
 					...(stock.prompt ? { prompt: stock.prompt } : {}),
 					...(stock.next ? { next: stock.next } : {}),
 				});
@@ -409,6 +414,7 @@ export function upgradeWorkflows(value: unknown): unknown {
 					: branch,
 			);
 		const handoff = steps.find((step) => step.tool === "handoff");
+		upgradeHandoffReadiness(steps as unknown as WorkflowStep[]);
 		if (
 			!handoff ||
 			steps.some((step) => step.id === "human-review") ||
@@ -428,4 +434,25 @@ export function upgradeWorkflows(value: unknown): unknown {
 		);
 	}
 	return definitions;
+}
+
+/** Extend only the stock handoff route to reuse its already-authorized CI fixer. */
+export function upgradeHandoffReadiness(steps: WorkflowStep[]): boolean {
+	const handoff = steps.find((step) => step.tool === "handoff");
+	const ci = steps.find((step) => step.tool === "ci");
+	if (
+		!handoff ||
+		handoff.branches?.length ||
+		(handoff.next && !["end", "human-review"].includes(handoff.next)) ||
+		!steps.some((step) => step.id === "ci-fix") ||
+		!ci?.branches.some(
+			(branch) =>
+				branch.next === "ci-fix" &&
+				branch.when.path === "fix" &&
+				branch.when.equals === true,
+		)
+	)
+		return false;
+	handoff.branches = [{ when: { path: "fix", equals: true }, next: "ci-fix" }];
+	return true;
 }
