@@ -4873,7 +4873,11 @@ ${taskSection}`;
 	}
 
 	private ticketReceiptIsActive(receipt: TicketLaunchReceipt): boolean {
-		if (receipt.phase === "settled") return false;
+		if (
+			receipt.phase === "settled" ||
+			this.ticketRunIsSettled(receipt.sessionId)
+		)
+			return false;
 		if (["pending", "starting", "recovery"].includes(receipt.phase))
 			return true;
 		const run = this.getFactoryRuntime().runs.get(receipt.sessionId);
@@ -4882,7 +4886,26 @@ ${taskSection}`;
 		if (session) return this.ticketSessionIsActive(session);
 		return true; // Reserved setup, repository/blocker wait or interrupted startup.
 	}
+	private ticketRunIsSettled(id: string): boolean {
+		const runtime = this.getFactoryRuntime();
+		if (!runtime.viewState(id).settledAt || runtime.isExecuting(id))
+			return false;
+		const run = runtime.runs.get(id);
+		if (run && ["running", "waiting"].includes(run.status)) return false;
+		const session = this.agentSessionManager.getSession(id);
+		if (
+			(!run && session?.status === AgentSessionStatus.Active) ||
+			session?.agentRunner?.isRunning()
+		)
+			return false;
+		const work = session?.agentRunner?.getPendingWork?.();
+		// Legacy stopped sessions persist as Error and may have no launch receipt.
+		// Their explicit settlement releases ownership, unless work resumed later.
+		return !(work && (work.sessionCrons.length || work.backgroundTasks.length));
+	}
 	private ticketSessionIsActive(session: CyrusAgentSession): boolean {
+		if (this.ticketRunIsSettled(session.id)) return false;
+		if (session.agentRunner?.isRunning()) return true;
 		const graphRun = this.getFactoryRuntime().runs.get(session.id);
 		if (graphRun && graphRun.workflow.id !== "simple")
 			return !["completed", "stopped"].includes(graphRun.status);
@@ -4917,6 +4940,7 @@ ${taskSection}`;
 				item.id !== except &&
 				item.workspaceId === workspace &&
 				item.issueId === issue &&
+				!this.ticketRunIsSettled(item.id) &&
 				!["completed", "stopped"].includes(item.status),
 		);
 		if (run) return run.id;

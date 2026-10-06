@@ -378,6 +378,129 @@ it("durably reserves concurrent arrivals, keeps original selection through resta
 	await edge.handleAgentSessionCreatedWebhook(later, [repository]);
 	expect(route).toHaveBeenCalledTimes(2);
 });
+it.each([
+	"legacy",
+	"started",
+	"recovery",
+])("releases settled %s session ownership while retaining redelivery protection", async (kind) => {
+	const { edge, worker, runtime, repository } = setup();
+	const original = webhook("@Bob [workflow=simple]");
+	const route = vi
+		.spyOn(edge, "routeAcceptedTicketLaunch")
+		.mockResolvedValue(undefined);
+	if (kind !== "legacy")
+		await edge.handleAgentSessionCreatedWebhook(original, [repository]);
+	else edge.captureTicketOrigin(original, true);
+	const { session } = await edge.createCyrusAgentSession(
+		"session",
+		original.agentSession.issue,
+		[repository],
+		edge.agentSessionManager,
+		"cli-workspace",
+	);
+	if (kind !== "legacy")
+		edge
+			.getLaunchAdmission()
+			.update(edge.getLaunchAdmission().get("cli-workspace", "session"), {
+				phase: kind,
+			});
+	edge.agentSessionManager.requestSessionStop(session.id);
+	runtime.updateViewState(session.id, { settledAt: new Date().toISOString() });
+	worker.restoreMappings(worker.serializeMappings());
+	edge.launchAdmission = undefined;
+	// Settlement survives reloading Factory's separate view-state file too.
+	edge.factoryRuntime = undefined;
+	route.mockClear();
+	const fresh = {
+		...original,
+		agentSession: { ...original.agentSession, id: "fresh-session" },
+	};
+	await edge.handleAgentSessionCreatedWebhook(fresh, [repository]);
+	expect(route).toHaveBeenCalledOnce();
+	expect(
+		edge.getLaunchAdmission().get("cli-workspace", "fresh-session").phase,
+	).toBe("pending");
+	await edge.handleAgentSessionCreatedWebhook(fresh, [repository]);
+	expect(route).toHaveBeenCalledOnce();
+});
+
+it("releases a settled failed graph but retains ownership while it is running again", async () => {
+	const { edge, runtime, repository } = setup();
+	const run = runtime.create({
+		id: "old-run",
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "takeover",
+			at: new Date().toISOString(),
+		},
+		repositoryId: repository.id,
+		workflow: defaultWorkflows.find((w) => w.id === "takeover")!,
+		workspace: repository.repositoryPath,
+		input: "Existing work",
+		issueId: "issue",
+		workspaceId: "cli-workspace",
+	});
+	run.status = "failed";
+	runtime.updateViewState(run.id, { settledAt: new Date().toISOString() });
+	const route = vi
+		.spyOn(edge, "routeAcceptedTicketLaunch")
+		.mockResolvedValue(undefined);
+	await edge.handleAgentSessionCreatedWebhook(
+		webhook("@Bob [workflow=simple]"),
+		[repository],
+	);
+	expect(route).toHaveBeenCalledOnce();
+	edge.settleTicketLaunch("session");
+	run.status = "running"; // A retry can retain its earlier view-state timestamp.
+	await edge.handleAgentSessionCreatedWebhook(
+		{
+			...webhook("@Bob [workflow=simple]"),
+			agentSession: { ...webhook("").agentSession, id: "competing" },
+		},
+		[repository],
+	);
+	expect(route).toHaveBeenCalledOnce();
+	expect(
+		edge.getLaunchAdmission().get("cli-workspace", "competing").phase,
+	).toBe("settled");
+});
+
+it.each([
+	"runner",
+	"background",
+])("keeps settled sessions with live %s work exclusive", async (live) => {
+	const { edge, runtime, repository } = setup();
+	const original = webhook("@Bob [workflow=simple]");
+	edge.captureTicketOrigin(original, true);
+	const { session } = await edge.createCyrusAgentSession(
+		"session",
+		original.agentSession.issue,
+		[repository],
+		edge.agentSessionManager,
+		"cli-workspace",
+	);
+	session.status = "complete";
+	session.agentRunner = {
+		isRunning: () => live === "runner",
+		getPendingWork: () => ({
+			sessionCrons: [],
+			backgroundTasks: live === "background" ? [{ id: "task" }] : [],
+		}),
+	};
+	runtime.updateViewState(session.id, { settledAt: new Date().toISOString() });
+	const route = vi
+		.spyOn(edge, "routeAcceptedTicketLaunch")
+		.mockResolvedValue(undefined);
+	await edge.handleAgentSessionCreatedWebhook(
+		{ ...original, agentSession: { ...original.agentSession, id: "fresh" } },
+		[repository],
+	);
+	expect(route).not.toHaveBeenCalled();
+	expect(edge.getLaunchAdmission().get("cli-workspace", "fresh").phase).toBe(
+		"settled",
+	);
+});
+
 it("holds interrupted startup ownership until stop and permits a later distinct launch", async () => {
 	const { edge, repository, activity } = setup();
 	const route = vi
