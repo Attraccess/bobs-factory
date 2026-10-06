@@ -3,12 +3,42 @@ import { useEffect, useRef, useState } from "react";
 import { type CheckoutCommand, reviewContext } from "./review-context";
 import { Button, External, useToast } from "./ui";
 
+function CopyIcon({ copied = false }: { copied?: boolean }) {
+	return (
+		<svg
+			className="checkout-icon"
+			width="16"
+			height="16"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			aria-hidden="true"
+		>
+			{copied ? (
+				<path d="m5 12 4 4L19 6" />
+			) : (
+				<>
+					<rect x="8" y="8" width="12" height="12" rx="2" />
+					<path d="M16 8V4H4v12h4" />
+				</>
+			)}
+		</svg>
+	);
+}
+
 export function ReviewContextRow({ run }: { run: unknown }) {
 	const context = reviewContext(run),
 		toast = useToast();
 	const [manual, setManual] = useState<CheckoutCommand>();
+	const [copied, setCopied] = useState<CheckoutCommand>();
 	const text = useRef<HTMLTextAreaElement>(null);
 	const manualFocus = useRef(false);
+	useEffect(() => {
+		if (!copied) return;
+		const timer = setTimeout(() => setCopied(undefined), 2600);
+		return () => clearTimeout(timer);
+	}, [copied]);
 	useEffect(() => {
 		if (manual) {
 			text.current?.focus({ preventScroll: true });
@@ -16,9 +46,11 @@ export function ReviewContextRow({ run }: { run: unknown }) {
 		}
 	}, [manual]);
 	async function copy(item: CheckoutCommand) {
+		setCopied(undefined);
 		try {
 			await navigator.clipboard.writeText(item.command);
 			setManual(undefined);
+			setCopied(item);
 			toast({ text: `${item.label} checkout command copied` });
 		} catch {
 			manualFocus.current = true;
@@ -56,7 +88,10 @@ export function ReviewContextRow({ run }: { run: unknown }) {
 						}}
 					>
 						<Dropdown.Trigger asChild>
-							<Button variant="secondary">Copy checkout ▾</Button>
+							<Button variant="secondary" aria-label="Copy checkout">
+								<CopyIcon copied={Boolean(copied)} />
+								{copied ? "Copied" : "Copy checkout"} ▾
+							</Button>
 						</Dropdown.Trigger>
 						<Dropdown.Portal>
 							<Dropdown.Content
@@ -82,9 +117,8 @@ export function ReviewContextRow({ run }: { run: unknown }) {
 										aria-label={`Copy ${item.label} checkout command`}
 										onSelect={() => void copy(item)}
 									>
-										<strong>{item.label}</strong>
 										<code>{item.command}</code>
-										<small>{item.help}</small>
+										<CopyIcon copied={copied?.command === item.command} />
 									</Dropdown.Item>
 								))}
 							</Dropdown.Content>

@@ -132,14 +132,14 @@ export function reviewContext(value: unknown) {
 	if (github && prUrl)
 		commands.push({
 			label: "GitHub CLI",
-			command: `gh pr checkout ${shellQuote(prUrl)}`,
+			command: `gh pr checkout ${github[3]}`,
 			help: "Run in a local clone with GitHub CLI installed.",
 		});
 	if (branch)
 		commands.push({
 			label: "Git only",
-			command: `git fetch origin && git switch -- ${shellQuote(branch)}`,
-			help: "Run in a clone with an origin remote. Switches an existing local branch or tracks the fetched branch.",
+			command: `git checkout ${/^[\w./-]+$/.test(branch) ? branch : shellQuote(branch)}`,
+			help: "Run in a local clone where the branch is available.",
 		});
 	return {
 		pr: prUrl

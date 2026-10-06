@@ -39,13 +39,13 @@ it("prefers review PR and published branch, retaining the verified ticket", () =
 		commands: [
 			{
 				label: "GitHub CLI",
-				command: `gh pr checkout '${url}'`,
+				command: "gh pr checkout 42",
 				help: "Run in a local clone with GitHub CLI installed.",
 			},
 			{
 				label: "Git only",
-				command: "git fetch origin && git switch -- 'feature/one'",
-				help: "Run in a clone with an origin remote. Switches an existing local branch or tracks the fetched branch.",
+				command: "git checkout feature/one",
+				help: "Run in a local clone where the branch is available.",
 			},
 		],
 	});
@@ -166,7 +166,7 @@ it("encodes unusual valid branch names and quotes them as exactly one shell argu
 		`https://github.com/owner/repo/tree/${encodeURIComponent(branch)}`,
 	);
 	expect(context.commands[1]?.command).toBe(
-		`git fetch origin && git switch -- ${shellQuote(branch)}`,
+		`git checkout ${shellQuote(branch)}`,
 	);
 	expect(
 		execFileSync("sh", ["-c", `printf '%s' ${shellQuote(branch)}`], {
