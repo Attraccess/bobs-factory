@@ -181,7 +181,10 @@ import {
 	parseAgentOutput,
 	toolArguments,
 } from "./factory/FactoryTools.js";
-import { validateGuideCoverage } from "./factory/Guide.js";
+import {
+	validateGuideCoverage,
+	validateGuideGeneration,
+} from "./factory/Guide.js";
 import {
 	completedAgentResult,
 	incrementalInstructions,
@@ -206,6 +209,7 @@ import {
 } from "./factory/OutputValidation.js";
 import { type QaScope, qaDigest, qaRequirementIssues } from "./factory/Qa.js";
 import { questionInstructions } from "./factory/Questions.js";
+import { finalizeGuideFiles } from "./factory/ReviewFiles.js";
 import {
 	buildTitleContext,
 	RunTitleGenerator,
@@ -7161,8 +7165,12 @@ ${taskSection}`;
 			outputCorrection && !context.resumeAgent?.result?.finalizing
 				? undefined
 				: await completedAgentResult(context);
-		if (recovered)
+		if (recovered) {
+			context.progress = await roleProgress(context);
+			if (context.resumeAgent?.result?.reviewScope)
+				context.progress.reviewScope = context.resumeAgent.result.reviewScope;
 			return this.finalizeFactoryAgentOutput(context, recovered.output);
+		}
 		const captureCorrection = outputCorrection?.screenshots
 			? {
 					rejectedOutput: outputCorrection.output,
@@ -7319,7 +7327,9 @@ ${taskSection}`;
 				} catch (error) {
 					throw outputValidationError(text, error);
 				}
+				const authoredScope = context.progress?.reviewScope;
 				context.progress = await roleProgress(context);
+				if (step.id === "guide") context.progress.reviewScope = authoredScope;
 				output = this.validateFactoryAgentOutput(context, output);
 				const completed = (await roleProgress(context)).currentRevision;
 				if (agentCheckpoint && completed)
@@ -7329,7 +7339,12 @@ ${taskSection}`;
 						...(context.resumeAgent?.rejected
 							? { rejected: context.resumeAgent.rejected }
 							: {}),
-						result: { output, revision: completed, finalizing: true },
+						result: {
+							output,
+							revision: completed,
+							finalizing: true,
+							reviewScope: context.progress?.reviewScope,
+						},
 					});
 				return this.finalizeFactoryAgentOutput(context, output);
 			} finally {
@@ -7364,7 +7379,10 @@ ${taskSection}`;
 				);
 				if (issues.length) throw new Error(issues.join("; "));
 			}
-			if (step.id === "guide") validateGuideCoverage(context, output);
+			if (step.id === "guide") {
+				validateGuideGeneration(output);
+				validateGuideCoverage(context, output);
+			}
 			return output;
 		} catch (error) {
 			throw outputValidationError(value, error);
@@ -7377,6 +7395,7 @@ ${taskSection}`;
 	): Promise<unknown> {
 		const { run, step } = context;
 		let output = this.validateFactoryAgentOutput(context, value);
+		if (step.id === "guide") output = await finalizeGuideFiles(context, output);
 		if (step.id === "capture") output = captureEvidence(context, output);
 		if (step.id === "ci-fix")
 			output = recordFeedbackAssessment(context, output);

@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Guided PR review now offers concise chapter steps, system maps, image viewers,
+  browser-local reading checks and Changed files with diffs pinned to the reviewed
+  revision. Incomplete new guides return to the guide agent for correction; older
+  guides remain readable. Browser history restores the matching page, map highlights
+  follow chapter colours, long map labels fit their boxes and connections without
+  overlap, and file diffs stay limited to the selected file. Item comments and collected
+  feedback remain available in compact steps and expanded evidence. ([Taskbot #75](https://taskbot.apps.janjaap.de/p/bobs-factory/t/75), [#17](https://github.com/Attraccess/bobs-factory/pull/17))
+
 - Install Bob’s Factory with branded app icons and concise browser-only guidance; keep mobile form text readable without focus zoom and wide content from scrolling the page sideways; open its static shell while disconnected and explicitly update while preserving drafts, panels and each tab’s reading position, including older SDK activity and dedicated review pages. Keep item comments and additional review feedback scoped to their revision through updates; isolate restored legacy text drafts from other tabs’ unsent comments. Browsing untouched runs does not fill the draft snapshot. Pause unsafe actions until authoritative state reconnects; reject conflicting settings saves even when requests overlap. Push notifications are tracked separately in Taskbot #69. (Taskbot bobs-factory #41, [#12](https://github.com/Attraccess/bobs-factory/pull/12))
 - Long-press review-guide items to comment in a popover, see a small count badge on commented items, retain drafts across navigation and reloads, and submit them together with additional feedback from any guide page. Keep pending submissions locked when returning to the guide and preserve unsent edits when a request succeeds. ([Taskbot #70](https://taskbot.apps.janjaap.de/p/bobs-factory/t/70), [#15](https://github.com/Attraccess/bobs-factory/pull/15))
 
@@ -42,6 +50,10 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Preserve compact review pages, checked and explicitly unchecked steps, visited pages and item feedback through explicit app updates, including stale feedback warnings when the guide changes. ([#17](https://github.com/Attraccess/bobs-factory/pull/17))
+
+- Make review-map Before/After pills visibly checked in red/green, and connect changed-file area legends and shared-step tags to their matching colours. ([#17](https://github.com/Attraccess/bobs-factory/pull/17))
 
 - Preserve this tab’s unsent review comments and additional feedback when the PR revision, guide or review gate changes; require acknowledgment before sending the recovered draft. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
 
