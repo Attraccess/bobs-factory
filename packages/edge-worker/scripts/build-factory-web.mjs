@@ -21,6 +21,15 @@ mkdirSync(target, { recursive: true });
 const stage = mkdtempSync(join(target, ".stage-"));
 const placeholder = "FACTORY_BUILD_REPLACED_AT_BUILD_TIME";
 try {
+	const bootstrap = await build({
+		entryPoints: [join(source, "theme-bootstrap.ts")],
+		bundle: true,
+		write: false,
+		format: "iife",
+		platform: "browser",
+		target: "es2022",
+		minify: true,
+	});
 	await build({
 		entryPoints: [join(source, "app.tsx")],
 		outfile: join(stage, "app.js"),
@@ -62,7 +71,15 @@ try {
 	const inputs = new Map([
 		["app.js", readFileSync(join(stage, "app.js"))],
 		["styles.css", readFileSync(join(stage, "styles.css"))],
-		["index.html", readFileSync(join(source, "index.html"))],
+		[
+			"index.html",
+			Buffer.from(
+				readFileSync(join(source, "index.html"), "utf8").replace(
+					"__THEME_BOOTSTRAP__",
+					bootstrap.outputFiles[0].text,
+				),
+			),
+		],
 		[
 			"manifest.webmanifest",
 			readFileSync(join(source, "manifest.webmanifest")),

@@ -56,6 +56,7 @@ All notable changes to this project will be documented in this file.
 - Upgrade saved intensive handoff recipes to passive polling before startup validation, so worker restarts recover existing runs without changing their accepted definitions. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
 - Keep concurrent Codex executions isolated, gate and cancel integration setup, recover queued chat and PR work after restart, reclaim abandoned coordinator locks, retain unverified remote title capacity, and prevent recipe classification edits from overwriting one another. PR recovery preserves provider sandbox settings, GitHub serialization and stops during configuration loading, and removes failed recovery requests from capacity queues. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
+- Resolve the saved Factory theme before the page loads and keep browser theme colors aligned with the app palette when switching themes. ([#26](https://github.com/Attraccess/bobs-factory/pull/26))
 
 - Keep Bob's webhook and web UI responsive while saving large session histories; combine overlapping saves while preserving complete restart state. ([#25](https://github.com/Attraccess/bobs-factory/pull/25))
 
