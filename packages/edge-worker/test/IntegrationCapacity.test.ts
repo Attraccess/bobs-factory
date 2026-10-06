@@ -464,3 +464,88 @@ it("removes the parked pre-restart queue immediately when configuration recovery
 	expect(provider.start).not.toHaveBeenCalled();
 	expect((await slots.snapshot()).requests).toEqual([]);
 });
+
+it.each([
+	"github",
+	"gitlab",
+])("removes failed %s recovery from the saved queue while preserving shutdown recovery", async (platform) => {
+	const {
+		worker,
+		session,
+		repository,
+		provider,
+		slots: old,
+	} = recoveryFixture(platform);
+	const identity = `${worker.cyrusHome}:session:${session.id}`;
+	const otherIdentity = `${worker.cyrusHome}:session:other`;
+	const blocker = await old.acquireLease();
+	const queued = [identity, otherIdentity].map((identity) =>
+		old.acquireLease(undefined, { identity, recoverable: true }),
+	);
+	const rejectedQueues = queued.map((request) =>
+		expect(request).rejects.toThrow(/shutting down/),
+	);
+	await vi.waitFor(async () => expect((await old.snapshot()).queued).toBe(2));
+	await old.shutdown();
+	await Promise.all(rejectedQueues);
+	const slots = new MachineCapacity(undefined, old.directory);
+	worker.runnerSlots = slots;
+	const original = (await slots.snapshot()).requests.filter(
+		(request) => request.phase === "queued",
+	);
+	Object.assign(worker, {
+		repositories: new Map([[repository.id, repository]]),
+		sessionRepositories: new Map(),
+		chatSessionHandler: null,
+		zulipChatSessionHandler: null,
+		getFactoryRuntime: () => ({ runs: new Map(), resumeAll: vi.fn() }),
+		ticketStartupIsIncomplete: () => false,
+		getAllKnownSessions: () => [session],
+	});
+	worker.agentSessionManager.getActiveSessions = () => [session];
+	worker.agentSessionManager.createResponseActivity = vi.fn();
+	let failConfig!: (error: Error) => void;
+	worker.skillsPluginResolver.resolve = () =>
+		new Promise((_, reject) => {
+			failConfig = reject;
+		});
+	// Shutdown interrupts preparation but keeps both parked requests for restart.
+	worker.recoverFactoryRuns();
+	worker.stopping = true;
+	worker.recoveryAbort.abort();
+	failConfig(new Error("configuration interrupted"));
+	await vi.waitFor(() => expect(worker.preparationStarts.size).toBe(0));
+	expect(session.status).toBe(AgentSessionStatus.Active);
+	expect(
+		(await slots.snapshot()).requests.filter((r) => r.phase === "queued"),
+	).toEqual(original);
+	expect(
+		worker.agentSessionManager.createResponseActivity,
+	).not.toHaveBeenCalled();
+	// A subsequent startup configuration failure must remove only its request.
+	worker.stopping = false;
+	worker.recoveryAbort = new AbortController();
+	worker.recoverFactoryRuns();
+	failConfig(new Error("configuration failed"));
+	await vi.waitFor(() =>
+		expect(
+			worker.agentSessionManager.createResponseActivity,
+		).toHaveBeenCalledWith(
+			session.id,
+			"Automatic recovery failed: configuration failed",
+		),
+	);
+	expect(session.status).toBe(AgentSessionStatus.Error);
+	expect((await slots.snapshot()).queued).toBe(1);
+	expect(
+		(await slots.snapshot()).requests.filter((r) => r.phase === "queued"),
+	).toEqual(original.filter((r) => r.identity === otherIdentity));
+	expect(provider.start).not.toHaveBeenCalled();
+	expect(worker.buildRunnerForType).not.toHaveBeenCalled();
+	expect(worker.activeGitHubPrSessions.size).toBe(0);
+	await slots.reconcileQueue(
+		(requestIdentity) => requestIdentity === otherIdentity,
+	);
+	await blocker.release();
+	expect((await slots.snapshot()).requests).toEqual([]);
+});

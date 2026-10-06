@@ -8077,6 +8077,11 @@ ${taskSection}`;
 					return;
 				session.status = AgentSessionStatus.Error;
 				this.logger.error(`Session recovery failed for ${session.id}:`, error);
+				// Failed recovery may leave a saved request parked before admission.
+				// Shutdown returns above so recoverable requests retain their order.
+				await this.runnerSlots.reconcileQueue(
+					(identity) => identity === `${this.cyrusHome}:session:${session.id}`,
+				);
 				await this.savePersistedState();
 				await this.agentSessionManager.createResponseActivity(
 					session.id,
