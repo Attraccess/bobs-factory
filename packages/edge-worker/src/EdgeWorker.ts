@@ -8102,6 +8102,22 @@ ${taskSection}`;
 
 	private async recoverFactoryTicketTracking(run: FactoryRun): Promise<void> {
 		if (run.workflow.id === "simple") return;
+		if (run.ticketSync) {
+			if (
+				!run.ticketSync.receipts.some(
+					(receipt) =>
+						!receipt.delivered && !receipt.superseded && !receipt.conflict,
+				)
+			)
+				return;
+		} else if (
+			!["running", "waiting"].includes(run.status) &&
+			readFactoryPath(run.outputs, "merge.merged") !== true
+		) {
+			// Historical attempts are not new work. Only recover active legacy runs
+			// or confirmed merges; explicit tracking retry can reconcile older runs.
+			return;
+		}
 		try {
 			await this.syncFactoryTicketTracking(run);
 		} catch (error) {

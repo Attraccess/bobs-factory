@@ -51,6 +51,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Keep completed and canceled tickets quiet on restart: skip historical attempts without pending tracking or confirmed merge evidence, and discard obsolete progress updates while retaining genuine pending merge delivery.
+
 - Keep every changed file visible when a file replaces a directory or a directory replaces a file, including file-diff navigation; allow customized review-guide roles with restricted inputs to bind their reviewed revision successfully. ([#19](https://github.com/Attraccess/bobs-factory/pull/19))
 
 - Keep Factory ticket progress and PR links synchronized for native and Taskbot launches, retain the originating ticket through follow-ups, and recover pending tracking after provider failures with readable provider error messages. Use configured base branches for new native-ticket work, respect the selected runner’s MCP configuration, keep blocked handoffs In Progress with their corrective-work blockers, and mark coding tickets Done only after confirmed merge. ([Taskbot #77](https://taskbot.apps.janjaap.de/p/bobs-factory/t/77), [#19](https://github.com/Attraccess/bobs-factory/pull/19))

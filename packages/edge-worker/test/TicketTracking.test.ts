@@ -266,11 +266,81 @@ it("retains cancelled tickets and fails closed for mismatched/partial context", 
 	});
 	expect(f.ticket.status).toBe("cancelled");
 	expect(f.run.ticketSync?.receipts[0]?.limitation).toMatch(/Terminal/);
+	expect(f.ticket.comments).toHaveLength(0);
 	f.ticket.project = "another";
 	await expect(f.adapter.read()).rejects.toThrow(/another project/);
 	f.ticket.project = "project-a";
 	f.ticket.nextOffset = 50;
 	await expect(f.adapter.read()).rejects.toThrow(/partial/);
+});
+it.each([
+	"done",
+	"cancelled",
+])("discards pending stale progress after a ticket becomes %s, including across restarts", async (status) => {
+	const f = fixture();
+	const original = f.call.getMockImplementation()!;
+	f.call.mockRejectedValue(new Error("offline"));
+	await f.service.record(f.run, {
+		key: "review",
+		body: "Waiting for review",
+		stage: "in_review",
+		pr: "https://github.com/org/repo/pull/1",
+	});
+	await f.service.record(f.run, {
+		key: "outcome:failed",
+		body: "Saved worktree is unavailable; recovery cannot recreate unfinished work",
+	});
+	expect(f.run.ticketSync?.error).toBe("offline");
+	f.service.stop();
+	f.ticket.status = status;
+	f.call.mockImplementation(original);
+	f.calls.splice(0);
+	const runtime = new WorkflowRuntime(f.home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const run = runtime.get(f.run.id);
+	const service = new TicketTracking(
+		async () => f.adapter,
+		(r) => runtime.save(r),
+		() => {},
+	);
+	services.push(service);
+	await service.flush(run);
+	expect(f.ticket.status).toBe(status);
+	expect(f.ticket.comments).toHaveLength(0);
+	expect(f.ticket.attachments).toHaveLength(0);
+	expect(f.calls.every((call) => call.tool === "get_ticket")).toBe(true);
+	expect(run.ticketSync?.receipts.every((r) => r.superseded)).toBe(true);
+	expect(run.ticketSync?.error).toBeUndefined();
+	const reads = f.calls.length;
+	const restored = new WorkflowRuntime(f.home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	}).get(run.id);
+	await service.flush(restored);
+	expect(f.calls).toHaveLength(reads);
+});
+
+it("still delivers confirmed merge evidence and its PR link to an already Done ticket", async () => {
+	const f = fixture();
+	f.ticket.status = "done";
+	await f.service.record(f.run, {
+		key: "merged",
+		body: "Confirmed merge",
+		stage: "done",
+		merged: true,
+		pr: "https://github.com/org/repo/pull/1",
+	});
+	expect(f.ticket.status).toBe("done");
+	expect(f.ticket.comments).toHaveLength(1);
+	expect(f.ticket.attachments).toHaveLength(1);
+	expect(f.run.ticketSync?.receipts[0]?.delivered).toBe(true);
+	await f.service.flush(f.run);
+	expect(f.ticket.comments).toHaveLength(1);
+	expect(f.ticket.attachments).toHaveLength(1);
 });
 it("uses ticket team states, native links and a nonterminal fallback when Review is unavailable", async () => {
 	const tracker = new CLIIssueTrackerService();
