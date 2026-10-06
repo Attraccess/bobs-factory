@@ -465,6 +465,34 @@ it("preserves dedicated review routes, checked steps and revision-scoped feedbac
 	);
 	completeRestoration();
 });
+it.each([
+	{ checked: { "feature-0/0": false } },
+	{ disclosures: { "feature-0": false } },
+	{ visited: { "chapter:feature-0": true, overview: true } },
+])("preserves explicit Overview progress through updates: %j", (changes) => {
+	browserState();
+	const saved = storage();
+	const key = "review/progress/factory-review/r/head/guide";
+	const progress = {
+		page: 0,
+		reviewed: {},
+		checked: {},
+		disclosures: {},
+		visited: {},
+		...changes,
+	};
+	rememberDraft(key, progress);
+	preserveForUpdate(build, saved);
+	expect(
+		decodeSnapshot([...saved.values.values()][0])?.drafts[key]?.value,
+	).toEqual(progress);
+	// Simulate a fresh app's in-memory state before consuming this tab's snapshot.
+	forgetDraft(key);
+	loadRestoration(build, saved);
+	expect(restoredDraft(key)).toEqual(progress);
+	completeRestoration();
+	forgetDraft(key);
+});
 it("retains a tab's document position at zero rather than falling back to shared storage", () => {
 	browserState();
 	const saved = storage();
@@ -487,6 +515,13 @@ it("keeps browsing defaults out of update snapshots while preserving edits and e
 		rememberDraft(`chat/visited-${i}`, "");
 		rememberDraft(`answers/visited-${i}`, {});
 		rememberDraft(`feedback/open/visited-${i}`, false);
+		rememberDraft(`review/progress/visited-${i}`, {
+			page: 0,
+			reviewed: {},
+			checked: {},
+			disclosures: {},
+			visited: {},
+		});
 		rememberDraft(`reading/visited-${i}/all`, {
 			following: true,
 			expanded: [],

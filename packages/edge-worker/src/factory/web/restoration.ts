@@ -274,12 +274,15 @@ function pristineDraft(key: string, value: any): boolean {
 			typeof value === "object" &&
 			Object.keys(value).length === 0
 		);
+	// False entries and visited pages still describe this tab's choices; shared
+	// storage may contain different progress written by another tab.
 	if (key.startsWith("review/progress/"))
 		return (
 			value?.page === 0 &&
 			Object.keys(value.reviewed ?? {}).length === 0 &&
-			!Object.values(value.disclosures ?? {}).some(Boolean) &&
-			!Object.values(value.checked ?? {}).some(Boolean)
+			Object.keys(value.disclosures ?? {}).length === 0 &&
+			Object.keys(value.checked ?? {}).length === 0 &&
+			Object.keys(value.visited ?? {}).length === 0
 		);
 	if (key.startsWith("reading/"))
 		return (

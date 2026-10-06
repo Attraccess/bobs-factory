@@ -51,7 +51,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Preserve compact review pages, reading checks and item feedback through explicit app updates, including stale feedback warnings when the guide changes. ([#17](https://github.com/Attraccess/bobs-factory/pull/17))
+- Preserve compact review pages, checked and explicitly unchecked steps, visited pages and item feedback through explicit app updates, including stale feedback warnings when the guide changes. ([#17](https://github.com/Attraccess/bobs-factory/pull/17))
 
 - Make review-map Before/After pills visibly checked in red/green, and connect changed-file area legends and shared-step tags to their matching colours. ([#17](https://github.com/Attraccess/bobs-factory/pull/17))
 
