@@ -231,8 +231,13 @@ human review still requires an explicit decision.
 Visual capture requires browser/screenshot tools available to the selected
 agent through its CLI or existing Cyrus MCP configuration. Captures must be
 real PNG/JPEG files in the supplied evidence directory and cover every requested
-area/state. Missing capture evidence fails visibly rather than approving the
-PR. The dashboard displays those images and a guide organized around the goal,
+area/state. In the factory pipeline, missing capture evidence pauses at the
+visual gate with a question explaining the unavailable states and their causes.
+Resolve the access, tooling or application setup and answer in the dashboard or
+ticket. The same run retries capture and visual review, reusing verified accepted
+screenshots when their provenance still matches. Repeated blockers wait for another
+answer; an answer never waives missing evidence or approves the PR. This checkpoint
+survives restart. The dashboard displays those images and a guide organized around the goal,
 before/after behavior, requirements, checks, risks and human review instructions,
 inspired by Rocky's visual recap.
 
@@ -285,6 +290,10 @@ After resolving a failed step's cause, select **Retry failed step** in the run
 view. It keeps the same run, worktree, frozen workflow, answers and history,
 and continues from saved progress. Completed steps are skipped; an unfinished
 script/tool step runs again, so check any external effects before retrying.
+An existing run failed at the visual gate for missing evidence opens the capture
+assistance checkpoint on Retry. Its frozen recipe must contain the standard
+`capture` → `visual-review` → visual-gate path in the same graph; unsupported
+custom graphs fail with instructions rather than skipping required review.
 An exhausted iteration limit shows **Continue (+4 passes)**. Each explicit continuation grants four additional visits only to the exhausted step, including nested workflows; historical counters and finished steps remain intact. If those additional visits are exhausted, the run stops again rather than looping indefinitely. The limit counts cumulative visits, including returns after real code/visual corrections. Stock coordination tools (review gates, readiness and routing) have a bounded 100-visit ceiling so they do not immediately block an authorized extra agent pass; customized limits are retained.
 
 Completed or explicitly terminated runs cannot be retried. Publication uses a

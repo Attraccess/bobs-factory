@@ -641,6 +641,7 @@ export class WorkflowRuntime {
 		checkpoint: GraphCheckpoint,
 		workflowId: string,
 		chat = false,
+		parallel = false,
 	): Promise<Record<string, unknown>> {
 		while (checkpoint.current !== "end") {
 			signal.throwIfAborted();
@@ -669,7 +670,9 @@ export class WorkflowRuntime {
 						...Object.fromEntries(
 							step.inputs.map((name) => [name, outputs[name]]),
 						),
-						...(step.askQuestions
+						...(step.askQuestions ||
+						(step.id === "capture" &&
+							readPath(outputs, "visual-gate.captureBlocked") === true)
 							? { answers: structuredClone(run.answers) }
 							: {}),
 					}
@@ -726,6 +729,7 @@ export class WorkflowRuntime {
 								state.children![index]!,
 								workflowId,
 								chat,
+								true,
 							),
 						),
 					);
@@ -771,6 +775,7 @@ export class WorkflowRuntime {
 						state.children[0]!,
 						definition.id,
 						definition.chat ?? chat,
+						parallel,
 					);
 					output = { workflow: definition.id, completed: true };
 				} else {
@@ -786,6 +791,47 @@ export class WorkflowRuntime {
 				});
 				state.phase = "result";
 				this.save(run);
+			}
+			if (
+				step.tool === "visual-gate" &&
+				readPath(output, "captureBlocked") === true
+			) {
+				// Existing runs keep their frozen graph. Recover inside that graph rather
+				// than replacing its recipe or rerunning implementation/code fixes.
+				const capture = steps.find((item) => item.id === "capture");
+				const review = steps.find((item) => item.id === "visual-review");
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
+				if (
+					!capture ||
+					!["agent", "script"].includes(capture.type) ||
+					capture.branches.length > 0 ||
+					!review ||
+					!["agent", "script"].includes(review.type) ||
+					review.branches.length > 0 ||
+					this.nextStep(steps, capture, {}) !== review.id ||
+					this.nextStep(steps, review, {}) !== step.id
+				)
+					throw new Error(
+						"Visual evidence is incomplete and this recipe has no capture → visual-review → visual-gate recovery path. Configure that path for a new run; missing evidence cannot be approved.",
+					);
+				const questions = readPath(output, "questions");
+				if (
+					!Array.isArray(questions) ||
+					!questions.length ||
+					questions.some((item) => typeof item !== "string" || !item.trim())
+				)
+					throw new Error("Capture assistance requires a question");
+				if (state.phase !== "answered")
+					await this.waitForAnswers(run, questions, signal, state);
+				checkpoint.current = capture.id;
+				checkpoint.active = undefined;
+				this.log(
+					run,
+					key,
+					"Capture assistance received; retrying capture and visual review with prior evidence retained.",
+				);
+				continue;
 			}
 			if (step.askQuestions) {
 				const questions = readPath(output, "questions");
