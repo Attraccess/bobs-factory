@@ -74,6 +74,57 @@ export interface SerializableEdgeWorkerState {
 	issueRepositoryCache?: Record<string, string[]>;
 }
 
+/** Serialize individual transcript entries, rather than the entire history at once. */
+function* stateFragments(
+	state: SerializableEdgeWorkerState,
+	savedAt: string,
+): Generator<string> {
+	yield `{"version":${JSON.stringify(PERSISTENCE_VERSION)},"savedAt":${JSON.stringify(savedAt)},"state":{`;
+	let fieldSeparator = "";
+	for (const [field, record] of Object.entries(state)) {
+		if (record === undefined) continue;
+		yield `${fieldSeparator}${JSON.stringify(field)}:{`;
+		fieldSeparator = ",";
+		let recordSeparator = "";
+		for (const [key, value] of Object.entries(record)) {
+			if (Array.isArray(value)) {
+				yield `${recordSeparator}${JSON.stringify(key)}:[`;
+				let entrySeparator = "";
+				for (const entry of value) {
+					yield `${entrySeparator}${JSON.stringify(entry) ?? "null"}`;
+					entrySeparator = ",";
+				}
+				yield "]";
+			} else {
+				const serialized = JSON.stringify(value);
+				if (serialized === undefined) continue;
+				yield `${recordSeparator}${JSON.stringify(key)}:${serialized}`;
+			}
+			recordSeparator = ",";
+		}
+		yield "}";
+	}
+	yield "}}";
+}
+
+function* stateChunks(
+	state: SerializableEdgeWorkerState,
+	savedAt: string,
+): Generator<string> {
+	let fragments: string[] = [];
+	let length = 0;
+	for (const fragment of stateFragments(state, savedAt)) {
+		fragments.push(fragment);
+		length += fragment.length;
+		if (length >= 128 * 1024) {
+			yield fragments.join("");
+			fragments = [];
+			length = 0;
+		}
+	}
+	if (length > 0) yield fragments.join("");
+}
+
 /**
  * v3.0 nested state format (for migration purposes)
  */
@@ -121,17 +172,19 @@ export class PersistenceManager {
 		try {
 			await this.ensurePersistenceDirectory();
 			const stateFile = this.getEdgeWorkerStateFilePath();
-			const stateData = {
-				version: PERSISTENCE_VERSION,
-				savedAt: new Date().toISOString(),
-				state,
-			};
 			// Write-then-rename so the state file is always a complete document.
 			// A plain writeFile interrupted mid-write (SIGKILL, OOM kill, power
 			// loss) leaves truncated JSON that the next boot cannot parse, which
 			// orphans every in-flight session.
 			const tmpFile = `${stateFile}.tmp`;
-			await writeFile(tmpFile, JSON.stringify(stateData, null, 2), "utf8");
+			// writeFile awaits each iterable chunk, letting HTTP requests and runner
+			// events progress between batches. A whole-history JSON.stringify can
+			// otherwise block the event loop for seconds on long-lived instances.
+			await writeFile(
+				tmpFile,
+				stateChunks(state, new Date().toISOString()),
+				"utf8",
+			);
 			await rename(tmpFile, stateFile);
 		} catch (error) {
 			this.logger.error("Failed to save EdgeWorker state:", error);

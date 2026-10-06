@@ -51,6 +51,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Keep Bob's webhook and web UI responsive while saving large session histories; combine overlapping saves while preserving complete restart state.
+
 - Start Factory workflows from Taskbot tickets with uploaded screenshots or files, preserving attachment details and resolving their download links. ([#24](https://github.com/Attraccess/bobs-factory/pull/24))
 
 - Factory backend calls to HTTP MCP servers now reuse the selected Codex runner's OAuth login and token refresh, allowing Taskbot workflows and pending ticket updates to recover after restarts. ([#22](https://github.com/Attraccess/bobs-factory/pull/22))
