@@ -143,6 +143,10 @@ describe("ChatSessionHandler chat session permissions", () => {
 		const onWebhookEnd = vi.fn();
 		const onStateChange = vi.fn().mockResolvedValue(undefined);
 		const onClaudeError = vi.fn();
+		const onNewSession = vi.fn((session) => {
+			expect(createRunner.mock.results[0].value.start).toHaveBeenCalledOnce();
+			expect(session.displayTitle).toBe(session.id);
+		});
 
 		const handler = new ChatSessionHandler(adapter, {
 			cyrusHome,
@@ -153,9 +157,18 @@ describe("ChatSessionHandler chat session permissions", () => {
 			onWebhookEnd,
 			onStateChange,
 			onClaudeError,
+			onNewSession,
 		});
 
 		await handler.handleEvent(event as any);
+		expect(onNewSession).toHaveBeenCalledOnce();
+		await capturedConfig.onMessage({
+			type: "system",
+			subtype: "init",
+			session_id: "native-chat",
+		});
+		await handler.handleEvent(event as any);
+		expect(onNewSession).toHaveBeenCalledOnce();
 
 		expect(capturedConfig).toBeDefined();
 		expect(capturedConfig.allowedTools).toContain("Read(**)");

@@ -340,9 +340,9 @@ function Settled({ runs, all }: { runs: any[]; all: any[] }) {
 				<summary>How settling works</summary>
 				<p>
 					Runs settle when you settle them, when they're stopped, when a newer
-					run with the same title replaces them, when you've seen a finished run
-					that has no review guide, or after 48 quiet hours. “Bring back” keeps
-					a run open until you settle it.
+					follow-up run replaces them, when you've seen a finished run that has
+					no review guide, or after 48 quiet hours. “Bring back” keeps a run
+					open until you settle it.
 				</p>
 			</details>
 		</section>

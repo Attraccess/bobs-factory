@@ -222,3 +222,76 @@ it("releases a rejected SSE response before retrying or waiting for an update", 
 	await expect(validateLiveConnection(response)).rejects.toThrow("version");
 	expect(cancel).toHaveBeenCalledOnce();
 });
+
+it("retains title settings through a stale refresh and unrelated recipe saves", async () => {
+	const cache = new QueryClient();
+	const original = {
+		workflows: [{ id: "simple" }],
+		titleGeneration: { runner: "claude" },
+	};
+	cache.setQueryData(["config"], original);
+	let resolveStale!: (response: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (_path: string, options: RequestInit = {}) =>
+			_path === "/api/version"
+				? version()
+				: options.method === "PUT"
+					? factoryResponse(
+							_path === "/api/title-settings"
+								? { titleGeneration: JSON.parse(options.body as string) }
+								: JSON.parse(options.body as string),
+						)
+					: new Promise<Response>((resolve) => {
+							resolveStale = resolve;
+						}),
+		),
+	);
+	const oldRead = cache.fetchQuery({
+		queryKey: ["config"],
+		queryFn: () => api("/api/config"),
+	});
+	const mutation = action(cache);
+	await mutation.mutate({
+		path: "/api/title-settings",
+		method: "PUT",
+		body: { runner: "codex", model: "cheap" },
+	});
+	resolveStale(factoryResponse(original));
+	await oldRead.catch(() => {});
+	await mutation.mutate({
+		path: "/api/workflows",
+		method: "PUT",
+		body: { workflows: [{ id: "simple", name: "Updated" }] },
+	});
+	expect(cache.getQueryData(["config"])).toEqual({
+		workflows: [{ id: "simple", name: "Updated" }],
+		titleGeneration: { runner: "codex", model: "cheap" },
+	});
+	cache.clear();
+});
+
+it("settles failures only through explicit follow-up provenance, independently of mutable titles", async () => {
+	const { settleReason } = await import("../src/factory/web/client.js");
+	const now = Date.now();
+	const run = {
+		id: "first",
+		title: "Same title",
+		status: "failed",
+		createdAt: new Date(now - 1000).toISOString(),
+	};
+	const unrelated = {
+		id: "second",
+		title: "Same title",
+		createdAt: new Date(now).toISOString(),
+	};
+	expect(settleReason(run, [run, unrelated], now)).toBeUndefined();
+	const followup = {
+		...unrelated,
+		title: "A different generated title",
+		triggerOrigin: { type: "manual", manual: { sourceRunId: "first" } },
+	};
+	expect(settleReason(run, [run, followup], now)).toBe(
+		"↻ Replaced by a newer run",
+	);
+});

@@ -6,6 +6,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Integrate automatic run naming into the PWA branch, retain both sets of API/cache checks, and preserve unsaved title-agent settings through explicit updates with stale-draft acknowledgement. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
+
 - Integrate the PWA branch with the dedicated review page and question-image routes; retain review navigation, scoped feedback, disclosure restoration and private image cache headers. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
 
 - Bundle maintained Workbox modules locally and publish the factory web shell as a staged, digest-checked build inventory with versioned assets; guard stale UI/configuration/question writes and validate cache/update behavior in focused tests and an isolated F1 drive. (Taskbot bobs-factory #41)

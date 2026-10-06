@@ -49,6 +49,8 @@ function validDraft(key: string, value: any): boolean {
 	if (/^(answers\/|composer\/(inputs|settings)$)/.test(key))
 		return values(value, "string");
 	if (key.startsWith("panels/")) return values(value, "boolean");
+	if (key === "recipe/title-settings")
+		return record(value) && values(value.value, "string");
 	if (key === "recipe/editing")
 		return (
 			record(value) &&

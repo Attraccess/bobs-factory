@@ -387,6 +387,11 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	rememberDraft("answers/r", { 0: "clarification draft" }, "old-question");
 	rememberDraft("feedback/text/r", "feedback", "old-gate");
 	rememberDraft("recipe/json/test", "{}", "old-recipe");
+	rememberDraft(
+		"recipe/title-settings",
+		{ value: { runner: "codex", model: "cheap" } },
+		"old-title-settings",
+	);
 	rememberDraft("inspector/selection", { runId: "r", name: "plan" });
 	rememberDraft("reading/r/all", {
 		following: false,
@@ -405,6 +410,12 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	});
 	loadRestoration(build, saved);
 	expect(restoredDraft("chat/r")).toBe("chat draft");
+	expect(restoredDraft("recipe/title-settings")).toEqual({
+		value: { runner: "codex", model: "cheap" },
+	});
+	expect(snapshot?.drafts["recipe/title-settings"]?.revision).toBe(
+		"old-title-settings",
+	);
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });
@@ -555,6 +566,7 @@ it("rejects expired, malformed and unexpected snapshot surfaces", () => {
 	).toBeUndefined();
 	for (const [key, value] of [
 		["recipe/role", { workflowId: "r" }],
+		["recipe/title-settings", { value: { model: 4 } }],
 		["today/skipped", 4],
 		["reading/r", { following: false, groups: 2 }],
 		["position/review", -1],

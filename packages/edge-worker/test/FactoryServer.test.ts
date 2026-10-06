@@ -186,7 +186,6 @@ it("starts, displays, answers and terminates runs through the local API", async 
 				reasoningEffort: input.reasoningEffort,
 				modelVariant: input.modelVariant,
 				serviceTier: input.serviceTier,
-				title: input.title,
 				repositoryId: input.repositoryId,
 				workspace: home,
 				input: input.prompt,
@@ -238,7 +237,7 @@ it("starts, displays, answers and terminates runs through the local API", async 
 				.json()
 				.workflows.find((workflow: { id: string }) => workflow.id === "simple")
 				.launchFields,
-		).toMatchObject([{ name: "prompt", required: true }, { name: "title" }]);
+		).toMatchObject([{ name: "prompt", required: true }]);
 		expect(runtime.selectWorkflow([], "manual").id).toBe("factory");
 		expect(
 			(await server.app.inject({ url: "/api/config", headers })).json()
@@ -421,7 +420,6 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 				workflowId: input.workflow ?? runtime.getDefaultWorkflow(),
 				at: new Date().toISOString(),
 			},
-			title: input.title,
 			repositoryId: input.repositoryId,
 			workspace: home,
 			input: input.prompt,
@@ -466,7 +464,6 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 			expect(start.mock.lastCall?.[0]).toMatchObject({
 				source: "DEF-1",
 				prompt: "",
-				titleProvided: false,
 				inputs: { source: "DEF-1", prompt: "" },
 			});
 		}
@@ -508,7 +505,7 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 		const result = await launch("deploy", { inputs: { target: " App " } });
 		expect(result.statusCode).toBe(202);
 		expect(result.json()).toMatchObject({
-			title: "Deploy",
+			title: result.json().id,
 			input: "",
 			launchInputs: { target: "App", environment: "staging" },
 		});
@@ -698,7 +695,6 @@ it("returns normalized permissions and rejects forged manual requests before the
 	};
 	const start = vi.fn(async (input: ResolvedLaunchRequest) =>
 		runtime.create({
-			title: input.title,
 			repositoryId: input.repositoryId,
 			input: input.prompt,
 			workspace: home,
@@ -1032,6 +1028,94 @@ it("serves a coherent installable shell with protected versioned writes and expl
 				})
 			).statusCode,
 		).toBe(202);
+	} finally {
+		await server.stop();
+		await runtime.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+it("protects and persists global title settings independently of workflow configuration", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-title-settings-"));
+	const hooks = {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	};
+	const runtime = new WorkflowRuntime(home, hooks);
+	const server = new FactoryServer(runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("unused");
+		},
+		stop: () => {},
+	});
+	const headers = { host: "localhost", "x-factory-request": "1" };
+	try {
+		expect(
+			(await server.app.inject({ url: "/api/config", headers })).json()
+				.titleGeneration,
+		).toEqual({});
+		for (const badHeaders of [
+			{ host: "evil.test", "x-factory-request": "1" },
+			{ host: "localhost" },
+			{ ...headers, origin: "https://evil.test" },
+		])
+			expect(
+				(
+					await server.app.inject({
+						method: "PUT",
+						url: "/api/title-settings",
+						headers: badHeaders,
+						payload: { runner: "codex" },
+					})
+				).statusCode,
+			).toBe(403);
+		const settings = {
+			runner: "codex",
+			model: "cheap",
+			reasoningEffort: "low",
+		};
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/title-settings",
+					headers,
+					payload: settings,
+				})
+			).json(),
+		).toEqual({ titleGeneration: settings });
+		runtime.updateWorkflows(runtime.listWorkflows());
+		expect(new WorkflowRuntime(home, hooks).getTitleSettings()).toEqual(
+			settings,
+		);
+		expect(
+			(await server.app.inject({ url: "/api/config", headers })).json()
+				.titleGeneration,
+		).toEqual(settings);
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/title-settings",
+					headers,
+					payload: { runner: "unknown" },
+				})
+			).statusCode,
+		).toBe(400);
+		expect(
+			(
+				await server.app.inject({
+					method: "PUT",
+					url: "/api/title-settings",
+					headers,
+					payload: { runner: "gemini", reasoningEffort: "high" },
+				})
+			).statusCode,
+		).toBe(409);
 	} finally {
 		await server.stop();
 		await runtime.shutdown();

@@ -38,12 +38,6 @@ export const standardLaunchFields = [
 		required: true,
 		placeholder: "What should Bob build?",
 	},
-	{
-		name: "title",
-		label: "Title",
-		required: false,
-		placeholder: "Optional name for this run",
-	},
 ];
 export const takeoverLaunchFields = [
 	{
@@ -81,7 +75,7 @@ export function getLaunchFields(
 								: field,
 						),
 		)
-	);
+	).filter((field) => field.name !== "title");
 }
 export const LaunchRequestSchema = z.object({
 	title: z.string().trim().max(300).optional(),
@@ -98,10 +92,11 @@ export function resolveLaunchRequest(
 	request: LaunchRequest,
 ) {
 	const values = { ...request.inputs };
+	delete values.title;
 	const schema: Record<string, z.ZodType<string>> = {};
 	for (const field of getLaunchFields(workflow)) {
-		const legacy = ["title", "prompt", "source"].includes(field.name)
-			? request[field.name as "title" | "prompt" | "source"]
+		const legacy = ["prompt", "source"].includes(field.name)
+			? request[field.name as "prompt" | "source"]
 			: undefined;
 		values[field.name] = Object.hasOwn(values, field.name)
 			? values[field.name]!
@@ -109,9 +104,7 @@ export function resolveLaunchRequest(
 		let value = z
 			.string()
 			.trim()
-			.max(
-				field.name === "title" ? 300 : field.name === "source" ? 1000 : 100000,
-			);
+			.max(field.name === "source" ? 1000 : 100000);
 		if (field.required) value = value.min(1, `${field.label} is required`);
 		schema[field.name] =
 			field.type === "select"
@@ -129,18 +122,11 @@ export function resolveLaunchRequest(
 	>;
 	const source = inputs.source || request.source || undefined;
 	if (workflow.id === "takeover") TakeoverSourceSchema.parse(source);
-	const providedTitle = inputs.title || request.title;
+	const { title: _legacyTitle, ...rest } = request;
 	return {
-		...request,
+		...rest,
 		inputs,
 		source,
-		title:
-			providedTitle ||
-			(source
-				? `${workflow.name}: ${source}`
-				: inputs.prompt?.split("\n")[0]?.trim() || workflow.name
-			).slice(0, 300),
-		titleProvided: Boolean(providedTitle),
 		prompt: inputs.prompt ?? request.prompt ?? "",
 	};
 }

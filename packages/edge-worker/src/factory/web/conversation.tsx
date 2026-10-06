@@ -278,7 +278,7 @@ function ChatComposer({ run }: { run: any }) {
 			setText("");
 			setNotice(
 				sent.mode === "continue"
-					? "Conversation resumed."
+					? "Request to resume the conversation sent."
 					: "Message sent to the agent.",
 			);
 			void cache.invalidateQueries({ queryKey: ["transcript", run.id] });

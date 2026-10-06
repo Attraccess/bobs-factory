@@ -1,0 +1,264 @@
+import { spawnSync } from "node:child_process";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+	AgentSessionStatus,
+	AgentSessionType,
+	type RepositoryConfig,
+	type RunnerType,
+} from "cyrus-core";
+import {
+	convertToGeminiMcpConfig,
+	loadMcpConfigFromPaths,
+} from "cyrus-gemini-runner";
+import { afterEach, expect, it, vi } from "vitest";
+import { titleSystemPrompt } from "../src/factory/RunTitleGenerator.js";
+import { RunnerConfigBuilder } from "../src/RunnerConfigBuilder.js";
+
+const projects: string[] = [];
+afterEach(() => {
+	for (const project of projects.splice(0))
+		rmSync(project, { recursive: true, force: true });
+});
+
+it.each([
+	"claude",
+	"codex",
+	"gemini",
+	"cursor",
+	"opencode",
+] as const)("selects %s before building native auxiliary config and preserves authenticated context tools", (runner: RunnerType) => {
+	const project = mkdtempSync(join(tmpdir(), "title-project-mcp-"));
+	projects.push(project);
+	const auxiliary = join(project, "title-job");
+	mkdirSync(auxiliary);
+	mkdirSync(join(project, ".cursor"));
+	const projectConfig = join(
+		project,
+		runner === "cursor" ? ".cursor/mcp.json" : ".mcp.json",
+	);
+	const override = join(project, "override.json");
+	writeFileSync(
+		override,
+		JSON.stringify({
+			mcpServers: {
+				ticket: { url: "https://override.example/mcp" },
+				context: {
+					type: "http",
+					url: "https://overridden-by-inline.example/mcp",
+				},
+				streamable: {
+					type: "http",
+					url: "https://explicit.example/mcp",
+					headers: { Authorization: "Bearer explicit-fixture" },
+				},
+			},
+		}),
+	);
+	writeFileSync(
+		join(project, "ticket.cjs"),
+		`process.stdout.write(JSON.stringify({cwd:process.cwd(), data:require("node:fs").readFileSync(process.argv[2],"utf8"), token:process.env.TICKET_TOKEN}));`,
+	);
+	writeFileSync(join(project, "ticket-data.txt"), "Inventory resets");
+	writeFileSync(
+		projectConfig,
+		JSON.stringify({
+			mcpServers: {
+				ticket: { url: "https://tickets.example/mcp" },
+				remote: {
+					url: "https://project.example/mcp",
+					headers: { Authorization: "Bearer project-fixture" },
+				},
+				legacy: { type: "sse", url: "https://project.example/sse" },
+				local: {
+					command: process.execPath,
+					args: ["ticket.cjs", "ticket-data.txt"],
+					env: { TICKET_TOKEN: "fixture" },
+				},
+			},
+		}),
+	);
+	const originalProjectConfig = readFileSync(projectConfig, "utf8");
+	const selectors = {
+		getDefaultRunner: () => "claude" as const,
+		getDefaultModelForRunner: (provider: RunnerType) => `${provider}-default`,
+		getDefaultFallbackModelForRunner: () => "fallback",
+		determineRunnerSelection: vi.fn(() => ({
+			runnerType: "claude" as const,
+			modelOverride: "expensive-execution",
+		})),
+	};
+	const mcp = {
+		buildMcpConfig: vi.fn(() => ({
+			context: {
+				type: "http" as const,
+				url: "https://context.example/mcp",
+				headers: { Authorization: "Bearer fixture" },
+			},
+		})),
+		buildMergedMcpConfigPath: () => "/repo/context.json",
+	};
+	const builder = new RunnerConfigBuilder(
+		{ buildChatAllowedTools: () => [] },
+		mcp,
+		selectors,
+	);
+	const repository: RepositoryConfig = {
+		id: "repo",
+		name: "Repo",
+		repositoryPath: "/repo",
+		workspaceBaseDir: "/worktrees",
+		isActive: true,
+		baseBranch: "main",
+		model: "expensive-repo",
+		opencode: { config: { provider: {} }, stateScope: "repo" },
+	};
+	const config = builder.buildTitleConfig(
+		{
+			session: {
+				id: "title-root",
+				type: AgentSessionType.CommentThread,
+				context: AgentSessionType.CommentThread,
+				status: AgentSessionStatus.Active,
+				createdAt: 1,
+				updatedAt: 1,
+				repositories: [],
+				workspace: {
+					path: auxiliary,
+					isGitWorktree: false,
+				},
+			},
+			sessionId: "title-root",
+			repository,
+			systemPrompt: titleSystemPrompt,
+			allowedTools: ["mcp__context__lookup_ticket"],
+			disallowedTools: ["Write(**)"],
+			allowedDirectories: ["/repo", "/worktree"],
+			platformMcpConfigOverrides: [override],
+			linearWorkspaceId: "ws",
+			requireLinearWorkspaceId: () => "ws",
+			cyrusHome: project,
+			logger: {
+				debug: () => {},
+				info: () => {},
+				warn: () => {},
+				error: () => {},
+			} as never,
+			onMessage: () => {},
+			onError: () => {},
+			sandboxSettings: { enabled: true },
+			githubToken: "fixture-token",
+			labels: ["claude/expensive"],
+			issueDescription: "[agent=opencode]",
+			createAskUserQuestionCallback: vi.fn(),
+		},
+		{
+			runner,
+			model: "cheap-title",
+			...(runner === "codex" ? { modelReasoningEffort: "low" as const } : {}),
+		},
+		project,
+	);
+	expect(selectors.determineRunnerSelection).not.toHaveBeenCalled();
+	expect(config.model).toBe("cheap-title");
+	expect(config.workingDirectory).toBe(auxiliary);
+	expect(config.appendSystemPrompt).toBe(titleSystemPrompt);
+	const fileDefault = runner === "claude" ? { type: "http" } : {};
+	expect({
+		ticket: config.mcpConfig?.ticket,
+		remote: config.mcpConfig?.remote,
+		legacy: config.mcpConfig?.legacy,
+		streamable: config.mcpConfig?.streamable,
+		context: config.mcpConfig?.context,
+	}).toEqual({
+		ticket: { ...fileDefault, url: "https://override.example/mcp" },
+		remote: {
+			...fileDefault,
+			url: "https://project.example/mcp",
+			headers: { Authorization: "Bearer project-fixture" },
+		},
+		legacy: { type: "sse", url: "https://project.example/sse" },
+		streamable: {
+			type: "http",
+			url: "https://explicit.example/mcp",
+			headers: { Authorization: "Bearer explicit-fixture" },
+		},
+		context: mcp.buildMcpConfig.mock.results[0].value.context,
+	});
+	if (runner === "gemini") {
+		const executionServers = {
+			...loadMcpConfigFromPaths([projectConfig, override]),
+			...mcp.buildMcpConfig.mock.results[0].value,
+		};
+		const expectedNative = {
+			ticket: { url: "https://override.example/mcp", trust: true },
+			remote: {
+				url: "https://project.example/mcp",
+				headers: { Authorization: "Bearer project-fixture" },
+				trust: true,
+			},
+			legacy: { url: "https://project.example/sse", trust: true },
+			streamable: {
+				httpUrl: "https://explicit.example/mcp",
+				headers: { Authorization: "Bearer explicit-fixture" },
+				trust: true,
+			},
+			context: {
+				httpUrl: "https://context.example/mcp",
+				headers: { Authorization: "Bearer fixture" },
+				trust: true,
+			},
+		};
+		for (const servers of [executionServers, config.mcpConfig!]) {
+			expect(
+				Object.fromEntries(
+					Object.keys(expectedNative).map((name) => [
+						name,
+						convertToGeminiMcpConfig(name, servers[name]),
+					]),
+				),
+			).toEqual(expectedNative);
+		}
+	}
+	expect(config.mcpConfigPath).toBeUndefined();
+	const local = config.mcpConfig!.local as {
+		command: string;
+		args: string[];
+		env: Record<string, string>;
+	};
+	const result = spawnSync(local.command, local.args, {
+		cwd: auxiliary,
+		env: { ...process.env, ...local.env },
+		encoding: "utf8",
+	});
+	expect(result.status, result.stderr).toBe(0);
+	expect(JSON.parse(result.stdout)).toEqual({
+		cwd: realpathSync(project),
+		data: "Inventory resets",
+		token: "fixture",
+	});
+	expect(readFileSync(projectConfig, "utf8")).toBe(originalProjectConfig);
+	expect(config.allowedTools).toEqual(["mcp__context__lookup_ticket"]);
+	expect(config.additionalEnv?.CYRUS_GH_TOKEN).toBe("fixture-token");
+	expect(config.hooks).toBeUndefined();
+	expect(config.resumeSessionId).toBeUndefined();
+	expect(config.onAskUserQuestion).toBeUndefined();
+	expect(config.maxTurns).toBe(4);
+	if (runner === "codex")
+		expect(config.sandboxSettings).toEqual({
+			allowWrite: [auxiliary],
+			allowRead: [auxiliary, "/repo", "/worktree"],
+		});
+	if (runner === "opencode")
+		expect(config.opencodeRepositoryConfig).toEqual(
+			repository.opencode?.config,
+		);
+});

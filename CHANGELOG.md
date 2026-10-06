@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Install Bob’s Factory with branded app icons and concise browser-only guidance; keep mobile form text readable without focus zoom and wide content from scrolling the page sideways; open its static shell while disconnected and explicitly update while preserving drafts, panels and each tab’s reading position, including older SDK activity and dedicated review pages. Keep review feedback scoped to its revision. Browsing untouched runs does not fill the draft snapshot. Pause unsafe actions until authoritative state reconnects. Push notifications are tracked separately in Taskbot #69. (Taskbot bobs-factory #41, [#12](https://github.com/Attraccess/bobs-factory/pull/12))
+- Automatically name new runs in the background with a globally configurable title agent and project context tools, including Cursor, Claude's URL-only HTTP servers, Gemini's URL-only SSE servers and relative server scripts. Show the run ID while naming, update titles live, preserve historical titles during recovery, and keep dashboard feedback usable for Slack/Zulip sessions across restarts and concurrent platform replies. ([Taskbot #68](https://taskbot.apps.janjaap.de/p/bobs-factory/t/68), [#11](https://github.com/Attraccess/bobs-factory/pull/11))
 - Chat with active Cyrus sessions and continue their existing conversations/worktrees after completion; opt other workflows and agent steps into chat steering through Recipes or JSON configuration. ([#5](https://github.com/Attraccess/bobs-factory/pull/5))
 - Configure workflow launch methods independently in Recipes, preserve saved permissions even when a configuration refresh fails, filter manual choices, reject disallowed workflow selections with actionable feedback, and retain launch/source and nested caller context across restarts. (Taskbot bobs-factory #35, [#2](https://github.com/Attraccess/bobs-factory/pull/2))
 
@@ -36,6 +37,8 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Acknowledge chat resume requests without reporting that the conversation has resumed while setup is still pending. ([#11](https://github.com/Attraccess/bobs-factory/pull/11))
 
 - Bob's clarification and implementation-blocker questions now explain the relevant facts, source of the decision and consequences in plain language; optional diagrams and images appear beside the answer box.
 

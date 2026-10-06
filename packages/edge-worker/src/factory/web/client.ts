@@ -214,7 +214,10 @@ export function useAction() {
 			method?: string;
 		}) => api(path, { method, body: JSON.stringify(body) }),
 		onSuccess: async (data, { path, method = "POST" }) => {
-			if (path === "/api/workflows" && method === "PUT") {
+			if (
+				["/api/workflows", "/api/title-settings"].includes(path) &&
+				method === "PUT"
+			) {
 				// A failed refresh must not let the next edit restore old permissions.
 				await cache.cancelQueries({ queryKey: ["config"] });
 				cache.setQueryData(["config"], (previous: any) => ({
@@ -347,7 +350,9 @@ export function settleReason(
 	if (
 		["failed", "error", "interrupted"].includes(run.status) &&
 		runs.some(
-			(other) => other.title === run.title && other.createdAt > run.createdAt,
+			(other) =>
+				other.triggerOrigin?.manual?.sourceRunId === run.id &&
+				other.createdAt > run.createdAt,
 		)
 	)
 		return "↻ Replaced by a newer run";
