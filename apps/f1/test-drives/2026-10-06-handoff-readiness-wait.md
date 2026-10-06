@@ -57,3 +57,12 @@ This drive simulates GitHub's transient response rather than forcing a real
 provider recalculation or having a real runner resolve a conflict. The production
 incident independently reproduced UNKNOWN mergeability on PR #12, followed by a
 concrete conflict blocker after the local retry.
+
+## Validation on current main before merge
+
+Reapplied the fix on `e07cc3e5` (the current main with the QA workflow update).
+Reran the transient and conflict drives with frozen pre-QA definitions matching
+the affected production run. Both passed. The QA migration and handoff recovery
+were checked together: custom QA roles remain intact, and a missing custom CI
+recovery route is not added by QA migration. All 136 focused tests passed,
+along with 2,412 passing tests across the monorepo, the full build, and type checks.

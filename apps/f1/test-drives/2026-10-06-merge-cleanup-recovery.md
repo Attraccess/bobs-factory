@@ -49,3 +49,11 @@ The isolated drive simulates the provider's terminal state and a missing checkou
 it does not exercise live Linear cleanup webhooks or perform a real GitHub merge.
 The production incident independently confirmed that PR #1938 had already merged
 at its approved revision before the run failed.
+
+## Validation on current main before merge
+
+Reapplied the fix on `e07cc3e5` and reran the same isolated merge recovery drive.
+The matching MERGED receipt completed and settled the saved run with history
+and activity retained; the OPEN receipt still blocked missing-worktree recovery.
+The integrated candidate passed all 136 focused factory/recovery tests, the
+monorepo test suite (2,412 passing tests), full build, and type checks.
