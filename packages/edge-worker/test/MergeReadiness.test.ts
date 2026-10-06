@@ -122,6 +122,46 @@ it("keeps all pages of discussion and waits for reapproval after recorded assess
 		),
 	).toBe(true);
 });
+it.each([
+	"head",
+	"different-head",
+])("confirms a completed merge without using a deleted worktree (provider head %s)", async (headRefOid) => {
+	const ctx = {
+		run: {
+			workspace: "/deleted-worktree",
+			history: [],
+			humanDecisions: [{ decision: "approve", headSha: "head" }],
+			outputs: { "draft-pr": { url } },
+		},
+		step: { tool: "merge" },
+		evidenceDir: "/retained-evidence",
+		signal: new AbortController().signal,
+		log: () => {},
+	} as unknown as ExecutionContext;
+	const cmd = vi.fn(
+		async (input: ExecutionContext, exe: string, args: string[]) => {
+			expect(exe).toBe("gh");
+			expect(input.run.workspace).toBe(ctx.evidenceDir);
+			return args.includes("graphql")
+				? JSON.stringify(providerReceipt({ state: "MERGED", headRefOid }))
+				: "[[]]";
+		},
+	);
+	const result = new FactoryTools({ command: cmd, postComment: vi.fn() }).tool(
+		ctx,
+	);
+	if (headRefOid === "head")
+		await expect(result).resolves.toEqual({
+			merged: true,
+			url,
+			headSha: "head",
+		});
+	else await expect(result).rejects.toThrow("explicitly approved revision");
+	expect(cmd.mock.calls.every(([, , args]) => !args.includes("merge"))).toBe(
+		true,
+	);
+});
+
 it("invalidates approval for a clean unpushed local commit", async () => {
 	const ctx = {
 		run: {

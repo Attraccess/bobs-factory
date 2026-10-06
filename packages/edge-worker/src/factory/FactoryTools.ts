@@ -18,6 +18,7 @@ import {
 	inspectReadinessWithRetry,
 	reportReadiness,
 } from "./MergeReadiness.js";
+import { confirmedMerge } from "./MergeRecovery.js";
 import { OutputValidationError } from "./OutputValidation.js";
 import {
 	QA_CONTRACT,
@@ -435,10 +436,20 @@ export class FactoryTools {
 		// stdout (especially repeated provider polling) is not conversation text.
 		const commandContext =
 			context.step.tool === "exec" ? context : { ...context, log: () => {} };
-		const command = (exe: string, args: string[], timeout?: number) =>
-			this.hooks.command
-				? this.hooks.command(commandContext, exe, args, timeout)
-				: executeCommand(commandContext, exe, args, timeout);
+		const command = (exe: string, args: string[], timeout?: number) => {
+			// Merge provider calls specify the PR explicitly. Keep their cwd outside
+			// the worktree: issue cleanup can remove it while GitHub completes a merge.
+			const ctx =
+				exe === "gh" && context.step.tool === "merge" && context.evidenceDir
+					? {
+							...commandContext,
+							run: { ...run, workspace: context.evidenceDir },
+						}
+					: commandContext;
+			return this.hooks.command
+				? this.hooks.command(ctx, exe, args, timeout)
+				: executeCommand(ctx, exe, args, timeout);
+		};
 		switch (context.step.tool) {
 			case "inspect-existing": {
 				const branch = await command("git", ["branch", "--show-current"]);
@@ -726,6 +737,11 @@ export class FactoryTools {
 						command,
 						url,
 					);
+					const merged = confirmedMerge(run, snapshot);
+					if (merged) {
+						reportReadiness(context, snapshot);
+						return merged;
+					}
 					assessFeedback(context, snapshot);
 					reportReadiness(context, snapshot);
 					if (
@@ -743,8 +759,6 @@ export class FactoryTools {
 								"Revision changed after human approval; synchronize the local and remote branch without discarding work, commit/push pending changes, then repeat all review gates",
 						};
 					}
-					if (snapshot.state === "MERGED")
-						return { merged: true, url, headSha: snapshot.headSha };
 					if (snapshot.state !== "OPEN")
 						throw new Error("PR closed without merging");
 					if (snapshot.isDraft) {
@@ -794,14 +808,44 @@ export class FactoryTools {
 					throw new Error(
 						"PR revision or CI evidence changed; handoff blocked",
 					);
-				const readiness = await inspectReadinessWithRetry(
-					context,
-					command,
-					url,
-				);
-				assessFeedback(context, readiness);
-				if (!readiness.reviewReady || readiness.headSha !== headSha)
-					throw new Error("Merge readiness changed; handoff blocked");
+				for (;;) {
+					const readiness = await inspectReadinessWithRetry(
+						context,
+						command,
+						url,
+					);
+					assessFeedback(context, readiness);
+					reportReadiness(context, readiness);
+					if (readiness.headSha !== headSha || readiness.state !== "OPEN")
+						throw new Error(
+							`Merge readiness changed; handoff blocked: ${readiness.blockers.map((blocker) => blocker.message).join("; ") || "PR state or revision changed"}`,
+						);
+					if (
+						(await command("git", ["rev-parse", "HEAD"])) !== headSha ||
+						(await command("git", ["status", "--porcelain"]))
+					)
+						throw new Error("Worktree changed after review; handoff blocked");
+					if (readiness.fix) {
+						if (
+							context.step.branches.some(
+								(branch) =>
+									branch.when.path === "fix" && branch.when.equals === true,
+							)
+						) {
+							// The existing fixer and its review gate consume the latest
+							// CI receipt, including feedback arriving after the guide.
+							run.outputs.ci = readiness;
+							return readiness;
+						}
+						throw new Error(
+							`Merge readiness changed; handoff blocked: ${readiness.blockers.map((blocker) => blocker.message).join("; ")}`,
+						);
+					}
+					if (readiness.reviewReady) break;
+					// GitHub may recalculate mergeability or start checks while the
+					// guide is being written. Wait as CI does, without replaying roles.
+					await delay(context.signal);
+				}
 				if (readPath(run.outputs, "guide.decision.status") !== "ready")
 					throw new Error(
 						"Review guide reports unresolved gaps; handoff blocked",

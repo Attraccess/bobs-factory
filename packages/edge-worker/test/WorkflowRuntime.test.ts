@@ -1377,6 +1377,98 @@ it("upgrades only stock CI routing, retaining customized models and routes", () 
 	).toBe("code-review");
 });
 
+it("upgrades handoff into the existing CI fix route without replacing custom routes", () => {
+	const definitions = structuredClone(defaultWorkflows);
+	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
+	const handoff = shared.steps.find((x) => x.id === "handoff")!;
+	handoff.branches = [];
+	const upgraded = validateWorkflows(upgradeWorkflows(definitions));
+	expect(
+		upgraded
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.find((x) => x.id === "handoff")!.branches,
+	).toEqual([{ when: { path: "fix", equals: true }, next: "ci-fix" }]);
+	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
+	handoff.branches = [
+		{ when: { path: "fix", equals: true }, next: "code-review" },
+	];
+	expect(
+		validateWorkflows(upgradeWorkflows(definitions))
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.find((x) => x.id === "handoff")!.branches,
+	).toEqual(handoff.branches);
+	handoff.branches = [];
+	shared.steps.find((x) => x.id === "ci")!.branches = [];
+	expect(
+		validateWorkflows(upgradeWorkflows(definitions))
+			.find((x) => x.id === "factory-pipeline")!
+			.steps.find((x) => x.id === "handoff")!.branches,
+	).toEqual([]);
+});
+
+it("recovers a saved nested handoff through its existing fixer without replaying completed work", async () => {
+	const called: string[] = [];
+	const { runtime, home } = create({
+		tool: async (ctx) => {
+			called.push(ctx.step.id);
+			if (ctx.step.id === "handoff") return { fix: true };
+			throw new Error("Fixture stops after dispatching the fixer");
+		},
+		agent: async (ctx) => {
+			called.push(ctx.step.id);
+			return { summary: "Conflict resolved", checks: ["Fixture validation"] };
+		},
+	});
+	const run = runtime.create({
+		workflow: defaultWorkflows.find((x) => x.id === "factory")!,
+		repositoryId: "repo",
+		workspace: home,
+		input: "Fixture",
+		triggerOrigin: {
+			type: "manual",
+			workflowId: "factory",
+			at: new Date().toISOString(),
+		},
+	});
+	run
+		.workflowDefinitions!.find((x) => x.id === "factory-pipeline")!
+		.steps.find((x) => x.id === "handoff")!.branches = [];
+	run.status = "failed";
+	run.step = "pipeline/handoff";
+	run.history = [
+		{
+			step: "pipeline/guide",
+			output: { summary: "Accepted guide" },
+			at: new Date().toISOString(),
+		},
+	];
+	const history = structuredClone(run.history);
+	run.checkpoint = {
+		current: "pipeline",
+		visits: { pipeline: 1 },
+		active: {
+			phase: "executing",
+			children: [
+				{
+					current: "handoff",
+					visits: { handoff: 1 },
+					active: { phase: "executing" },
+				},
+			],
+		},
+	};
+	runtime.save(run);
+	runtime.retry(run.id);
+	await vi.waitFor(() => expect(run.status).toBe("failed"));
+	expect(called).toEqual(["handoff", "ci-fix", "after-ci-fix"]);
+	expect(run.history[0]).toEqual(history[0]);
+	expect(run.history.slice(1).map((x) => x.step)).toEqual([
+		"pipeline/handoff",
+		"pipeline/ci-fix",
+	]);
+	expect(run.step).toBe("pipeline/after-ci-fix");
+});
+
 it("upgrades stock coordination limits without changing agent/custom limits", () => {
 	const definitions = structuredClone(defaultWorkflows);
 	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
@@ -1691,13 +1783,18 @@ it("upgrades a coherent screenshot recipe to QA atomically, keeps custom behavio
 	const custom = validateWorkflows(upgradeWorkflows(saved)).find(
 		(w) => w.id === "factory-pipeline",
 	)!;
+	// Handoff recovery is independent of the QA role migration: the existing
+	// CI fixer still handles late conflicts while custom screenshot roles stay intact.
+	expect(custom.steps.find((s) => s.id === "handoff")!.branches).toEqual([
+		{ when: { path: "fix", equals: true }, next: "ci-fix" },
+	]);
 	expect(
 		custom.steps.filter((s) =>
-			legacyScreenshotSteps.some((l) => l.id === s.id),
+			legacyScreenshotSteps.some((l) => l.id === s.id && l.id !== "handoff"),
 		),
 	).toEqual(
 		pipeline.steps.filter((s) =>
-			legacyScreenshotSteps.some((l) => l.id === s.id),
+			legacyScreenshotSteps.some((l) => l.id === s.id && l.id !== "handoff"),
 		),
 	);
 	const { runtime } = create();
