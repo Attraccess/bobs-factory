@@ -4,11 +4,11 @@ import { Bob } from "./Bob";
 import { CopyCommand } from "./CopyCommand";
 import { Reveal, SectionTitle } from "./ui";
 
-export const REPO = "https://github.com/Attraccess/bobs-factory";
+export const REPO = "https://github.com/jappyjan/bobs-factory";
 
 const lines = [
 	{
-		cmd: "git clone https://github.com/Attraccess/bobs-factory && cd bobs-factory",
+		cmd: `git clone ${REPO} && cd bobs-factory`,
 	},
 	{ cmd: "pnpm install", out: "Done in 41s" },
 	{

@@ -5,7 +5,7 @@
 If you're using any AI coding agent (Claude Code, Codex, Cursor, etc.), set up Cyrus with a single command:
 
 ```bash
-npx skills add ceedaragents/cyrus -g
+npx skills add jappyjan/bobs-factory -g
 ```
 
 Then in your agent:

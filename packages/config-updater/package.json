@@ -4,7 +4,7 @@
 	"description": "Configuration update handlers for Cyrus agent",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/cyrusagents/cyrus.git",
+		"url": "git+https://github.com/jappyjan/bobs-factory.git",
 		"directory": "packages/config-updater"
 	},
 	"type": "module",

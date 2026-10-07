@@ -1,5 +1,8 @@
 # Software factory MVP
 
+[Source repository](https://github.com/jappyjan/bobs-factory) ·
+[Homepage](https://jappyjan.github.io/bobs-factory/)
+
 The factory reuses Cyrus's runners, Git worktrees and ticket integrations. Its
 local dashboard and JSON workflow graph are deliberately small: no database,
 hosted login, queue service or separate orchestration platform.
@@ -11,6 +14,8 @@ the agent CLI and run `gh auth login`. The target repository needs an `origin`
 remote you can push to, a base branch, and configured branch/merge rules for the factory pipeline.
 
 ```sh
+git clone https://github.com/jappyjan/bobs-factory.git
+cd bobs-factory
 pnpm install
 pnpm factory --repo /absolute/path/to/repo --agent codex --model gpt-6.1-sol
 ```

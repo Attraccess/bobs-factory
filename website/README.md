@@ -1,5 +1,9 @@
 # Bob's Factory — marketing site
 
+Published at [jappyjan.github.io/bobs-factory](https://jappyjan.github.io/bobs-factory/)
+from [jappyjan/bobs-factory](https://github.com/jappyjan/bobs-factory) by the
+Website GitHub Actions workflow on `main`. The project path remains `/bobs-factory/`.
+
 Vite + React + Tailwind v4 + Motion + Lenis. Every product image and video on the
 page is the **real Bob's Factory UI**, captured from the actual factory runtime,
 HTTP server and web app running against a demo repository with scripted agents.

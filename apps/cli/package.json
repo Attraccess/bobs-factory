@@ -27,7 +27,7 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/cyrusagents/cyrus.git",
+		"url": "git+https://github.com/jappyjan/bobs-factory.git",
 		"directory": "apps/cli"
 	},
 	"keywords": [

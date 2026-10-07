@@ -1,14 +1,26 @@
-# Cyrus
+# Bob’s Factory
 
-This fork adds a local software factory MVP. Run `pnpm install`, then
-`pnpm factory --repo /path/to/repository --agent codex --model gpt-6.1-sol`.
+[Homepage](https://jappyjan.github.io/bobs-factory/) ·
+[Source](https://github.com/jappyjan/bobs-factory) ·
+[Factory guide](docs/FACTORY.md)
+
+This fork of [Cyrus](https://github.com/cyrusagents/cyrus) adds a local software
+factory. Clone the repository and start it with your preferred agent:
+
+```sh
+git clone https://github.com/jappyjan/bobs-factory.git
+cd bobs-factory
+pnpm install
+pnpm factory --repo /path/to/repository --agent codex --model gpt-6.1-sol
+```
+
 Open **http://127.0.0.1:3457** to start runs, answer clarification questions,
 watch progress, terminate work, and configure workflows and per-step agents/models.
 See [Software factory MVP](docs/FACTORY.md) for setup, workflow examples and limits.
 
 <div>
-  <a href="https://github.com/ceedaragents/cyrus/actions">
-    <img src="https://github.com/ceedaragents/cyrus/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <a href="https://github.com/jappyjan/bobs-factory/actions">
+    <img src="https://github.com/jappyjan/bobs-factory/actions/workflows/ci.yml/badge.svg" alt="CI">
   </a>
 
 </div>
@@ -28,7 +40,7 @@ Your (Claude Code|Codex|Cursor|Gemini|Opencode) powered (Linear|GitHub|GitLab|Sl
 Zero cost option — host everything yourself with your own Linear OAuth app, GitHub App, and Slack App. An AI-guided setup skill handles the entire onboarding: installing dependencies, configuring auth, creating integration apps, and connecting repositories — so you don't have to follow a manual guide.
 
 ```bash
-npx skills add ceedaragents/cyrus -g
+npx skills add jappyjan/bobs-factory -g
 ```
 
 Then in any AI coding agent (Claude Code, Codex, Cursor, etc.):

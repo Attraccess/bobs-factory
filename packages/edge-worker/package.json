@@ -4,7 +4,7 @@
 	"description": "Unified edge worker for processing Linear issues with Claude",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/cyrusagents/cyrus.git",
+		"url": "git+https://github.com/jappyjan/bobs-factory.git",
 		"directory": "packages/edge-worker"
 	},
 	"type": "module",
