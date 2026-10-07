@@ -73,6 +73,15 @@ function validDraft(key: string, value: any): boolean {
 	)
 		return typeof value === "boolean";
 	if (key === "today/skipped") return strings(value);
+	if (key === "composer/execution")
+		return (
+			record(value) &&
+			Object.entries(value).every(
+				([key, id]) =>
+					["identityProfile", "toolProfile"].includes(key) &&
+					(id === undefined || typeof id === "string"),
+			)
+		);
 	if (/^(answers\/|composer\/(inputs|settings)$)/.test(key))
 		return values(value, "string");
 	if (key.startsWith("panels/")) return values(value, "boolean");
@@ -270,7 +279,7 @@ function pristineDraft(key: string, value: any): boolean {
 		return value === false;
 	if (key === "today/skipped")
 		return Array.isArray(value) && value.length === 0;
-	if (/^(answers\/|panels\/|composer\/(inputs|settings)$)/.test(key))
+	if (/^(answers\/|panels\/|composer\/(inputs|settings|execution)$)/.test(key))
 		return (
 			value !== null &&
 			typeof value === "object" &&

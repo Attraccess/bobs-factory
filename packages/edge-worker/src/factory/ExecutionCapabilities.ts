@@ -42,13 +42,25 @@ export function executionCapabilities(runner: RunnerType): {
 		const sdk = require.resolve("@anthropic-ai/claude-agent-sdk");
 		const localRequire = createRequire(sdk);
 		const suffix = process.platform === "win32" ? ".exe" : "";
-		const report = process.report.getReport() as {
-			header?: { glibcVersionRuntime?: string };
-		};
-		const libcSuffix =
-			process.platform === "linux" && !report.header?.glibcVersionRuntime
-				? "-musl"
-				: "";
+		let libcSuffix = "";
+		if (process.platform === "linux") {
+			// Only Linux needs libc detection. Node reports otherwise inspect open
+			// sockets and can block on reverse DNS before the executable timeout.
+			// Available since Node 20.13; the workspace's Node 20 typings lag it.
+			const diagnostic = process.report as typeof process.report & {
+				excludeNetwork: boolean;
+			};
+			const excludeNetwork = diagnostic.excludeNetwork;
+			try {
+				diagnostic.excludeNetwork = true;
+				const report = diagnostic.getReport() as {
+					header?: { glibcVersionRuntime?: string };
+				};
+				if (!report.header?.glibcVersionRuntime) libcSuffix = "-musl";
+			} finally {
+				diagnostic.excludeNetwork = excludeNetwork;
+			}
+		}
 		try {
 			binary = localRequire.resolve(
 				`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}${libcSuffix}/claude${suffix}`,

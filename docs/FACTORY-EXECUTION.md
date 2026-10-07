@@ -6,6 +6,8 @@
 
 New admissions select each concern independently: manual choice → repository default → factory default → Legacy. Accepted definitions and references survive profile edits/deletion, nested graphs, fanout, title jobs, Simple, follow-ups and restart. Recovery revalidates the saved principal and resource version rather than adopting new defaults. The editor saves atomically with revisions and retains drafts on conflicts. Active consumers are listed before changes.
 
+The composer retains explicit identity and tool profile IDs in tab-local session storage across reloads and application updates. It stores no resolved configuration or credentials. Clearing either choice restores default resolution independently; preview results must be checked again after a reload.
+
 Share reads declared sources at each operation. Overlay privately snapshots declared JSON source files and applies object overlays. Factory-only uses explicit definitions. API credential references remain separate from ordinary settings and MCP definitions. MCP definitions replace whole servers; removal tombstones apply last. `factory-context` remains runtime-owned and role permission restrictions remain authoritative.
 
 | Concern | Supported behavior and restrictions |
@@ -129,4 +131,3 @@ All supported explicit modes retain managed policy. Incompatible managed enforce
 For host identity with private tool roots, resolve host credential references independently of HOME/config materialization: retain explicitly allowed SSH/GPG sockets or use the chosen host provider credential binding. The required cross-case does not depend on copying refreshable native OAuth stores. Native subscription login combined with factory-only tools is explicitly unavailable unless a separate supported binding exists; show this before Start.
 
 Shared tools in the factory-only identity cross-case are declared MCP definitions and supported ordinary runner settings. Their authentication fields are separately resolved. Arbitrary plugins/scripts that introduce undocumented automatic credential lookup are not supported isolated-auth sources merely because they were installed on the host.
-

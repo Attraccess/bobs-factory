@@ -393,6 +393,10 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 		otherTab = storage();
 	vi.stubGlobal("sessionStorage", saved);
 	rememberDraft("composer/inputs", { prompt: "launch draft" });
+	rememberDraft("composer/execution", {
+		identityProfile: "native-claude",
+		toolProfile: "shared",
+	});
 	rememberDraft("chat/r", "chat draft");
 	rememberDraft("answers/r", { 0: "clarification draft" }, "old-question");
 	rememberDraft("feedback/text/r", "feedback", "old-gate");
@@ -420,6 +424,11 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 		drafts: { "reading/r/all": { value: { anchor: { cursor: "cursor" } } } },
 	});
 	loadRestoration(build, saved);
+	expect(restoredDraft("composer/execution")).toEqual({
+		identityProfile: "native-claude",
+		toolProfile: "shared",
+	});
+	forgetDraft("composer/execution");
 	expect(restoredDraft("chat/r")).toBe("chat draft");
 	expect(restoredDraft("recipe/machine-capacity")).toEqual({ limit: "7" });
 	expect(snapshot?.drafts["recipe/machine-capacity"]?.revision).toBe(
@@ -619,6 +628,8 @@ it("rejects expired, malformed and unexpected snapshot surfaces", () => {
 		),
 	).toBeUndefined();
 	for (const [key, value] of [
+		["composer/execution", { identityProfile: 1 }],
+		["composer/execution", { credential: "secret" }],
 		["recipe/role", { workflowId: "r" }],
 		["recipe/title-settings", { value: { model: 4 } }],
 		["recipe/machine-capacity", { limit: 7 }],

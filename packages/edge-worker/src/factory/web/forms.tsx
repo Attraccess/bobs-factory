@@ -3,6 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import { passiveTools } from "../CapacityPolicy";
 import { useAction, useConfig } from "./client";
 import { ExecutionEditor, ExecutionSelectors } from "./execution";
+import {
+	readComposerExecution,
+	writeComposerExecution,
+} from "./execution-selection";
 import { DraftNotice } from "./pwa-ui";
 import { forgetDraft, revisionOf, useRestorableState } from "./restoration";
 import { Button, Modal, useToast } from "./ui";
@@ -207,7 +211,10 @@ export function Composer({
 			revisionOf([config.repositories, config.workflows]),
 		),
 		[settings, setSettings] = useRestorableState("composer/settings", {}),
-		[execution, setExecution] = useRestorableState("composer/execution", {}),
+		[execution, setExecution] = useRestorableState(
+			"composer/execution",
+			readComposerExecution,
+		),
 		[agentOpen, setAgentOpen] = useRestorableState(
 			"composer/agent-panel",
 			false,
@@ -218,6 +225,9 @@ export function Composer({
 		workflow = workflows.find((w: any) => w.id === workflowId),
 		fields = workflow?.launchFields ?? [];
 	const previousDefault = useRef(config.defaultWorkflow);
+	useEffect(() => {
+		writeComposerExecution(execution);
+	}, [execution]);
 	useEffect(() => {
 		if (config.defaultWorkflow !== previousDefault.current) {
 			const oldDefault = previousDefault.current;
