@@ -162,8 +162,12 @@ it("checks configured tool restrictions before native OAuth calls", async () => 
 	expect(directCall).not.toHaveBeenCalled();
 });
 
-it("keeps intensive stdio tool descendants attached to their execution lease", async () => {
+it.each([
+	undefined,
+	{ HOME: "/selected/home", SELECTED_ACCOUNT: "fixture" },
+])("keeps intensive stdio tool descendants attached to their execution lease with child environment %j", async (childEnvironment) => {
 	const { edge, run, config } = fixture("codex");
+	config.childEnvironment = childEnvironment;
 	config.mcpConfig = {
 		taskbot: { command: "fixture-tool", env: { CONFIGURED: "retained" } },
 	};
@@ -183,6 +187,7 @@ it("keeps intensive stdio tool descendants attached to their execution lease", a
 		{},
 		expect.any(AbortSignal),
 		run.workspace,
+		childEnvironment,
 	);
 	expect(nativeCall).not.toHaveBeenCalled();
 });

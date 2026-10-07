@@ -10,7 +10,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
-- Integrate execution profiles with machine capacity and the current Recipes UI; preserve selected environments, cancellable setup and redaction while retaining lease provenance and both settings editors. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+- Integrate execution profiles with machine capacity and the current Recipes UI; preserve selected environments, cancellable setup and redaction while retaining lease provenance and both settings editors. Update direct-MCP regression checks for Legacy and selected complete child environments. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
 - Integrate machine capacity with ticket lifecycle tracking, MCP OAuth recovery and batched session persistence; isolate browser capacity policy from server-only ticket modules and retain transactional chat-save barriers and stdio execution provenance. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
 

@@ -57,6 +57,16 @@ and `merge57-drive.json`; log output is `/tmp/merge57-drive.log`.
 
 ![Merged Recipes settings on mobile](assets/execution57-merge/recipes-mobile.png)
 
+## CI follow-up
+
+The first remote matrix run passed Biome and build, then exposed one MCP test
+assertion expecting the old five-argument transport call. The received call
+retained its lease and configured server environment and passed the newly
+optional sixth child-environment argument. The corrected regression explicitly
+covers both Legacy (`undefined`) and selected complete environments. All six
+MCP OAuth/transport tests pass locally, as do the direct MCP transport tests.
+No runtime behavior or approval rule changed for this follow-up.
+
 ## Limitations
 
 Live runner/GitLab checks remain waived by the accepted answer. Successful live
