@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import {
+	authorizeFeedbackPolicies,
+	feedbackInstructionFingerprint,
+	feedbackPolicies,
+} from "./FeedbackPolicy.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 export type ProviderCommand = (
@@ -27,6 +32,12 @@ export interface MergeReadiness {
 	reviews: unknown[];
 	queued: boolean;
 	mergeMethod: "squash" | "merge" | "rebase";
+	unassessedComments?: (FeedbackComment & { bodySha256: string })[];
+	feedbackPolicies?: {
+		author: string;
+		action: "ignore" | "assess";
+		reason: string;
+	}[];
 }
 export async function inspectMergeReadiness(
 	command: ProviderCommand,
@@ -243,6 +254,7 @@ const commentHash = (body: string) =>
 interface FeedbackComment {
 	id: string;
 	body: string;
+	html_url?: string;
 	updated_at?: string;
 	user?: { login?: string; type?: string };
 }
@@ -266,14 +278,45 @@ export function recordFeedbackAssessment(
 	output: unknown,
 ): unknown {
 	if (!output || typeof output !== "object") return output;
-	const value = output as { addressedCommentIds?: string[] };
+	const value = output as {
+		addressedCommentIds?: string[];
+		commentAssessments?: { id: string; bodySha256: string }[];
+		feedbackPolicies?: unknown[];
+		questions?: string[];
+	};
 	const ids = new Set((value.addressedCommentIds ?? []).map(String));
-	const comments =
-		readComments(context.run.outputs["merge-readiness"]) ??
-		readComments(context.run.outputs.ci) ??
-		[];
+	const policies = authorizeFeedbackPolicies(context, value.feedbackPolicies);
+	const active = feedbackPolicies(context, policies);
+	const receipt = (context.run.outputs["merge-readiness"] ??
+		context.run.outputs.ci) as MergeReadiness | undefined;
+	const comments = readComments(receipt) ?? [];
+	for (const assessment of value.commentAssessments ?? []) {
+		const comment = comments.find((item) => String(item.id) === assessment.id);
+		if (!comment || commentHash(comment.body) !== assessment.bodySha256)
+			throw new Error(
+				`Comment ${assessment.id} assessment must match the supplied content hash; assess the current unassessedComments entry`,
+			);
+		ids.add(assessment.id);
+	}
+	const missing = (receipt?.unassessedComments ?? []).filter(
+		(comment) =>
+			!ids.has(String(comment.id)) &&
+			active.get(comment.user?.login?.toLowerCase() ?? "")?.action !== "ignore",
+	);
+	if (missing.length && !value.questions?.length)
+		throw new Error(
+			`Assess every outstanding comment or provide a user-authorized feedback policy or an assistance question. Missing comment IDs: ${missing.map((comment) => comment.id).join(", ")}`,
+		);
 	return {
 		...value,
+		addressedCommentIds: [...ids],
+		feedbackPolicies: policies,
+		feedbackAssessment: receipt && {
+			headSha: receipt.headSha,
+			baseSha: receipt.baseSha,
+			fingerprint: feedbackWorkFingerprint(receipt),
+			instructionsSha256: feedbackInstructionFingerprint(context),
+		},
 		assessedComments: comments
 			.filter((comment) => ids.has(String(comment.id)))
 			.map((comment) => ({
@@ -295,8 +338,8 @@ export function assessFeedback(
 ): void {
 	const addressedComments = new Map<string, { hash?: string; at: string }>(),
 		addressedReviews = new Set<string>();
-	for (const item of context.run.history) {
-		if (!item.step.endsWith("ci-fix")) continue;
+	for (const item of context.run.history ?? []) {
+		if (item.step.split("/").at(-1) !== "ci-fix") continue;
 		const output = item.output as
 			| {
 					addressedCommentIds?: string[];
@@ -315,14 +358,20 @@ export function assessFeedback(
 		for (const id of output?.addressedReviewIds ?? [])
 			addressedReviews.add(String(id));
 	}
+	const policies = feedbackPolicies(context);
+	snapshot.feedbackPolicies = [...policies.values()].map(
+		({ author, action, reason }) => ({ author, action, reason }),
+	);
 	const comments = (snapshot.comments as FeedbackComment[]).filter(
 		(comment) => {
+			const policy = policies.get(comment.user?.login?.toLowerCase() ?? "");
 			if (
 				!comment.body?.trim() ||
 				/<!-- generated-by-cyrus -->/.test(comment.body) ||
-				informationalComment(comment)
+				(policy?.action !== "assess" && informationalComment(comment))
 			)
 				return false;
+			if (policy?.action === "ignore") return false;
 			const assessed = addressedComments.get(String(comment.id));
 			if (!assessed) return true;
 			if (assessed.hash) return assessed.hash !== commentHash(comment.body);
@@ -332,6 +381,14 @@ export function assessFeedback(
 						Date.parse(comment.updated_at) > Date.parse(assessed.at)),
 			);
 		},
+	);
+	snapshot.unassessedComments = comments.map((comment) => ({
+		...comment,
+		id: String(comment.id),
+		bodySha256: commentHash(comment.body),
+	}));
+	snapshot.blockers = snapshot.blockers.filter(
+		(blocker) => blocker.kind !== "comments",
 	);
 	if (comments.length)
 		snapshot.blockers.push({
@@ -361,4 +418,50 @@ export function assessFeedback(
 	snapshot.reviewReady =
 		snapshot.state === "OPEN" &&
 		snapshot.blockers.every((item) => item.action === "human");
+}
+
+/** Stable actionable work identity; pending jobs and human approvals are not fixer work. */
+export function feedbackWorkFingerprint(
+	snapshot: MergeReadiness,
+): string | undefined {
+	const kinds = snapshot.blockers
+		.filter((blocker) => blocker.action === "fix")
+		.map((blocker) => blocker.kind)
+		.sort();
+	if (!kinds.length) return undefined;
+	const sorted = (items: unknown[]) =>
+		items.map((item) => JSON.stringify(item)).sort();
+	return createHash("sha256")
+		.update(
+			JSON.stringify({
+				headSha: snapshot.headSha,
+				baseSha: snapshot.baseSha,
+				kinds,
+				checks: kinds.includes("checks")
+					? sorted(
+							snapshot.checks
+								.filter((check) => check.bucket === "fail")
+								.map(({ name, state, link }) => ({ name, state, link })),
+						)
+					: [],
+				comments: kinds.includes("comments")
+					? sorted(
+							(snapshot.unassessedComments ?? []).map(({ id, bodySha256 }) => ({
+								id,
+								bodySha256,
+							})),
+						)
+					: [],
+				threads: kinds.includes("threads") ? sorted(snapshot.threads) : [],
+				reviews: kinds.includes("reviews")
+					? sorted(
+							snapshot.reviews.filter(
+								(review) =>
+									(review as { state?: string }).state === "CHANGES_REQUESTED",
+							),
+						)
+					: [],
+			}),
+		)
+		.digest("hex");
 }

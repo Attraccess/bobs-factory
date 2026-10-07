@@ -183,6 +183,7 @@ import {
 	parseAgentOutput,
 	toolArguments,
 } from "./factory/FactoryTools.js";
+import { factoryFeedbackContext } from "./factory/FeedbackPolicy.js";
 import {
 	validateGuideCoverage,
 	validateGuideGeneration,
@@ -216,6 +217,11 @@ import {
 	questionNotification,
 } from "./factory/Questions.js";
 import { finalizeGuideFiles } from "./factory/ReviewFiles.js";
+import {
+	factoryReviewFixContext,
+	recordReviewFix,
+	validateReviewFix,
+} from "./factory/ReviewRecovery.js";
 import {
 	buildTitleContext,
 	RunTitleGenerator,
@@ -7619,11 +7625,18 @@ ${taskSection}`;
 				context.log(JSON.stringify(message), "agent");
 		};
 		context.progress = await roleProgress(context);
+		this.refreshFactoryFeedbackContext(context);
 		const factoryContext = prepareFactoryContext({
 			...(context.input && typeof context.input === "object"
 				? context.input
 				: { input: context.input }),
 			progress: context.progress,
+			...(step.id === "ci-fix"
+				? { feedback: factoryFeedbackContext(context) }
+				: {}),
+			...(["code-fix", "visual-fix"].includes(step.id)
+				? { reviewFix: factoryReviewFixContext(context) }
+				: {}),
 			...(captureCorrection ? { captureCorrection } : {}),
 			...(outputCorrection ? { outputCorrection } : {}),
 		});
@@ -7739,10 +7752,33 @@ ${taskSection}`;
 				validateGuideGeneration(output);
 				validateGuideCoverage(context, output);
 			}
+			if (step.id === "ci-fix") {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				output = recordFeedbackAssessment(context, output);
+			}
+			if (["code-fix", "visual-fix"].includes(step.id)) {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				validateReviewFix(context, output);
+			}
 			return output;
 		} catch (error) {
 			throw outputValidationError(value, error);
 		}
+	}
+
+	private refreshFactoryFeedbackContext(context: ExecutionContext): void {
+		if (
+			!["ci-fix", "code-fix", "visual-fix"].includes(context.step.id) ||
+			!this.factoryRuntime
+		)
+			return;
+		context.chatMessages = this.factoryRuntime.chatMessages(context.run.id);
+		context.input = {
+			...(context.input as Record<string, unknown>),
+			chatMessages: context.chatMessages,
+		};
 	}
 
 	private async finalizeFactoryAgentOutput(
@@ -7753,9 +7789,9 @@ ${taskSection}`;
 		let output = this.validateFactoryAgentOutput(context, value);
 		if (step.id === "guide") output = await finalizeGuideFiles(context, output);
 		if (step.id === "capture") output = captureEvidence(context, output);
-		if (step.id === "ci-fix")
-			output = recordFeedbackAssessment(context, output);
 		const completed = (await roleProgress(context)).currentRevision;
+		if (["code-fix", "visual-fix"].includes(step.id))
+			output = recordReviewFix(context, output, completed);
 		if (completed && step.id === "visual-review" && step.qaContract) {
 			output = {
 				...(output as Record<string, unknown>),

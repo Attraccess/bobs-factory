@@ -372,8 +372,8 @@ it.each([
 	[undefined, true, "comments", undefined],
 	[true, true, "comments", undefined],
 	[false, false, "comments", undefined],
-	[false, true, "revision", "fix"],
-	[false, true, "reviews", "fix"],
+	[false, false, "revision", "fix"],
+	[false, false, "reviews", "fix"],
 	[false, false, "reviews", "human"],
 ])("requires review for substantive fixes rather than pending human approval (%s, %s, %s, %s)", async (flag, required, kind, action) => {
 	const ctx = {
@@ -478,4 +478,120 @@ it.each([
 			questions: [expect.stringContaining("CodeQL: same-job")],
 		});
 	else expect(result).not.toHaveProperty("questions");
+});
+
+it.each([
+	false,
+	true,
+])("parks repeated actionable feedback without revision progress (review=%s)", async (reviewRequired) => {
+	const ctx = {
+		run: {
+			step: "pipeline/after-ci-fix",
+			history: [],
+			roleRevisions: {
+				"pipeline/code-review": { headSha: "head", dirty: false },
+			},
+			outputs: {
+				"draft-pr": { url },
+				"review-gate": { approved: true },
+				"ci-fix": { reviewRequired },
+			},
+		},
+		step: { tool: "review-after-fix" },
+		signal: new AbortController().signal,
+		log: vi.fn(),
+	} as unknown as ExecutionContext;
+	const extra = {
+		headRefOid: "head",
+		baseRefOid: "base",
+		mergeable: "CONFLICTING",
+	};
+	const before = await inspectMergeReadiness(command(extra), url);
+	assessFeedback(ctx, before);
+	ctx.run.outputs.ci = before;
+	const assessment = recordFeedbackAssessment(ctx, { reviewRequired });
+	if (reviewRequired)
+		ctx.run.history.push({
+			step: "pipeline/ci-fix",
+			at: "earlier",
+			output: assessment,
+		});
+	ctx.run.history.push({
+		step: "pipeline/ci-fix",
+		at: "latest",
+		output: assessment,
+	});
+	const cmd = async (_ctx: ExecutionContext, exe: string, args: string[]) =>
+		exe === "git"
+			? args[0] === "rev-parse"
+				? "head"
+				: ""
+			: command(extra)(exe, args);
+	const result = await new FactoryTools({
+		command: cmd,
+		postComment: async () => {},
+	}).tool(ctx);
+	expect(result).toMatchObject({
+		reviewRequired,
+		questions: [expect.stringContaining("same actionable blockers")],
+	});
+});
+
+it("allows a review of substantive rejection and resets repetition after new human direction", async () => {
+	const ctx = {
+		run: {
+			step: "pipeline/after-ci-fix",
+			history: [],
+			roleRevisions: {
+				"pipeline/code-review": { headSha: "head", dirty: false },
+			},
+			outputs: {
+				"draft-pr": { url },
+				"review-gate": { approved: true },
+				"ci-fix": { reviewRequired: true },
+			},
+		},
+		step: { tool: "review-after-fix" },
+		signal: new AbortController().signal,
+		log: vi.fn(),
+	} as unknown as ExecutionContext;
+	const extra = {
+		headRefOid: "head",
+		baseRefOid: "base",
+		mergeable: "CONFLICTING",
+	};
+	const before = await inspectMergeReadiness(command(extra), url);
+	assessFeedback(ctx, before);
+	ctx.run.outputs.ci = before;
+	ctx.run.history.push({
+		step: "pipeline/ci-fix",
+		at: "first",
+		output: recordFeedbackAssessment(ctx, { reviewRequired: true }),
+	});
+	const cmd = async (_ctx: ExecutionContext, exe: string, args: string[]) =>
+		exe === "git"
+			? args[0] === "rev-parse"
+				? "head"
+				: ""
+			: command(extra)(exe, args);
+	const result = await new FactoryTools({
+		command: cmd,
+		postComment: async () => {},
+	}).tool(ctx);
+	expect(result).toMatchObject({ reviewRequired: true });
+	expect(result).not.toHaveProperty("questions");
+	ctx.run.history.push({ ...ctx.run.history[0]!, at: "second" });
+	ctx.run.answers = [
+		{
+			questions: [],
+			answer: "Assess the revised acceptance requirement",
+			at: "2026-10-07T04:00:00Z",
+		},
+	];
+	const redirected = await new FactoryTools({
+		command: cmd,
+		postComment: async () => {},
+	}).tool(ctx);
+	expect(redirected).toMatchObject({ reviewRequired: true });
+	expect(redirected).not.toHaveProperty("questions");
 });
