@@ -48,6 +48,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Keep unsent form edits only while their current form and context remain open. Navigation, context changes, reloads, app updates and canceling follow-up feedback or new-passkey setup now discard them without stale-draft warnings; saved server data and pending-request guards remain intact. ([#41](https://github.com/Attraccess/bobs-factory/pull/41))
+
 - Factory QA now tests agreed user stories across UI, API and CLI changes, captures representative screenshots during those flows, and requires fixes and retesting for consequential failures. QA evidence and optional improvements remain visible for human review. ([Taskbot #74](https://taskbot.apps.janjaap.de/p/bobs-factory/t/74))
 
 - Review guides open on a dedicated reading page, with a compact entry on Today, saved reading positions and feedback drafts, and a clear empty state when no guide is available. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59), [#9](https://github.com/Attraccess/bobs-factory/pull/9))
