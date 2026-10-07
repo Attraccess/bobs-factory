@@ -74,9 +74,12 @@ export interface PushSession {
 	status: string;
 	stopped?: boolean;
 	recovering?: boolean;
+	pendingWork?: boolean;
 }
 export function sessionPushEvent(session: PushSession): PushEvent | undefined {
 	if (session.stopped || session.recovering) return undefined;
+	// A successful turn can leave scheduled wakeups or background tasks in flight.
+	if (session.status === "complete" && session.pendingWork) return undefined;
 	const category =
 		session.status === "complete"
 			? "completion"

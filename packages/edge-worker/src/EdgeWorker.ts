@@ -923,14 +923,20 @@ export class EdgeWorker extends EventEmitter {
 		await this.sharedApplicationServer.start();
 		this.factoryPush?.attach(this.getFactoryRuntime(), {
 			sessions: () =>
-				this.getAllKnownSessions().map((session) => ({
-					id: session.id,
-					status: session.status,
-					stopped: session.metadata?.intentionalStop,
-					// Saved execution input survives normal completion. Active recovery
-					// has no eligible status; only shutdown suppresses terminal alerts.
-					recovering: this.stopping,
-				})),
+				this.getAllKnownSessions().map((session) => {
+					const work = session.agentRunner?.getPendingWork?.();
+					return {
+						id: session.id,
+						status: session.status,
+						stopped: session.metadata?.intentionalStop,
+						// Saved execution input survives normal completion. Active recovery
+						// has no eligible status; only shutdown suppresses terminal alerts.
+						recovering: this.stopping,
+						pendingWork: Boolean(
+							work && (work.sessionCrons.length || work.backgroundTasks.length),
+						),
+					};
+				}),
 			subscribe: (notify) => {
 				this.agentSessionManager.on("sessionChanged", notify);
 				this.on("chatSessionChanged", notify);

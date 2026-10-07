@@ -13,6 +13,7 @@ import webPush from "web-push";
 import { FactoryPush } from "../src/factory/FactoryPush.js";
 import {
 	type PushEvent,
+	type PushSession,
 	runPushEvent,
 	sessionPushEvent,
 } from "../src/factory/PushEvents.js";
@@ -249,6 +250,48 @@ it.each([
 	await tick();
 	expect(sender).toHaveBeenCalledTimes(2);
 	expect(JSON.parse(sender.mock.calls[1]![1]).category).toBe(category);
+	await runtime.shutdown();
+	await push.stop();
+});
+it("defers native completion while work is pending, then sends the final completion once", async () => {
+	vi.useFakeTimers();
+	const sender = vi.fn(async () => {});
+	const push = new FactoryPush(home(), sender, Date.now, subject);
+	const runtime = new WorkflowRuntime(home(), {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const session: PushSession = { id: "native", status: "active" };
+	let notify = () => {};
+	push.attach(runtime, {
+		sessions: () => [session],
+		subscribe: (listener) => {
+			notify = listener;
+			return () => {};
+		},
+	});
+	push.register({ label: "one", subscription: subscription("one") });
+	session.status = "complete";
+	session.pendingWork = true;
+	notify();
+	await tick();
+	expect(sender).not.toHaveBeenCalled();
+	session.status = "active";
+	notify();
+	session.pendingWork = false;
+	session.status = "complete";
+	notify();
+	await tick();
+	expect(sender).toHaveBeenCalledTimes(1);
+	expect(JSON.parse(sender.mock.calls[0]![1]).category).toBe("completion");
+	notify();
+	await tick();
+	expect(sender).toHaveBeenCalledTimes(1);
+	expect(
+		sessionPushEvent({ id: "failed", status: "error", pendingWork: true })
+			?.category,
+	).toBe("failure");
 	await runtime.shutdown();
 	await push.stop();
 });
