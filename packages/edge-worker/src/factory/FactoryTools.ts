@@ -18,6 +18,7 @@ import {
 	delay,
 	feedbackWorkFingerprint,
 	inspectReadinessWithRetry,
+	type MergeReadiness,
 	reportReadiness,
 } from "./MergeReadiness.js";
 import { confirmedMerge } from "./MergeRecovery.js";
@@ -73,6 +74,21 @@ export function toolArguments(
 
 import type { GuideSchema } from "./FactoryResults.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
+
+function blockRevisionMismatch(
+	snapshot: MergeReadiness,
+	headSha: string,
+): void {
+	snapshot.worktreeHeadSha = headSha;
+	snapshot.fix = true;
+	snapshot.approved = false;
+	snapshot.reviewReady = false;
+	snapshot.blockers.push({
+		kind: "revision",
+		action: "fix",
+		message: `PR points to ${snapshot.headSha}, but the worktree is at ${headSha}. Synchronize the PR and branch without discarding work, then confirm the PR head and repeat review and CI. Checks for the old revision cannot validate this worktree.`,
+	});
+}
 
 export function reviewGuideMarkdown(value: unknown, headSha: string): string {
 	const guide = value as z.infer<typeof GuideSchema>;
@@ -695,6 +711,8 @@ export class FactoryTools {
 					command,
 					url,
 				);
+				if (readiness.headSha !== headSha)
+					blockRevisionMismatch(readiness, headSha);
 				const previousBase = readPath(run.outputs, "ci.baseSha");
 				assessFeedback(context, readiness);
 				const feedback = readPath(run.outputs, "ci.blockers") as
@@ -743,9 +761,13 @@ export class FactoryTools {
 					failures(readiness.checks).length > 0 &&
 					JSON.stringify(failures(previousChecks)) ===
 						JSON.stringify(failures(readiness.checks));
-				const previous = run.outputs.ci as
-					| import("./MergeReadiness.js").MergeReadiness
-					| undefined;
+				const previous = run.outputs.ci as MergeReadiness | undefined;
+				const unchangedRevision =
+					!dirty &&
+					readiness.headSha !== headSha &&
+					previous?.worktreeHeadSha === headSha &&
+					previous.headSha === readiness.headSha &&
+					previous.baseSha === readiness.baseSha;
 				const fingerprint = feedbackWorkFingerprint(readiness);
 				const repeated = (run.history ?? [])
 					.slice(0, -1)
@@ -768,25 +790,27 @@ export class FactoryTools {
 					reviewRequired,
 					headSha,
 					baseSha: readiness.baseSha,
-					...(unchangedFailures || unchangedWork
+					...(unchangedRevision || unchangedFailures || unchangedWork
 						? {
 								questions: [
-									unchangedFailures
-										? `The CI fixer made no revision change and these same checks still fail: ${readiness.checks
-												.filter((check) => check.bucket === "fail")
-												.map(
-													(check) =>
-														`${check.name}: ${check.link ?? check.state}`,
-												)
-												.join(
-													"; ",
-												)}. Resolve the external blocker or provide a corrective direction before retrying. The failures remain blocking.`
-										: `The CI fixer made no progress on the same actionable blockers: ${readiness.blockers
-												.filter((blocker) => blocker.action === "fix")
-												.map((blocker) => blocker.message)
-												.join(
-													"; ",
-												)}. Resolve the blocker or provide a corrective direction before retrying. Review and merge safeguards remain enforced.`,
+									unchangedRevision
+										? `The same revision mismatch remains after the CI fixer's synchronization attempt: GitHub reports ${readiness.headSha}, while the worktree is at ${headSha}. Restore synchronization between this PR and its branch, then reply to resume. Checks for the older revision remain insufficient; your answer does not approve or waive review and CI.`
+										: unchangedFailures
+											? `The CI fixer made no revision change and these same checks still fail: ${readiness.checks
+													.filter((check) => check.bucket === "fail")
+													.map(
+														(check) =>
+															`${check.name}: ${check.link ?? check.state}`,
+													)
+													.join(
+														"; ",
+													)}. Resolve the external blocker or provide a corrective direction before retrying. The failures remain blocking.`
+											: `The CI fixer made no progress on the same actionable blockers: ${readiness.blockers
+													.filter((blocker) => blocker.action === "fix")
+													.map((blocker) => blocker.message)
+													.join(
+														"; ",
+													)}. Resolve the blocker or provide a corrective direction before retrying. Review and merge safeguards remain enforced.`,
 								],
 							}
 						: {}),
@@ -803,10 +827,19 @@ export class FactoryTools {
 					);
 					assessFeedback(context, snapshot);
 					const headSha = await command("git", ["rev-parse", "HEAD"]);
-					if (snapshot.headSha !== headSha)
-						throw new Error(
-							"PR must match the current pushed worktree revision",
-						);
+					if (snapshot.headSha !== headSha) {
+						if (
+							snapshot.state !== "OPEN" ||
+							!context.step.branches.some(
+								(branch) =>
+									branch.when.path === "fix" && branch.when.equals === true,
+							)
+						)
+							throw new Error(
+								`PR must match the current pushed worktree revision (PR ${snapshot.headSha}, worktree ${headSha}); this step has no open PR synchronization recovery path`,
+							);
+						blockRevisionMismatch(snapshot, headSha);
+					}
 					reportReadiness(context, snapshot);
 					if (snapshot.fix || snapshot.reviewReady || snapshot.approved)
 						return snapshot;
