@@ -1,3 +1,4 @@
+import { accessState } from "./auth-state";
 export function signature(value: unknown) {
 	let hash = 2166136261;
 	for (const c of JSON.stringify(value))
@@ -71,6 +72,11 @@ export function readTextStored(key: string, fallback: string, session = false) {
 	}
 }
 export function writeTextStored(key: string, value: string, session = false) {
+	if (
+		accessState().status !== "authenticated" &&
+		!["factory-theme", "factory-settled-view"].includes(key)
+	)
+		return;
 	try {
 		(session ? sessionStorage : localStorage).setItem(key, value);
 	} catch {

@@ -12,6 +12,8 @@ export async function launchLocal(values: {
 	agent: string;
 	model?: string;
 	home: string;
+	origin?: string;
+	sessionHours?: string;
 }) {
 	const repo = resolve(resolvePath(values.repo!));
 	const port = Number(values.port);
@@ -52,6 +54,9 @@ export async function launchLocal(values: {
 	if (!baseBranch)
 		throw new Error("Check out a branch before starting the factory");
 	process.env.BOBS_FACTORY_FACTORY_PORT = String(port);
+	if (values.origin) process.env.BOBS_FACTORY_FACTORY_ORIGIN = values.origin;
+	if (values.sessionHours !== undefined)
+		process.env.BOBS_FACTORY_FACTORY_SESSION_HOURS = values.sessionHours;
 	const worker = new EdgeWorker({
 		platform: "cli",
 		factoryHome: home,

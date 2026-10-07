@@ -1,8 +1,8 @@
 # Bob’s Factory
 
 The factory builds on Cyrus’s runners, Git worktrees and ticket integrations. Its
-local dashboard and JSON workflow graph are deliberately small: no database,
-hosted login, queue service or separate orchestration platform.
+dashboard and JSON workflow graph are deliberately small: passkeys and a private
+local authentication file, without accounts, a database or a hosted identity service.
 
 ## Start locally
 
@@ -19,11 +19,131 @@ Open http://127.0.0.1:3457. `--port`, `--home` and `--agent` are optional;
 defaults are 3457, `~/.bobs-factory` and `claude`. Local launch uses the next port
 for RPC/webhooks and works without Linear credentials for manually triggered tasks.
 
-`bobs-factory start` uses configured repositories/integrations. Set
-`BOBS_FACTORY_FACTORY_PORT` to choose a dashboard port, or `0` to disable it.
-The dashboard binds to loopback separately from webhook ingress. Its public tunnel
-must not expose the dashboard. zrok2 (#39) and frontend protection (#40) are separate
-work. Development checkouts can still use `pnpm factory`.
+`bobs-factory start` uses configured repositories/integrations and starts the
+dashboard on port 3457. Set `BOBS_FACTORY_FACTORY_PORT` to choose another port,
+or `0` to disable it. Development checkouts can still use `pnpm factory`.
+The dashboard binds to loopback separately from the webhook listener and is
+intended for one operator. Every dashboard address requires a passkey session,
+including localhost. Provider webhooks and OAuth callbacks stay independent of
+dashboard authentication.
+
+## Passkey access and first setup
+
+Factory requires a server-verified passkey session for all dashboard data and
+controls. Localhost has no authentication bypass. An empty store displays the
+first-passkey setup screen; it does not give a remote visitor permission to enroll.
+Development checkouts use Node 22 or newer (SimpleWebAuthn 14). The binary includes its runtime.
+
+For an HTTPS tunnel, configure the exact browser origin before starting Factory:
+
+```sh
+bobs-factory --repo /absolute/path/to/repo \
+  --origin https://bobs-factory-schlepptop.zrok.apps.janjaap.de
+```
+
+Configured services use `BOBS_FACTORY_FACTORY_ORIGIN` for the same setting.
+`BOBS_FACTORY_FACTORY_PUBLIC_ORIGIN` remains a compatibility alias; the explicit
+`BOBS_FACTORY_FACTORY_ORIGIN` setting takes precedence when both are supplied.
+`BOBS_FACTORY_FACTORY_PORT` remains 3457 by default. The server binds only to loopback,
+accepts only explicitly configured authorities and checks exact browser Origin
+on writes. Request headers and loopback proxy peers never waive authentication.
+The tunnel must preserve the public authority and origin. No forwarded header
+is used as an authentication or identity claim. There is no extra UI listener.
+Remote access is denied when its origin has not been configured.
+
+At first startup, a ten-minute, single-use setup code is written to
+`<home>/factory/auth/enroll.json`, readable only by the operator. Copy its `token`
+value into the setup screen. Generate another code on the machine when it expires
+or a registration is cancelled:
+
+```sh
+bobs-factory --home /absolute/path/to/the/effective/factory-home factory-auth
+```
+
+An installed CLI also supports `bobs-factory --home /absolute/home factory-auth`
+and `bobs-factory --home /absolute/home factory-auth --recover --confirm
+"RESET FACTORY AUTHENTICATION"`. Neither command starts services.
+
+Start the server before generating a code: pending grants/challenges are
+invalidated on restart. Both launch modes default to `~/.bobs-factory`; `--home` selects another
+state directory. Always choose the home used by the running service. Setup codes authorize one enrollment, expire in ten minutes and
+never belong in URLs, screenshots, run prompts or ticket comments. Transfer the
+code privately to the phone, then open the exact configured HTTPS origin there.
+
+Each passkey belongs to the address where it was created. Localhost and the
+public hostname need separate keys. The `http://127.0.0.1:3457` entrypoint redirects
+to `http://localhost:3457` because WebAuthn rejects IP addresses as RP IDs.
+Both addresses protect data; the redirect provides a usable local login.
+`Settings` in the main navigation contains passkey management and sign-out.
+The sign-in screen folds new-key setup under `Set up a new passkey` once the
+first key exists. First-time setup opens automatically. In Settings, add a named
+phone/security key or remove a saved key; each change explicitly verifies an
+existing passkey first. Viewing keys also requires verification within the last
+five minutes, with a verification button when that window has expired. Keep at least one key per enrolled address;
+removing the last key requires local recovery. Removing a key revokes its sessions
+and live streams. Labels and metadata are shown; public keys and session tokens
+are never returned.
+
+Sessions last twelve hours without sliding renewal. `--session-hours` or
+`BOBS_FACTORY_FACTORY_SESSION_HOURS` permits 1–24 hours; the explicit CLI option takes
+precedence over the environment, and twelve hours applies only when neither is
+set. Invalid values fail startup. Sessions survive a restart;
+credentials, counters and token hashes live in private atomic files. HTTPS uses
+host-only `__Host-` cookies with Secure, HttpOnly, SameSite=Strict and Path=/.
+Loopback HTTP uses a host-only HttpOnly/SameSite=Strict cookie. Both paths require
+a verified, unexpired server record. Ceremonies require user verification, exact
+origin/RP binding and a single-use browser-bound challenge valid for five minutes.
+
+Sign out warns that unsent edits, review comments and saved restoration drafts
+will be discarded across tabs. Expiry/revocation also clears sensitive views and
+stops retries, streams and late responses. Reopening, restored navigation and
+reconnection recheck the session. Offline access shows an inert sign-in screen.
+The service worker caches only the static shell, never auth/API/media responses.
+Theme and settled-view preferences are retained.
+
+### Local recovery
+
+If every passkey is lost or the store is corrupt, deliberately reset only Factory
+authentication on the machine:
+
+```sh
+bobs-factory --home /absolute/path/to/the/effective/factory-home factory-auth \
+  --recover --confirm "RESET FACTORY AUTHENTICATION"
+```
+
+A running server consumes the private recovery request and revokes every key,
+session, stream and pending ceremony. No service restart is required. If corrupt
+state prevented startup, rerun the server after recovery. Run history, workflows,
+integrations, credentials for provider services and worktrees are preserved.
+The old auth file is retained privately as a recovery backup and is never read
+automatically. Use the new setup code in `factory/auth/enroll.json`. Corrupt state
+and incompatible configured origins fail closed; restore the old configuration
+or deliberately recover rather than silently rebinding existing keys.
+
+| Surface | Access |
+| --- | --- |
+| Local and public dashboard data/actions/media/SSE | Passkey session required |
+| Static app shell, version, access status and ceremonies | Public; no run or configuration data |
+| First or recovery enrollment | Operator setup code; one key only |
+| Additional enrollment/removal | Recently verified session or a fresh operator code |
+| Provider webhook/OAuth listener (3456 in production) | Existing provider signature/OAuth checks; independent of dashboard login |
+
+### Rollout and device checks
+
+This change does not deploy, restart or alter production Nix/zrok2 services.
+The parent must review the code, configure the reserved HTTPS origin, confirm
+that zrok2 preserves authority/Origin and retire the legacy localhost-rewriting
+proxy before public rollout. The UI tunnel can keep target `127.0.0.1:3457`;
+authentication applies even to rewritten localhost requests. Verify signed
+Linear deliveries, rejection of unsigned deliveries and OAuth callback access
+on the separate provider listener.
+
+Physical iPhone Safari and installed-PWA validation remains a human check: enroll
+at the public HTTPS origin, log out/in, add a second key, revoke it, test expiry
+and reopen the installed app. Chromium emulation and a virtual authenticator do
+not prove biometric, Safari or synced-phone behavior. Connection failure means
+reconnect to sign in; a browser cancellation means retry with a fresh setup code
+when enrollment has consumed its previous authorization.
 
 ## Install Bob’s Factory
 

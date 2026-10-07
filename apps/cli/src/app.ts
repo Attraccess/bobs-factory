@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "reflect-metadata";
 import { isPackagedExecutable } from "bobs-factory-core";
 
 if (isPackagedExecutable)

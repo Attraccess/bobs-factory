@@ -53,9 +53,11 @@ existing session and retain its accepted definition. See [Factory docs](docs/FAC
 
 The dashboard retains runs, chats, evidence, review decisions and checkpoints.
 PWA installation still requires a browser-supported secure origin; a service
-worker/version guard cannot make an insecure remote dashboard safe. Current
-ngrok support remains; zrok2 (#39), protected frontend access (#40), and identity
-configuration (#57) are separate work.
+worker/version guard cannot make an insecure remote dashboard safe. Every dashboard address requires a passkey session, including localhost.
+Configure the exact public HTTPS origin and enroll a passkey using the local
+operator setup code; see [passkey setup and recovery](docs/FACTORY.md#passkey-access-and-first-setup).
+Current ngrok support remains; zrok2 (#39) and identity configuration (#57) are
+separate work.
 
 ## Migrate Cyrus
 

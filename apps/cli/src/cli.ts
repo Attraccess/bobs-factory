@@ -1,4 +1,13 @@
-import { factoryVersion, setGlobalErrorReporter } from "bobs-factory-core";
+import { resolve } from "node:path";
+import {
+	factoryVersion,
+	resolvePath,
+	setGlobalErrorReporter,
+} from "bobs-factory-core";
+import {
+	authorizeFactoryEnrollment,
+	requestFactoryAuthRecovery,
+} from "bobs-factory-edge-worker";
 import { Command } from "commander";
 import packageJson from "../package.json" with { type: "json" };
 import { Application } from "./Application.js";
@@ -41,7 +50,30 @@ program
 	.option("--repo <path>", "Repository for local launch", process.cwd())
 	.option("--port <port>", "Loopback dashboard port for local launch", "3457")
 	.option("--agent <agent>", "Prepared agent CLI", "claude")
-	.option("--model <model>", "Agent model");
+	.option("--model <model>", "Agent model")
+	.option("--origin <origin>", "Exact public HTTPS dashboard origin")
+	.option("--session-hours <hours>", "Passkey session lifetime (1–24 hours)");
+
+// Machine-owner setup/recovery must remain outside the dashboard auth boundary.
+program
+	.command("factory-auth")
+	.description(
+		"Authorize one Factory passkey enrollment or deliberately recover Factory authentication",
+	)
+	.option("--recover", "Revoke all Factory credentials and sessions")
+	.option("--confirm <text>", "Deliberate recovery confirmation")
+	.action((options: { recover?: boolean; confirm?: string }) => {
+		const home = resolve(resolvePath(program.opts().home));
+		if (options.recover) {
+			requestFactoryAuthRecovery(home, options.confirm);
+			console.log(
+				"Factory authentication recovery requested. Use the new setup code from factory/auth/enroll.json.",
+			);
+		} else
+			console.log(
+				`Single-use Factory setup code (expires in ten minutes): ${authorizeFactoryEnrollment(home)}`,
+			);
+	});
 
 program
 	.command("local", { isDefault: true })

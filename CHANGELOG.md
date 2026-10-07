@@ -61,6 +61,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Reconcile current passkey protection, Codex startup recovery and dependency cleanup with the binary CLI and renamed settings. Preserve cancellation and saved-review recovery. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
 - Cancel Codex startup when a run is stopped, releasing its child and capacity slot so shutdown and restart can finish. Interrupt late turn starts even after their request times out, while preserving other runs sharing the same process. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Preserve explicit feedback-provider choices and same-step recovery when integrating current main with Bob’s Factory naming. Keep saved answers usable after restart when visual-review assistance questions are unchanged; changed questions still require draft review. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
@@ -70,6 +72,10 @@ All notable changes to this project will be documented in this file.
 - Attribute unlabeled assistant activity to Bob’s Factory and explain how to recover from a missing or invalid repository directory before launching Git. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Reconcile the fork with current instance-capacity, mocked F1, browser and workflow-recovery fixes while retaining migrated names and completed results; restore the pre-commit schema check with the renamed package filter. Block migration with capacity-directory overrides until custom/shared policy and queues are explicitly reconciled into the instance pool. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+- Make passkey sign-in the default, fold operator setup away for existing installations, and move key management and sign-out into Settings. Let signed-out Factory users update a cached app after deployment so passkey login can continue, including from Settings and after signing out there. Honor the configured session lifetime when launching Factory, with explicit CLI settings taking precedence and invalid values rejected. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
+
+- Retry Codex startup failures without saving nonexistent conversations, and recover older invalid capture checkpoints while preserving completed work, evidence and review allowances. ([#40](https://github.com/Attraccess/bobs-factory/pull/40))
+
 - Make Bob’s questions, progress messages and review summaries easier to follow: lead with the decision or outcome, explain choices in everyday words, and keep internal test IDs in technical details. Saved review-fix workflows now receive the same question guidance as clarification. ([#39](https://github.com/Attraccess/bobs-factory/pull/39))
 
 - Resume older paused runs with the exact PR comments needing assessment, instead of asking operators to restore missing internal feedback context. ([#38](https://github.com/Attraccess/bobs-factory/pull/38))
