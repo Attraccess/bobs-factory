@@ -7615,6 +7615,7 @@ ${taskSection}`;
 				context.log(JSON.stringify(message), "agent");
 		};
 		context.progress = await roleProgress(context);
+		this.refreshFactoryFeedbackContext(context);
 		const factoryContext = prepareFactoryContext({
 			...(context.input && typeof context.input === "object"
 				? context.input
@@ -7735,10 +7736,23 @@ ${taskSection}`;
 				validateGuideGeneration(output);
 				validateGuideCoverage(context, output);
 			}
+			if (step.id === "ci-fix") {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				output = recordFeedbackAssessment(context, output);
+			}
 			return output;
 		} catch (error) {
 			throw outputValidationError(value, error);
 		}
+	}
+
+	private refreshFactoryFeedbackContext(context: ExecutionContext): void {
+		if (context.step.id !== "ci-fix" || !this.factoryRuntime) return;
+		context.input = {
+			...(context.input as Record<string, unknown>),
+			chatMessages: this.factoryRuntime.chatMessages(context.run.id),
+		};
 	}
 
 	private async finalizeFactoryAgentOutput(
@@ -7749,8 +7763,6 @@ ${taskSection}`;
 		let output = this.validateFactoryAgentOutput(context, value);
 		if (step.id === "guide") output = await finalizeGuideFiles(context, output);
 		if (step.id === "capture") output = captureEvidence(context, output);
-		if (step.id === "ci-fix")
-			output = recordFeedbackAssessment(context, output);
 		const completed = (await roleProgress(context)).currentRevision;
 		if (completed && step.id === "visual-review" && step.qaContract) {
 			output = {

@@ -11,10 +11,12 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnExecution as spawn } from "cyrus-core";
 import { z } from "zod";
+import { feedbackInstructionFingerprint } from "./FeedbackPolicy.js";
 import { dependencyCovers, dependencyHashes } from "./Incremental.js";
 import {
 	assessFeedback,
 	delay,
+	feedbackWorkFingerprint,
 	inspectReadinessWithRetry,
 	reportReadiness,
 } from "./MergeReadiness.js";
@@ -667,6 +669,7 @@ export class FactoryTools {
 					url,
 				);
 				const previousBase = readPath(run.outputs, "ci.baseSha");
+				assessFeedback(context, readiness);
 				const feedback = readPath(run.outputs, "ci.blockers") as
 					| { kind: string; action?: string }[]
 					| undefined;
@@ -674,7 +677,12 @@ export class FactoryTools {
 					feedback?.some(
 						(item) =>
 							["threads", "reviews", "revision"].includes(item.kind) &&
-							(item.action === undefined || item.action === "fix"),
+							(item.action === undefined || item.action === "fix") &&
+							(readPath(run.outputs, "ci-fix.reviewRequired") !== false ||
+								readiness.blockers.some(
+									(current) =>
+										current.kind === item.kind && current.action === "fix",
+								)),
 					) ||
 					(feedback?.some((item) => item.kind === "comments") &&
 						readPath(run.outputs, "ci-fix.reviewRequired") !== false);
@@ -708,21 +716,50 @@ export class FactoryTools {
 					failures(readiness.checks).length > 0 &&
 					JSON.stringify(failures(previousChecks)) ===
 						JSON.stringify(failures(readiness.checks));
+				const previous = run.outputs.ci as
+					| import("./MergeReadiness.js").MergeReadiness
+					| undefined;
+				const fingerprint = feedbackWorkFingerprint(readiness);
+				const repeated = (run.history ?? [])
+					.slice(0, -1)
+					.some(
+						(item) =>
+							item.step === `${prefix}ci-fix` &&
+							readPath(item.output, "feedbackAssessment.fingerprint") ===
+								fingerprint &&
+							readPath(item.output, "feedbackAssessment.instructionsSha256") ===
+								feedbackInstructionFingerprint(context),
+					);
+				const unchangedWork =
+					!dirty &&
+					previous?.headSha === headSha &&
+					previous.baseSha === readiness.baseSha &&
+					fingerprint !== undefined &&
+					fingerprint === feedbackWorkFingerprint(previous) &&
+					(!reviewRequired || repeated);
 				return {
 					reviewRequired,
 					headSha,
 					baseSha: readiness.baseSha,
-					...(unchangedFailures
+					...(unchangedFailures || unchangedWork
 						? {
 								questions: [
-									`The CI fixer made no revision change and these same checks still fail: ${readiness.checks
-										.filter((check) => check.bucket === "fail")
-										.map(
-											(check) => `${check.name}: ${check.link ?? check.state}`,
-										)
-										.join(
-											"; ",
-										)}. Resolve the external blocker or provide a corrective direction before retrying. The failures remain blocking.`,
+									unchangedFailures
+										? `The CI fixer made no revision change and these same checks still fail: ${readiness.checks
+												.filter((check) => check.bucket === "fail")
+												.map(
+													(check) =>
+														`${check.name}: ${check.link ?? check.state}`,
+												)
+												.join(
+													"; ",
+												)}. Resolve the external blocker or provide a corrective direction before retrying. The failures remain blocking.`
+										: `The CI fixer made no progress on the same actionable blockers: ${readiness.blockers
+												.filter((blocker) => blocker.action === "fix")
+												.map((blocker) => blocker.message)
+												.join(
+													"; ",
+												)}. Resolve the blocker or provide a corrective direction before retrying. Review and merge safeguards remain enforced.`,
 								],
 							}
 						: {}),
