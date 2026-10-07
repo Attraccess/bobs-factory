@@ -1,6 +1,11 @@
 import { defaultWorkflows } from "./defaultWorkflows.js";
 import { GeneratedGuideSchema, GuideSchema } from "./FactoryResults.js";
 import { OutputValidationError } from "./OutputValidation.js";
+import {
+	activeRequirements,
+	aggregateForContext,
+	assertAggregateRevision,
+} from "./SpecialistReview.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 /** Validate guide coverage against the entire PR, not the last agent's delta. */
@@ -9,6 +14,39 @@ export function validateGuideCoverage(
 	value: unknown,
 ): void {
 	const guide = GuideSchema.parse(value);
+	const aggregate = aggregateForContext(context);
+	if (aggregate) {
+		assertAggregateRevision(
+			aggregate,
+			context.progress?.currentRevision?.headSha ?? "",
+		);
+		const requirements = activeRequirements(aggregate.baseline.inventory);
+		if (
+			guide.requirements.length !== requirements.length ||
+			requirements.some(
+				(r, i) =>
+					guide.requirements[i]?.requirementId !== r.id ||
+					guide.requirements[i]?.criterion !== r.criterion,
+			)
+		)
+			throw new Error(
+				"Guide requirements must match every active frozen inventory ID and criterion in inventory order",
+			);
+		for (const [i, r] of requirements.entries()) {
+			const assessment = aggregate.coverage.find(
+				(a) => a.requirementId === r.id,
+			)!;
+			const expected = {
+				met: "supported",
+				not_met: "gap",
+				deliberately_skipped: "waived",
+			}[assessment.status];
+			if (guide.requirements[i]!.status !== expected)
+				throw new Error(
+					`${r.id}: guide status cannot differ from validated review coverage`,
+				);
+		}
+	}
 	const stock = defaultWorkflows
 		.find((w) => w.id === "factory-pipeline")!
 		.steps.find((s) => s.id === "guide")!;
@@ -88,4 +126,56 @@ export function validateGuideCoverage(
 
 export function validateGuideGeneration(value: unknown): void {
 	GeneratedGuideSchema.parse(value);
+}
+
+/** Attach authoritative coverage instead of trusting an agent-authored coverage table. */
+export function attachRequirementCoverage(
+	context: ExecutionContext,
+	value: unknown,
+): unknown {
+	const aggregate = aggregateForContext(context);
+	if (!aggregate) return value;
+	const guide = GuideSchema.parse(value);
+	const inventory = aggregate.baseline.inventory;
+	return {
+		...guide,
+		requirementCoverage: {
+			inventoryVersion: inventory.version,
+			inventoryDigest: inventory.digest,
+			headSha: aggregate.baseline.headSha,
+			baseSha: aggregate.baseline.baseSha,
+			assessments: activeRequirements(inventory).map((r) => {
+				const assessment = aggregate.coverage.find(
+					(a) => a.requirementId === r.id,
+				)!;
+				return {
+					...assessment,
+					criterion: r.criterion,
+					decision: inventory.decisions.find(
+						(d) => d.id === assessment.decisionId,
+					),
+				};
+			}),
+			reviewers: [
+				...new Set([
+					...aggregate.reviewers.map((r) => r.stamp.reviewer),
+					...aggregate.rawFindings.map((f) => f.reviewer),
+				]),
+			].map((reviewer) => {
+				const receipt = aggregate.reviewers.find(
+					(r) => r.stamp.reviewer === reviewer,
+				);
+				return {
+					reviewer,
+					summary:
+						receipt?.summary ?? "Retained findings from prior review rounds",
+					findings: aggregate.rawFindings
+						.filter((f) => f.reviewer === reviewer)
+						.map((f) => ({ ...f, id: f.id.slice(reviewer.length + 1) })),
+					disagreements: receipt?.disagreements ?? [],
+					disputeResolutions: receipt?.disputeResolutions ?? [],
+				};
+			}),
+		},
+	};
 }

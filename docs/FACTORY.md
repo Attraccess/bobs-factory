@@ -356,7 +356,7 @@ a local image beside the question; nested paths and external symlink targets
 are rejected. Visuals supplement a question that is understandable on its own.
 
 The factory runs clarification → decisions → planner/plan-review loop →
-implementation → push/draft PR → code-review/fix loop → CI/fix loop → QA story and screenshot
+implementation → push/draft PR → requirement inventory → specialist review/fix loop → CI/fix loop → QA story and screenshot
 plan → QA execution/screenshot review/fix loop → human review guide. The implementer
 receives only the accepted plan and its asset references. Reviews retain earlier
 findings and fixer dispositions, use stable finding IDs, discard severity 1,
@@ -896,3 +896,24 @@ exactly-once delivery. Terminal tickets are retained for ownership review.
 Taskbot comments and status mutations identify `bobs-factory` as author. Its
 attachment tool has no author field; the accompanying milestone comment records
 attribution using the supported provider contract.
+
+
+### Specialist review and complete requirement coverage
+
+New stock Factory and Takeover recipes extract requirements after delivery, then run six separately visible agents in `specialist-review.groups`: security/data protection, architecture/module boundaries, repository fit/integration, simplicity/maintainability, correctness/verification, and business requirements/acceptance. The existing machine pool admits these agents as slots become available. Parent fanout consumes no slot. Reviewers inspect and report; corrective work remains outside fanout.
+
+Recipes exposes every role's prompt, runner/model, reasoning and output settings. Edit the JSON to add or remove groups (at most eight), including optional accessibility/interaction, performance/resource use, or deployment/operations specialists. Keep briefs distinct and require concrete evidence rather than subjective preferences. Changing recipes affects later launches; accepted runs retain their frozen definitions and checkpoints.
+
+Agent `reviewContract` values are `inventory-v1`, `specialist-v1`, and `coverage-v1`. They require structured JSON output. Extraction also requires `askQuestions: true` and complete input context. A configured review fanout declares `review: {"inventory":"extract-requirements"}`. Its aggregate `review-gate` tool declares `review: {"inventory":"extract-requirements","fanout":"specialist-review"}`. References name steps in the same graph, including a called workflow's graph. There must be exactly one coverage supplier. Remove that role only after configuring a replacement with `coverage-v1`; its ID, prompt and model are editable. Saving incompatible contracts or removing coverage without replacement fails with an actionable error. Removed roles never run secretly.
+
+Extraction reads original scope, acceptance criteria, complete paginated discussions and assets, clarification answers, accepted plans and decisions, later steering, and applicable takeover/PR discussions. It retains stable IDs, version history, testable criteria, source receipts, suggestions and superseded records. Amendments need a reason; historical records and accepted decisions cannot disappear. Unavailable sources and unresolved conflicts require an outside-fanout question checkpoint. Structural checks do not prove semantic extraction completeness: the extractor must inspect sources.
+
+Before fanout, the runtime freezes one clean head/base revision, inventory version/digest, accepted context, history cutoff and reviewer list. Later steering remains pending for another round. Each output gets its own execution path and runtime revision stamp. An incomplete, cancelled, failed, malformed or stale reviewer cannot approve. Completed branches survive restart and retry without replay. Substantive fixes, changed scope or uncertain provenance return through extraction; informational feedback may keep the existing unchanged-code/base shortcut.
+
+The coverage supplier assesses every active ID exactly once as `met`, `not_met`, or `deliberately_skipped`, with concrete evidence and a reason. Unmet requirements need actionable rating-2/3 findings. A deliberate skip requires an explicit accepted decision with `kind:"skip"`, its precise `requirementIds`, accepting person, rationale and source. A suggestion, reviewer preference or QA exclusion cannot waive scope. Missing, duplicate and unknown IDs or unsupported skips fail validation.
+
+The gate namespaces findings as `reviewer:local-id`, retains raw rating-1 observations and dispositions, and blocks on open rating-2/3 findings or unresolved disagreements. Fixer dispositions require reassessment. Omitted complaints remain open; settled complaints reopen only with fresh evidence or changed requirements. Removed reviewers' unresolved complaints remain blocking until another configured reviewer supplies an evidence-backed `inheritedDispositions` entry. Disagreement removal requires `disputeResolutions` with evidence and reason.
+
+QA stories use stable inventory IDs. Every active requirement needs a relevant executable story or explicit justified exclusion. Excluding executable QA does not waive the requirement. Failed or blocked required QA still prevents handoff regardless of earlier business coverage. The human guide uses the frozen active inventory order and runtime-attached coverage; expandable evidence shows accepted skips, specialist attribution, observations, disputes and executed QA receipts. Clean current-head/base checks, screenshots and fresh explicit human approval remain effective.
+
+Untouched legacy stock review segments upgrade conservatively and idempotently for future launches. Customized general reviewers, guide prompts, gate arguments, and consumers of legacy review output keep their legacy contracts. To opt in, copy the extraction/fanout/gate segment from the stock shared pipeline and retarget substantive correction loops through extraction. Preserve your role settings and QA/human approval gates. Active, waiting, failed and restored accepted runs are not rewritten.

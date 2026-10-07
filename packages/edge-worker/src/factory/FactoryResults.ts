@@ -115,7 +115,51 @@ export const QaScopeSchema = VisualScopeSchema.and(
 	for (const message of scopeIssues(scope))
 		context.addIssue({ code: "custom", message });
 });
+export const RequirementCoverageSchema = z.object({
+	inventoryVersion: z.number().int(),
+	inventoryDigest: text,
+	headSha: text,
+	baseSha: text,
+	assessments: z.array(
+		z.object({
+			requirementId: text,
+			criterion: text,
+			status: z.enum(["met", "not_met", "deliberately_skipped"]),
+			evidence: z.array(text),
+			reason: text,
+			decision: z
+				.object({
+					id: text,
+					acceptedBy: text,
+					rationale: text,
+					source: z.object({ source: text, reference: text }),
+				})
+				.optional(),
+		}),
+	),
+	reviewers: z.array(
+		z.object({
+			reviewer: text,
+			summary: text,
+			findings: z.array(
+				z.object({
+					id: text,
+					rating: z.number(),
+					summary: text,
+					evidence: text,
+					status: text,
+					reason: text.optional(),
+				}),
+			),
+			disagreements: z.array(text),
+			disputeResolutions: z
+				.array(z.object({ disagreement: text, reason: text, evidence: text }))
+				.optional(),
+		}),
+	),
+});
 export const GuideSchema = z.object({
+	requirementCoverage: RequirementCoverageSchema.optional(),
 	tldr: short(90).optional(),
 	system: SystemSchema.optional(),
 	reviewFiles: ReviewFilesReferenceSchema.optional(),
@@ -179,6 +223,7 @@ export const GuideSchema = z.object({
 	requirements: z
 		.array(
 			z.object({
+				requirementId: text.optional(),
 				criterion: text,
 				status: z.enum(["supported", "gap", "unverified", "waived"]),
 				evidence: z.array(text).min(1),

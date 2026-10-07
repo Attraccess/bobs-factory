@@ -41,7 +41,7 @@ export async function roleProgress(
 	context: ExecutionContext,
 ): Promise<RoleProgress> {
 	const { run } = context,
-		key = run.step ?? context.step.id;
+		key = context.stepKey ?? run.step ?? context.step.id;
 	const previousRevision = run.roleRevisions?.[key];
 	const previousOutput = [...run.history]
 		.reverse()
@@ -55,7 +55,10 @@ export async function roleProgress(
 		uncertain: true,
 		newHistory: context.step.inputs
 			? []
-			: run.history.slice(previousRevision?.historyLength ?? 0),
+			: (context.reviewBaseline
+					? run.history.slice(0, context.reviewBaseline.historyLength)
+					: run.history
+				).slice(previousRevision?.historyLength ?? 0),
 	};
 	const git = async (args: string[]) =>
 		(

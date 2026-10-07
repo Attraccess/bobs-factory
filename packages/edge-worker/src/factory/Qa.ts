@@ -255,6 +255,33 @@ export function qaRequirementIssues(
 	outputs: Record<string, unknown>,
 	answers: unknown[],
 ) {
+	const aggregate = outputs["review-gate"] as
+		| {
+				baseline?: {
+					inventory?: {
+						requirements: { id: string; classification: string }[];
+					};
+				};
+		  }
+		| undefined;
+	const inventory = aggregate?.baseline?.inventory;
+	if (inventory) {
+		const ids = inventory.requirements
+			.filter((r) => r.classification === "active")
+			.map((r) => r.id);
+		const issues = scope.stories.flatMap((s) =>
+			s.requirementRefs
+				.filter((r) => !ids.includes(r))
+				.map((r) => `${s.id}: unknown active requirement ID ${r}`),
+		);
+		for (const id of ids)
+			if (
+				!scope.stories.some((s) => s.requirementRefs.includes(id)) &&
+				!scope.exclusions.some((e) => e.requirementRef === id)
+			)
+				issues.push(`${id}: no QA story or explicit justified exclusion`);
+		return issues;
+	}
 	const clarify = (outputs.clarify ?? outputs.decisions) as
 		| { requirements?: string[]; decisions?: unknown[] }
 		| undefined;

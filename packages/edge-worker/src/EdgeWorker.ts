@@ -184,6 +184,7 @@ import {
 	toolArguments,
 } from "./factory/FactoryTools.js";
 import {
+	attachRequirementCoverage,
 	validateGuideCoverage,
 	validateGuideGeneration,
 } from "./factory/Guide.js";
@@ -223,6 +224,7 @@ import {
 	SessionChat,
 	steeringState,
 } from "./factory/SessionChat.js";
+import { validateContractOutput } from "./factory/SpecialistReview.js";
 import {
 	inspectPullRequest,
 	type TakeoverPullRequest,
@@ -7698,7 +7700,7 @@ ${taskSection}`;
 	): unknown {
 		const { run, step } = context;
 		try {
-			let output = value;
+			let output = validateContractOutput(context, value);
 			if (
 				step.qaContract ||
 				["factory", "takeover"].includes(run.workflow.id) ||
@@ -7731,7 +7733,11 @@ ${taskSection}`;
 	): Promise<unknown> {
 		const { run, step } = context;
 		let output = this.validateFactoryAgentOutput(context, value);
-		if (step.id === "guide") output = await finalizeGuideFiles(context, output);
+		if (step.id === "guide")
+			output = await finalizeGuideFiles(
+				context,
+				attachRequirementCoverage(context, output),
+			);
 		if (step.id === "capture") output = captureEvidence(context, output);
 		if (step.id === "ci-fix")
 			output = recordFeedbackAssessment(context, output);
@@ -7750,7 +7756,7 @@ ${taskSection}`;
 		if (completed) {
 			run.roleRevisions ??= {};
 			completed.historyLength = run.history.length + 1;
-			run.roleRevisions[run.step ?? step.id] = completed;
+			run.roleRevisions[context.stepKey ?? run.step ?? step.id] = completed;
 		}
 		return output;
 	}
