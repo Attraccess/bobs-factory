@@ -84,7 +84,7 @@ their UI and receive their own update notice. Installation and frontend updates
 do not stop, restart, approve or replace backend runs.
 
 An explicit update saves a bounded, tab-local snapshot of unsent launch/chat/
-answer/feedback/recipe edits (including machine capacity and global title-agent settings), selected
+answer/feedback/recipe edits (including instance capacity and global title-agent settings), selected
 route, open panels, inspector selection
 and stable conversation reading anchors. It contains no query cache, transcript,
 artifact or screenshot. The snapshot expires after 30 minutes, is limited to
@@ -94,7 +94,7 @@ guarantee preservation. Denied/full session storage postpones the update with
 edits still on screen. Copy unusually large drafts before retrying.
 
 Restored drafts are never sent automatically. If questions, review gates or
-recipe, machine-capacity or title-agent settings changed, review the warning and current state before explicitly
+recipe, instance-capacity or title-agent settings changed, review the warning and current state before explicitly
 acknowledging the draft. Recovered copies remain available when a former gate is
 no longer open. Reading restoration fetches the relevant bounded history page;
 if its anchor is no longer retained, the app explains that limitation.
@@ -735,21 +735,24 @@ guarantee of flawless software.
 - File dependency and image hashes support screenshot reuse; unknown global
   effects require fresh evidence. Brief recap updates never waive fresh approval.
 
-### Machine capacity
+### Instance capacity
 
-Factory and integration/chat sessions use one shared machine pool. The default is
+Factory and integration/chat sessions in one Bob’s Factory instance use one pool. The default is
 four slots, including installations that previously omitted `maxConcurrentSessions`.
 Existing numeric settings seed a new pool. Joining workers without a setting adopt
 the persisted policy; an explicit conflicting setting is reported in Recipes.
-Change **Machine capacity** in Recipes to update the durable shared limit. Increasing
+Change **Instance capacity** in Recipes to update that instance's durable limit. Increasing
 it admits queued work; decreasing it lets existing execution drain. A deliberate
 configuration edit updates the policy, and removing the numeric setting restores
 four. Unrelated config reloads and stale startup settings do not reset it.
 
-The coordinator lives at `~/.bobs-factory/machine-capacity`, independently of each worker's
-`--home`, repository or worktree. Set `BOBS_FACTORY_CAPACITY_DIRECTORY` to an accessible
-shared directory for multiple service accounts, or an isolated directory for tests.
-All participating workers must use the coordinator. This release requires POSIX
+The coordinator lives at `<factoryHome>/machine-capacity`. Separate `--home`
+directories have independent limits and queues, so temporary F1 instances do not
+compete with the instance running their parent QA step. Processes using the same
+Factory home share its durable policy and restart queue. Repositories and worktrees
+within an instance share that instance's pool. `BOBS_FACTORY_CAPACITY_DIRECTORY` no longer
+overrides this location. The default home retains `~/.bobs-factory/machine-capacity` and
+its saved policy. This release requires POSIX
 process inspection (`ps`) for reconciliation; unsupported or inaccessible process
 inspection fails closed. Existing older worker versions must be upgraded to join.
 
@@ -771,7 +774,7 @@ Queued work remains active and stoppable. Ordinary integration/chat sessions rep
 capacity queueing before the provider has started. Cancelled queue entries never
 start, and running/stopping execution remains counted until cleanup has settled.
 
-Primary work is FIFO across processes. The oldest background title request is admitted
+Primary work is FIFO within the instance. The oldest background title request is admitted
 after at most eight primary admissions while it is eligible. Queue identities and
 ordering survive restart; graceful shutdown parks recoverable work without recording
 user termination. Startup reconciles surviving local descendants before admission.

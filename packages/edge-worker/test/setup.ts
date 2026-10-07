@@ -4,14 +4,9 @@ import { join } from "node:path";
 import type { SDKMessage } from "bobs-factory-claude-runner";
 import { vi } from "vitest";
 
-process.env.BOBS_FACTORY_CAPACITY_DIRECTORY = mkdtempSync(
-	join(tmpdir(), "cyrus-test-capacity-"),
-);
-
-// Tests own an isolated pool; legacy source scans must also stay isolated.
-process.env.BOBS_FACTORY_MIGRATION_SOURCE_CAPACITY_DIRECTORY = join(
-	process.env.BOBS_FACTORY_CAPACITY_DIRECTORY,
-	"legacy",
+// Legacy migration safety checks must not inspect host-owned coordinator state.
+process.env.BOBS_FACTORY_MIGRATION_SOURCE_CAPACITY_DIRECTORY = mkdtempSync(
+	join(tmpdir(), "bobs-factory-test-legacy-capacity-"),
 );
 
 // Disable the remote session store in tests so EdgeWorker construction

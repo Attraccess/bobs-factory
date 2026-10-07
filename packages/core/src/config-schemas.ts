@@ -550,9 +550,9 @@ export const EdgeConfigSchema = z.object({
 
 	/**
 	 * Maximum number of agent runner sessions allowed to execute concurrently
-	 * across all repositories and platforms. Additional session starts wait in
+	 * across this instance's repositories and platforms. Additional starts wait in
 	 * FIFO order for a free slot and begin automatically as running sessions
-	 * finish. Omit for unlimited (the historical behavior).
+	 * finish. Defaults to four slots, shared with intensive workflow steps.
 	 *
 	 * Use this on hosts where an unbounded burst of webhook-driven sessions
 	 * can exhaust memory or CPU. Hot-reloads with the config file: raising the
@@ -565,7 +565,7 @@ export const EdgeConfigSchema = z.object({
 		.positive()
 		.optional()
 		.describe(
-			"Shared machine capacity for scheduled agents and intensive workflow steps. Defaults to four; explicit limits seed or must agree with the machine policy.",
+			"Instance capacity for scheduled agents and intensive workflow steps. Defaults to four; explicit limits seed or must agree with this instance's saved policy.",
 		),
 
 	/**

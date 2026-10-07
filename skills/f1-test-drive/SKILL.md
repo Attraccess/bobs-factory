@@ -57,6 +57,22 @@ for that scenario, plus setup and cleanup.
 
 ## Test Drive Protocol
 
+### Agent Mode
+
+Automated F1 drives use deterministic mocked agents. The standard
+`apps/f1/server.ts` defaults to `F1_AGENT_MODE=mock`, intercepting every provider,
+Factory role, chat session, and background title. Set `F1_MOCK_RESPONSE` to a
+fixture reply when a scenario needs structured output. For a custom embedded
+EdgeWorker, supply `f1AgentHandlers("mock", fixtureResponse)` from
+`apps/f1/src/MockAgentRunner.ts` through `config.handlers` as well.
+
+Use mocks or controlled scripts to assert orchestration, routing, lifecycle,
+and activity output; use recorded transcript replays for native adapter events.
+Report that evidence as mocked or scripted, without claiming real model/tool
+behavior. Live CLI/API validation consumes provider credits and requires an
+explicit user request authorizing that cost before setting `F1_AGENT_MODE=live`
+or constructing native runners in a custom fixture.
+
 ### Phase 1: Setup
 
 1. Create a fresh test repository (if needed):
@@ -67,7 +83,7 @@ for that scenario, plus setup and cleanup.
 
 2. Start F1 server:
    ```bash
-   BOBS_FACTORY_PORT=3600 BOBS_FACTORY_REPO_PATH=/tmp/f1-test-drive-<timestamp> bun run apps/f1/server.ts &
+   F1_AGENT_MODE=mock BOBS_FACTORY_PORT=3600 BOBS_FACTORY_REPO_PATH=/tmp/f1-test-drive-<timestamp> bun run server.ts &
    ```
 
 3. Verify server health:
@@ -106,7 +122,7 @@ for that scenario, plus setup and cleanup.
 
 ### Phase 3.5: Slack Chat Session Verification (optional)
 
-Use when validating the Slack → ChatSessionHandler → ClaudeRunner path. F1 exposes a test-only endpoint `/cli/dispatch-chat` that injects a synthetic `app_mention` event without going through Slack signature verification (`SlackChatAdapter` no-ops Slack API calls when `slackBotToken` is undefined).
+Use when validating Slack → ChatSessionHandler → mocked runner orchestration. F1 exposes a test-only endpoint `/cli/dispatch-chat` that injects a synthetic `app_mention` event without going through Slack signature verification (`SlackChatAdapter` no-ops Slack API calls when `slackBotToken` is undefined).
 
 1. Dispatch a synthetic chat event:
    ```bash
@@ -120,7 +136,7 @@ Use when validating the Slack → ChatSessionHandler → ClaudeRunner path. F1 e
 2. Verify shared auto-memory wiring:
    - The chat workspace exists at `<factoryHome>/slack-workspaces/<sanitized-threadKey>/`.
    - The shared auto-memory directory exists (or is lazily creatable) at `<factoryHome>/slack-memory/`.
-   - The `claude_query_options` event emitted by `ClaudeRunner` carries `cqo.settingsAutoMemoryDirectory=<factoryHome>/slack-memory`.
+   - When inspecting mock runner configuration, `settingsAutoMemoryDirectory` points to `<factoryHome>/slack-memory`. Native `claude_query_options` telemetry needs transcript replay or an explicitly authorized live drive.
 
 3. Verify per-thread workspace isolation alongside shared memory:
    - Dispatch a second event in a different channel/thread.

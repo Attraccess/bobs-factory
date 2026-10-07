@@ -65,6 +65,8 @@ export interface WorkflowCall {
 	workflowId: string;
 }
 export interface AgentCheckpoint {
+	/** Persisted per-role budget for resuming a silent provider turn. */
+	idleRetries?: number;
 	runner: NonNullable<WorkflowStep["runner"]>;
 	sessionId: string;
 	result?: {
@@ -607,7 +609,7 @@ export class WorkflowRuntime {
 		if (this.controllers.has(run.id))
 			throw new Error("Run is already executing");
 		const controller = new AbortController();
-		if (run.ticketReference && run.status === "waiting") run.status = "running";
+		if (run.status === "waiting") run.status = "running";
 		this.controllers.set(run.id, controller);
 		const execution = this.execute(run, controller, task);
 		this.executions.set(run.id, execution);
@@ -731,10 +733,10 @@ export class WorkflowRuntime {
 						run,
 						key,
 						request.phase === "queued"
-							? "Waiting for machine capacity."
+							? "Waiting for instance capacity."
 							: request.phase === "stopping"
 								? "Stopping execution; capacity remains reserved until it settles."
-								: "Machine capacity admitted execution.",
+								: "Instance capacity admitted execution.",
 					);
 				if (request)
 					run.capacityLeaves[key] = { phase: request.phase, request };
@@ -981,6 +983,24 @@ export class WorkflowRuntime {
 				state.phase = "result";
 				this.save(run);
 			}
+			// Restored waits must use current gate logic, retaining all role evidence.
+			if (
+				step.tool === "visual-gate" &&
+				state.phase === "waiting" &&
+				step.qaContract
+			) {
+				output = outputs[step.id] = await this.hooks.tool(context);
+				state.phase = "result";
+				this.save(run);
+			}
+			if (
+				step.tool === "visual-gate" &&
+				Array.isArray(readPath(output, "findings")) &&
+				(readPath(output, "findings") as unknown[]).length
+			) {
+				run.status = "running";
+				run.questions = [];
+			}
 			if (
 				step.tool === "draft-pr" ||
 				step.tool === "handoff" ||
@@ -1038,7 +1058,12 @@ export class WorkflowRuntime {
 			if (
 				step.tool === "visual-gate" &&
 				(readPath(output, "captureBlocked") === true ||
-					readPath(output, "qaBlocked") === true)
+					readPath(output, "qaBlocked") === true ||
+					readPath(output, "qaRetry") === true) &&
+				!(
+					Array.isArray(readPath(output, "findings")) &&
+					(readPath(output, "findings") as unknown[]).length
+				)
 			) {
 				// Existing runs keep their frozen graph. Recover inside that graph rather
 				// than replacing its recipe or rerunning implementation/code fixes.
@@ -1059,6 +1084,18 @@ export class WorkflowRuntime {
 					throw new Error(
 						"QA or visual evidence is incomplete and this recipe has no capture → visual-review → visual-gate recovery path. Configure that path for a new run; missing evidence cannot be approved.",
 					);
+				if (readPath(output, "qaRetry") === true) {
+					checkpoint.current = capture.id;
+					checkpoint.active = undefined;
+					run.questions = [];
+					run.status = "running";
+					this.log(
+						run,
+						key,
+						`Retrying invalid QA evidence: ${JSON.stringify(readPath(output, "evidenceIssues"))}`,
+					);
+					continue;
+				}
 				const questions = readPath(output, "questions");
 				if (
 					!Array.isArray(questions) ||
@@ -1077,7 +1114,28 @@ export class WorkflowRuntime {
 				);
 				continue;
 			}
-			if (step.askQuestions) {
+			if (
+				step.tool === "review-after-fix" &&
+				Array.isArray(readPath(output, "questions")) &&
+				(readPath(output, "questions") as unknown[]).length
+			) {
+				if (!steps.some((item) => item.id === "ci-fix"))
+					throw new Error("CI assistance has no configured fixer");
+				if (state.phase !== "answered")
+					await this.waitForAnswers(
+						run,
+						readPath(output, "questions") as string[],
+						signal,
+						state,
+					);
+				checkpoint.current = "ci-fix";
+				checkpoint.active = undefined;
+				continue;
+			}
+			if (
+				step.askQuestions ||
+				(step.id === "ci-fix" && Array.isArray(readPath(output, "questions")))
+			) {
 				const questions = readPath(output, "questions");
 				if (
 					!Array.isArray(questions) ||

@@ -314,7 +314,7 @@ export class FactoryTools {
 			return revision && !revision.dirty && revision.headSha === headSha;
 		});
 		const coverage = qaCoverage(scope, capture);
-		coverage.blocked.push(
+		coverage.errors.push(
 			...qaRequirementIssues(scope, run.outputs, run.answers),
 		);
 		if (
@@ -331,7 +331,7 @@ export class FactoryTools {
 			reviewed.scopeHash !== scopeHash ||
 			reviewed.captureHash !== captureHash
 		)
-			coverage.blocked.push(
+			coverage.errors.push(
 				"QA execution or review has missing, dirty or stale revision/scope provenance. Retry QA and review on the current clean revision.",
 			);
 		const gaps = captureGaps(capture, scope.areas);
@@ -359,14 +359,14 @@ export class FactoryTools {
 					(a) => a.name === shot.area && a.states.includes(shot.state ?? ""),
 				)
 			)
-				coverage.blocked.push(
+				coverage.errors.push(
 					`Unknown screenshot task ${shot.area}/${shot.state}`,
 				);
 			const bytes = readFileSync(
 				verifiedScreenshot(shot.path, context.evidenceDir),
 			);
 			if (createHash("sha256").update(bytes).digest("hex") !== shot.imageSha256)
-				coverage.blocked.push(
+				coverage.errors.push(
 					`${shot.area}/${shot.state}: screenshot bytes changed after capture`,
 				);
 		}
@@ -395,19 +395,23 @@ export class FactoryTools {
 				) &&
 				!findings.length
 			)
-				coverage.blocked.push(
+				coverage.errors.push(
 					`${shot.area}/${shot.state}: no exact inspected-image acceptance receipt`,
 				);
 		return {
 			qaContract: QA_CONTRACT,
-			approved: !findings.length && !coverage.blocked.length,
+			approved:
+				!findings.length && !coverage.blocked.length && !coverage.errors.length,
+			...(coverage.errors.length && !coverage.blocked.length
+				? { qaRetry: true, evidenceIssues: coverage.errors }
+				: {}),
 			findings,
 			observations: capture.observations,
 			headSha,
 			scopeHash,
 			captureHash,
 			reviewHash,
-			...(coverage.blocked.length
+			...(!findings.length && coverage.blocked.length
 				? {
 						qaBlocked: true,
 						captureBlocked: assistanceGaps.length > 0,
@@ -664,11 +668,13 @@ export class FactoryTools {
 				);
 				const previousBase = readPath(run.outputs, "ci.baseSha");
 				const feedback = readPath(run.outputs, "ci.blockers") as
-					| { kind: string }[]
+					| { kind: string; action?: string }[]
 					| undefined;
 				const substantiveFeedback =
-					feedback?.some((item) =>
-						["threads", "reviews"].includes(item.kind),
+					feedback?.some(
+						(item) =>
+							["threads", "reviews", "revision"].includes(item.kind) &&
+							(item.action === undefined || item.action === "fix"),
 					) ||
 					(feedback?.some((item) => item.kind === "comments") &&
 						readPath(run.outputs, "ci-fix.reviewRequired") !== false);
@@ -688,7 +694,39 @@ export class FactoryTools {
 						? "Changed revision, substantive feedback or missing review provenance requires code review."
 						: "Accepted code and base are unchanged; returning directly to merge readiness.",
 				);
-				return { reviewRequired, headSha, baseSha: readiness.baseSha };
+				const previousChecks = readPath(run.outputs, "ci.checks");
+				const failures = (checks: unknown) =>
+					Array.isArray(checks)
+						? checks
+								.filter((check) => check.bucket === "fail")
+								.map((check) => [check.name, check.state, check.link])
+								.sort()
+						: [];
+				const unchangedFailures =
+					!reviewRequired &&
+					readPath(run.outputs, "ci.headSha") === headSha &&
+					failures(readiness.checks).length > 0 &&
+					JSON.stringify(failures(previousChecks)) ===
+						JSON.stringify(failures(readiness.checks));
+				return {
+					reviewRequired,
+					headSha,
+					baseSha: readiness.baseSha,
+					...(unchangedFailures
+						? {
+								questions: [
+									`The CI fixer made no revision change and these same checks still fail: ${readiness.checks
+										.filter((check) => check.bucket === "fail")
+										.map(
+											(check) => `${check.name}: ${check.link ?? check.state}`,
+										)
+										.join(
+											"; ",
+										)}. Resolve the external blocker or provide a corrective direction before retrying. The failures remain blocking.`,
+								],
+							}
+						: {}),
+				};
 			}
 			case "ci": {
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
@@ -798,16 +836,40 @@ export class FactoryTools {
 				);
 				if (await command("git", ["status", "--porcelain"]))
 					throw new Error("Worktree changed after review; handoff blocked");
+				if (pr.state !== "OPEN")
+					throw new Error("PR is no longer open; handoff blocked");
 				if (
 					pr.headRefOid !== headSha ||
-					readPath(run.outputs, "ci.headSha") !== headSha ||
-					(readPath(run.outputs, "ci.reviewReady") !== true &&
-						readPath(run.outputs, "ci.approved") !== true) ||
-					pr.state !== "OPEN"
-				)
-					throw new Error(
-						"PR revision or CI evidence changed; handoff blocked",
+					readPath(run.outputs, "ci.headSha") !== headSha
+				) {
+					if (
+						!context.step.branches.some(
+							(branch) =>
+								branch.when.path === "fix" && branch.when.equals === true,
+						)
+					) {
+						throw new Error(
+							"PR revision or CI evidence changed; handoff blocked",
+						);
+					}
+					const readiness = await inspectReadinessWithRetry(
+						context,
+						command,
+						url,
 					);
+					assessFeedback(context, readiness);
+					readiness.fix = true;
+					readiness.approved = false;
+					readiness.reviewReady = false;
+					readiness.blockers.push({
+						kind: "revision",
+						action: "fix",
+						message:
+							"PR/worktree revision changed after CI; synchronize the branch and repeat review and validation before handoff",
+					});
+					run.outputs.ci = readiness;
+					return readiness;
+				}
 				for (;;) {
 					const readiness = await inspectReadinessWithRetry(
 						context,

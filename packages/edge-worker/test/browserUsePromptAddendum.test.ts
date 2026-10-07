@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	appendBrowserUseAddendum,
 	BROWSER_USE_PROMPT_ADDENDUM,
+	HEADLESS_BROWSER_PROMPT_ADDENDUM,
 } from "../src/prompts/browserUsePromptAddendum.js";
 
 describe("browser-use prompt addendum", () => {
@@ -22,45 +23,47 @@ describe("browser-use prompt addendum", () => {
 		expect(BROWSER_USE_PROMPT_ADDENDUM).toMatch(/screenshot/i);
 	});
 
-	it("returns the existing prompt unchanged when the env var is unset", () => {
+	it("adds headless guidance without claiming tooling is installed when the env var is unset", () => {
 		expect(appendBrowserUseAddendum("You are Bob’s Factory.")).toBe(
-			"You are Bob’s Factory.",
+			`You are Bob’s Factory.\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}`,
 		);
-		expect(appendBrowserUseAddendum(undefined)).toBe("");
-		expect(appendBrowserUseAddendum(null)).toBe("");
+		for (const base of [undefined, null, "", " \n"]) {
+			expect(appendBrowserUseAddendum(base)).toBe(
+				HEADLESS_BROWSER_PROMPT_ADDENDUM,
+			);
+		}
 	});
 
-	it("returns the existing prompt unchanged when the env var is falsy", () => {
-		process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = "false";
-		expect(appendBrowserUseAddendum("You are Bob’s Factory.")).toBe(
-			"You are Bob’s Factory.",
-		);
-		process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = "0";
-		expect(appendBrowserUseAddendum("You are Bob’s Factory.")).toBe(
-			"You are Bob’s Factory.",
-		);
+	it("retains headless guidance when the browser availability flag is falsy", () => {
+		for (const value of ["false", "0", "", "no"]) {
+			process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = value;
+			expect(appendBrowserUseAddendum("You are Bob’s Factory.")).toBe(
+				`You are Bob’s Factory.\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}`,
+			);
+		}
 	});
 
 	it("appends the addendum with a blank-line separator when enabled", () => {
 		process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = "true";
-		const result = appendBrowserUseAddendum("You are Bob’s Factory.");
-		expect(result.startsWith("You are Bob’s Factory.\n\n")).toBe(true);
-		expect(result.endsWith(BROWSER_USE_PROMPT_ADDENDUM)).toBe(true);
+		expect(appendBrowserUseAddendum("You are Bob’s Factory.\n ")).toBe(
+			`You are Bob’s Factory.\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}`,
+		);
 	});
 
-	it("returns the addendum verbatim when enabled with no base prompt", () => {
+	it("returns both addenda when enabled with no base prompt", () => {
 		process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = "1";
-		expect(appendBrowserUseAddendum(undefined)).toBe(
-			BROWSER_USE_PROMPT_ADDENDUM,
-		);
-		expect(appendBrowserUseAddendum("")).toBe(BROWSER_USE_PROMPT_ADDENDUM);
+		for (const base of [undefined, null, ""]) {
+			expect(appendBrowserUseAddendum(base)).toBe(
+				`${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}`,
+			);
+		}
 	});
 
 	it("accepts common truthy spellings", () => {
 		for (const value of ["true", "1", "yes", "TRUE", " Yes "]) {
 			process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = value;
-			expect(appendBrowserUseAddendum("base")).toContain(
-				BROWSER_USE_PROMPT_ADDENDUM,
+			expect(appendBrowserUseAddendum("base")).toBe(
+				`base\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}`,
 			);
 		}
 	});

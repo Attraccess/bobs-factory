@@ -30,6 +30,7 @@ import {
 } from "bobs-factory-core";
 import { EdgeWorker } from "bobs-factory-edge-worker";
 import type { SlackWebhookEvent } from "bobs-factory-slack-event-transport";
+import { f1AgentHandlers, parseF1AgentMode } from "./src/MockAgentRunner.js";
 import { bold, cyan, dim, gray, green, success } from "./src/utils/colors.js";
 
 // ============================================================================
@@ -43,6 +44,7 @@ const BOBS_FACTORY_PORT = Number.parseInt(
 const BOBS_FACTORY_REPO_PATH =
 	process.env.BOBS_FACTORY_REPO_PATH || process.cwd();
 const BOBS_FACTORY_HOME = join(tmpdir(), `bobs-factory-f1-${Date.now()}`);
+const F1_AGENT_MODE = parseF1AgentMode(process.env.F1_AGENT_MODE);
 const DEFAULT_REPOS_BASE_DIR = getDefaultReposDir(BOBS_FACTORY_HOME);
 const DEFAULT_WORKTREES_BASE_DIR = getDefaultWorktreesDir(BOBS_FACTORY_HOME);
 // Optional second repository path for multi-repo orchestration testing
@@ -168,14 +170,15 @@ function createEdgeWorkerConfig(): EdgeWorkerConfig {
 
 	const config: EdgeWorkerConfig = {
 		platform: "cli" as const,
+		handlers: f1AgentHandlers(F1_AGENT_MODE, process.env.F1_MOCK_RESPONSE),
 		repositories,
 		factoryHome: BOBS_FACTORY_HOME,
 		serverPort: BOBS_FACTORY_PORT,
 		serverHost: "localhost",
 		claudeDefaultModel: "sonnet",
 		claudeDefaultFallbackModel: "haiku",
-		// Env-gated runner selection for harness validation (default unchanged).
-		// e.g. BOBS_FACTORY_DEFAULT_RUNNER=codex to exercise the Codex (app-server) path.
+		// Provider labels select the intended adapter; mock mode intercepts all of them.
+		// F1_AGENT_MODE=live is required to launch a real provider.
 		...(process.env.BOBS_FACTORY_DEFAULT_RUNNER && {
 			defaultRunner: process.env.BOBS_FACTORY_DEFAULT_RUNNER as
 				| "claude"
@@ -267,6 +270,9 @@ function displayConnectionInfo(): void {
 		`  ${cyan("RPC:")}       ${bold(`http://localhost:${BOBS_FACTORY_PORT}/cli/rpc`)}`,
 	);
 	console.log(`  ${cyan("Platform:")}  ${bold("cli")}`);
+	console.log(
+		`  ${cyan("Agents:")}    ${bold(F1_AGENT_MODE === "mock" ? "mock (no API usage)" : "LIVE (uses provider credits)")}`,
+	);
 	console.log(`  ${cyan("Factory Home:")} ${dim(BOBS_FACTORY_HOME)}`);
 	console.log(`  ${cyan("Repository:")} ${dim(BOBS_FACTORY_REPO_PATH)}`);
 	if (MULTI_REPO_MODE) {

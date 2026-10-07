@@ -2,6 +2,8 @@
 
 This documentation provides guidance to Claude Code when working with the F1 testing framework.
 
+For automated drives and agent-mode selection, follow the canonical [F1 test-drive skill](../../skills/f1-test-drive/SKILL.md#agent-mode). The standard server uses mocked agents by default.
+
 ## Project Overview
 
 The F1 Testing Framework is an end-to-end observable testing platform for the Cyrus agent system. It provides a CLI-based issue tracker that simulates Linear's functionality without requiring external dependencies.
@@ -29,7 +31,7 @@ CLI Commands (f1 binary)
          ↓
    EdgeWorker (platform: "cli")
          ↓
-   Claude Code Sessions
+   Mock Agent Sessions (default)
 ```
 
 For detailed architecture information, see `/spec/f1/ARCHITECTURE.md`.

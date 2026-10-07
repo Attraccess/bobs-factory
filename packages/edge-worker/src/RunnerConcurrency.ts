@@ -1,5 +1,5 @@
 /**
- * Global concurrency cap for agent runner sessions.
+ * Instance concurrency cap for agent runner sessions.
  *
  * Every runner created by the EdgeWorker resolves `start()` /
  * `startStreaming()` only when its session finishes, so holding a semaphore

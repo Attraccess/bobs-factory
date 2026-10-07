@@ -454,3 +454,49 @@ it("retries IO failures during correction by revalidating the completed candidat
 	expect(f.runner.start).toHaveBeenCalledOnce();
 	expect(f.ctx.resumeAgent!.rejected).toBeUndefined();
 });
+
+it("resumes one silent Codex turn in the same conversation and persists the retry budget", async () => {
+	const f = await fixture();
+	f.ctx.resumeAgent = { runner: "codex", sessionId: "existing-conversation" };
+	f.runner.getMessages = () =>
+		f.runner.start.mock.calls.length === 1
+			? [
+					{
+						type: "result",
+						is_error: true,
+						errors: ["codex app-server produced no activity for 300000ms"],
+					},
+				]
+			: [{ type: "result", result: JSON.stringify(f.repaired) }];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		f.repaired,
+	);
+	expect(f.runner.start).toHaveBeenCalledTimes(2);
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	expect(f.ctx.resumeAgent?.idleRetries).toBe(1);
+});
+
+it("never retries a repeatedly silent or cancelled turn indefinitely", async () => {
+	const f = await fixture();
+	f.ctx.resumeAgent = { runner: "codex", sessionId: "existing-conversation" };
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			is_error: true,
+			errors: ["codex app-server produced no activity for 300000ms"],
+		},
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"no activity",
+	);
+	expect(f.runner.start).toHaveBeenCalledTimes(2);
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"no activity",
+	);
+	expect(f.runner.start).toHaveBeenCalledTimes(3);
+	const cancelled = new AbortController();
+	cancelled.abort();
+	f.ctx.signal = cancelled.signal;
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow();
+	expect(f.runner.start).toHaveBeenCalledTimes(3);
+});

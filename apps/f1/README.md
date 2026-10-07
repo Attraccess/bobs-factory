@@ -26,7 +26,7 @@ pnpm build
 
 ### 1. Start the F1 Server
 
-The F1 server runs an EdgeWorker in CLI platform mode, providing an in-memory issue tracker and agent session management.
+The F1 server runs an EdgeWorker in CLI platform mode, providing an in-memory issue tracker and agent session management. Agents are deterministic mocks by default: no agent CLI or inference API is invoked, including for Factory roles and background titles.
 
 ```bash
 # Start server with default settings
@@ -51,6 +51,10 @@ pnpm run server:dev
 **Environment Variables:**
 - `BOBS_FACTORY_PORT` - Server port (default: 3600)
 - `BOBS_FACTORY_REPO_PATH` - Path to repository to test (default: current directory)
+- `F1_AGENT_MODE` - `mock` (default) or `live`. Live mode launches real agents and consumes provider credits; use it only for an explicitly requested live drive.
+- `F1_MOCK_RESPONSE` - Fixed mock reply (default: a message identifying the mock). Set a fixture response, such as a JSON object matching a Factory role's output contract, when needed.
+
+Mock drives exercise Bob’s Factory orchestration and activity rendering. They do not demonstrate model reasoning, tool execution, or native CLI behavior. Validate provider adapters with recorded transcript replays; live validation requires an explicit cost opt-in.
 
 Once started, the server displays:
 ```
@@ -62,7 +66,8 @@ Once started, the server displays:
   Server:    http://localhost:3600
   RPC:       http://localhost:3600/cli/rpc
   Platform:  cli
-  Cyrus Home: /tmp/bobs-factory-f1-1234567890
+  Agents:    mock (no API usage)
+  Factory Home: /tmp/bobs-factory-f1-1234567890
   Repository: /path/to/your/repo
 
   Press Ctrl+C to stop the server

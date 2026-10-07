@@ -1,9 +1,14 @@
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { AgentRunnerConfig, IAgentRunner } from "./agent-runner-types.js";
 import type { Workspace } from "./CyrusAgentSession.js";
 // Import types for use in this file
-import type { EdgeConfig, RepositoryConfig } from "./config-schemas.js";
+import type {
+	EdgeConfig,
+	RepositoryConfig,
+	RunnerType,
+} from "./config-schemas.js";
 import type { Issue } from "./issue-tracker/types.js";
 
 // Re-export schemas and types from config-schemas
@@ -145,6 +150,12 @@ export interface EdgeWorkerRuntimeConfig {
 	 * These are callback functions that cannot be serialized to JSON.
 	 */
 	handlers?: {
+		/** Supplies runners for an embedded harness (for example F1's mocks). All runner paths, including titles, use this factory. */
+		createAgentRunner?: (
+			runnerType: RunnerType,
+			config: AgentRunnerConfig,
+		) => IAgentRunner;
+
 		/** Called when workspace needs to be created. Accepts array of repositories for multi-repo workspaces. */
 		createWorkspace?: (
 			issue: Issue,

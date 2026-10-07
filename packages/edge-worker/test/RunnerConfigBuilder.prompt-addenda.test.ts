@@ -1,6 +1,9 @@
 import type { ILogger } from "bobs-factory-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BROWSER_USE_PROMPT_ADDENDUM } from "../src/prompts/browserUsePromptAddendum.js";
+import {
+	BROWSER_USE_PROMPT_ADDENDUM,
+	HEADLESS_BROWSER_PROMPT_ADDENDUM,
+} from "../src/prompts/browserUsePromptAddendum.js";
 import { FAILURE_MODE_PROMPT_ADDENDUM } from "../src/prompts/failureModePromptAddendum.js";
 import { GITHUB_CLI_MEDIA_PROMPT_ADDENDUM } from "../src/prompts/githubCliMediaPromptAddendum.js";
 import {
@@ -92,23 +95,25 @@ describe("RunnerConfigBuilder prompt addenda", () => {
 		else process.env.BOBS_FACTORY_CLOUD_RUNTIME = originalCloudRuntime;
 	});
 
-	it("always adds GitHub media guidance to chat prompts while browser use remains disabled", () => {
+	it("always adds headless and GitHub media guidance to chat prompts without advertising installed browsers", () => {
 		expect(buildChatPrompt(makeBuilder())).toBe(
-			`Base prompt.\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
+			`Base prompt.\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
 		);
 	});
 
-	it("always adds GitHub media guidance to issue prompts while browser use remains disabled", () => {
+	it("always adds headless and GitHub media guidance to issue and Factory role prompts without advertising installed browsers", () => {
 		expect(buildIssuePrompt(makeBuilder())).toBe(
-			`Base prompt.\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
+			`Base prompt.\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
 		);
 	});
 
 	it("adds browser guidance separately when its environment flag is enabled", () => {
 		process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = "true";
 
-		expect(buildChatPrompt(makeBuilder())).toBe(
-			`Base prompt.\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
-		);
+		for (const build of [buildChatPrompt, buildIssuePrompt]) {
+			expect(build(makeBuilder())).toBe(
+				`Base prompt.\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
+			);
+		}
 	});
 });
