@@ -34,7 +34,9 @@ runners. No native agent CLI or inference API was invoked.
 Commands were `F1_AGENT_MODE=mock bun run <fixture.ts>`, root `pnpm build` and
 `pnpm typecheck`, scoped EdgeWorker Vitest (227 passed), CLI suite (129 passed),
 F1 suite (9 passed), root Biome (no errors, 18 existing warnings), and
-`git diff --check`. Rebuilt the web assets after the final wording correction.
+`git diff --check`. Rebuilt the web assets after the final wording correction. The commit hook’s
+old `cyrus-core` filter skipped schema generation; corrected it to
+`bobs-factory-core`, ran the generator directly and confirmed no schema drift.
 
 ## Limits and cleanup
 
