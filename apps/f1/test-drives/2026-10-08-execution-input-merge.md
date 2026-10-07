@@ -42,6 +42,7 @@ pnpm --filter bobs-factory-edge-worker exec vitest run test/FactoryPwa.test.ts t
 pnpm --filter bobs-factory-mcp-tools exec vitest run --maxWorkers=1
 pnpm --filter bobs-factory-edge-worker build
 F1_AGENT_MODE=mock bun node_modules/.cache/ci57-input-merge.ts
+env -u BOBS_FACTORY_INTERNAL_EXECUTABLE pnpm --filter bobs-factory-edge-worker exec vitest run test/prompt-assembly.routing-context.test.ts test/RunnerConfigBuilder.title-config.test.ts test/FactoryPwa.test.ts
 pnpm lint
 ```
 
@@ -50,6 +51,14 @@ one worker. Build/typecheck passed; lint retained 18 existing CSS warnings.
 Initial broad parallel local runs hit existing five-second MCP test timeouts.
 The one-worker MCP run passed without changing timeout limits. A snapshot test
 now locates the input file in both source-checkout and packaged command layouts.
+The full worker run exposed a stale complete routing-prompt expectation and five
+source-checkout title subprocess tests inheriting the managed binary marker. The
+complete prompt now matches the execution capability reference, including fresh
+form behavior. Clearing `BOBS_FACTORY_INTERNAL_EXECUTABLE` for source-checkout
+validation resolved the five title cases; all 42 prompt/title/PWA tests passed.
+The initial full run retained 1,515 passes, one skip and six failures; it is not
+claimed as passing. Logs remain in the evidence directory.
+
 The three CI Claude failures reproduced before updating their exact SDK-option
 expectations to include the prepared executable path.
 
