@@ -15,7 +15,7 @@ import {
 	workingLabel,
 } from "./client";
 import { activitiesOf } from "./conversation";
-import { DraftNotice } from "./pwa-ui";
+import { useCurrentForm, useFormState } from "./form-state";
 import {
 	type AnswerDraft,
 	answerChoice,
@@ -23,7 +23,7 @@ import {
 	resolveAnswers,
 	serializeAnswers,
 } from "./question-answers";
-import { revisionOf, useRestorableState } from "./restoration";
+import { revisionOf } from "./restoration";
 import { GuidedReview } from "./review";
 import {
 	type FeedbackController,
@@ -160,21 +160,19 @@ export function RunOrigin({ run }: { run: any }) {
 	);
 }
 export function QuestionForm({ run }: { run: any }) {
-	const toast = useToast(),
-		action = useAction();
+	const toast = useToast();
 	const questions: string[] = run.questions ?? [];
 	const recommendations: Recommendation[] = run.questionRecommendations ?? [];
-	const [draft, setDraft, staleAnswers] = useRestorableState<AnswerDraft>(
-		`answers/${run.id}`,
-		{},
-		revisionOf([
-			run.questionBatchId,
-			questions,
-			recommendations,
-			run.step,
-			run.status,
-		]),
-	);
+	const context = revisionOf([
+		run.id,
+		run.questionBatchId,
+		questions,
+		recommendations,
+		run.step,
+		run.status,
+	]);
+	const action = useAction(`answers/${run.id}`, context);
+	const [draft, setDraft] = useFormState<AnswerDraft>(context, {});
 	const fields = useRef<Record<number, HTMLTextAreaElement | null>>({});
 	const submitting = useRef(false);
 	const focusCustom = useRef<number | undefined>(undefined);
@@ -191,7 +189,6 @@ export function QuestionForm({ run }: { run: any }) {
 			submitting.current ||
 			action.isPending ||
 			action.isBlocked ||
-			staleAnswers ||
 			incomplete
 		)
 			return;
@@ -230,7 +227,6 @@ export function QuestionForm({ run }: { run: any }) {
 				}
 			}}
 		>
-			<DraftNotice conflict={staleAnswers} draftKey={`answers/${run.id}`} />
 			<fieldset disabled={action.isPending}>
 				<legend className="sr-only">
 					Answers to Bob's clarification questions
@@ -326,7 +322,7 @@ export function QuestionForm({ run }: { run: any }) {
 				type="submit"
 				requiresConnection
 				busy={action.isPending}
-				disabled={staleAnswers || incomplete}
+				disabled={incomplete}
 			>
 				Send answers <kbd>⌘⏎</kbd>
 			</Button>
@@ -404,8 +400,7 @@ export function FullReview({
 			{updated && (
 				<p className="notice" role="status">
 					This review has been updated. Review the current guide and revision
-					before deciding. Earlier feedback drafts stay with their original
-					review.
+					before deciding. Unsent feedback has been discarded.
 				</p>
 			)}
 			<GuidedReview
@@ -462,9 +457,13 @@ function ReviewDecisions({
 }: DecisionProps & { controller: FeedbackController }) {
 	const toast = useToast(),
 		navigate = useNavigate(),
-		action = useAction(),
-		[validationError, setValidationError] = useState("");
-	const { draft, update, busy, staleFeedback, draftKey } = controller;
+		action = useAction(`review/${run.id}`, controller.context),
+		[validationError, setValidationError] = useFormState(
+			controller.context,
+			"",
+		);
+	const isCurrent = useCurrentForm(controller.context);
+	const { draft, update, busy } = controller;
 	const feedback = draft.feedback,
 		feedbackOpen = draft.open;
 	const setFeedback = (feedback: string) => update((d) => ({ ...d, feedback }));
@@ -475,14 +474,7 @@ function ReviewDecisions({
 		matching = !waiting || (run.status === "waiting" && guideMatchesGate(run)),
 		url = run.outputs?.["draft-pr"]?.url ?? gate?.url;
 	const reject = async () => {
-		if (
-			!hasFeedback(draft) ||
-			staleFeedback ||
-			busy ||
-			action.isPending ||
-			!matching
-		)
-			return;
+		if (!hasFeedback(draft) || busy || action.isPending || !matching) return;
 		let feedback: string;
 		try {
 			feedback = serializeFeedback(
@@ -517,13 +509,13 @@ function ReviewDecisions({
 					path: `/api/runs/${run.id}/messages`,
 					body: { text: feedback },
 				});
-				navigate(`/runs/${run.id}`);
+				if (isCurrent()) navigate(`/runs/${run.id}`);
 			} else {
 				const next = await action.mutateAsync({
 					path: `/api/runs/${run.id}/followup`,
 					body: { feedback },
 				});
-				navigate(`/runs/${next.id}`);
+				if (isCurrent()) navigate(`/runs/${next.id}`);
 			}
 			toast({ text: "Feedback sent — Bob is on it" });
 			controller.clear(draft);
@@ -535,7 +527,6 @@ function ReviewDecisions({
 	};
 	return (
 		<>
-			<DraftNotice conflict={staleFeedback} draftKey={draftKey} />
 			{waiting && !matching && (
 				<p className="notice" role="status">
 					The pending revision changed. Decisions are unavailable until its
@@ -577,7 +568,7 @@ function ReviewDecisions({
 							type="submit"
 							busy={busy || action.isPending}
 							requiresConnection
-							disabled={!hasFeedback(draft) || staleFeedback || !matching}
+							disabled={!hasFeedback(draft) || !matching}
 						>
 							Submit feedback to Bob
 						</Button>

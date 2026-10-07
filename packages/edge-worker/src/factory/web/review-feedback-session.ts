@@ -1,11 +1,4 @@
-import {
-	emptyFeedback,
-	type FeedbackDraft,
-	loadFeedback,
-	normalizeFeedback,
-	saveFeedback,
-} from "./review-feedback";
-import { readStored } from "./review-state";
+import { emptyFeedback, type FeedbackDraft } from "./review-feedback";
 
 /** Remove only comments whose submitted contents are still unchanged. */
 function withoutSubmitted(draft: FeedbackDraft, submitted: FeedbackDraft) {
@@ -24,53 +17,53 @@ function withoutSubmitted(draft: FeedbackDraft, submitted: FeedbackDraft) {
 	return next.feedback || next.items.length ? next : emptyFeedback();
 }
 
-// A request can outlive its route. Remounts must share the same lock and state
-// until it settles; do not persist locks across reloads, which cancel requests.
-const pending = new Map<string, FeedbackSession>();
+// Only pending request identities cross route remounts; no editable content does.
+const pending = new Map<string, symbol>();
+const listeners = new Set<() => void>();
+const changed = () => {
+	for (const listener of listeners) listener();
+};
 class FeedbackSession {
 	private state: { draft: FeedbackDraft; busy: boolean };
-	private listeners = new Set<() => void>();
+	private token?: symbol;
 	constructor(private key: string) {
-		this.state = { draft: loadFeedback(key), busy: false };
+		this.state = { draft: emptyFeedback(), busy: pending.has(key) };
 	}
-	getSnapshot = () => this.state;
-	subscribe = (listener: () => void) => {
-		this.listeners.add(listener);
-		return () => this.listeners.delete(listener);
+	getSnapshot = () => {
+		const busy = pending.has(this.key);
+		if (busy !== this.state.busy) this.state = { ...this.state, busy };
+		return this.state;
 	};
-	private publish(draft: FeedbackDraft, busy = this.state.busy) {
-		this.state = { draft, busy };
-		for (const listener of this.listeners) listener();
+	subscribe = (listener: () => void) => {
+		listeners.add(listener);
+		return () => {
+			listeners.delete(listener);
+		};
+	};
+	private publish(draft: FeedbackDraft) {
+		this.state = { draft, busy: pending.has(this.key) };
+		changed();
 	}
 	update = (change: (draft: FeedbackDraft) => FeedbackDraft) => {
-		if (this.state.busy || pending.has(this.key)) return;
-		const next = change(this.state.draft);
-		saveFeedback(this.key, next);
-		this.publish(next);
+		if (!pending.has(this.key)) this.publish(change(this.state.draft));
 	};
 	lock = () => {
-		if (this.state.busy || pending.has(this.key)) return false;
-		pending.set(this.key, this);
-		this.publish(this.state.draft, true);
+		if (pending.has(this.key)) return false;
+		this.token = Symbol(this.key);
+		pending.set(this.key, this.token);
+		changed();
 		return true;
 	};
 	unlock = () => {
-		if (pending.get(this.key) !== this) return;
+		if (!this.token || pending.get(this.key) !== this.token) return;
 		pending.delete(this.key);
-		this.publish(this.state.draft, false);
+		this.token = undefined;
+		changed();
 	};
 	clear = (submitted: FeedbackDraft) => {
-		// Another tab can change storage while this request is in flight. Preserve
-		// those edits too, falling back to memory when storage is unavailable.
-		const stored = readStored<unknown>(this.key, null);
-		const current =
-			stored === null ? this.state.draft : normalizeFeedback(stored);
-		const next = withoutSubmitted(current, submitted);
-		saveFeedback(this.key, next);
-		this.publish(next);
+		this.publish(withoutSubmitted(this.state.draft, submitted));
 	};
 }
-
 export function feedbackSession(key: string) {
-	return pending.get(key) ?? new FeedbackSession(key);
+	return new FeedbackSession(key);
 }

@@ -110,9 +110,7 @@ export class FactoryServer {
 		const checkConfigRevision = (request: FastifyRequest) => {
 			const config = request.headers["x-factory-config"];
 			if (config !== undefined && config !== configRevision())
-				throw new Error(
-					"Recipe settings changed. Refresh and review your draft before sending.",
-				);
+				throw new Error("Recipe settings changed. Refresh before sending.");
 		};
 		this.app.addHook("onSend", async (request, reply) => {
 			if (request.url.startsWith("/api/")) {
@@ -651,7 +649,7 @@ export class FactoryServer {
 						!isDeepStrictEqual(context.questions, run.questions))
 				)
 					throw new Error(
-						"The question or step changed. Refresh and review your draft before answering.",
+						"The question or step changed. Refresh before answering.",
 					);
 				runtime.answer(request.params.id, answer);
 				return { accepted: true };
