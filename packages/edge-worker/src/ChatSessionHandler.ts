@@ -858,6 +858,10 @@ export class ChatSessionHandler<TEvent> {
 			existingSession.status === AgentSessionStatus.Error;
 		const controller = new AbortController();
 		this.continuationStarts.set(sessionId, controller);
+		existingSession.metadata = {
+			...existingSession.metadata,
+			intentionalStop: false,
+		};
 		existingSession.status = AgentSessionStatus.Active;
 		this.sessionManager.emit("sessionChanged", sessionId);
 		let started = false;

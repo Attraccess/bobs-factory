@@ -287,8 +287,13 @@ export class AgentSessionManager extends EventEmitter {
 			linearSession.claudeSessionId = claudeSystemMessage.session_id;
 		}
 
-		if (!this.stopRequestedSessions.has(sessionId))
+		if (!this.stopRequestedSessions.has(sessionId)) {
+			linearSession.metadata = {
+				...linearSession.metadata,
+				intentionalStop: false,
+			};
 			linearSession.status = AgentSessionStatus.Active;
+		}
 		linearSession.updatedAt = Date.now();
 		linearSession.metadata = {
 			...linearSession.metadata, // Preserve existing metadata
@@ -477,7 +482,10 @@ export class AgentSessionManager extends EventEmitter {
 		this.stopRequestedSessions.add(linearAgentActivitySessionId);
 		// A user stop must survive a reboot even if the runner hasn't emitted its result yet.
 		const session = this.sessions.get(linearAgentActivitySessionId);
-		if (session) session.status = AgentSessionStatus.Error;
+		if (session) {
+			session.metadata = { ...session.metadata, intentionalStop: true };
+			session.status = AgentSessionStatus.Error;
+		}
 	}
 
 	/**
@@ -704,6 +712,8 @@ export class AgentSessionManager extends EventEmitter {
 		const session = this.sessions.get(sessionId);
 		if (!session) return;
 
+		if (status === AgentSessionStatus.Active)
+			session.metadata = { ...session.metadata, intentionalStop: false };
 		session.status = status;
 		this.emit("sessionChanged", sessionId);
 		session.updatedAt = Date.now();

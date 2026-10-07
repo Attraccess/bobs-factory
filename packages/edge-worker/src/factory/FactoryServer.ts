@@ -26,6 +26,8 @@ import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	push?: import("./FactoryPush.js").FactoryPush;
+	trustedOrigin?: string;
 	capacity?: MachineCapacity;
 	chat?(id: string): ChatState;
 	message?(id: string, text: string, messageId?: string): void | Promise<void>;
@@ -53,6 +55,19 @@ export class FactoryServer {
 	readonly app: FastifyInstance;
 	private streams = new Set<ServerResponse>();
 	constructor(runtime: WorkflowRuntime, hooks: ServerHooks) {
+		const trusted = hooks.trustedOrigin
+			? new URL(hooks.trustedOrigin)
+			: undefined;
+		if (
+			trusted &&
+			(trusted.protocol !== "https:" ||
+				trusted.origin !== hooks.trustedOrigin ||
+				trusted.username ||
+				trusted.password)
+		)
+			throw new Error(
+				"CYRUS_FACTORY_ORIGIN must be an exact HTTPS origin without a path or credentials",
+			);
 		this.app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
 		this.app.setErrorHandler((error, _request, reply) =>
 			reply.code(error instanceof z.ZodError ? 400 : 409).send({
@@ -123,11 +138,22 @@ export class FactoryServer {
 		// This separate listener is loopback-only and never registered on Cyrus's webhook tunnel.
 		this.app.addHook("onRequest", async (request, reply) => {
 			const host = request.headers.host ?? "";
-			if (!/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host))
+			const proxyHost =
+				trusted?.protocol === "https:" &&
+				trusted.origin === hooks.trustedOrigin &&
+				host === trusted.host;
+			if (
+				!/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host) &&
+				!proxyHost
+			)
 				return reply.code(403).send({ error: "Local UI only" });
 			if (!["GET", "HEAD"].includes(request.method)) {
 				const origin = request.headers.origin;
-				if (origin && origin !== `http://${host}`)
+				if (
+					origin &&
+					origin !== (proxyHost ? trusted!.origin : `http://${host}`) &&
+					origin !== trusted?.origin
+				)
 					return reply.code(403).send({ error: "Invalid origin" });
 				if (request.headers["x-factory-request"] !== "1")
 					return reply
@@ -158,6 +184,40 @@ export class FactoryServer {
 					.send(asset.bytes),
 			);
 		}
+		this.app.get(
+			"/api/push",
+			() =>
+				hooks.push?.status() ?? {
+					available: false,
+					diagnostic: "Push unavailable",
+					devices: [],
+				},
+		);
+		this.app.post("/api/push/devices", { bodyLimit: 8192 }, (request) => {
+			if (!hooks.push) throw new Error("Push unavailable");
+			return hooks.push.register(request.body);
+		});
+		this.app.patch("/api/push/devices/:id", { bodyLimit: 1024 }, (request) => {
+			if (!hooks.push) throw new Error("Push unavailable");
+			const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+			return hooks.push.update(id, request.body);
+		});
+		this.app.delete("/api/push/devices/:id", (request) => {
+			if (!hooks.push) throw new Error("Push unavailable");
+			const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+			return hooks.push.remove(id);
+		});
+		this.app.post(
+			"/api/push/devices/:id/test",
+			{ bodyLimit: 1024 },
+			async (request) => {
+				if (!hooks.push) throw new Error("Push unavailable");
+				const { id } = z
+					.object({ id: z.string().uuid() })
+					.parse(request.params);
+				return hooks.push.test(id);
+			},
+		);
 		this.app.get("/api/version", () => ({
 			build: shell.build,
 			protocol: shell.protocol,

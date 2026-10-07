@@ -111,8 +111,13 @@ function worker() {
 		registration: {
 			waiting: undefined as unknown,
 			installing: undefined as unknown,
+			showNotification: vi.fn(async () => {}),
 		},
-		clients: { matchAll: async () => clients, claim: vi.fn(async () => {}) },
+		clients: {
+			matchAll: async () => clients,
+			claim: vi.fn(async () => {}),
+			openWindow: vi.fn(async () => {}),
+		},
 		skipWaiting: vi.fn(async () => {}),
 		addEventListener: (name: string, handler: (event: any) => void) =>
 			handlers.set(name, handler),
@@ -905,4 +910,62 @@ it.each([
 	} finally {
 		for (const surface of [textKey, openKey, draftKey]) forgetDraft(surface);
 	}
+});
+
+it("displays minimal visible push, focuses a same-origin tab without reload, and rejects arbitrary destinations", async () => {
+	const w = worker();
+	const payload = {
+		version: 1,
+		category: "review",
+		runId: "run",
+		destination: "/#/runs/run/review",
+		title: "SECRET",
+		body: "private ticket text",
+	};
+	await w.dispatch("push", { data: { json: () => payload } });
+	expect(w.self.registration.showNotification).toHaveBeenCalledWith(
+		"Bob’s Factory",
+		expect.objectContaining({
+			body: "A new review needs your approval.",
+			data: {
+				category: "review",
+				runId: "run",
+				destination: "/#/runs/run/review",
+			},
+		}),
+	);
+	const postMessage = vi.fn(),
+		focus = vi.fn(async () => {}),
+		close = vi.fn();
+	Object.assign(w.clients[0]!, { postMessage, focus });
+	await w.dispatch("notificationclick", {
+		notification: { close, data: payload },
+	});
+	expect(close).toHaveBeenCalled();
+	expect(postMessage).toHaveBeenCalledWith({
+		type: "FACTORY_NOTIFICATION",
+		destination: "/#/runs/run/review",
+	});
+	expect(focus).toHaveBeenCalled();
+	expect(w.self.clients.openWindow).not.toHaveBeenCalled();
+	expect(w.fetch).not.toHaveBeenCalled();
+	w.clients.splice(0);
+	await w.dispatch("notificationclick", {
+		notification: {
+			close,
+			data: { ...payload, destination: "https://evil.test/" },
+		},
+	});
+	expect(w.self.clients.openWindow).toHaveBeenCalledWith(`${origin}/#/`);
+	await w.dispatch("push", {
+		data: {
+			json: () => {
+				throw new Error("bad payload");
+			},
+		},
+	});
+	expect(w.self.registration.showNotification).toHaveBeenLastCalledWith(
+		"Bob’s Factory",
+		expect.objectContaining({ body: "Open Factory to check current state." }),
+	);
 });

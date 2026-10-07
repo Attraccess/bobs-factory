@@ -119,12 +119,94 @@ automation without this metadata remains compatible and must still satisfy the
 Host, Origin and `X-Factory-Request` guards. Such legacy clients do not gain UI
 version protection by omitting the metadata.
 
-Push notifications are a separate backlog task, **Taskbot #69: Add opt-in Web
-Push for Bob’s Factory attention and completion events**, linked behind #41.
-The follow-up will use maintained Web Push libraries: Bob’s Factory server
-will send directly to browser push-service endpoints with VAPID authentication,
-without a hosted notification provider. Installing this version does not request
-notification permission or send push.
+### Opt-in notifications
+
+Keep the existing stable HTTPS address and tailnet-only Tailscale Serve deployment.
+Set `CYRUS_FACTORY_ORIGIN` to that exact HTTPS origin (no path or trailing slash)
+when the proxy forwards its public Host or Origin. The listener remains loopback-only;
+only that configured origin and the existing local origin pass the request guards.
+No forwarded-header trust, public listener or permissive CORS is added. Do not expose
+Factory through a public tunnel to enable push. The deployed proxy configuration
+and protected-origin flow have not been verified by automated local checks.
+
+Set `CYRUS_FACTORY_PUSH_SUBJECT` to an operator contact, such as
+`mailto:operator@example.org` or an HTTPS contact page, then restart Factory.
+A configured server creates `<cyrusHome>/factory/push.json` with mode `0600`.
+It contains the stable VAPID key pair, browser subscriptions and consumed-event
+bookkeeping. Back it up securely with Factory state. The subject and keys in
+that file remain authoritative on restart; changing the environment variable
+alone does not rotate them. Never copy this file into web assets or share it as
+an artifact. Repair corrupt or unwritable state before restarting; push disables
+itself without discarding the file or interrupting Factory. To rotate keys,
+stop Factory, securely archive the file, remove it and restart with a valid
+subject. Every device must explicitly enable again; old subscriptions are unusable.
+
+Open **Notifications** beside Install app/App help. **Enable this device** requests
+browser permission only from your click and registers the existing app worker.
+Give each browser profile or installed app a recognizable label. Enabled means
+both browser subscription and server registration succeeded. **Send test** uses
+the same encrypted VAPID/provider/worker path as real events. Check your device
+for the visible notification: provider acceptance alone does not prove receipt
+or background delivery. Permission, browser support, server configuration and
+delivery health are shown separately. Change a label in the input before enabling
+an existing subscription. Disable or remove other devices independently; enable
+those devices from their own browser. Remote disable requires explicit re-enable
+and is never undone by a foreground visit. Local disable unsubscribes immediately;
+failed server cleanup is retained locally and retried on foreground/reconnect.
+Denied or revoked permission leaves Today and the connected app usable.
+
+Supported events are new question waves or changed question sets, new pending
+review revisions, failed/interrupted runs needing help, explicit human-only merge
+blockers, and successful completion including runs without a review guide.
+Mirrored native sessions are suppressed when a Factory run exists. User stops,
+automatic restart recovery, tool activity, capacity waits and CI/merge polling do
+not alert. Closely spaced events for one run coalesce; unchanged questions/gates
+and repeated saves never alert again. Notifications show Factory's name and a
+fixed event type, never ticket titles, question text, findings, transcripts or
+raw errors. Clicks focus an existing app tab or open the relevant run/review hash
+route, preserving drafts and refreshing authoritative state before actions.
+Protected links still require tailnet access and the existing access controls.
+
+Delivery is intentionally **at most one attempt**, with no recovery backlog.
+Existing attention at startup, registration or re-enable becomes a baseline.
+Claims are saved before sending; a crash near dispatch can lose an alert.
+Transient failures consume the event and apply bounded backoff; events during
+backoff are skipped. Only a fresh event after backoff or an explicit test checks
+recovery. Provider HTTP 404/410 removes an expired subscription; authentication
+errors and rate limits retain it with separate delivery health. Receipts are
+bounded. Tests are limited to one per device every 30 seconds; there are at most
+32 devices. Provider TTL is **0**, so an unreachable device may miss an event
+rather than receive stale attention when it reconnects. This is neither guaranteed
+nor offline delivery. [Web Push protocol](https://www.rfc-editor.org/rfc/rfc8030#section-5.2).
+
+Factory must be running with outbound HTTPS to browser push services; no new inbound
+callback is required. The maintained [web-push library](https://github.com/web-push-libs/web-push)
+handles encryption and VAPID; endpoint validation permits Google FCM, Mozilla and
+Apple services, rejects local/private/tailnet DNS results and does not follow
+redirects. Apple documents allowing `*.push.apple.com` on outbound networks.
+[WebKit iOS guidance](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
+
+Browser guidance checked 2026-10-07:
+
+- Desktop Chrome and Android Chrome use standard PushManager subscriptions and
+  visible notifications. Feature detection controls availability.
+  [Google guidance](https://codelabs.developers.google.com/codelabs/push-notifications).
+- Desktop Safari supports standard Web Push. Browser and OS notification settings
+  still govern delivery. [WebKit](https://webkit.org/blog/12945/meet-web-push/).
+- iOS/iPadOS 16.4+ requires a Home Screen web app and direct interaction for
+  permission. Install this same protected address and open the Home Screen app.
+  [WebKit](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
+- Desktop Brave may require enabling its Google-services push setting.
+  [Brave privacy settings](https://support.brave.app/hc/en-us/articles/360017989132-How-do-I-change-my-Privacy-Settings).
+  Brave iOS background delivery has not been observed in this implementation.
+  If its menu lacks Home Screen installation, open the same address in Safari
+  and install there. [Brave installation](https://support.brave.app/hc/en-us/articles/39077114659597-How-do-I-install-and-use-Web-Apps-in-Brave).
+
+Physical-device/background delivery on macOS Chrome/Brave/Safari, iPhone
+Safari/Brave and Android Chrome remains unverified. Headless Chromium checks,
+mobile emulation and deterministic sender receipts do not establish those cases.
+Category filters, per-run muting, quiet hours and suppression while viewing a run
+remain deferred.
 
 ### Installation validation record
 

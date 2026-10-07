@@ -9,7 +9,9 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
+import webPush from "web-push";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
+import { FactoryPush } from "../src/factory/FactoryPush.js";
 import { FactoryServer } from "../src/factory/FactoryServer.js";
 import type { ResolvedLaunchRequest } from "../src/factory/LaunchFields.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
@@ -1482,6 +1484,157 @@ it("protects and validates machine settings, exposing durable cross-worker polic
 		await server.stop();
 		await capacity.shutdown();
 		await other.shutdown();
+		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+it("protects and redacts push device APIs with the exact configured HTTPS origin", async () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-push-api-"));
+	const sender = vi.fn(async () => {}),
+		push = new FactoryPush(home, sender, Date.now, "mailto:test@example.com");
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const server = new FactoryServer(runtime, {
+		push,
+		trustedOrigin: "https://factory.example.ts.net",
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("unused");
+		},
+		stop: () => {},
+	});
+	const key = webPush.generateVAPIDKeys().publicKey;
+	const payload = {
+		label: "phone",
+		subscription: {
+			endpoint: "https://web.push.apple.com/private-subscription",
+			keys: { p256dh: key, auth: Buffer.alloc(16, 1).toString("base64url") },
+		},
+	};
+	const headers = {
+		host: "factory.example.ts.net",
+		origin: "https://factory.example.ts.net",
+		"x-factory-request": "1",
+	};
+	try {
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers: { ...headers, host: "evil.test" },
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers: { ...headers, origin: "https://evil.test" },
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers: { host: headers.host, origin: headers.origin },
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers: { ...headers, "x-factory-build": "old" },
+					payload,
+				})
+			).statusCode,
+		).toBe(409);
+		const registration = await server.app.inject({
+			method: "POST",
+			url: "/api/push/devices",
+			headers,
+			payload,
+		});
+		expect(registration.statusCode).toBe(200);
+		const { id } = registration.json();
+		const status = await server.app.inject({ url: "/api/push", headers });
+		expect(status.headers["cache-control"]).toBe("no-store");
+		expect(status.body).not.toMatch(
+			/private-subscription|privateKey|p256dh|auth"/,
+		);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: `/api/push/devices/${id}/test`,
+					headers,
+					payload: {},
+				})
+			).json().accepted,
+		).toBe(true);
+		expect(
+			(
+				await server.app.inject({
+					method: "PATCH",
+					url: `/api/push/devices/${id}`,
+					headers,
+					payload: { enabled: false },
+				})
+			).statusCode,
+		).toBe(200);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: `/api/push/devices/${id}/test`,
+					headers,
+					payload: {},
+				})
+			).statusCode,
+		).toBe(409);
+		expect(
+			(
+				await server.app.inject({
+					method: "DELETE",
+					url: `/api/push/devices/${id}`,
+					headers,
+				})
+			).statusCode,
+		).toBe(200);
+		expect(push.status().devices).toEqual([]);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers,
+					payload: {
+						...payload,
+						subscription: {
+							...payload.subscription,
+							endpoint: "https://127.0.0.1/private",
+						},
+					},
+				})
+			).statusCode,
+		).toBe(400);
+	} finally {
+		await push.stop();
+		await runtime.shutdown();
+		await server.stop();
 		rmSync(home, { recursive: true, force: true });
 	}
 });

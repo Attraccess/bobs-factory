@@ -13,6 +13,7 @@ import {
 	api,
 	artifactsOf,
 	client,
+	refreshFactory,
 	useAction,
 	validateLiveConnection,
 } from "../src/factory/web/client.js";
@@ -377,4 +378,28 @@ it("classifies QA before screenshot artifacts, including previews, and renders z
 	expect(artifactsOf({ outputs: { capture: qa } })[0].title).toBe(
 		"QA and screenshots",
 	);
+});
+
+it("refreshes review deep links and their current gate before enabling writes", async () => {
+	disconnected();
+	vi.stubGlobal("location", { hash: "#/runs/run/review" });
+	const fetch = vi.fn(async (path: string) =>
+		path === "/api/version"
+			? version()
+			: factoryResponse(
+					path.startsWith("/api/runs/run?")
+						? { id: "run", reviewGate: { id: "current", status: "approve" } }
+						: [],
+				),
+	);
+	vi.stubGlobal("fetch", fetch);
+	await refreshFactory();
+	expect(fetch.mock.calls.map(([path]) => path)).toContain(
+		"/api/runs/run?view=dashboard",
+	);
+	expect(client.getQueryData(["run", "run"])).toEqual({
+		id: "run",
+		reviewGate: { id: "current", status: "approve" },
+	});
+	expect(pwaState().status).toBe("ready");
 });

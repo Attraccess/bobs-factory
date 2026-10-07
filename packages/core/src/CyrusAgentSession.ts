@@ -121,6 +121,8 @@ export interface CyrusAgentSession {
 	opencodeSessionId?: string; // OpenCode-specific session ID (assigned once it initializes)
 	agentRunner?: IAgentRunner;
 	metadata?: {
+		/** Suppress attention notifications for an intentional user stop, including after restart. */
+		intentionalStop?: boolean;
 		/** Default repository available when a standalone chat was created. */
 		chatRepositoryId?: string;
 		chatPlatform?: "slack" | "zulip";
