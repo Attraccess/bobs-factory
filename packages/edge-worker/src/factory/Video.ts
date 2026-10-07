@@ -261,15 +261,63 @@ export async function probeVideo(path: string, signal?: AbortSignal) {
 async function captionAsset(path: string, directory: string) {
 	const real = evidenceFile(path, directory, 1024 * 1024),
 		content = await readFile(real, "utf8");
+	const blocks = content
+		.replace(/^\uFEFF/, "")
+		.replace(/\r\n?/g, "\n")
+		.split(/\n(?:[ \t]*\n)+/);
+	const header = blocks.shift() ?? "";
 	if (
-		!/^WEBVTT(?:\r?\n|\s)/.test(content) ||
-		!/\d{2}:\d{2}(?::\d{2})?\.\d{3}\s+-->\s+\d{2}:\d{2}(?::\d{2})?\.\d{3}/.test(
-			content,
-		) ||
+		!/^WEBVTT(?:[ \t][^\n]*)?(?:\n|$)/.test(header) ||
+		header.includes("-->") ||
 		/<script|<iframe/i.test(content)
 	)
 		throw new Error("Captions must be a bounded WebVTT track with timed cues");
+	let count = 0,
+		previousStart = -1;
+	for (const block of blocks) {
+		if (!block.trim() || /^NOTE(?:[ \t\n]|$)/.test(block)) continue;
+		if (/^(?:STYLE|REGION)[ \t]*(?:\n|$)/.test(block)) {
+			if (count || block.includes("-->"))
+				throw new Error("Caption styles and regions must precede timed cues");
+			continue;
+		}
+		const lines = block.split("\n"),
+			timingIndex = (lines[0] ?? "").includes("-->") ? 0 : 1,
+			timingLine = lines[timingIndex] ?? "",
+			timing = /^(\S+)[ \t]+-->[ \t]+(\S+)(?:[ \t]+[^\n]*)?$/.exec(timingLine);
+		const start = captionTimestamp(timing?.[1] ?? ""),
+			end = captionTimestamp(timing?.[2] ?? "");
+		if (
+			start === undefined ||
+			end === undefined ||
+			timingLine.split("-->").length !== 2 ||
+			end <= start ||
+			start < previousStart ||
+			!lines
+				.slice(timingIndex + 1)
+				.join("\n")
+				.trim() ||
+			lines.slice(timingIndex + 1).some((line) => line.includes("-->"))
+		)
+			throw new Error(
+				`Captions require valid timed cues: cue ${count + 1} must have valid timestamps, end after start, ordered starts and text`,
+			);
+		previousStart = start;
+		count++;
+	}
+	if (!count) throw new Error("Captions require at least one valid timed cue");
 	return { path: real, sha256: await fileHash(real) };
+}
+
+/** WebVTT permits overlapping cues and two-or-more-digit hours, but not overflowing minutes/seconds. */
+function captionTimestamp(value: string): number | undefined {
+	const match = /^(?:(\d{2,}):)?([0-5]\d):([0-5]\d)\.(\d{3})$/.exec(value);
+	if (!match) return undefined;
+	const milliseconds =
+		((Number(match[1] ?? 0) * 60 + Number(match[2])) * 60 + Number(match[3])) *
+			1000 +
+		Number(match[4]);
+	return Number.isSafeInteger(milliseconds) ? milliseconds : undefined;
 }
 
 /** Only linked stories affect reuse; include their fixtures, actions and criteria. */

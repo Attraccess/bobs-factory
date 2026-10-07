@@ -655,6 +655,76 @@ it("enforces duration, file size, caption and poster validation before accepting
 	await expect(finalizeVideoEvidence(f.ctx, badPoster)).rejects.toThrow();
 });
 
+it("rejects every malformed caption cue while preserving valid WebVTT timing variants", async () => {
+	const f = setup();
+	const audio = join(f.ctx.evidenceDir, "audio.mp4"),
+		captions = join(f.ctx.evidenceDir, "captions.vtt");
+	execFileSync("ffmpeg", [
+		"-v",
+		"error",
+		"-i",
+		f.path,
+		"-f",
+		"lavfi",
+		"-i",
+		"sine=frequency=1000",
+		"-shortest",
+		"-c:v",
+		"copy",
+		"-c:a",
+		"aac",
+		audio,
+	]);
+	const output = structuredClone(f.output);
+	output.videos![0].path = audio;
+	output.videos![0].captionsPath = captions;
+	const validCue = "00:00.000 --> 00:01.000\nConfirmation";
+	for (const body of [
+		"00:99.000 --> 00:99.500\nInvalid seconds",
+		"60:00.000 --> 60:01.000\nInvalid minutes",
+		"00:60:00.000 --> 01:00:01.000\nInvalid hour-form minutes",
+		"00:04.000 --> 00:01.000\nReversed",
+		"00:01.000 --> 00:01.000\nEmpty interval",
+		"00:00.000 --> 00:01.00\nMalformed fraction",
+		"00:00.000\n-->\n00:01.000\nBroken timing line",
+		`${validCue}\n\n00:99.000 --> 00:99.500\nInvalid later cue`,
+		`00:00.500 --> 00:01.000\nFirst\n\n${validCue}`,
+		`${validCue}\n00:99.000 --> 00:99.500\nMissing separator`,
+		"00:00.000 --> 00:01.000 --> 00:02.000\nExtra arrow",
+		"00:00.000 --> 00:01.000\n",
+		`NOTE\n${validCue}`,
+		`STYLE\n${validCue}`,
+	]) {
+		writeFileSync(captions, `WEBVTT\n\n${body}\n`);
+		await expect(
+			finalizeVideoEvidence(f.ctx, structuredClone(output)),
+		).rejects.toMatchObject({
+			issues: [
+				{
+					path: "/videos/0",
+					message: expect.stringMatching(/Caption.*timed cue/),
+				},
+			],
+		});
+	}
+	for (const content of [
+		`WEBVTT\n\n${validCue}\n`,
+		"\uFEFFWEBVTT Captions\r\n\r\nNOTE A comment\r\n\r\nSTYLE\r\n::cue { color: white; }\r\n\r\nfirst\r\n00:00:00.000 --> 00:00:00.900 align:start\r\nFirst line\r\nSecond line\r\n\r\nsecond\r\n00:00.500 --> 00:01.000\r\nOverlapping cue\r\n",
+		"WEBVTT\n\n00:59.999 --> 01:00.000\nMinute rollover\n\n100:00:00.000 --> 100:00:00.001\nLong hour form\n",
+		"WEBVTT\n\n00:00.000 --> 00:00.800\nFirst\n\n00:00.000 --> 00:01.000\nEqual start\n",
+	]) {
+		writeFileSync(captions, content);
+		const accepted = (await finalizeVideoEvidence(
+			f.ctx,
+			structuredClone(output),
+		)) as VideoCapture;
+		expect(accepted.videos![0].validation!.captions).toMatchObject({
+			path: evidenceFile(captions, f.ctx.evidenceDir),
+			sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+		});
+	}
+}, 30000);
+
 it("does not let terminal cleanup follow a run-directory symlink or crash on a dangling temporary link", async () => {
 	const f = setup();
 	f.run.outputs.capture = await finalizeVideoEvidence(f.ctx, f.output);

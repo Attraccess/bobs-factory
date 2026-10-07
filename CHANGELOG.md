@@ -56,6 +56,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Reject malformed caption timestamps, reversed intervals and out-of-order cues before accepting recorded audio evidence. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+
 - Prefer headless browser automation for agent QA and screenshots, using isolated `agent-browser` sessions when available; visible browser windows and attaching to a user's browser require an explicit request.
 
 - Upgrade saved intensive handoff recipes to passive polling before startup validation, so worker restarts recover existing runs without changing their accepted definitions. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
