@@ -18,6 +18,8 @@ export interface MergeBlocker {
 }
 export interface MergeReadiness {
 	headSha: string;
+	/** Local revision that a synchronization attempt must publish to this PR. */
+	worktreeHeadSha?: string;
 	baseSha: string;
 	url: string;
 	state: string;
