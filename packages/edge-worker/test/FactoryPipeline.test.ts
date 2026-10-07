@@ -312,6 +312,94 @@ function context(): ExecutionContext {
 	};
 }
 
+it("routes a CI revision mismatch to the configured fixer without accepting old checks", async () => {
+	const ctx = context();
+	ctx.step.tool = "ci";
+	ctx.step.branches = [{ when: { path: "fix", equals: true }, next: "ci-fix" }];
+	ctx.log = vi.fn();
+	const tools = new FactoryTools({
+		postComment: vi.fn(),
+		command: async (_ctx, exe, args) => {
+			if (exe === "git") return "current-head";
+			if (args.includes("graphql"))
+				return JSON.stringify(providerReceipt({ headRefOid: "old-head" }));
+			return "[[]]";
+		},
+	});
+	await expect(tools.tool(ctx)).resolves.toMatchObject({
+		headSha: "old-head",
+		worktreeHeadSha: "current-head",
+		fix: true,
+		approved: false,
+		reviewReady: false,
+		blockers: expect.arrayContaining([
+			expect.objectContaining({ kind: "revision", action: "fix" }),
+		]),
+	});
+	expect(ctx.log).toHaveBeenCalledWith(expect.stringContaining("old-head"));
+	ctx.step.branches = [];
+	await expect(tools.tool(ctx)).rejects.toThrow(
+		"PR must match the current pushed worktree revision",
+	);
+});
+
+it.each([
+	"unchanged",
+	"local-changed",
+	"pr-synchronized",
+])("checks synchronization progress after a CI fixer (%s)", async (progress) => {
+	const ctx = context();
+	ctx.step.tool = "review-after-fix";
+	ctx.run.outputs.ci = {
+		headSha: "old-head",
+		worktreeHeadSha: "current-head",
+		baseSha: "base",
+		blockers: [{ kind: "revision", action: "fix" }],
+	};
+	ctx.run.outputs["ci-fix"] = { reviewRequired: false };
+	ctx.run.outputs["review-gate"] = { approved: true };
+	ctx.run.roleRevisions = {
+		"code-review": {
+			headSha: "current-head",
+			dirty: false,
+			historyLength: 0,
+			at: "",
+		},
+	};
+	const tools = new FactoryTools({
+		postComment: vi.fn(),
+		command: async (_ctx, exe, args) => {
+			if (exe === "git")
+				return args[0] === "status"
+					? ""
+					: progress === "local-changed"
+						? "new-head"
+						: "current-head";
+			if (args.includes("graphql"))
+				return JSON.stringify(
+					providerReceipt({
+						headRefOid:
+							progress === "pr-synchronized" ? "current-head" : "old-head",
+						baseRefOid: "base",
+					}),
+				);
+			return "[[]]";
+		},
+	});
+	const result = await tools.tool(ctx);
+	if (progress === "unchanged") {
+		expect(result).toMatchObject({
+			reviewRequired: true,
+			questions: [expect.stringContaining("same revision mismatch")],
+		});
+	} else {
+		expect(result).not.toHaveProperty("questions");
+		expect(result).toMatchObject({
+			reviewRequired: progress === "local-changed",
+		});
+	}
+});
+
 it("publishes with a conventional commit message instead of a raw ticket title", async () => {
 	const input = context();
 	input.run.title = "Power Consumption Billing\nwith clarification.";

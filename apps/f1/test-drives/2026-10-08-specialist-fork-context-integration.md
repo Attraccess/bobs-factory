@@ -51,3 +51,29 @@ passkeys and production connectivity remain unverified. No provider credits,
 PR approval, readiness mutation, publication or merge was performed by this step.
 Existing ticket-sync receipts are delivered; historical capacity-lock and
 iteration-limit incidents remain recorded limitations.
+
+## Subsequent base update
+
+After pushing `b6c7253c`, main advanced to `a5ff0910` (#43).
+Merged its revision-mismatch recovery while preserving specialist baseline base
+selection. No frontend files changed in this second merge. The prior full suite
+and screenshots apply to `b6c7253c`; this additional runtime delta passed 211
+FactoryPipeline, MergeReadiness, WorkflowRuntime and SpecialistReview tests,
+edge-worker build/typecheck and whole-repository Biome CI.
+
+Fresh production EdgeWorker/F1 CLI scenarios passed with simulated agents and
+GitHub responses: automatic synchronization, a persistent mismatch waiting for
+an explicit fixture answer across worker restart, and retry of an older failed
+checkpoint. All required fresh review/CI paths ran, old passing checks did not
+approve a newer worktree, and the final capacity pool had no active/queued work.
+Worker listeners closed cleanly. The fixture retained the general reviewer recipe
+to cover accepted legacy workflows; specialist integration is covered by the
+focused aggregate tests and the separate six-specialist drive above.
+
+Command: `env -u BOBS_FACTORY_FACTORY_ORIGIN -u BOBS_FACTORY_FACTORY_PUBLIC_ORIGIN
+F1_AGENT_MODE=mock BOBS_FACTORY_MIGRATION_SOURCE_CAPACITY_DIRECTORY=/tmp/manual73-isolated-legacy-capacity
+bun <evidence>/ci-r8/revision-drive.ts`.
+
+Fresh receipts: `ci-r8/revision-HJyeTF/receipts.json` and per-scenario run JSON.
+Fixture origins and the migration-source pool were isolated from the operator's
+running installation. Real provider synchronization remains outside this mock.
