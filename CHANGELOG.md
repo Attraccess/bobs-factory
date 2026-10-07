@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Refinement questions now offer generated recommendations selected by default, with a separate custom answer field and explicit submission before work resumes. ([Taskbot #83](https://taskbot.apps.janjaap.de/p/bobs-factory/t/83))
 - Review Guide headers now link to the PR, branch and originating ticket, with simple GitHub CLI and Git checkout commands that copy on click, visible copy confirmation and manual copying when clipboard access fails. ([#28](https://github.com/Attraccess/bobs-factory/pull/28))
 - Provide durable capacity limits for agents and intensive workflow steps, with four slots by default, live capacity settings, separate queue states and cancellable queued work. Recipes can classify scripts and tools, including fanout branches, and separate the capacity and Run titles cards with consistent spacing. Preserve unsaved capacity settings through app updates and keep passive handoff polling outside the pool. Managed conversations resume through admission after each completed turn. Keep Slack/Zulip message submission available during capacity waits, visibly mark queued messages, and preserve pending follow-ups through restart. Concurrent submissions persist atomically so rejected messages cannot return after restart, while ordinary history saves remain batched and responsive. ([Taskbot #37](https://taskbot.apps.janjaap.de/p/bobs-factory/t/37), [#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
@@ -53,6 +54,8 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Preserve pending QA question drafts across restarts when questions and recommendations are unchanged; changed assistance still requires reviewing the new batch. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Recover stalled QA and handoff runs from their saved evidence, retry malformed QA and one silent Codex turn, and request assistance when CI repeats the same unresolved failure. Known defects proceed to correction before access waits. ([#36](https://github.com/Attraccess/bobs-factory/pull/36))
 
