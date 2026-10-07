@@ -143,8 +143,8 @@ it("isolates snapshots across roles/rounds and removes private files on cleanup"
 			step: "code-fix",
 			output: { findings: ["fixed"] },
 		});
-		const firstPath = first.config.args[1]!;
-		const secondPath = second.config.args[1]!;
+		const firstPath = first.config.args.at(-1)!;
+		const secondPath = second.config.args.at(-1)!;
 		expect(firstPath).not.toBe(secondPath);
 		expect(JSON.parse(readFileSync(firstPath, "utf8")).history).toHaveLength(1);
 		expect(JSON.parse(readFileSync(secondPath, "utf8"))).toEqual({

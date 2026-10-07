@@ -92,7 +92,7 @@ export function assertWritable() {
 	if (state.updating || state.status !== "ready")
 		throw new Error(
 			state.status === "mismatch"
-				? "Factory updated. Preserve drafts and update before sending."
+				? "Factory updated. Update before sending. Unsent edits will be discarded."
 				: "Actions are paused until the factory reconnects and refreshes current state.",
 		);
 }

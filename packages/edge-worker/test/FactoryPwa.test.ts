@@ -12,8 +12,6 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runInNewContext } from "node:vm";
 import { buildSync } from "esbuild";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { factoryWebAssets } from "../src/factory/FactoryWebAssets.js";
 import { accessRequired, checkAccess } from "../src/factory/web/auth-state.js";
@@ -24,28 +22,15 @@ import {
 	uiBuild,
 } from "../src/factory/web/pwa.js";
 import {
-	acknowledgeDraft,
 	completeRestoration,
 	decodeSnapshot,
-	draftRevision,
-	forgetDraft,
+	forgetView,
 	loadRestoration,
 	preserveForUpdate,
-	rememberDraft,
+	rememberView,
 	restorationNotice,
-	restoredDraft,
-	revisionOf,
-	useRestorableState,
+	restoredView,
 } from "../src/factory/web/restoration.js";
-import {
-	emptyFeedback,
-	feedbackKey,
-	loadFeedback,
-	normalizeFeedback,
-	serializeFeedback,
-} from "../src/factory/web/review-feedback.js";
-import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
-import { reviewKey } from "../src/factory/web/review-state.js";
 
 beforeEach(async () => {
 	const previous = globalThis.fetch;
@@ -395,28 +380,28 @@ it("keeps the connected app usable without workers and prompts for installation 
 	window.dispatchEvent(new Event("appinstalled"));
 	expect(pwaState().installed).toBe(true);
 });
-it("round-trips bounded tab-local drafts, identifiers and stable reading anchors, then consumes restoration", () => {
+it("round-trips only view state and excludes every editable surface", () => {
 	browserState();
 	const saved = storage(),
 		otherTab = storage();
 	vi.stubGlobal("sessionStorage", saved);
-	rememberDraft("composer/inputs", { prompt: "launch draft" });
-	rememberDraft("composer/execution", {
+	rememberView("composer/inputs", { prompt: "launch draft" });
+	rememberView("composer/execution", {
 		identityProfile: "native-claude",
 		toolProfile: "shared",
 	});
-	rememberDraft("chat/r", "chat draft");
-	rememberDraft("answers/r", { 0: "clarification draft" }, "old-question");
-	rememberDraft("feedback/text/r", "feedback", "old-gate");
-	rememberDraft("recipe/json/test", "{}", "old-recipe");
-	rememberDraft("recipe/machine-capacity", { limit: "7" }, "old-limit");
-	rememberDraft(
+	rememberView("chat/r", "chat draft");
+	rememberView("answers/r", { 0: "clarification draft" }, "old-question");
+	rememberView("feedback/text/r", "feedback", "old-gate");
+	rememberView("recipe/json/test", "{}", "old-recipe");
+	rememberView("recipe/machine-capacity", { limit: "7" }, "old-limit");
+	rememberView(
 		"recipe/title-settings",
 		{ value: { runner: "codex", model: "cheap" } },
 		"old-title-settings",
 	);
-	rememberDraft("inspector/selection", { runId: "r", name: "plan" });
-	rememberDraft("reading/r/all", {
+	rememberView("inspector/selection", { runId: "r", name: "plan" });
+	rememberView("reading/r/all", {
 		following: false,
 		anchor: { key: "entry/2", cursor: "cursor", offset: 4 },
 		expanded: ["entry/2"],
@@ -425,29 +410,26 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	expect(otherTab.values.size).toBe(0);
 	const snapshot = decodeSnapshot([...saved.values.values()][0]);
 	expect(snapshot).toMatchObject({
-		schema: 1,
+		schema: 2,
 		target: build,
 		route: "#/runs/r",
-		details: ["recipe-test"],
-		drafts: { "reading/r/all": { value: { anchor: { cursor: "cursor" } } } },
+		details: [],
+		views: { "reading/r/all": { value: { anchor: { cursor: "cursor" } } } },
 	});
 	loadRestoration(build, saved);
-	expect(restoredDraft("composer/execution")).toEqual({
-		identityProfile: "native-claude",
-		toolProfile: "shared",
-	});
-	forgetDraft("composer/execution");
-	expect(restoredDraft("chat/r")).toBe("chat draft");
-	expect(restoredDraft("recipe/machine-capacity")).toEqual({ limit: "7" });
-	expect(snapshot?.drafts["recipe/machine-capacity"]?.revision).toBe(
-		"old-limit",
-	);
-	expect(restoredDraft("recipe/title-settings")).toEqual({
-		value: { runner: "codex", model: "cheap" },
-	});
-	expect(snapshot?.drafts["recipe/title-settings"]?.revision).toBe(
-		"old-title-settings",
-	);
+	for (const key of [
+		"chat/r",
+		"composer/inputs",
+		"composer/execution",
+		"answers/r",
+		"feedback/text/r",
+		"recipe/json/test",
+		"recipe/title-settings",
+		"recipe/machine-capacity",
+	]) {
+		expect(restoredView(key)).toBeUndefined();
+		expect(snapshot?.views[key]).toBeUndefined();
+	}
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });
@@ -459,35 +441,24 @@ it.each([
 	"/tools",
 	"/capacity",
 	"/titles",
-])("restores Settings%s and unsaved capacity/title drafts through updates", (section) => {
+])("restores Settings%s without unsaved inputs through updates", (section) => {
 	browserState();
 	const route = `#/settings${section}`;
 	vi.stubGlobal("location", { hash: route });
 	const saved = storage();
 	vi.stubGlobal("sessionStorage", saved);
-	const edits = {
-		"recipe/machine-capacity": { value: { limit: "7" }, revision: "old-limit" },
-		"recipe/title-settings": {
-			value: { value: { runner: "codex", model: "cheap" } },
-			revision: "old-title-settings",
-		},
-	};
-	for (const [key, draft] of Object.entries(edits))
-		rememberDraft(key, draft.value, draft.revision);
+	rememberView("recipe/machine-capacity", { limit: "7" });
+	rememberView("recipe/title-settings", { value: { model: "cheap" } });
 	preserveForUpdate(build, saved);
 	expect(decodeSnapshot([...saved.values.values()][0])).toMatchObject({
 		route,
-		drafts: edits,
+		views: {},
 	});
-	for (const key of Object.keys(edits)) forgetDraft(key);
 	location.hash = "#/";
 	loadRestoration(build, saved);
 	expect(location.hash).toBe(route);
-	for (const [key, draft] of Object.entries(edits)) {
-		expect(restoredDraft(key)).toEqual(draft.value);
-		expect(draftRevision(key)).toBe(draft.revision);
-		forgetDraft(key);
-	}
+	expect(restoredView("recipe/machine-capacity")).toBeUndefined();
+	expect(restoredView("recipe/title-settings")).toBeUndefined();
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });
@@ -500,11 +471,11 @@ it.each([
 	expect(
 		decodeSnapshot(
 			JSON.stringify({
-				schema: 1,
+				schema: 2,
 				target: build,
 				route,
 				expires: Date.now() + 1000,
-				drafts: {},
+				views: {},
 				details: [],
 			}),
 		),
@@ -513,18 +484,20 @@ it.each([
 it.each([
 	false,
 	true,
-])("preserves the Settings route during updates with signed-out state %s", (signedOut) => {
+])("preserves the Settings route without inputs during updates with signed-out state %s", (signedOut) => {
 	browserState();
 	vi.stubGlobal("location", { hash: "#/settings" });
 	const saved = storage();
 	vi.stubGlobal("sessionStorage", saved);
-	rememberDraft("chat/r", "private draft");
+	rememberView("chat/r", "private draft");
+	rememberView("inspector/selection", { runId: "r", name: "plan" });
 	if (signedOut) accessRequired("Signed out");
 	preserveForUpdate(build, saved);
 	const snapshot = decodeSnapshot([...saved.values.values()][0]);
 	expect(snapshot?.route).toBe("#/settings");
-	expect(snapshot?.drafts["chat/r"]).toEqual(
-		signedOut ? undefined : { value: "private draft" },
+	expect(snapshot?.views["chat/r"]).toBeUndefined();
+	expect(snapshot?.views["inspector/selection"]).toEqual(
+		signedOut ? undefined : { value: { runId: "r", name: "plan" } },
 	);
 	location.hash = "#/";
 	loadRestoration(build, saved);
@@ -532,7 +505,7 @@ it.each([
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });
-it("preserves dedicated review routes, checked steps and revision-scoped feedback during updates", () => {
+it("preserves review routes and reading progress without feedback", () => {
 	browserState();
 	vi.stubGlobal("location", {
 		hash: "#/runs/r/review?page=overview&rev=current",
@@ -548,24 +521,19 @@ it("preserves dedicated review routes, checked steps and revision-scoped feedbac
 		checked: { "feature-0/0": true },
 		visited: { overview: true, "chapter:feature-0": true },
 	};
-	rememberDraft(progressKey, progress);
-	rememberDraft(positionKey, 700);
-	rememberDraft(feedbackKey, "Keep this feedback with this revision", "gate");
+	rememberView(progressKey, progress);
+	rememberView(positionKey, 700);
+	rememberView(feedbackKey, "Keep this feedback with this revision", "gate");
 	preserveForUpdate(build, saved);
 	const snapshot = decodeSnapshot([...saved.values.values()][0]);
 	expect(snapshot?.route).toBe("#/runs/r/review?page=overview&rev=current");
-	expect(snapshot?.drafts[progressKey]?.value).toEqual(progress);
-	expect(snapshot?.drafts[positionKey]?.value).toBe(700);
-	expect(snapshot?.drafts[feedbackKey]).toEqual({
-		value: "Keep this feedback with this revision",
-		revision: "gate",
-	});
+	expect(snapshot?.views[progressKey]?.value).toEqual(progress);
+	expect(snapshot?.views[positionKey]?.value).toBe(700);
+	expect(snapshot?.views[feedbackKey]).toBeUndefined();
 	loadRestoration(build, saved);
-	expect(restoredDraft(progressKey)).toEqual(progress);
-	expect(restoredDraft(positionKey)).toBe(700);
-	expect(restoredDraft(feedbackKey)).toBe(
-		"Keep this feedback with this revision",
-	);
+	expect(restoredView(progressKey)).toEqual(progress);
+	expect(restoredView(positionKey)).toBe(700);
+	expect(restoredView(feedbackKey)).toBeUndefined();
 	completeRestoration();
 });
 it.each([
@@ -584,104 +552,89 @@ it.each([
 		visited: {},
 		...changes,
 	};
-	rememberDraft(key, progress);
+	rememberView(key, progress);
 	preserveForUpdate(build, saved);
 	expect(
-		decodeSnapshot([...saved.values.values()][0])?.drafts[key]?.value,
+		decodeSnapshot([...saved.values.values()][0])?.views[key]?.value,
 	).toEqual(progress);
 	// Simulate a fresh app's in-memory state before consuming this tab's snapshot.
-	forgetDraft(key);
+	forgetView(key);
 	loadRestoration(build, saved);
-	expect(restoredDraft(key)).toEqual(progress);
+	expect(restoredView(key)).toEqual(progress);
 	completeRestoration();
-	forgetDraft(key);
+	forgetView(key);
 });
 it("retains a tab's document position at zero rather than falling back to shared storage", () => {
 	browserState();
 	const saved = storage();
 	const key = "position/bob-today-position";
-	rememberDraft(key, 0);
+	rememberView(key, 0);
 	preserveForUpdate(build, saved);
-	expect(
-		decodeSnapshot([...saved.values.values()][0])?.drafts[key]?.value,
-	).toBe(0);
+	expect(decodeSnapshot([...saved.values.values()][0])?.views[key]?.value).toBe(
+		0,
+	);
 	loadRestoration(build, saved);
-	expect(restoredDraft(key)).toBe(0);
+	expect(restoredView(key)).toBe(0);
 	completeRestoration();
-	forgetDraft(key);
+	forgetView(key);
 });
 it("keeps browsing defaults out of update snapshots while preserving edits and explicit panel choices", () => {
 	browserState();
 	const saved = storage();
 	for (let i = 0; i < 301; i++) {
-		rememberDraft(`panels/visited-${i}`, {});
-		rememberDraft(`chat/visited-${i}`, "");
-		rememberDraft(`answers/visited-${i}`, {});
-		rememberDraft(`feedback/open/visited-${i}`, false);
-		rememberDraft(`review/progress/visited-${i}`, {
+		rememberView(`panels/visited-${i}`, {});
+		rememberView(`chat/visited-${i}`, "");
+		rememberView(`answers/visited-${i}`, {});
+		rememberView(`feedback/open/visited-${i}`, false);
+		rememberView(`review/progress/visited-${i}`, {
 			page: 0,
 			reviewed: {},
 			checked: {},
 			disclosures: {},
 			visited: {},
 		});
-		rememberDraft(`reading/visited-${i}/all`, {
+		rememberView(`reading/visited-${i}/all`, {
 			following: true,
 			expanded: [],
 			groups: [],
 		});
 	}
-	rememberDraft("chat/edited", "keep this");
-	rememberDraft("panels/edited", { clarify: false, work: true });
-	rememberDraft("recipe/json/edited", "");
-	rememberDraft("answers/cleared", { 0: "answer" });
-	rememberDraft("answers/cleared", {});
-	rememberDraft("chat/cleared", "draft");
-	rememberDraft("chat/cleared", "");
+	rememberView("chat/edited", "keep this");
+	rememberView("panels/edited", { clarify: false, work: true });
+	rememberView("recipe/json/edited", "");
+	rememberView("answers/cleared", { 0: "answer" });
+	rememberView("answers/cleared", {});
+	rememberView("chat/cleared", "draft");
+	rememberView("chat/cleared", "");
 	try {
 		preserveForUpdate(build, saved);
 		const snapshot = decodeSnapshot([...saved.values.values()][0])!;
 		for (let i = 0; i < 301; i++)
 			expect(
-				Object.keys(snapshot.drafts).some((key) =>
-					key.includes(`visited-${i}`),
-				),
+				Object.keys(snapshot.views).some((key) => key.includes(`visited-${i}`)),
 			).toBe(false);
-		expect(snapshot.drafts).toMatchObject({
-			"chat/edited": { value: "keep this" },
+		expect(snapshot.views).toMatchObject({
 			"panels/edited": { value: { clarify: false, work: true } },
-			"recipe/json/edited": { value: "" },
 		});
-		expect(snapshot.drafts["answers/cleared"]).toBeUndefined();
-		expect(snapshot.drafts["chat/cleared"]).toBeUndefined();
+		expect(snapshot.views["answers/cleared"]).toBeUndefined();
+		expect(snapshot.views["chat/cleared"]).toBeUndefined();
 		loadRestoration(build, saved);
-		expect(restoredDraft("chat/edited")).toBe("keep this");
-		expect(restoredDraft("panels/edited")).toEqual({
+		expect(restoredView("chat/edited")).toBeUndefined();
+		expect(restoredView("panels/edited")).toEqual({
 			clarify: false,
 			work: true,
 		});
-		expect(restoredDraft("recipe/json/edited")).toBe("");
+		expect(restoredView("recipe/json/edited")).toBeUndefined();
 		completeRestoration();
 	} finally {
 		for (const key of ["chat/edited", "panels/edited", "recipe/json/edited"])
-			forgetDraft(key);
+			forgetView(key);
 	}
 });
-it("still postpones updates rather than dropping too many meaningful drafts", () => {
+it("never postpones an update for denied storage or oversized old inputs", () => {
 	browserState();
-	try {
-		for (let i = 0; i < 301; i++)
-			rememberDraft(`chat/edited-${i}`, `draft ${i}`);
-		expect(() => preserveForUpdate(build, storage())).toThrow("too large");
-		expect(restoredDraft("chat/edited-0")).toBe("draft 0");
-		expect(restoredDraft("chat/edited-300")).toBe("draft 300");
-	} finally {
-		for (let i = 0; i < 301; i++) forgetDraft(`chat/edited-${i}`);
-	}
-});
-it("postpones when storage is denied or drafts exceed the bound and retains edits", () => {
-	browserState();
-	rememberDraft("chat/r", "keep this draft");
+	rememberView("chat/huge", "x".repeat(512001));
+	expect(restoredView("chat/huge")).toBeUndefined();
 	expect(() =>
 		preserveForUpdate(build, {
 			setItem: () => {
@@ -689,20 +642,16 @@ it("postpones when storage is denied or drafts exceed the bound and retains edit
 			},
 			getItem: () => null,
 		}),
-	).toThrow("Update postponed");
-	expect(restoredDraft("chat/r")).toBe("keep this draft");
-	rememberDraft("chat/huge", "x".repeat(512001));
-	expect(() => preserveForUpdate(build, storage())).toThrow("too large");
-	rememberDraft("chat/huge", undefined);
-	expect(() => rememberDraft("transcript/r", [])).toThrow("Unknown");
+	).not.toThrow();
+	expect(() => preserveForUpdate(build, storage())).not.toThrow();
 });
 it("rejects expired, malformed and unexpected snapshot surfaces", () => {
 	const snapshot = {
-		schema: 1,
+		schema: 2,
 		target: build,
 		route: "#/",
 		expires: Date.now() - 1,
-		drafts: {},
+		views: {},
 		details: [],
 	};
 	expect(decodeSnapshot(JSON.stringify(snapshot))).toBeUndefined();
@@ -712,7 +661,7 @@ it("rejects expired, malformed and unexpected snapshot surfaces", () => {
 			JSON.stringify({
 				...snapshot,
 				expires: Date.now() + 1000,
-				drafts: { "query/r": { value: [] } },
+				views: { "query/r": { value: [] } },
 			}),
 		),
 	).toBeUndefined();
@@ -733,7 +682,7 @@ it("rejects expired, malformed and unexpected snapshot surfaces", () => {
 				JSON.stringify({
 					...snapshot,
 					expires: Date.now() + 1000,
-					drafts: { [String(key)]: { value } },
+					views: { [String(key)]: { value } },
 				}),
 			),
 		).toBeUndefined();
@@ -754,284 +703,37 @@ it("keeps startup usable when access to sessionStorage itself throws", () => {
 	try {
 		expect(() => loadRestoration(build)).not.toThrow();
 		expect(restorationNotice()).toMatch(/storage is unavailable/);
-		expect(() => preserveForUpdate(build)).toThrow("Update postponed");
+		expect(() => preserveForUpdate(build)).not.toThrow();
 	} finally {
 		if (original) Object.defineProperty(globalThis, "sessionStorage", original);
 		else delete (globalThis as any).sessionStorage;
 	}
 });
-it("marks changed questions/gates/recipes as stale drafts instead of accepting them", () => {
-	rememberDraft(
-		"answers/conflict",
-		{ 0: "keep me" },
-		revisionOf(["old question"]),
-	);
-	let stale = false;
-	function Probe() {
-		const [value, , conflict] = useRestorableState(
-			"answers/conflict",
-			{},
-			revisionOf(["new question"]),
-		);
-		stale = conflict;
-		return createElement("span", {}, JSON.stringify(value));
-	}
-	expect(renderToStaticMarkup(createElement(Probe))).toContain("keep me");
-	expect(stale).toBe(true);
-	// Acknowledgement is a user action; it is not done during snapshot loading.
-	vi.stubGlobal("window", { dispatchEvent: vi.fn() });
-	vi.stubGlobal(
-		"CustomEvent",
-		class {
-			constructor(
-				public name: string,
-				public data: unknown,
-			) {}
-		},
-	);
-	acknowledgeDraft("answers/conflict");
-	expect(window.dispatchEvent).toHaveBeenCalledOnce();
-});
-
-it.each([
-	"head",
-	"guide",
-	"gate",
-])("recovers this tab's feedback as stale when the review %s changes", (changed) => {
+it("ignores and removes legacy update snapshots without reading their inputs", () => {
 	browserState();
-	vi.stubGlobal("localStorage", storage());
-	const run = {
-		id: `revision-${changed}`,
-		status: "waiting",
-		reviewGate: { id: "old-gate", headSha: "old-head", status: "pending" },
-	};
-	const guide = { summary: "Original guide" };
-	const key = feedbackKey(reviewKey(run, guide), run.reviewGate.id);
-	const revision = revisionOf([key, run.reviewGate, run.status, undefined]);
-	const draft = {
-		...emptyFeedback(),
-		feedback: "Keep my additional feedback",
-		items: [
-			{
-				text: "Keep my item comment",
-				target: {
-					path: "/summary",
-					page: 0,
-					pageTitle: "Overview",
-					kind: "Text block",
-					label: "Summary",
-					context: "Original guide",
-					order: [0, 0],
-				},
-			},
-		],
-	};
-	const snapshotKey = `feedback/draft/${key}`;
-	rememberDraft(snapshotKey, draft, revision);
 	const saved = storage();
-	preserveForUpdate(build, saved);
-	forgetDraft(snapshotKey);
+	saved.setItem(
+		"bobs-factory-update-v1",
+		JSON.stringify({
+			schema: 1,
+			target: build,
+			expires: Date.now() + 1000,
+			route: "#/recipes",
+			details: [],
+			drafts: {
+				"answers/r": { value: { 0: "old answer" } },
+				"chat/r": { value: "old chat" },
+			},
+		}),
+	);
+	saved.setItem(
+		"bob-composer-execution",
+		JSON.stringify({ identityProfile: "old-profile" }),
+	);
 	loadRestoration(build, saved);
-	const current = structuredClone(run);
-	if (changed === "head") current.reviewGate.headSha = "new-head";
-	if (changed === "gate") current.reviewGate.id = "new-gate";
-	const currentGuide =
-		changed === "guide" ? { summary: "Revised guide" } : guide;
-	const currentKey = feedbackKey(
-		reviewKey(current, currentGuide),
-		current.reviewGate.id,
-	);
-	const recovered = feedbackSession(currentKey).getSnapshot().draft;
-	let stale = false;
-	function Probe() {
-		const [, , conflict] = useRestorableState(
-			`feedback/draft/${currentKey}`,
-			recovered,
-			revisionOf([currentKey, current.reviewGate, current.status, undefined]),
-		);
-		stale = conflict;
-		return null;
-	}
-	renderToStaticMarkup(createElement(Probe));
-	expect(recovered).toEqual(normalizeFeedback(draft));
-	expect(stale).toBe(true);
-	expect(draftRevision(`feedback/draft/${currentKey}`)).toBe(revision);
-	expect(
-		loadFeedback(
-			feedbackKey(
-				reviewKey({ ...current, id: "other-run" }, currentGuide),
-				current.reviewGate.id,
-			),
-		),
-	).toEqual(emptyFeedback());
-	forgetDraft(`feedback/draft/${currentKey}`);
-	forgetDraft(snapshotKey);
-	completeRestoration();
-});
-
-it("preserves collected feedback per tab through updates and migrates earlier text snapshots", () => {
-	browserState();
-	const local = storage(),
-		saved = storage();
-	vi.stubGlobal("localStorage", local);
-	const key = "factory-review/update/feedback/gate",
-		snapshotKey = `feedback/draft/${key}`;
-	const session = feedbackSession(key);
-	const item = {
-		text: "Keep my item comment",
-		target: {
-			path: "/summary",
-			page: 0,
-			pageTitle: "Summary",
-			kind: "Text block",
-			label: "Summary",
-			context: "Original guide",
-			order: [0, 0],
-		},
-	};
-	session.update((d) => ({
-		...d,
-		feedback: "Keep additional feedback",
-		open: true,
-		collectedOpen: true,
-		editing: "/summary",
-		items: [item],
-	}));
-	const draft = session.getSnapshot().draft;
-	rememberDraft(snapshotKey, draft, "old-gate-state");
-	try {
-		preserveForUpdate(build, saved);
-		const snapshot = decodeSnapshot([...saved.values.values()][0])!;
-		expect(snapshot.drafts[snapshotKey]).toEqual({
-			value: draft,
-			revision: "old-gate-state",
-		});
-		forgetDraft(snapshotKey);
-		local.setItem(
-			key,
-			JSON.stringify({ ...emptyFeedback(), feedback: "Another tab" }),
-		);
-		loadRestoration(build, saved);
-		expect(feedbackSession(key).getSnapshot().draft).toEqual(draft);
-		let stale = false;
-		function Probe() {
-			const [, , conflict] = useRestorableState(
-				snapshotKey,
-				emptyFeedback(),
-				"new-gate-state",
-			);
-			stale = conflict;
-			return null;
-		}
-		renderToStaticMarkup(createElement(Probe));
-		expect(stale).toBe(true);
-		const invalid = structuredClone(snapshot);
-		invalid.drafts[snapshotKey].value.items[0].target.order = [-1];
-		expect(decodeSnapshot(JSON.stringify(invalid))).toBeUndefined();
-		completeRestoration();
-		forgetDraft(snapshotKey);
-		const otherTab = {
-			...draft,
-			feedback: "Another tab's general feedback",
-			items: [{ ...item, text: "Another tab's unsent item comment" }],
-		};
-		local.setItem(key, JSON.stringify(otherTab));
-		rememberDraft(
-			`feedback/text/${key}`,
-			"Original tab text",
-			"legacy-gate-state",
-		);
-		rememberDraft(`feedback/open/${key}`, true);
-		expect(loadFeedback(key).feedback).toBe("Original tab text");
-		expect(loadFeedback(key).open).toBe(true);
-		expect(restoredDraft(snapshotKey)).toEqual({
-			...emptyFeedback(),
-			feedback: "Original tab text",
-			open: true,
-			collectedOpen: false,
-			editing: undefined,
-		});
-		expect(draftRevision(snapshotKey)).toBe("legacy-gate-state");
-		expect(restoredDraft(`feedback/text/${key}`)).toBeUndefined();
-		expect(restoredDraft(`feedback/open/${key}`)).toBeUndefined();
-		expect(
-			serializeFeedback(loadFeedback(key), {
-				revision: "abc123",
-				goal: "Review the update",
-				identity: key,
-			}),
-		).toBe(
-			`Review feedback\nRevision: abc123\nGuide: Review the update\nReview: ${key}\n\nAdditional feedback\n\nOriginal tab text`,
-		);
-		expect(JSON.parse(local.getItem(key)!)).toEqual(otherTab);
-		rememberDraft(snapshotKey, emptyFeedback());
-		expect(restoredDraft(snapshotKey)).toBeUndefined();
-	} finally {
-		for (const surface of [
-			snapshotKey,
-			`feedback/text/${key}`,
-			`feedback/open/${key}`,
-		])
-			forgetDraft(surface);
-	}
-});
-
-it.each([
-	{ text: "Legacy text only", open: undefined },
-	{ text: undefined, open: true },
-])("isolates partial legacy snapshots from shared feedback: %j", ({
-	text,
-	open,
-}) => {
-	browserState();
-	const local = storage();
-	vi.stubGlobal("localStorage", local);
-	const key = "factory-review/partial-legacy/feedback/gate";
-	const textKey = `feedback/text/${key}`,
-		openKey = `feedback/open/${key}`,
-		draftKey = `feedback/draft/${key}`;
-	local.setItem(key, JSON.stringify({ feedback: "Other tab", open: true }));
-	if (text !== undefined) rememberDraft(textKey, text, "legacy-gate");
-	if (open !== undefined) rememberDraft(openKey, open, "legacy-gate");
-	try {
-		const draft = normalizeFeedback({
-			...emptyFeedback(),
-			feedback: text ?? "",
-			open: open ?? false,
-		});
-		expect(loadFeedback(key)).toEqual(draft);
-		expect(loadFeedback(key)).toEqual(draft);
-		expect(draftRevision(draftKey)).toBe("legacy-gate");
-	} finally {
-		for (const surface of [textKey, openKey, draftKey]) forgetDraft(surface);
-	}
-});
-
-it("restores answer modes and retained custom text alongside historical string drafts", () => {
-	const snapshot = {
-		schema: 1,
-		expires: Date.now() + 1000,
-		target: build,
-		route: "#/",
-		details: [],
-		drafts: {
-			"answers/current": {
-				revision: "old-batch",
-				value: {
-					0: { mode: "recommendation", custom: "keep my draft" },
-					1: { mode: "custom", custom: "typed answer" },
-				},
-			},
-			"answers/legacy": {
-				revision: "old-question",
-				value: { 0: "legacy answer" },
-			},
-		},
-	};
-	expect(decodeSnapshot(JSON.stringify(snapshot))?.drafts).toEqual(
-		snapshot.drafts,
-	);
-	const invalid = structuredClone(snapshot);
-	invalid.drafts["answers/current"].value[0].mode = "automatic";
-	expect(decodeSnapshot(JSON.stringify(invalid))).toBeUndefined();
+	expect(saved.getItem("bob-composer-execution")).toBeNull();
+	expect(saved.getItem("bobs-factory-update-v1")).toBeNull();
+	expect(restoredView("answers/r")).toBeUndefined();
+	expect(restoredView("chat/r")).toBeUndefined();
+	expect(location.hash).toBe("#/runs/r");
 });

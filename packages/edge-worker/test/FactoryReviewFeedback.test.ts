@@ -1,16 +1,12 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { accessRequired, checkAccess } from "../src/factory/web/auth-state.js";
-import { forgetDraft } from "../src/factory/web/restoration.js";
 import {
 	emptyFeedback,
 	type FeedbackDraft,
 	type FeedbackTarget,
 	feedbackKey,
 	hasFeedback,
-	loadFeedback,
-	normalizeFeedback,
 	orderedComments,
-	saveFeedback,
 	serializeFeedback,
 } from "../src/factory/web/review-feedback.js";
 import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
@@ -51,68 +47,25 @@ const context = {
 	identity: "review/abc123/guide1",
 };
 
-it("migrates single-text drafts and discards invalid stored comments", () => {
-	expect(
-		normalizeFeedback({
-			feedback: "Keep my old draft\nSecond line",
-			open: true,
-		}),
-	).toEqual({
-		feedback: "Keep my old draft\nSecond line",
-		open: true,
-		collectedOpen: false,
-		items: [],
-		editing: undefined,
-	});
-	const item = {
-		target: target("/chapters/0/before", [1, 2]),
-		text: "Comment",
-	};
-	expect(
-		normalizeFeedback({
-			items: [
-				null,
-				{},
-				item,
-				item,
-				{ ...item, target: { ...item.target, path: "bad" } },
-				{ ...item, target: { ...item.target, order: [NaN] } },
-			],
-			feedback: 7,
-			editing: false,
-		}).items,
-	).toEqual([item]);
-	for (const value of [null, "broken", [], false])
-		expect(normalizeFeedback(value).items).toEqual([]);
-});
-
-it("isolates shared storage by run, revision, guide and gate while retaining legacy keys", () => {
-	const data = new Map<string, string>();
-	vi.stubGlobal("localStorage", {
-		getItem: (key: string) => data.get(key) ?? null,
-		setItem: (key: string, value: string) => data.set(key, value),
-	});
-	const run = { id: "a", reviewGate: { headSha: "sha1" } },
-		guide = { summary: "Guide" };
-	const key = feedbackKey(reviewKey(run, guide), "gate1");
-	expect(key).toBe(`${reviewKey(run, guide)}/feedback/gate1`);
-	const draft = { ...emptyFeedback(), feedback: "Old draft" };
-	saveFeedback(key, draft);
-	expect(loadFeedback(key).feedback).toBe("Old draft");
-	// Another tab's shared storage is not a draft mounted in this tab or saved by its update.
-	forgetDraft(`feedback/draft/${key}`);
-	for (const other of [
-		feedbackKey(reviewKey({ ...run, id: "b" }, guide), "gate1"),
-		feedbackKey(
-			reviewKey({ ...run, reviewGate: { headSha: "sha2" } }, guide),
-			"gate1",
+it("starts fresh even with legacy feedback saved in browser storage", () => {
+	const key = feedbackKey(
+		reviewKey(
+			{ id: "a", reviewGate: { headSha: "sha1" } },
+			{ summary: "Guide" },
 		),
-		feedbackKey(reviewKey(run, { summary: "New guide" }), "gate1"),
-		feedbackKey(reviewKey(run, guide), "gate2"),
-	])
-		expect(loadFeedback(other).feedback).toBe("");
-	saveFeedback(feedbackKey(reviewKey(run, guide), "gate2"), emptyFeedback());
-	expect(loadFeedback(key).feedback).toBe("Old draft");
+		"gate1",
+	);
+	const getItem = vi.fn(() =>
+		JSON.stringify({ feedback: "Old draft", open: true }),
+	);
+	const setItem = vi.fn();
+	vi.stubGlobal("localStorage", { getItem, setItem });
+	const first = feedbackSession(key);
+	first.update((d) => ({ ...d, feedback: "New edit" }));
+	expect(feedbackSession(key).getSnapshot().draft).toEqual(emptyFeedback());
+	expect(first.getSnapshot().draft.feedback).toBe("New edit");
+	expect(getItem).not.toHaveBeenCalled();
+	expect(setItem).not.toHaveBeenCalled();
 });
 
 it("orders distinct repeated targets numerically and serializes the entire combined review", () => {
@@ -243,113 +196,59 @@ it("checks the final message limit without truncating or altering drafts", () =>
 	).toThrow("Shorten your feedback");
 });
 
-it("keeps unavailable storage from blocking draft use", () => {
-	vi.stubGlobal("localStorage", {
-		getItem: () => {
-			throw new Error("Denied");
-		},
-		setItem: () => {
-			throw new Error("Denied");
-		},
-	});
-	const draft = { ...loadFeedback("denied"), feedback: "In-memory feedback" };
-	expect(() => saveFeedback("denied", draft)).not.toThrow();
-	expect(serializeFeedback(draft)).toBe("In-memory feedback");
-});
-
-function memoryStorage() {
-	const data = new Map<string, string>();
-	vi.stubGlobal("localStorage", {
-		getItem: (key: string) => data.get(key) ?? null,
-		setItem: (key: string, value: string) => data.set(key, value),
-	});
-}
-
-it("retains the pending lock across route remounts and clears the submitted view", () => {
-	memoryStorage();
-	const key = "remount-success";
+it.each([
+	"success",
+	"failure",
+])("keeps only the pending lock across remounts on %s", (result) => {
+	const key = `remount-${result}`;
 	const original = feedbackSession(key);
 	original.update((d) => ({ ...d, feedback: "Submitted feedback" }));
 	const submitted = original.getSnapshot().draft;
 	expect(original.lock()).toBe(true);
 	const returning = feedbackSession(key);
-	const changed = vi.fn();
-	const unsubscribe = returning.subscribe(changed);
-	expect(returning.getSnapshot().busy).toBe(true);
+	expect(returning.getSnapshot()).toEqual({
+		draft: emptyFeedback(),
+		busy: true,
+	});
 	expect(returning.lock()).toBe(false);
-	returning.update((d) => ({ ...d, feedback: "New edit while locked" }));
-	expect(returning.getSnapshot().draft).toEqual(submitted);
-	original.clear(submitted);
+	returning.update((d) => ({ ...d, feedback: "Duplicate edit" }));
+	expect(returning.getSnapshot().draft).toEqual(emptyFeedback());
+	if (result === "success") original.clear(submitted);
 	original.unlock();
 	expect(returning.getSnapshot()).toEqual({
 		draft: emptyFeedback(),
 		busy: false,
 	});
-	expect(changed).toHaveBeenCalledTimes(2);
-	unsubscribe();
-	expect(loadFeedback(key).feedback).toBe("");
-	expect(feedbackSession(key).getSnapshot().busy).toBe(false);
-});
-
-it("unlocks a remounted review after failure without clearing its drafts", () => {
-	memoryStorage();
-	const key = "remount-failure";
-	const original = feedbackSession(key);
-	original.update((d) => ({
-		...d,
-		feedback: "General draft",
-		items: [{ target: target("/summary", [0, 1]), text: "Item draft" }],
-	}));
-	const submitted = original.getSnapshot().draft;
-	original.lock();
-	const returning = feedbackSession(key);
-	original.unlock();
-	expect(returning.getSnapshot()).toEqual({ draft: submitted, busy: false });
-	returning.update((d) => ({ ...d, feedback: "Editable after failure" }));
-	expect(loadFeedback(key)).toEqual(
-		normalizeFeedback({ ...submitted, feedback: "Editable after failure" }),
+	expect(original.getSnapshot().draft.feedback).toBe(
+		result === "failure" ? "Submitted feedback" : "",
 	);
+	returning.update((d) => ({ ...d, feedback: "Replacement edit" }));
 	expect(returning.lock()).toBe(true);
+	original.clear(submitted);
+	original.unlock();
+	expect(returning.getSnapshot()).toEqual({
+		draft: { ...emptyFeedback(), feedback: "Replacement edit" },
+		busy: true,
+	});
 	returning.unlock();
 });
 
-it("clears only the submitted contents and identity when stored drafts change", () => {
-	memoryStorage();
-	const key = "changed-in-other-tab";
-	const original = feedbackSession(key);
-	const first = { target: target("/summary", [0, 1]), text: "Original" };
-	const second = { target: target("/goal", [0, 0]), text: "Unchanged" };
-	original.update((d) => ({
-		...d,
-		feedback: "Original general feedback",
-		items: [first, second],
-	}));
-	const submitted = original.getSnapshot().draft;
-	original.lock();
-	const returning = feedbackSession(key);
-	const newItem = { target: target("/checks/0", [2, 0]), text: "New item" };
-	const edited = {
-		...submitted,
-		feedback: "New unsent general edit",
-		items: [{ ...first, text: "New unsent item edit" }, second, newItem],
-	};
-	saveFeedback(key, edited);
-	const other = feedbackSession("replacement-gate");
-	other.update((d) => ({ ...d, feedback: "Different review" }));
-	expect(other.getSnapshot().busy).toBe(false);
-	original.clear(submitted);
-	original.unlock();
-	const expected = normalizeFeedback({
-		...edited,
-		items: [edited.items[0], newItem],
+it("keeps a replacement review independent of an older request", () => {
+	const old = feedbackSession("old-gate");
+	old.update((d) => ({ ...d, feedback: "Old feedback" }));
+	const submitted = old.getSnapshot().draft;
+	old.lock();
+	const replacement = feedbackSession("new-gate");
+	replacement.update((d) => ({ ...d, feedback: "New feedback" }));
+	old.clear(submitted);
+	old.unlock();
+	expect(replacement.getSnapshot()).toEqual({
+		draft: { ...emptyFeedback(), feedback: "New feedback" },
+		busy: false,
 	});
-	expect(returning.getSnapshot()).toEqual({ draft: expected, busy: false });
-	expect(loadFeedback(key)).toEqual(expected);
-	expect(feedbackSession(key).getSnapshot().draft).toEqual(expected);
-	expect(loadFeedback("replacement-gate").feedback).toBe("Different review");
 });
 
-it("keeps pending state and submitted drafts in memory when storage is denied", () => {
+it("edits and submits without access to browser storage", () => {
 	vi.stubGlobal("localStorage", {
 		getItem: () => {
 			throw new Error("Denied");
@@ -358,16 +257,44 @@ it("keeps pending state and submitted drafts in memory when storage is denied", 
 			throw new Error("Denied");
 		},
 	});
-	const original = feedbackSession("pending-denied");
-	original.update((d) => ({ ...d, feedback: "In-memory draft" }));
-	const submitted = original.getSnapshot().draft;
-	original.lock();
-	const returning = feedbackSession("pending-denied");
-	expect(returning.getSnapshot()).toEqual({ draft: submitted, busy: true });
-	original.clear(submitted);
-	original.unlock();
-	expect(returning.getSnapshot()).toEqual({
+	const session = feedbackSession("denied");
+	session.update((d) => ({ ...d, feedback: "In-memory feedback" }));
+	const submitted = session.getSnapshot().draft;
+	expect(serializeFeedback(submitted)).toBe("In-memory feedback");
+	expect(session.lock()).toBe(true);
+	session.clear(submitted);
+	session.unlock();
+	expect(session.getSnapshot()).toEqual({
 		draft: emptyFeedback(),
 		busy: false,
 	});
+});
+
+it("releases access-lost locks without letting old callbacks alter a new session", async () => {
+	const old = feedbackSession("logout-gate");
+	old.update((draft) => ({ ...draft, feedback: "Before logout" }));
+	const submitted = old.getSnapshot().draft;
+	expect(old.lock()).toBe(true);
+	const notify = vi.fn();
+	const unsubscribe = old.subscribe(notify);
+	accessRequired("Signed out");
+	expect(notify).toHaveBeenCalled();
+	old.clear(submitted);
+	expect(old.getSnapshot().busy).toBe(false);
+	vi.stubGlobal("fetch", async () =>
+		Response.json({ authenticated: true, expires: Date.now() + 3600000 }),
+	);
+	await checkAccess();
+	const current = feedbackSession("logout-gate");
+	expect(current.getSnapshot().draft).toEqual(emptyFeedback());
+	current.update((draft) => ({ ...draft, feedback: "After login" }));
+	expect(current.lock()).toBe(true);
+	old.clear(submitted);
+	old.unlock();
+	expect(current.getSnapshot()).toEqual({
+		draft: { ...emptyFeedback(), feedback: "After login" },
+		busy: true,
+	});
+	current.unlock();
+	unsubscribe();
 });

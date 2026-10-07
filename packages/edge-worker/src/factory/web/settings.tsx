@@ -2,9 +2,9 @@ import { Navigate, NavLink, useParams } from "react-router-dom";
 import { AccessSettings } from "./auth";
 import { useAction, useConfig } from "./client";
 import { ExecutionEditor } from "./execution";
+import { useFormState } from "./form-state";
 import { AgentSettings } from "./forms";
-import { DraftNotice } from "./pwa-ui";
-import { forgetDraft, revisionOf, useRestorableState } from "./restoration";
+import { revisionOf } from "./restoration";
 import { Button, useToast } from "./ui";
 
 const pages = [
@@ -59,8 +59,7 @@ export function Settings() {
 					))}
 				</nav>
 				<div className="settings-content">
-					{/* Keep the execution draft mounted while navigating between sections. */}
-					<ExecutionEditor config={config} page={page} />
+					<ExecutionEditor key={page} config={config} page={page} />
 					{page === "access" && <AccessSettings />}
 					{page === "capacity" && <MachineCapacitySettings config={config} />}
 					{page === "titles" && <RunTitleSettings config={config} />}
@@ -72,17 +71,16 @@ export function Settings() {
 
 function MachineCapacitySettings({ config }: { config: any }) {
 	const capacity = config.capacity;
-	const action = useAction();
-	const draftKey = "recipe/machine-capacity";
-	const [draft, setDraft, stale] = useRestorableState<
-		{ limit: string } | undefined
-	>(draftKey, undefined, revisionOf(capacity?.limit));
+	const action = useAction("capacity", revisionOf(capacity?.limit));
+	const [draft, setDraft] = useFormState<{ limit: string } | undefined>(
+		revisionOf(capacity?.limit),
+		undefined,
+	);
 	const limit = draft?.limit ?? String(capacity?.limit ?? 4);
 	if (!capacity) return null;
 	return (
 		<section className="recipe" aria-labelledby="machine-capacity">
 			<h2 id="machine-capacity">Instance capacity</h2>
-			<DraftNotice conflict={stale} draftKey={draftKey} />
 			<p>
 				One pool for this Bob’s Factory instance’s agents and intensive workflow
 				steps. Default: {capacity.defaultLimit} slots.
@@ -97,7 +95,7 @@ function MachineCapacitySettings({ config }: { config: any }) {
 			<form
 				onSubmit={async (event) => {
 					event.preventDefault();
-					if (stale || action.isPending) return;
+					if (action.isPending) return;
 					try {
 						await action.mutateAsync({
 							path: "/api/capacity",
@@ -105,7 +103,6 @@ function MachineCapacitySettings({ config }: { config: any }) {
 							body: { limit: Number(limit) },
 						});
 						setDraft(undefined);
-						forgetDraft(draftKey);
 					} catch {}
 				}}
 			>
@@ -126,7 +123,7 @@ function MachineCapacitySettings({ config }: { config: any }) {
 				<Button
 					type="submit"
 					requiresConnection
-					disabled={draft === undefined || stale || action.isPending}
+					disabled={draft === undefined || action.isPending}
 				>
 					Save instance limit
 				</Button>
@@ -136,18 +133,20 @@ function MachineCapacitySettings({ config }: { config: any }) {
 	);
 }
 function RunTitleSettings({ config }: { config: any }) {
-	const draftKey = "recipe/title-settings";
-	const [draft, setDraft, stale] = useRestorableState<
-		{ value: any } | undefined
-	>(draftKey, undefined, revisionOf(config.titleGeneration ?? {}));
+	const [draft, setDraft] = useFormState<{ value: any } | undefined>(
+		revisionOf(config.titleGeneration ?? {}),
+		undefined,
+	);
 	const value = draft?.value ?? config.titleGeneration ?? {};
 	const dirty = draft !== undefined;
-	const action = useAction(),
+	const action = useAction(
+			"title-settings",
+			revisionOf(config.titleGeneration ?? {}),
+		),
 		toast = useToast();
 	return (
 		<section className="recipe" aria-labelledby="run-title-settings">
 			<h2 id="run-title-settings">Run titles</h2>
-			<DraftNotice conflict={stale} draftKey={draftKey} />
 			<p>
 				Choose a fast, inexpensive agent to name all new runs. Runs start with
 				their ID while titles generate in the background. These settings are
@@ -164,9 +163,8 @@ function RunTitleSettings({ config }: { config: any }) {
 			/>
 			<Button
 				requiresConnection
-				disabled={!dirty || stale || action.isPending}
+				disabled={!dirty || action.isPending}
 				onClick={() =>
-					!stale &&
 					void action
 						.mutateAsync({
 							path: "/api/title-settings",
@@ -175,7 +173,6 @@ function RunTitleSettings({ config }: { config: any }) {
 						})
 						.then(() => {
 							setDraft(undefined);
-							forgetDraft(draftKey);
 							toast({ text: "Run title settings saved" });
 						})
 						.catch(() => {})

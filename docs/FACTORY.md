@@ -94,8 +94,8 @@ Loopback HTTP uses a host-only HttpOnly/SameSite=Strict cookie. Both paths requi
 a verified, unexpired server record. Ceremonies require user verification, exact
 origin/RP binding and a single-use browser-bound challenge valid for five minutes.
 
-Sign out warns that unsent edits, review comments and saved restoration drafts
-will be discarded across tabs. Expiry/revocation also clears sensitive views and
+Sign out warns that unsent edits and review comments will be discarded across
+tabs. Expiry/revocation also clears sensitive views and
 stops retries, streams and late responses. Reopening, restored navigation and
 reconnection recheck the session. Offline access shows an inert sign-in screen.
 The service worker caches only the static shell, never auth/API/media responses.
@@ -186,7 +186,7 @@ different site data; do not assume shared cookies or storage.
 To uninstall on Chrome/Brave, use the app’s menu or the browser’s app management
 page. Remove Safari’s app from Applications/Dock, or delete the iPhone/Android
 Home Screen app. Removing an app does not stop backend runs. Clearing its site
-data can also remove preferences and unsent browser drafts.
+data can also remove reading and layout preferences.
 
 ### Disconnection and updates
 
@@ -197,10 +197,10 @@ After a successful first visit, the service worker caches only the branded
 static shell: HTML, versioned JavaScript/CSS, manifest and icons. A cold offline
 launch explains how to reconnect instead of loading indefinitely. Run history,
 API responses, live events, artifacts, screenshots and raw entries are not
-stored in this offline cache. Already-loaded information remains in memory and
-is marked potentially stale after disconnection. Drafts remain editable, but
-server actions pause; nothing is queued or replayed offline. Reconnection
-refreshes configuration and current runs/gates before actions become available.
+stored in this offline cache. Loss of authenticated access clears private views and unsent edits. The static
+sign-in screen remains available offline; nothing is queued or replayed.
+Reconnection rechecks access and refreshes configuration and current runs/gates
+before actions become available.
 Unsupported service workers or failed registration leave the connected app
 usable.
 
@@ -211,32 +211,36 @@ the complete new shell, then reloads only the tab you chose. Other tabs retain
 their UI and receive their own update notice. Installation and frontend updates
 do not stop, restart, approve or replace backend runs.
 
-An explicit update saves a bounded, tab-local snapshot of unsent launch/chat/
-answer/feedback/recipe edits (including instance capacity and global title-agent settings), selected
-route, open panels, inspector selection
-and stable conversation reading anchors. It contains no query cache, transcript,
-artifact or screenshot. The snapshot expires after 30 minutes, is limited to
-512,000 characters, and is removed after restoration. Ordinary editing does not
-persist these drafts, and a manual browser reload or closing the tab does not
-guarantee preservation. Denied/full session storage postpones the update with
-edits still on screen. Copy unusually large drafts before retrying.
+Unsent launch inputs and agent overrides, chat text, clarification answers,
+review comments, additional feedback and recipe/settings edits stay only in the
+current unchanged form. Leaving the form, changing its questions, recommendations,
+review or saved settings context, reloading, reopening a tab or updating the app
+discards them. Unchanged refreshes and unrelated activity/capacity updates keep
+current typing. Fresh forms use current server settings and declared defaults;
+recommendations are still preselected where provided. Typing never sends or saves.
+Previously stored drafts and legacy update snapshots are ignored.
 
-Restored drafts are never sent automatically. If questions, review gates or
-recipe, instance-capacity or title-agent settings changed, review the warning and current state before explicitly
-acknowledging the draft. Recovered copies remain available when a former gate is
-no longer open. Reading restoration fetches the relevant bounded history page;
-if its anchor is no longer retained, the app explains that limitation.
+Explicit updates preserve only reading/layout state on a best-effort basis:
+the selected route, open panels, inspector selection and stable conversation
+reading anchors. The view-only snapshot expires after 30 minutes, is bounded at
+512,000 characters and is consumed after restoration. It contains no inputs,
+query cache, transcript, artifact or screenshot. Denied/full browser storage
+cannot postpone an update just to preserve edits. Reading restoration fetches
+the relevant bounded history page; if its anchor is no longer retained, the app
+explains that limitation.
 
-Unsent guided-review comments and additional feedback from this tab survive
-changes to the same run's commit, guide or gate. They retain their old context
-and require acknowledgment before submission to the current review. Old drafts
-from another tab's shared storage are not imported across review identities.
+Guided-review comments remain collected while moving among chapters of the same
+active form. Leaving the review or changing its commit, guide, gate or decision
+context starts an empty collection. Pending requests remain locked across
+navigation, but returning shows fresh inputs. Failures keep text for retry only
+in the same unchanged, still-open form. Saved settings, submitted answers,
+messages and feedback, run history and pending server work remain on the server.
 
 For damaged browser caches, first copy unsent drafts and reconnect. Try **Retry
 connection**, then **Update now**. If that fails, remove this origin’s service
 worker and `bobs-factory-shell-*` caches in browser developer tools, then reload
 while connected. The browser’s clear-site-data option is a broader reset and
-also removes browser preferences/drafts. Server run/checkpoint data is separate
+also removes browser preferences. Server run/checkpoint data is separate
 and remains intact.
 
 The versioned UI sends `X-Factory-Build` on API requests; mismatched writes are
@@ -283,8 +287,7 @@ Open a run for artifacts and step conversations. Human replies appear on the
 right, tools share expandable summaries, and CI polling becomes one status.
 Real Markdown, decision records, diffs, provider discussion, screenshots and
 review recaps render in the artifact inspector; Raw JSON stays available. Large
-artifacts load on demand. Conversations fetch 120 records at a time, virtualize visible rows, and retain a reloadable window of at most 600 records / 2 MiB per open step. Collapsed histories unmount; reading positions and disclosures remain cached. Large raw tool records load only when opened. Screenshot galleries virtualize rows, images load near the viewport, and adjacent small artifacts/images are prefetched unless data saving is enabled. Full JSON remains available explicitly; large Markdown renders in bounded pages. Reading positions, open panels, typed fields and
-selected cards survive live updates. A reconnecting SSE connection sends coalesced run/configuration notifications; the UI fetches only changed visible data and refreshes after reconnect or returning from the background. Scroll away from the latest message to
+artifacts load on demand. Conversations fetch 120 records at a time, virtualize visible rows, and retain a reloadable window of at most 600 records / 2 MiB per open step. Collapsed histories unmount; reading positions and disclosures remain cached. Large raw tool records load only when opened. Screenshot galleries virtualize rows, images load near the viewport, and adjacent small artifacts/images are prefetched unless data saving is enabled. Full JSON remains available explicitly; large Markdown renders in bounded pages. Reading positions, open panels and selected cards survive live updates. Typed fields survive unchanged refreshes only within their current form. A reconnecting SSE connection sends coalesced run/configuration notifications; the UI fetches only changed visible data and refreshes after reconnect or returning from the background. Scroll away from the latest message to
 pause following; **Scroll to latest** resumes it. Inspector Escape returns focus
 and screenshot Escape returns to the gallery first.
 
@@ -292,7 +295,7 @@ and screenshot Escape returns to the gallery first.
 Send questions or instructions while Claude/Codex is working; after completion,
 a message resumes the same native conversation and worktree. Successful submissions
 appear as your chat bubbles and remain available after restart. Failed submissions
-retain the draft. Use ⌘ / Ctrl + Enter to send; Enter adds a newline.
+retain text only in the current unchanged form. Use ⌘ / Ctrl + Enter to send; Enter adds a newline.
 
 Slack and Zulip sessions listed in the dashboard use the same composer and
 feedback controls. Send remains available while capacity is full or a continuation
@@ -501,12 +504,13 @@ empty field, and switching back and forth preserves the custom draft. Mixed
 answers submit together. Blank custom answers prevent submission. **Send answers
 is always required**: generating, selecting, refreshing or restoring suggestions
 never advances work. Ticket replies also require an explicit answer.
-Drafts retain both the choice and text through navigation and PWA updates. Older
-text drafts remain custom answers. Changed question batches or recommendations
-require draft review, and contextual API submissions reject outdated batch IDs,
-even when the question wording repeats.
+Answer choices and custom text reset when leaving the form, changing the
+questions or recommendations, reloading or updating. Within the unchanged form,
+switching answer modes retains custom text. Contextual API submissions reject
+outdated batch IDs, even when the question wording repeats.
 Restart retains unchanged visual-review assistance questions and their batch ID,
-so saved answers remain usable without sending another question notification.
+so explicitly submitted answers remain usable without sending another question
+notification.
 
 The factory runs clarification → decisions → planner/plan-review loop →
 implementation → push/draft PR → code-review/fix loop → CI/fix loop → QA story and screenshot

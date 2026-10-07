@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useAction } from "./client";
+import { useFormState } from "./form-state";
+import { revisionOf } from "./restoration";
 import { Button } from "./ui";
 
 const runners = ["claude", "codex", "gemini", "cursor", "opencode"];
@@ -807,8 +809,6 @@ export function ExecutionSelectors({
 	workflow?: string;
 	model?: string;
 }) {
-	const action = useAction();
-	const [savedPreview, setPreview] = useState<any>();
 	const profiles = config.executionProfiles;
 	const previewKey = JSON.stringify([
 		repositoryId,
@@ -819,6 +819,8 @@ export function ExecutionSelectors({
 		value.identityProfile,
 		value.toolProfile,
 	]);
+	const action = useAction("execution-preview", previewKey);
+	const [savedPreview, setPreview] = useFormState<any>(previewKey, undefined);
 	const preview =
 		savedPreview?.key === previewKey ? savedPreview.result : undefined;
 	if (!profiles) return null;
@@ -912,12 +914,16 @@ export function ExecutionEditor({
 	config: any;
 	page?: string;
 }) {
-	const action = useAction();
-	const [draft, setDraft] = useState<any>();
-	const [editing, setEditing] = useState<{
-		kind: "identities" | "tools";
-		index: number;
-	}>();
+	const context = `${page}/${revisionOf(config.executionProfiles)}`;
+	const action = useAction("execution-profiles", context);
+	const [draft, setDraft] = useFormState<any>(context, undefined);
+	const [editing, setEditing] = useFormState<
+		| {
+				kind: "identities" | "tools";
+				index: number;
+		  }
+		| undefined
+	>(context, undefined);
 	const profiles = draft ?? config.executionProfiles;
 	if (!profiles || !["execution", "identities", "tools"].includes(page ?? ""))
 		return null;
