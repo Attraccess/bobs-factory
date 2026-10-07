@@ -16,6 +16,13 @@ import {
 } from "./client";
 import { activitiesOf } from "./conversation";
 import { DraftNotice } from "./pwa-ui";
+import {
+	type AnswerDraft,
+	answerChoice,
+	type Recommendation,
+	resolveAnswers,
+	serializeAnswers,
+} from "./question-answers";
 import { revisionOf, useRestorableState } from "./restoration";
 import { GuidedReview } from "./review";
 import {
@@ -152,45 +159,61 @@ export function RunOrigin({ run }: { run: any }) {
 		</section>
 	);
 }
-function QuickReplies({ question }: { question: string }) {
-	const versions = question.match(/\b\d+\.\d+(?:\.\d+)?\b/g);
-	if (versions && new Set(versions).size === 2) return [...new Set(versions)];
-	const match = question.match(
-		/(?:on|for|use|choose|prefer|keep|include)\s+([^?]{2,35}?)\s+or\s+([^?]{2,35})\?/i,
-	);
-	return match ? [match[1]!, match[2]!] : [];
-}
 export function QuestionForm({ run }: { run: any }) {
 	const toast = useToast(),
-		action = useAction(),
-		[answers, setAnswers, staleAnswers] = useRestorableState<
-			Record<number, string>
-		>(
-			`answers/${run.id}`,
-			{},
-			revisionOf([run.questions, run.step, run.status]),
-		);
-	const questions = run.questions ?? [];
+		action = useAction();
+	const questions: string[] = run.questions ?? [];
+	const recommendations: Recommendation[] = run.questionRecommendations ?? [];
+	const [draft, setDraft, staleAnswers] = useRestorableState<AnswerDraft>(
+		`answers/${run.id}`,
+		{},
+		revisionOf([
+			run.questionBatchId,
+			questions,
+			recommendations,
+			run.step,
+			run.status,
+		]),
+	);
+	const fields = useRef<Record<number, HTMLTextAreaElement | null>>({});
+	const submitting = useRef(false);
+	const focusCustom = useRef<number | undefined>(undefined);
+	useEffect(() => {
+		if (focusCustom.current === undefined) return;
+		fields.current[focusCustom.current]?.focus();
+		focusCustom.current = undefined;
+	});
+	const answers = resolveAnswers(questions, recommendations, draft);
+	const incomplete =
+		!questions.length || answers.some((answer) => !answer.trim());
 	const submit = async () => {
 		if (
+			submitting.current ||
 			action.isPending ||
+			action.isBlocked ||
 			staleAnswers ||
-			questions.some((_: string, i: number) => !answers[i]?.trim())
+			incomplete
 		)
 			return;
+		submitting.current = true;
 		try {
 			await action.mutateAsync({
 				path: `/api/runs/${run.id}/answer`,
 				body: {
-					context: { questions, step: run.step },
-					answer: questions
-						.map((q: string, i: number) => `${i + 1}. ${q}\n${answers[i]}`)
-						.join("\n\n"),
+					context: {
+						questions,
+						step: run.step,
+						questionBatchId: run.questionBatchId,
+					},
+					answer: serializeAnswers(questions, answers),
 				},
 			});
+			setDraft({});
 			toast({ text: "Answer sent — Bob is back at it" });
 		} catch {
-			/* error stays visible */
+			/* error stays visible; draft is retained */
+		} finally {
+			submitting.current = false;
 		}
 	};
 	return (
@@ -212,41 +235,87 @@ export function QuestionForm({ run }: { run: any }) {
 				<legend className="sr-only">
 					Answers to Bob's clarification questions
 				</legend>
-				{questions.map((q: string, i: number) => (
-					<div className="question" key={`${i}/${q}`}>
-						<div className="question-heading">
-							<Bob mood="alert" size={32} />
-							<div id={`question-${run.id}-${i}`} className="question-content">
-								<Markdown>{q}</Markdown>
+				{questions.map((q, i) => {
+					const recommendation = recommendations.find(
+						(item) => item.questionIndex === i,
+					);
+					const choice = answerChoice(draft[i], recommendation);
+					const custom = !recommendation || choice.mode === "custom";
+					const select = (mode: "custom" | "recommendation") => {
+						if (mode === "custom") focusCustom.current = i;
+						setDraft({ ...draft, [i]: { ...choice, mode } });
+					};
+					return (
+						<div className="question" key={`${i}/${q}`}>
+							<div className="question-heading">
+								<Bob mood="alert" size={32} />
+								<div
+									id={`question-${run.id}-${i}`}
+									className="question-content"
+								>
+									<Markdown>{q}</Markdown>
+								</div>
 							</div>
-						</div>
-						<div className="answer-controls">
-							<div className="quick-replies">
-								{QuickReplies({ question: q }).map((value) => (
-									<button
-										type="button"
-										aria-pressed={answers[i] === value}
-										key={value}
-										onClick={() => setAnswers({ ...answers, [i]: value })}
-									>
-										{value}
-									</button>
-								))}
-							</div>
-							<textarea
-								id={`answer-${run.id}-${i}`}
+							<fieldset
+								className="answer-controls"
 								aria-labelledby={`question-${run.id}-${i}`}
-								required
-								rows={2}
-								placeholder="Type your answer…"
-								value={answers[i] ?? ""}
-								onChange={(e) =>
-									setAnswers({ ...answers, [i]: e.target.value })
-								}
-							/>
+							>
+								<legend className="sr-only">
+									Choose an answer for question {i + 1}
+								</legend>
+								{recommendation && (
+									<>
+										<div className="answer-modes">
+											<label>
+												<input
+													type="radio"
+													name={`answer-mode-${run.id}-${i}`}
+													checked={!custom}
+													onChange={() => select("recommendation")}
+												/>
+												Use recommendation
+											</label>
+											<label>
+												<input
+													type="radio"
+													name={`answer-mode-${run.id}-${i}`}
+													checked={custom}
+													onChange={() => select("custom")}
+												/>
+												Custom answer
+											</label>
+										</div>
+										<div className="answer-recommendation">
+											<Markdown>{recommendation.answer}</Markdown>
+											<div className="recommendation-reason">
+												<Markdown>{recommendation.reason}</Markdown>
+											</div>
+										</div>
+									</>
+								)}
+								{custom && (
+									<textarea
+										ref={(el) => {
+											fields.current[i] = el;
+										}}
+										id={`answer-${run.id}-${i}`}
+										aria-labelledby={`question-${run.id}-${i}`}
+										required
+										rows={2}
+										placeholder="Type your answer…"
+										value={choice.custom}
+										onChange={(e) =>
+											setDraft({
+												...draft,
+												[i]: { mode: "custom", custom: e.target.value },
+											})
+										}
+									/>
+								)}
+							</fieldset>
 						</div>
-					</div>
-				))}
+					);
+				})}
 			</fieldset>
 			{action.error && (
 				<p className="error" role="alert">
@@ -257,11 +326,7 @@ export function QuestionForm({ run }: { run: any }) {
 				type="submit"
 				requiresConnection
 				busy={action.isPending}
-				disabled={
-					staleAnswers ||
-					!questions.length ||
-					questions.some((_: string, i: number) => !answers[i]?.trim())
-				}
+				disabled={staleAnswers || incomplete}
 			>
 				Send answers <kbd>⌘⏎</kbd>
 			</Button>

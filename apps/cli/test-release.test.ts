@@ -105,7 +105,8 @@ function publish(config = {}) {
 		writes: events.filter((e) => e.args?.[0] === "publish"),
 	};
 }
-describe("npm test-channel publication", () => {
+// Each scenario launches mocked npm processes for the complete package graph.
+describe("npm test-channel publication", { timeout: 30_000 }, () => {
 	it("publishes all17 in order with hooks disabled, exact integrity, immutable provenance and protected tags", () => {
 		const p = publish();
 		expect(p.status, p.stderr).toBe(0);

@@ -30,6 +30,7 @@ import {
 } from "cyrus-core";
 import { EdgeWorker } from "cyrus-edge-worker";
 import type { SlackWebhookEvent } from "cyrus-slack-event-transport";
+import { f1AgentHandlers, parseF1AgentMode } from "./src/MockAgentRunner.js";
 import { bold, cyan, dim, gray, green, success } from "./src/utils/colors.js";
 
 // ============================================================================
@@ -39,6 +40,7 @@ import { bold, cyan, dim, gray, green, success } from "./src/utils/colors.js";
 const CYRUS_PORT = Number.parseInt(process.env.CYRUS_PORT || "3600", 10);
 const CYRUS_REPO_PATH = process.env.CYRUS_REPO_PATH || process.cwd();
 const CYRUS_HOME = join(tmpdir(), `cyrus-f1-${Date.now()}`);
+const F1_AGENT_MODE = parseF1AgentMode(process.env.F1_AGENT_MODE);
 const DEFAULT_REPOS_BASE_DIR = getDefaultReposDir(CYRUS_HOME);
 const DEFAULT_WORKTREES_BASE_DIR = getDefaultWorktreesDir(CYRUS_HOME);
 // Optional second repository path for multi-repo orchestration testing
@@ -158,14 +160,15 @@ function createEdgeWorkerConfig(): EdgeWorkerConfig {
 
 	const config: EdgeWorkerConfig = {
 		platform: "cli" as const,
+		handlers: f1AgentHandlers(F1_AGENT_MODE, process.env.F1_MOCK_RESPONSE),
 		repositories,
 		cyrusHome: CYRUS_HOME,
 		serverPort: CYRUS_PORT,
 		serverHost: "localhost",
 		claudeDefaultModel: "sonnet",
 		claudeDefaultFallbackModel: "haiku",
-		// Env-gated runner selection for harness validation (default unchanged).
-		// e.g. CYRUS_DEFAULT_RUNNER=codex to exercise the Codex (app-server) path.
+		// Provider labels select the intended adapter; mock mode intercepts all of them.
+		// F1_AGENT_MODE=live is required to launch a real provider.
 		...(process.env.CYRUS_DEFAULT_RUNNER && {
 			defaultRunner: process.env.CYRUS_DEFAULT_RUNNER as
 				| "claude"
@@ -257,6 +260,9 @@ function displayConnectionInfo(): void {
 		`  ${cyan("RPC:")}       ${bold(`http://localhost:${CYRUS_PORT}/cli/rpc`)}`,
 	);
 	console.log(`  ${cyan("Platform:")}  ${bold("cli")}`);
+	console.log(
+		`  ${cyan("Agents:")}    ${bold(F1_AGENT_MODE === "mock" ? "mock (no API usage)" : "LIVE (uses provider credits)")}`,
+	);
 	console.log(`  ${cyan("Cyrus Home:")} ${dim(CYRUS_HOME)}`);
 	console.log(`  ${cyan("Repository:")} ${dim(CYRUS_REPO_PATH)}`);
 	if (MULTI_REPO_MODE) {

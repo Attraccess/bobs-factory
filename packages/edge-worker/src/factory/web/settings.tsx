@@ -24,8 +24,8 @@ const pages = [
 	},
 	{
 		id: "capacity",
-		name: "Machine capacity",
-		description: "Shared execution slot limit",
+		name: "Instance capacity",
+		description: "Instance execution slot limit",
 	},
 	{
 		id: "titles",
@@ -78,16 +78,16 @@ function MachineCapacitySettings({ config }: { config: any }) {
 	if (!capacity) return null;
 	return (
 		<section className="recipe" aria-labelledby="machine-capacity">
-			<h2 id="machine-capacity">Machine capacity</h2>
+			<h2 id="machine-capacity">Instance capacity</h2>
 			<DraftNotice conflict={stale} draftKey={draftKey} />
 			<p>
-				One shared pool for agents and intensive workflow steps. Default:{" "}
-				{capacity.defaultLimit} slots.
+				One pool for this Cyrus instance's agents and intensive workflow steps.
+				Default: {capacity.defaultLimit} slots.
 			</p>
 			<p role="status">
-				Shared limit: {capacity.limit} {capacity.limit === 1 ? "slot" : "slots"}
-				. {capacity.active} executing · {capacity.stopping} stopping ·{" "}
-				{capacity.queued} waiting for capacity
+				Instance limit: {capacity.limit}{" "}
+				{capacity.limit === 1 ? "slot" : "slots"}. {capacity.active} executing ·{" "}
+				{capacity.stopping} stopping · {capacity.queued} waiting for capacity
 			</p>
 			{capacity.error && <p role="alert">{capacity.error}</p>}
 			{capacity.conflict && <p role="alert">{capacity.conflict}</p>}
@@ -107,7 +107,7 @@ function MachineCapacitySettings({ config }: { config: any }) {
 				}}
 			>
 				<label>
-					Shared slot limit{" "}
+					Instance slot limit{" "}
 					<input
 						type="number"
 						min="1"
@@ -125,7 +125,7 @@ function MachineCapacitySettings({ config }: { config: any }) {
 					requiresConnection
 					disabled={draft === undefined || stale || action.isPending}
 				>
-					Save machine limit
+					Save instance limit
 				</Button>
 				{action.error && <p role="alert">{action.error.message}</p>}
 			</form>

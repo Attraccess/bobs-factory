@@ -28,7 +28,7 @@ trusted local operator.
 
 ## Execution identities and tools
 
-**Settings** has separate pages for **Execution defaults**, **Identity profiles**, **Tool profiles**, **Machine capacity** and **Run titles**. Recipes manages workflow definitions and launch permissions. In Identity profiles, create an identity with separate Git author/committer, repository account, signing policy and per-runner API references. Create a tool profile with declared MCP sources/definitions, per-server credential references, removals, denials and supported ordinary settings. Enter credential names or protected-file paths, never token values.
+**Settings** has separate pages for **Execution defaults**, **Identity profiles**, **Tool profiles**, **Instance capacity** and **Run titles**. Recipes manages workflow definitions and launch permissions. In Identity profiles, create an identity with separate Git author/committer, repository account, signing policy and per-runner API references. Create a tool profile with declared MCP sources/definitions, per-server credential references, removals, denials and supported ordinary settings. Enter credential names or protected-file paths, never token values.
 
 The composer selects identity and tools independently and offers an effective preview. Manual choices override repository defaults, which override factory defaults. No selection/default keeps Legacy behavior. Explicit profiles require both concerns and an authentication binding for every workflow provider and the title agent. Unsupported native sources fail before worktree setup. Saved runs keep their accepted definitions even when defaults change or profiles are deleted.
 
@@ -93,7 +93,7 @@ their UI and receive their own update notice. Installation and frontend updates
 do not stop, restart, approve or replace backend runs.
 
 An explicit update saves a bounded, tab-local snapshot of unsent launch/chat/
-answer/feedback/recipe edits (including machine capacity and global title-agent settings), selected
+answer/feedback/recipe edits (including instance capacity and global title-agent settings), selected
 route, open panels, inspector selection
 and stable conversation reading anchors. It contains no query cache, transcript,
 artifact or screenshot. The snapshot expires after 30 minutes, is limited to
@@ -103,7 +103,7 @@ guarantee preservation. Denied/full session storage postpones the update with
 edits still on screen. Copy unusually large drafts before retrying.
 
 Restored drafts are never sent automatically. If questions, review gates or
-recipe, machine-capacity or title-agent settings changed, review the warning and current state before explicitly
+recipe, instance-capacity or title-agent settings changed, review the warning and current state before explicitly
 acknowledging the draft. Recovered copies remain available when a former gate is
 no longer open. Reading restoration fetches the relevant bounded history page;
 if its anchor is no longer retained, the app explains that limitation.
@@ -362,6 +362,28 @@ diagrams and optional PNG/JPEG images saved in the run's evidence directory.
 Use `![caption](/api/runs/RUN_ID/question-images/unique-filename.png)` to display
 a local image beside the question; nested paths and external symlink targets
 are rejected. Visuals supplement a question that is understandable on its own.
+
+Refinement roles generate evidence-based suggestions alongside string questions:
+
+```json
+{"questions":["Which approach should we use?"],"questionRecommendations":[{"questionIndex":0,"answer":"Use the existing approach.","reason":"It meets the requirement without a migration."}]}
+```
+
+Recommendation indices are zero-based and unique within the batch. Answers and
+reasons must be nonblank. Missing facts, credentials or access must be requested
+instead of invented; omit recommendations where no supported choice exists.
+Custom and frozen question-enabled recipes receive these instructions at execution.
+Legacy results without metadata continue to show blank answer fields.
+
+“Use recommendation” is selected by default. “Custom answer” focuses a separate
+empty field, and switching back and forth preserves the custom draft. Mixed
+answers submit together. Blank custom answers prevent submission. **Send answers
+is always required**: generating, selecting, refreshing or restoring suggestions
+never advances work. Ticket replies also require an explicit answer.
+Drafts retain both the choice and text through navigation and PWA updates. Older
+text drafts remain custom answers. Changed question batches or recommendations
+require draft review, and contextual API submissions reject outdated batch IDs,
+even when the question wording repeats.
 
 The factory runs clarification → decisions → planner/plan-review loop →
 implementation → push/draft PR → code-review/fix loop → CI/fix loop → QA story and screenshot
@@ -744,21 +766,24 @@ guarantee of flawless software.
 - File dependency and image hashes support screenshot reuse; unknown global
   effects require fresh evidence. Brief recap updates never waive fresh approval.
 
-### Machine capacity
+### Instance capacity
 
-Factory and integration/chat sessions use one shared machine pool. The default is
+Factory and integration/chat sessions in one Cyrus instance use one pool. The default is
 four slots, including installations that previously omitted `maxConcurrentSessions`.
 Existing numeric settings seed a new pool. Joining workers without a setting adopt
-the persisted policy; an explicit conflicting setting is reported in Settings → Machine capacity.
-Change **Settings → Machine capacity** to update the durable shared limit. Increasing
+the persisted policy; an explicit conflicting setting is reported in Settings → Instance capacity.
+Change **Settings → Instance capacity** to update that instance’s durable limit. Increasing
 it admits queued work; decreasing it lets existing execution drain. A deliberate
 configuration edit updates the policy, and removing the numeric setting restores
 four. Unrelated config reloads and stale startup settings do not reset it.
 
-The coordinator lives at `~/.cyrus/machine-capacity`, independently of each worker's
-`--home`, repository or worktree. Set `CYRUS_CAPACITY_DIRECTORY` to an accessible
-shared directory for multiple service accounts, or an isolated directory for tests.
-All participating workers must use the coordinator. This release requires POSIX
+The coordinator lives at `<cyrusHome>/machine-capacity`. Separate `--home`
+directories have independent limits and queues, so temporary F1 instances do not
+compete with the instance running their parent QA step. Processes using the same
+Cyrus home share its durable policy and restart queue. Repositories and worktrees
+within an instance share that instance's pool. `CYRUS_CAPACITY_DIRECTORY` no longer
+overrides this location. The default home retains `~/.cyrus/machine-capacity` and
+its saved policy. This release requires POSIX
 process inspection (`ps`) for reconciliation; unsupported or inaccessible process
 inspection fails closed. Existing older worker versions must be upgraded to join.
 
@@ -780,7 +805,7 @@ Queued work remains active and stoppable. Ordinary integration/chat sessions rep
 capacity queueing before the provider has started. Cancelled queue entries never
 start, and running/stopping execution remains counted until cleanup has settled.
 
-Primary work is FIFO across processes. The oldest background title request is admitted
+Primary work is FIFO within the instance. The oldest background title request is admitted
 after at most eight primary admissions while it is eligible. Queue identities and
 ordering survive restart; graceful shutdown parks recoverable work without recording
 user termination. Startup reconciles surviving local descendants before admission.

@@ -129,14 +129,24 @@ export class FactoryServer {
 				reply.header("X-Factory-Build", shell.build);
 			}
 		});
-		// This separate listener is loopback-only and never registered on Cyrus's webhook tunnel.
+		// Keep the listener on loopback; optionally admit one explicitly configured UI tunnel.
+		const publicUrl = process.env.CYRUS_FACTORY_PUBLIC_ORIGIN
+			? new URL(process.env.CYRUS_FACTORY_PUBLIC_ORIGIN)
+			: undefined;
 		this.app.addHook("onRequest", async (request, reply) => {
 			const host = request.headers.host ?? "";
-			if (!/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host))
+			const isPublicHost = publicUrl !== undefined && host === publicUrl.host;
+			if (
+				!isPublicHost &&
+				!/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host)
+			)
 				return reply.code(403).send({ error: "Local UI only" });
 			if (!["GET", "HEAD"].includes(request.method)) {
 				const origin = request.headers.origin;
-				if (origin && origin !== `http://${host}`)
+				if (
+					origin &&
+					origin !== (isPublicHost ? publicUrl?.origin : `http://${host}`)
+				)
 					return reply.code(403).send({ error: "Invalid origin" });
 				if (request.headers["x-factory-request"] !== "1")
 					return reply
@@ -258,7 +268,7 @@ export class FactoryServer {
 					};
 		});
 		this.app.put("/api/capacity", async (request) => {
-			if (!hooks.capacity) throw new Error("Machine capacity unavailable");
+			if (!hooks.capacity) throw new Error("Instance capacity unavailable");
 			const { limit } = z
 				.object({ limit: z.number().int().positive() })
 				.parse(request.body);
@@ -686,6 +696,7 @@ export class FactoryServer {
 						context: z
 							.object({
 								questions: z.array(z.string()),
+								questionBatchId: z.string().optional(),
 								step: z.string().optional(),
 							})
 							.optional(),
@@ -695,6 +706,8 @@ export class FactoryServer {
 				if (
 					context &&
 					(context.step !== run.step ||
+						(context.questionBatchId !== undefined &&
+							context.questionBatchId !== run.questionBatchId) ||
 						!isDeepStrictEqual(context.questions, run.questions))
 				)
 					throw new Error(

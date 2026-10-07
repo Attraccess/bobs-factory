@@ -307,6 +307,22 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		});
 		expect(staleAnswer.statusCode).toBe(409);
 		expect(runtime.get(id).answers).toHaveLength(0);
+		const staleBatch = await server.app.inject({
+			method: "POST",
+			url: `/api/runs/${id}/answer`,
+			headers,
+			payload: {
+				answer: "Old batch",
+				context: {
+					questions: detail.json().questions,
+					step: detail.json().step,
+					questionBatchId: "previous-batch",
+				},
+			},
+		});
+		expect(staleBatch.statusCode).toBe(409);
+		expect(runtime.get(id).answers).toHaveLength(0);
+
 		expect(
 			(
 				await server.app.inject({
@@ -317,6 +333,7 @@ it("starts, displays, answers and terminates runs through the local API", async 
 						answer: "Codex",
 						context: {
 							questions: detail.json().questions,
+							questionBatchId: detail.json().questionBatchId,
 							step: detail.json().step,
 						},
 					},

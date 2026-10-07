@@ -4,13 +4,24 @@ This changelog documents internal development changes, refactors, tooling update
 
 ## [Unreleased]
 
+### Fixed
+
+- Integrate refinement recommendations with the latest workflow recovery changes, retaining recommendation validation and bounded retry regression coverage. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
+
+- Update the complete routing-prompt expectation for refinement recommendations so CI validates the current capability guidance. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
+
 ### Added
+
+- Add a reproducible mocked F1 follow-up for refinement recommendation submission and existing-session replies, retaining the disputed native-only QA coverage as an explicit limitation. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))
 
 ### Changed
 
+- Merge current workflow recovery, refinement recommendations and instance capacity into execution profiles; retain dedicated Settings pages and both answer/execution update drafts. Wait for coordinator initialization before removing persistence-test homes and give mocked multi-package release scenarios a bounded 30-second budget. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
 - Integrate execution profiles with machine capacity and the current Recipes UI; preserve selected environments, cancellable setup and redaction while retaining lease provenance and both settings editors. Update direct-MCP regression checks for Legacy and selected complete child environments. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+- Run F1 agents as deterministic mocks by default, including Factory roles, chat sessions, and background titles; require an explicit live-mode opt-in for provider usage.
 
 - Integrate machine capacity with ticket lifecycle tracking, MCP OAuth recovery and batched session persistence; isolate browser capacity policy from server-only ticket modules and retain transactional chat-save barriers and stdio execution provenance. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
 

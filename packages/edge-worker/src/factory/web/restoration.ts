@@ -82,8 +82,19 @@ function validDraft(key: string, value: any): boolean {
 					(id === undefined || typeof id === "string"),
 			)
 		);
-	if (/^(answers\/|composer\/(inputs|settings)$)/.test(key))
-		return values(value, "string");
+	if (key.startsWith("answers/"))
+		return (
+			record(value) &&
+			Object.entries(value).every(
+				([index, item]) =>
+					/^\d+$/.test(index) &&
+					(typeof item === "string" ||
+						(record(item) &&
+							["custom", "recommendation"].includes((item as any).mode) &&
+							typeof (item as any).custom === "string")),
+			)
+		);
+	if (/^composer\/(inputs|settings)$/.test(key)) return values(value, "string");
 	if (key.startsWith("panels/")) return values(value, "boolean");
 	if (key === "recipe/title-settings")
 		return record(value) && values(value.value, "string");

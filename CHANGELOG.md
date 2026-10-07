@@ -7,8 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Select execution identities and tool profiles independently from dedicated Settings pages, separate from workflow Recipes, machine capacity and run titles. Preserve the active Settings page and unsaved capacity/title settings through app updates. Configure repository/factory defaults, preview selected accounts and MCP tools, and retain accepted bindings through workflow roles and recovery. Private runner environments use explicit credential references; eligible Claude/Codex Share profiles can reuse a selected native login. Preserve effective shared Git attribution/signing, validate the selected model before setup, clean interrupted runner artifacts, and reject undeclared native Codex notification commands before setup. ([Taskbot #57](https://taskbot.apps.janjaap.de/p/bobs-factory/t/57), [#30](https://github.com/Attraccess/bobs-factory/pull/30))
+- Refinement questions now offer generated recommendations selected by default, with a separate custom answer field and explicit submission before work resumes. ([Taskbot #83](https://taskbot.apps.janjaap.de/p/bobs-factory/t/83))
 - Review Guide headers now link to the PR, branch and originating ticket, with simple GitHub CLI and Git checkout commands that copy on click, visible copy confirmation and manual copying when clipboard access fails. ([#28](https://github.com/Attraccess/bobs-factory/pull/28))
-- Share a durable machine-wide pool across workers, agents and intensive workflow steps, with four slots by default, live capacity settings, separate queue states and cancellable queued work. Recipes can classify scripts and tools, including fanout branches, and separate the Machine capacity and Run titles cards with consistent spacing. Preserve unsaved capacity settings through app updates and keep passive handoff polling outside the pool. Managed conversations resume through admission after each completed turn. Keep Slack/Zulip message submission available during capacity waits, visibly mark queued messages, and preserve pending follow-ups through restart. Concurrent submissions persist atomically so rejected messages cannot return after restart, while ordinary history saves remain batched and responsive. ([Taskbot #37](https://taskbot.apps.janjaap.de/p/bobs-factory/t/37), [#20](https://github.com/Attraccess/bobs-factory/pull/20))
+- Provide durable capacity limits for agents and intensive workflow steps, with four slots by default, live capacity settings, separate queue states and cancellable queued work. Recipes can classify scripts and tools, including fanout branches, and separate the capacity and Run titles cards with consistent spacing. Preserve unsaved capacity settings through app updates and keep passive handoff polling outside the pool. Managed conversations resume through admission after each completed turn. Keep Slack/Zulip message submission available during capacity waits, visibly mark queued messages, and preserve pending follow-ups through restart. Concurrent submissions persist atomically so rejected messages cannot return after restart, while ordinary history saves remain batched and responsive. ([Taskbot #37](https://taskbot.apps.janjaap.de/p/bobs-factory/t/37), [#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
 - Guided PR review now offers concise chapter steps, system maps, image viewers,
   browser-local reading checks and Changed files with diffs pinned to the reviewed
@@ -56,6 +57,13 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Preserve independent composer execution choices across reloads and updates, and avoid diagnostic DNS stalls when previewing Claude execution profiles. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+- Preserve pending QA question drafts across restarts when questions and recommendations are unchanged; changed assistance still requires reviewing the new batch. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
+
+- Recover stalled QA and handoff runs from their saved evidence, retry malformed QA and one silent Codex turn, and request assistance when CI repeats the same unresolved failure. Known defects proceed to correction before access waits. ([#36](https://github.com/Attraccess/bobs-factory/pull/36))
+
+- Allow an explicitly configured public Factory UI origin while retaining host, origin, and request-header checks.
+
+- Scope capacity limits and queues to each Cyrus instance's home, so temporary F1 instances can run tests while the parent QA step occupies its own slot. Recipes now labels the setting Instance capacity.
 
 - Prefer headless browser automation for agent QA and screenshots, using isolated `agent-browser` sessions when available; visible browser windows and attaching to a user's browser require an explicit request.
 
