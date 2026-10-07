@@ -202,7 +202,11 @@ import {
 } from "./factory/LaunchAdmission.js";
 import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
-import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
+import {
+	assessFeedback,
+	type MergeReadiness,
+	recordFeedbackAssessment,
+} from "./factory/MergeReadiness.js";
 import {
 	confirmedMerge,
 	pendingMergeConfirmation,
@@ -7544,7 +7548,9 @@ ${taskSection}`;
 				}
 			: undefined;
 
-		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${step.askQuestions ? questionInstructions(run.id) : ""}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		// Review fixers and QA roles can request assistance without askQuestions;
+		// saved recipes must receive the same question guidance as new ones.
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${questionInstructions(run.id)}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
 			repository,
@@ -7778,16 +7784,23 @@ ${taskSection}`;
 	}
 
 	private refreshFactoryFeedbackContext(context: ExecutionContext): void {
-		if (
-			!["ci-fix", "code-fix", "visual-fix"].includes(context.step.id) ||
-			!this.factoryRuntime
-		)
-			return;
-		context.chatMessages = this.factoryRuntime.chatMessages(context.run.id);
-		context.input = {
-			...(context.input as Record<string, unknown>),
-			chatMessages: context.chatMessages,
-		};
+		if (!["ci-fix", "code-fix", "visual-fix"].includes(context.step.id)) return;
+		if (this.factoryRuntime) {
+			context.chatMessages = this.factoryRuntime.chatMessages(context.run.id);
+			context.input = {
+				...(context.input as Record<string, unknown>),
+				chatMessages: context.chatMessages,
+			};
+		}
+		if (context.step.id === "ci-fix") {
+			const receipt = (context.run.outputs["merge-readiness"] ??
+				context.run.outputs.ci) as MergeReadiness | undefined;
+			// Runs paused before feedback recovery was installed retain legacy
+			// receipts. Derive the exact pending versions before exposing context
+			// or validating a recovered result, without inventing assessments.
+			if (receipt && receipt.unassessedComments === undefined)
+				assessFeedback(context, receipt);
+		}
 	}
 
 	private async finalizeFactoryAgentOutput(
