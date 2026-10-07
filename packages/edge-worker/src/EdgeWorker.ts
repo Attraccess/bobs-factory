@@ -7542,7 +7542,9 @@ ${taskSection}`;
 		];
 		built.config.onAskUserQuestion = undefined; // Clarification uses the persisted workflow checkpoint.
 		built.config.allowedTools = [
-			...(built.config.allowedTools ?? []),
+			...(step.id === "question-explanation"
+				? []
+				: (built.config.allowedTools ?? [])),
 			"mcp__factory-context__list_context",
 			"mcp__factory-context__read_context",
 		];

@@ -61,6 +61,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Keep explanation requests separate from accepted answers, preserve the pending decision across restart, and rephrase it without resuming blocked work. Align self-hosting instructions and binary CI smoke with passkey-protected dashboard access. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
 - Reconcile current passkey protection, Codex startup recovery and dependency cleanup with the binary CLI and renamed settings. Preserve cancellation and saved-review recovery. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Cancel Codex startup when a run is stopped, releasing its child and capacity slot so shutdown and restart can finish. Interrupt late turn starts even after their request times out, while preserving other runs sharing the same process. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))

@@ -13,11 +13,25 @@ Use the canonical setup skills for GitHub, GitLab and Slack integrations. No
 upstream hosted enrollment, auth key or paid control service is supported.
 
 The dashboard binds to loopback on 3457. OAuth/webhooks normally use port 3456
-(or local repository launcher port + 1). Expose only the webhook listener through
-your existing ingress. ngrok remains supported; zrok2 (#39) is separate work.
-A tunnel does not authorize public dashboard access; remote protection (#40)
-and independent identity overlays (#57) remain separate work. Preserve existing
-PWA secure-origin/version guard limitations.
+(or local repository launcher port + 1). Use your existing webhook ingress for
+the webhook listener. ngrok remains supported; zrok2 (#39) is separate work.
+Every dashboard address, including localhost, requires a passkey session for APIs,
+live updates, media and actions. To expose the dashboard through HTTPS, configure
+the exact browser origin with `--origin https://YOUR_HOST` for local startup, or
+`BOBS_FACTORY_FACTORY_ORIGIN=https://YOUR_HOST` for configured services. Your proxy
+must preserve that authority and browser Origin; unconfigured origins are denied.
+Keep webhook ingress separate, with its provider signature checks.
+
+On first startup, read the private ten-minute setup code from
+`<home>/factory/auth/enroll.json` on the service machine, then enter it in the
+setup screen and create a passkey. Additional enrollment requires a recent passkey sign-in and a new code from
+`bobs-factory --home /absolute/service/home factory-auth`. Use the running service's
+home. If all passkeys are lost, run the same command with `--recover --confirm
+"RESET FACTORY AUTHENTICATION"`; this revokes passkeys and sessions while preserving
+runs and integrations. Re-enroll using the new setup code. Changing configured
+origins also requires deliberate local recovery. See [passkey setup and recovery](FACTORY.md#passkey-access-and-first-setup)
+for session limits and supported secure origins. Preserve PWA secure-origin/version
+guards; independent identity overlays (#57) remain separate work.
 
 ## Linux systemd (user service)
 

@@ -806,9 +806,10 @@ export class FactoryServer {
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/answer",
 			(request) => {
-				const { answer, context } = z
+				const { answer, context, kind } = z
 					.object({
 						answer: z.string().trim().min(1).max(100000),
+						kind: z.enum(["answer", "explanation"]).optional(),
 						context: z
 							.object({
 								questions: z.array(z.string()),
@@ -829,7 +830,7 @@ export class FactoryServer {
 					throw new Error(
 						"The question or step changed. Refresh and review your draft before answering.",
 					);
-				runtime.answer(request.params.id, answer);
+				runtime.answer(request.params.id, answer, kind);
 				return { accepted: true };
 			},
 		);

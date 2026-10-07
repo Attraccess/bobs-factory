@@ -461,6 +461,8 @@ fields inherit the run settings. Changing agent provider without specifying a
 model uses that provider's default model. Saved definitions apply to new runs;
 an active run retains its original definition.
 
+Explanation requests are kept separately from accepted answers. Bob rephrases the pending decision without restarting the blocked role or advancing the workflow; an explicit answer is still required. The answer API also accepts `kind: "explanation"` for requests that free-text detection does not recognize.
+
 Clarification pauses until you answer in the dashboard or original agent-session
 ticket thread. There is no automatic answer or approval. Decisions and all Q&A
 are saved in run history and posted as a comment when a real ticket exists.

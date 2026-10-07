@@ -547,6 +547,141 @@ describe("workflow runtime", () => {
 		});
 		expect(run.history).toHaveLength(2);
 	});
+	it.each([
+		true,
+		false,
+	])("keeps explanation requests outside answers and blocked work (askQuestions=%s)", async (askQuestions) => {
+		const calls: string[] = [];
+		const downstream = vi.fn(async () => ({}));
+		const { runtime } = create({
+			script: downstream,
+			agent: async (context) => {
+				calls.push(context.step.id);
+				if (context.step.id === "question-explanation") {
+					expect(context.step).toMatchObject({
+						runner: "codex",
+						model: "test-model",
+					});
+					expect(context.input).toMatchObject({
+						request:
+							"Please explain this more simply. I have not chosen an option or authorized paid tests.",
+						answers: [],
+					});
+					return {
+						questions: ["Use simulated tests or authorize paid tests?"],
+						approved: true,
+					};
+				}
+				return context.run.answers.length
+					? { questions: [] }
+					: { questions: ["Which tests?"] };
+			},
+		});
+		const run = start(
+			runtime,
+			workflow([
+				agent("visual-fix", {
+					askQuestions,
+					runner: "codex",
+					model: "test-model",
+				}),
+				{ id: "receipt", name: "Receipt", type: "script", script: "unused" },
+			]),
+		);
+		const done = runtime.launch(run);
+		await vi.waitFor(() => expect(run.status).toBe("waiting"));
+		runtime.answer(
+			run.id,
+			"Please explain this more simply. I have not chosen an option or authorized paid tests.",
+		);
+		await vi.waitFor(() =>
+			expect(run.questions).toEqual([
+				"Use simulated tests or authorize paid tests?",
+			]),
+		);
+		expect(run.status).toBe("waiting");
+		expect(run.answers).toEqual([]);
+		expect(run.questionRequests).toHaveLength(1);
+		expect(run.checkpoint?.active?.phase).toBe("waiting");
+		expect(run.outputs["visual-fix"]).toEqual({ questions: ["Which tests?"] });
+		expect(calls).toEqual(["visual-fix", "question-explanation"]);
+		expect(downstream).not.toHaveBeenCalled();
+		runtime.answer(run.id, "Use simulated tests");
+		await done;
+		expect(run.answers).toHaveLength(1);
+		expect(run.answers[0]).toMatchObject({
+			questions: ["Use simulated tests or authorize paid tests?"],
+			answer: "Use simulated tests",
+		});
+		expect(calls).toEqual(["visual-fix", "question-explanation", "visual-fix"]);
+		expect(downstream).toHaveBeenCalledTimes(1);
+	});
+	it("restores rephrased questions and their batch without notifying or accepting the explanation again", async () => {
+		const question = vi.fn(async () => {});
+		const execute = vi.fn(async (context: ExecutionContext) =>
+			context.step.id === "question-explanation"
+				? { questions: ["Clearer pending decision?"] }
+				: { questions: context.run.answers.length ? [] : ["Decision?"] },
+		);
+		const { runtime, home } = create({ agent: execute, question });
+		const run = start(
+			runtime,
+			workflow([agent("clarify", { askQuestions: true })]),
+		);
+		const first = runtime.launch(run);
+		await vi.waitFor(() => expect(run.status).toBe("waiting"));
+		runtime.answer(run.id, "Rephrase this please", "explanation");
+		await vi.waitFor(() =>
+			expect(run.questions).toEqual(["Clearer pending decision?"]),
+		);
+		const batch = run.questionBatchId;
+		await runtime.shutdown();
+		await first;
+		const restarted = new WorkflowRuntime(home, {
+			agent: execute,
+			script: async () => ({}),
+			tool: async () => ({}),
+			question,
+		});
+		const restored = restarted.get(run.id);
+		const second = restarted.launch(restored);
+		await vi.waitFor(() => expect(restored.status).toBe("waiting"));
+		expect(restored.questions).toEqual(["Clearer pending decision?"]);
+		expect(restored.questionBatchId).toBe(batch);
+		expect(restored.answers).toEqual([]);
+		expect(restored.questionRequests).toHaveLength(1);
+		expect(question).toHaveBeenCalledTimes(2);
+		expect(execute).toHaveBeenCalledTimes(2);
+		restarted.answer(run.id, "Proceed");
+		await second;
+		expect(restored.status).toBe("completed");
+		expect(restored.answers).toHaveLength(1);
+	});
+	it("refuses an explanation that drops the decision and never starts downstream work", async () => {
+		const downstream = vi.fn(async () => ({}));
+		const { runtime } = create({
+			agent: async (context) => ({
+				questions:
+					context.step.id === "question-explanation" ? [] : ["Decision?"],
+			}),
+			script: downstream,
+		});
+		const run = start(
+			runtime,
+			workflow([
+				agent("clarify", { askQuestions: true }),
+				{ id: "receipt", name: "Receipt", type: "script", script: "unused" },
+			]),
+		);
+		const done = runtime.launch(run);
+		await vi.waitFor(() => expect(run.status).toBe("waiting"));
+		runtime.answer(run.id, "Please explain");
+		await done;
+		expect(run.status).toBe("failed");
+		expect(run.error).toContain("preserve every pending decision");
+		expect(run.answers).toEqual([]);
+		expect(downstream).not.toHaveBeenCalled();
+	});
 	it("terminates a waiting run and never starts downstream work", async () => {
 		const execute = vi.fn(async () => ({ questions: ["Question"] }));
 		const { runtime } = create({ agent: execute });

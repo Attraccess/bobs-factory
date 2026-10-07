@@ -63,3 +63,33 @@ For example, when simulated-agent checks passed but real-agent checks remain req
 Use familiar words: "security warning" instead of "advisory", "fix" instead of "remediation", "allow skipping this test" instead of "waive its live-only facets". Keep secondary references in a clearly labeled technical detail or link. The main question must be understandable without them. Ask only for information or decisions you cannot obtain or resolve from the available context and existing authorization. A request to explain or rephrase is not an answer, approval or exception; preserve the blocker until the human actually decides.
 Questions support Markdown. Put essential context directly in the question; links and visuals only supplement it. Optionally include a small text flow diagram in a fenced code block, or a real PNG/JPEG image when it makes the decision easier to understand. Do not use Mermaid (it is not rendered). Save images directly in the supplied evidence directory with unique filenames containing only letters, digits, dots, underscores or hyphens, then embed them as ![short descriptive caption](/api/runs/${runId}/question-images/FILENAME.png). Inspect images before including them, describe what the human should notice, and never claim evidence you have not verified. Keep visuals optional; a text-only question is usually enough. Keep questions as strings and preserve all other requested role fields. Add optional sibling questionRecommendations: [{"questionIndex":0,"answer":"recommended answer","reason":"short evidence-based explanation"}]. Indices are zero-based within this exact questions array, with at most one recommendation per question. Generate recommendations in the same response for decisions supported by the available evidence. Never invent an unknowable fact, credential or access; omit its recommendation and explain the needed input in the question. Recommendations are suggestions only, never accepted decisions or authorization; explicit human submission is required. Omit metadata or use an empty array when no recommendation is justified.`;
 }
+
+/** Obvious explanation requests from existing free-text/ticket reply clients.
+ * New clients can specify the reply kind explicitly, including other languages. */
+export function isExplanationRequest(
+	text: string,
+	questions: string[] = [],
+): boolean {
+	// Existing dashboard submissions prefix each reply with its complete question.
+	// Inspect the reply text, not the question wording or its choices.
+	if (questions.length && text.startsWith(`1. ${questions[0]}\n`)) {
+		let remaining = text;
+		const replies: string[] = [];
+		for (let i = 0; i < questions.length; i++) {
+			const prefix = `${i + 1}. ${questions[i]}\n`;
+			if (!remaining.startsWith(prefix)) return false;
+			remaining = remaining.slice(prefix.length);
+			const next =
+				i + 1 < questions.length
+					? remaining.indexOf(`\n\n${i + 2}. ${questions[i + 1]}\n`)
+					: -1;
+			if (i + 1 < questions.length && next < 0) return false;
+			replies.push(next < 0 ? remaining : remaining.slice(0, next));
+			remaining = next < 0 ? "" : remaining.slice(next + 2);
+		}
+		return replies.some((reply) => isExplanationRequest(reply));
+	}
+	return /^(?:(?:please|can you|could you|would you)\s+)?(?:explain|rephrase|clarify|simplify)\b|^(?:i (?:do not|don't) understand|what do you mean|can you (?:make|say) (?:this|that) (?:simpler|more simply))\b/i.test(
+		text.trim(),
+	);
+}

@@ -22,6 +22,17 @@ if HOME="$smoke_root/home" PATH="$smoke_root/path:/usr/bin:/bin" BOBS_FACTORY_CU
   echo 'Unprepared Cursor unexpectedly succeeded'; exit 1
 fi
 grep -q BOBS_FACTORY_CURSOR_SDK_PATH "$smoke_root/cursor-missing.log"
+# Seed a private, expiring session fixture before startup. This smoke exercises
+# the real access boundary, without requiring a physical passkey or a JS runtime.
+# Passkey ceremonies have separate browser/auth tests; no auth bypass is enabled.
+umask 077
+mkdir -p "$smoke_root/home/state/factory/auth"
+session_token="$(openssl rand -hex 32)"
+session_hash="$(printf '%s' "$session_token" | openssl dgst -sha256)"
+session_hash="${session_hash##* }"
+now_ms="$(date +%s)000"
+expires_ms="$((now_ms + 3600000))"
+printf '{"version":1,"origins":["http://127.0.0.1:%s","http://localhost:%s"],"user":"smoke","credentials":[{"id":"smoke","origin":"http://127.0.0.1:%s","publicKey":"smoke-fixture","counter":0,"deviceType":"singleDevice","backedUp":false,"label":"Smoke fixture","createdAt":%s,"lastUsedAt":%s}],"sessions":[{"hash":"%s","credential":"smoke","origin":"http://127.0.0.1:%s","expires":%s,"verifiedAt":%s}]}' "$port" "$port" "$port" "$now_ms" "$now_ms" "$session_hash" "$port" "$expires_ms" "$now_ms" > "$smoke_root/home/state/factory/auth/state.json"
 for attempt in 1 2; do
   ready=false
   HOME="$smoke_root/home" PATH="$smoke_root/path:/usr/bin:/bin" "$binary" --repo "$smoke_root/repo" --home "$smoke_root/home/state" --port "$port" --agent codex > "$smoke_root/worker.log" 2>&1 &
@@ -32,7 +43,10 @@ for attempt in 1 2; do
     sleep 1
   done
   if [[ "$ready" != true ]]; then cat "$smoke_root/worker.log"; exit 1; fi
-  curl -fsS http://127.0.0.1:$port/api/config > "$smoke_root/state.json"
+  denied_status="$(curl -sS -o "$smoke_root/unauthenticated.json" -w '%{http_code}' "http://127.0.0.1:$port/api/config")"
+  [[ "$denied_status" == 401 ]] || { echo "Expected unauthenticated API denial; got $denied_status"; exit 1; }
+  curl -fsS -H "Cookie: factory-local-session=$session_token" "http://127.0.0.1:$port/api/config" > "$smoke_root/state.json"
+  echo "Startup $attempt: unauthenticated API 401; authenticated API 200"
   curl -fsS http://127.0.0.1:$port/manifest.webmanifest >/dev/null
   curl -fsS http://127.0.0.1:$port/sw.js >/dev/null
   kill -TERM "$worker_pid"
@@ -53,4 +67,4 @@ wait "$helper_pid" 2>/dev/null || true
 # OS grep, not a JavaScript runtime, validates protocol output.
 grep -q '"jsonrpc":"2.0"' "$smoke_root/mcp.jsonl"
 grep -q 'totalCharacters' "$smoke_root/mcp.jsonl"
-echo 'Binary startup/assets/API/MCP/shutdown/restart smoke passed'
+echo 'Binary startup/assets/protected API/MCP/shutdown/restart smoke passed'

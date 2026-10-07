@@ -209,7 +209,7 @@ export function QuestionForm({ run }: { run: any }) {
 				},
 			});
 			setDraft({});
-			toast({ text: "Answer sent — Bob is back at it" });
+			toast({ text: "Reply sent" });
 		} catch {
 			/* error stays visible; draft is retained */
 		} finally {
