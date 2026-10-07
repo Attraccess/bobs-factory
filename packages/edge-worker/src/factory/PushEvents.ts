@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import type { MergeReadiness } from "./MergeReadiness.js";
-import type { FactoryRun } from "./WorkflowRuntime.js";
+import type { FactoryRun, GraphCheckpoint } from "./WorkflowRuntime.js";
 
 export type PushCategory =
 	| "question"
@@ -16,6 +17,21 @@ export interface PushEvent {
 }
 export const digest = (value: unknown) =>
 	createHash("sha256").update(JSON.stringify(value)).digest("base64url");
+function questionSource(
+	checkpoint: GraphCheckpoint | undefined,
+	questions: string[],
+): string[] | undefined {
+	const display = checkpoint?.active?.questionDisplay;
+	// A rephrasing changes presentation, while its saved source remains the decision.
+	// Match the displayed questions so stale provenance cannot hide new attention.
+	if (display?.source && isDeepStrictEqual(display.questions, questions))
+		return display.source.questions;
+	for (const child of checkpoint?.active?.children ?? []) {
+		const source = questionSource(child, questions);
+		if (source) return source;
+	}
+	return undefined;
+}
 export function runPushEvent(run: FactoryRun): PushEvent | undefined {
 	const destination = `/#/runs/${encodeURIComponent(run.id)}`;
 	// Ticket preparation temporarily marks restored waits as running. Unanswered
@@ -33,7 +49,9 @@ export function runPushEvent(run: FactoryRun): PushEvent | undefined {
 			identity: digest([
 				run.step,
 				run.answers.length,
-				[...run.questions].sort(),
+				[
+					...(questionSource(run.checkpoint, run.questions) ?? run.questions),
+				].sort(),
 			]),
 			destination,
 		};

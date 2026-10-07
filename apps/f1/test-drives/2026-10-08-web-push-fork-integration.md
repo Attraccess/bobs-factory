@@ -79,3 +79,35 @@ Browser authentication uses persisted fixture sessions, not a passkey ceremony.
 Native foreground/background receipt, trusted OS notification clicks, physical
 devices, production Tailscale deployment and live tracker synchronization remain
 unverified. The tracker snapshot discrepancy remains a limitation.
+
+## Follow-up: explanation identity regression
+
+The merged revision `9dbfc6e8d7c234ab8b0ecac328d0aad16097dd56` passed
+[CI on Node 22 and 24](https://github.com/Attraccess/bobs-factory/actions/runs/37699623556).
+An additional integration reproducer then found that explaining a pending question
+sent a duplicate alert: two devices received four question payloads instead of two.
+The first two were the new decision; the next two only repeated its rephrased wording.
+
+The follow-up tested tree is `9dbfc6e8` plus the fix to use matched saved explanation
+provenance when deriving question identity, including nested workflow frames.
+Stale display provenance falls back to the actual new questions. Answer count
+still distinguishes subsequent decision waves. The capability reference and
+complete prompt fixture now explicitly describe this behavior.
+
+```sh
+env -u BOBS_FACTORY_INTERNAL_EXECUTABLE F1_AGENT_MODE=mock node /Users/jappy/.cyrus/factory/evidence/manual-56a8faa8-c83d-4083-a81b-b98174357df8/ci-fork-explanation-push.mjs
+```
+
+The same reproducer passed after the fix: explaining the decision kept two question
+payloads, recorded no accepted answer and retained the pending decision. The
+subsequent explicit answer completed the run and sent only one completion to the
+enabled device. All other authenticated API, browser, restart and cleanup assertions
+also passed. Inspected the fresh Notifications screenshot; its scroll area retains
+the same layout. No native browser push service or paid agent was invoked.
+
+Final focused checks passed: 126 push/runtime tests, five complete routing-prompt
+tests, the EdgeWorker build and Biome. Root build/typecheck run in the commit hook.
+Evidence uses `ci-fork-explanation-`: red/green logs, driver, results, activities,
+focused test logs and the inspected Notifications image. The limitations above
+remain unchanged. Final GitHub CI is evaluated on the follow-up commit, not the
+already passing merge commit.

@@ -78,6 +78,57 @@ it("configures push from the Bob’s Factory environment and preserves its store
 		vi.unstubAllEnvs();
 	}
 });
+it.each([
+	false,
+	true,
+])("keeps the same question alert after rephrasing (nested=%s)", (nested) => {
+	const original = {
+		id: "run",
+		status: "waiting",
+		step: "clarify",
+		answers: [],
+		questions: ["Which tests?"],
+	} as unknown as FactoryRun;
+	const checkpoint = {
+		current: "clarify",
+		visits: { clarify: 1 },
+		active: {
+			phase: "waiting" as const,
+			questionDisplay: {
+				source: { questions: original.questions },
+				questions: ["Use simulated tests or authorize paid tests?"],
+			},
+		},
+	};
+	const rephrased = {
+		...original,
+		questions: checkpoint.active.questionDisplay.questions,
+		checkpoint: nested
+			? {
+					current: "fanout",
+					visits: {},
+					active: { phase: "executing" as const, children: [checkpoint] },
+				}
+			: checkpoint,
+	};
+	expect(runPushEvent(rephrased)).toEqual(runPushEvent(original));
+	// Persisted explanation provenance also survives a restart.
+	expect(runPushEvent(JSON.parse(JSON.stringify(rephrased)))).toEqual(
+		runPushEvent(original),
+	);
+	expect(
+		runPushEvent({ ...rephrased, questions: ["A different decision?"] })
+			?.identity,
+	).not.toBe(runPushEvent(original)?.identity);
+	expect(
+		runPushEvent({
+			...rephrased,
+			answers: [
+				{ questions: original.questions, answer: "Proceed", at: "now" },
+			],
+		})?.identity,
+	).not.toBe(runPushEvent(original)?.identity);
+});
 it("baselines attention, deduplicates saves, captures eligible devices and coalesces destinations", async () => {
 	vi.useFakeTimers();
 	const sender = vi.fn(async () => {});
