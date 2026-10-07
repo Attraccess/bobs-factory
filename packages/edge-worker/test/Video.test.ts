@@ -17,6 +17,7 @@ import {
 	upgradeWorkflows,
 } from "../src/factory/defaultWorkflows.js";
 import { qaDigest } from "../src/factory/EvidenceDigest.js";
+import { validateFactoryResult } from "../src/factory/FactoryResults.js";
 import { FactoryServer } from "../src/factory/FactoryServer.js";
 import { CaptureSchema } from "../src/factory/FactoryTools.js";
 import {
@@ -749,4 +750,20 @@ it("does not let terminal cleanup follow a run-directory symlink or crash on a d
 	};
 	cleanupVideoEvidence(join(f.runtime.directory, "evidence"), [malicious]);
 	expect(readFileSync(media, "utf8")).toBe("preserve me");
+});
+
+it("requires the selected video contract through result normalization", () => {
+	const legacyCapture = { screenshots: [], unavailable: [] };
+	expect(validateFactoryResult("capture", legacyCapture)).toEqual(
+		legacyCapture,
+	);
+	for (const step of ["visual-scope", "capture"]) {
+		expect(() =>
+			validateFactoryResult(step, legacyCapture, undefined, "video-v1"),
+		).toThrow();
+	}
+	const capture = { ...legacyCapture, videoContract: "video-v1" };
+	expect(
+		validateFactoryResult("capture", capture, undefined, "video-v1"),
+	).toEqual(capture);
 });
