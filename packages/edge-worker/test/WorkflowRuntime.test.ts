@@ -383,7 +383,7 @@ describe("workflow runtime", () => {
 			(definition) => definition.id === "factory-pipeline",
 		)!;
 		const reviewer = shared.steps.find((step) => step.id === "visual-review")!;
-		reviewer.prompt = `${shared.steps.find((step) => step.id === "code-review")!.prompt}\nThis is a VISUAL review: open and inspect the actual screenshots, checking each requested area/state against the plan. Include areas with missing/unavailable capture evidence as rating 3 findings. Never approve missing screenshots.`;
+		reviewer.prompt = `${legacyScreenshotSteps.find((step) => step.id === "visual-review")!.prompt!.split("\n")[0]}\nThis is a VISUAL review: open and inspect the actual screenshots, checking each requested area/state against the plan. Include areas with missing/unavailable capture evidence as rating 3 findings. Never approve missing screenshots.`;
 		reviewer.model = "custom-review-model";
 		const upgraded = validateWorkflows(upgradeWorkflows(saved))
 			.find((definition) => definition.id === "factory-pipeline")!
