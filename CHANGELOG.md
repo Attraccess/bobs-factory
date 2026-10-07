@@ -60,6 +60,8 @@ All notable changes to this project will be documented in this file.
 - Retain generated recommendations on requirement-extraction questions while enforcing specialist inventory validation and explicit human submission. Notify the originating ticket when restored questions or recommendations change, without duplicating unchanged waits. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve resolved specialist disagreements, their rationale and supporting evidence in exported review guide Markdown. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Retry Codex startup failures without saving nonexistent conversations, and recover older invalid capture checkpoints while preserving completed work, evidence and review allowances. ([#40](https://github.com/Attraccess/bobs-factory/pull/40))
+
 - Make Bob’s questions, progress messages and review summaries easier to follow: lead with the decision or outcome, explain choices in everyday words, and keep internal test IDs in technical details. Saved review-fix workflows now receive the same question guidance as clarification. ([#39](https://github.com/Attraccess/bobs-factory/pull/39))
 
 - Resume older paused runs with the exact PR comments needing assessment, instead of asking operators to restore missing internal feedback context. ([#38](https://github.com/Attraccess/bobs-factory/pull/38))

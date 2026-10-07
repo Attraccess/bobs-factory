@@ -26,6 +26,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Integrate Codex startup recovery with specialist review and retain focused coverage of retry, restart, requirement validation and approval safeguards. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
 - Integrate specialist review with current QA recovery and instance-capacity behavior; retain inventory validation across nested workflows and refresh the complete routing-prompt expectation. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Run F1 agents as deterministic mocks by default, including Factory roles, chat sessions, and background titles; require an explicit live-mode opt-in for provider usage.
