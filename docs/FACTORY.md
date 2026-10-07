@@ -517,7 +517,14 @@ Human decisions, review IDs, commit IDs and checkpoint state persist on restart.
 Repeated agents start with `/progress` through factory-context: their previous
 result, prior/current revision, changed files/diff and new history. Planning and
 reviews preserve decisions, stable findings and dispositions while assessing new
-feedback and affected code. QA scope keeps the cumulative story/criterion and area/state lists.
+feedback and affected code. The default history view is compact: `/history` and
+`/progress/newHistory` contain step indexes with references to original outputs.
+Reviewers and fixers read `/contextMemory/reviewLedger` and
+`/contextMemory/reviewRounds` for distinct verbatim claims, review reasoning and
+gate outcomes, then fetch original evidence only where needed. Repeated claims
+retain their first/latest round and source paths, so reopened complaints remain
+visible. A claimed fix never becomes reviewer acceptance through compaction.
+QA scope keeps the cumulative story/criterion and area/state lists.
 Capture can reuse real, previously approved images only when their revision is
 unchanged or declared dependencies are unchanged and all changed files are
 accounted for. Image hashes and dependency provenance are persisted; dirty,
@@ -774,11 +781,19 @@ otherwise agents receive the original input,
 launch inputs, outputs, answers and full structured history.
 
 Factory agent roles receive a short role prompt and a private `factory-context`
-MCP server. `list_context` browses object fields/array entries; `read_context`
-reads values in pages of at most 16,000 characters. Both return `nextOffset`;
-follow it until null to read complete discussions and review/fixer history.
+MCP server. `list_context` browses up to 50 object fields/array entries per page,
+including short identity/step previews; `read_context` reads values in pages of
+at most 16,000 characters. Both return `nextOffset`; follow it until null to read
+each relevant collection/value completely.
 Paths use JSON Pointer syntax, for example `/outputs/ticket/comments/0/body`.
-Strings use raw text pages; other values use JSON pages. Only the step's scoped
+Strings use raw text pages; other values use JSON pages. Default `view: "compact"`
+replaces historical outputs with indexes and adds deterministic review memory.
+Current requirements, decisions, answers, outputs and revision deltas remain
+complete. Index `outputPath` references work directly, including existing deep
+history paths. Pass `view: "full"` to either tool for original records at the
+same paths. Compaction preserves the private source snapshot and persisted
+checkpoints; it does not summarize with another model, reset provider
+conversations, change iteration limits or grant approval. Only the step's scoped
 input is served: `inputs: ["plan"]` exposes `/plan` without ticket/history.
 The stock implementer also receives `/answers` and returns `status`, `summary`,
 `checks`, and `questions`. A `blocked` status requires at least one actionable
