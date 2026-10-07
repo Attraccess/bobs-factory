@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep the fixer’s existing conversation when answering assistance questions, including after a restart or a request for a simpler explanation. Process new replies without replaying the previous answer or completed steps. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
 ### Added
 
 - Select execution identities and tool profiles independently from dedicated Settings pages, separate from workflow Recipes, machine capacity and run titles. Preserve the active Settings page and unsaved capacity/title settings through app updates. Configure repository/factory defaults, preview selected accounts and MCP tools, and retain accepted bindings through workflow roles and recovery. Private runner environments use explicit credential references; eligible Claude/Codex Share profiles can reuse a selected native login. Preserve effective shared Git attribution/signing, validate the selected model before setup, clean interrupted runner artifacts, and reject undeclared native Codex notification commands before setup. ([Taskbot #57](https://taskbot.apps.janjaap.de/p/bobs-factory/t/57), [#30](https://github.com/Attraccess/bobs-factory/pull/30))

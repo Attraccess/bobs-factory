@@ -1262,7 +1262,18 @@ export class WorkflowRuntime {
 								| QuestionRecommendation[]
 								| undefined,
 						);
-					checkpoint.active = undefined;
+					// Answers start a new turn in the same conversation. Discard the
+					// completed result so unchanged-code recovery cannot replay it.
+					checkpoint.active = state.agent
+						? {
+								phase: "executing",
+								agent: {
+									runner: state.agent.runner,
+									sessionId: state.agent.sessionId,
+								},
+							}
+						: undefined;
+					if (state.agent) checkpoint.visits[step.id] = count + 1;
 					this.save(run);
 					continue;
 				}
