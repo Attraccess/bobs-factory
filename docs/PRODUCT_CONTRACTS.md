@@ -30,6 +30,9 @@ apply. External or linked files needing owned-reference changes, ambiguous relat
 paths, legacy executable commands and conflicting old/new server keys require
 explicit reconciliation. Migration never rewrites external MCP files or opaque
 headers, environment values, tool arguments, completed receipts or review gates.
+Workflow tool changes are limited to saved recipes and the run's top-level frozen
+`workflow` / `workflowDefinitions`; workflow-shaped step outputs and checkpoint
+outputs remain completed results, including when later steps consume them.
 
 The issued egress certificate keeps its existing `cyrus-egress-ca.pem` filename
 inside the new home. Migration preserves certificate/key bytes and system trust;

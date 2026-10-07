@@ -31,6 +31,17 @@ const toolFields = new Set([
 	"skillNames",
 	"plugins",
 ]);
+const opaqueFields = new Set([
+	"history",
+	"messages",
+	"agentSessionEntries",
+	"outputs",
+	"reviewGate",
+	"humanDecisions",
+	"ticketSync",
+	"workflow",
+	"workflowDefinitions",
+]);
 function transformTool(value: string): string {
 	return value.replace(/^mcp__cyrus-tools(?=__|$)/, "mcp__bobs-factory-tools");
 }
@@ -64,6 +75,27 @@ export function transformWorkflow(value: unknown): Record<string, unknown> {
 	};
 	if (!Array.isArray(workflow.steps)) throw new Error("Unknown workflow steps");
 	return { ...workflow, steps: workflow.steps.map(step) };
+}
+
+/** Frozen executable definitions belong to the run root, never step results. */
+export function transformRun(
+	value: unknown,
+	source: string,
+	destination: string,
+): Record<string, unknown> {
+	const run = record(value);
+	const workflow = run.workflow;
+	return {
+		...record(transformState(run, source, destination)),
+		...(workflow &&
+		typeof workflow === "object" &&
+		Array.isArray((workflow as Record<string, unknown>).steps)
+			? { workflow: transformWorkflow(workflow) }
+			: {}),
+		...(Array.isArray(run.workflowDefinitions)
+			? { workflowDefinitions: run.workflowDefinitions.map(transformWorkflow) }
+			: {}),
+	};
 }
 
 /** MCP URLs and server identities are operational; headers/env remain opaque. */
@@ -113,14 +145,7 @@ export function transformState(
 	destination: string,
 	field = "",
 ): unknown {
-	if (["history", "messages", "agentSessionEntries"].includes(field))
-		return value;
-	if (field === "workflowDefinitions" && Array.isArray(value))
-		return value.map(transformWorkflow);
-	if (field === "workflow" && value && typeof value === "object")
-		return Array.isArray((value as Record<string, unknown>).steps)
-			? transformWorkflow(value)
-			: value;
+	if (opaqueFields.has(field)) return value;
 	if (typeof value === "string") {
 		if (pathFields.has(field)) {
 			const path =

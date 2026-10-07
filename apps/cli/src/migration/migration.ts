@@ -25,6 +25,7 @@ import {
 import {
 	transformEnvironment,
 	transformMcpConfig,
+	transformRun,
 	transformState,
 	transformWorkflow,
 } from "./transform.js";
@@ -331,7 +332,7 @@ export function inspectMigration(
 				entry.path.endsWith(".json")
 			) {
 				const run = readJson(path);
-				transformState(run, source, destination);
+				transformRun(run, source, destination);
 				sessions.push(...nativeSessions(run));
 				if (!run.id || !run.workflow || !Array.isArray(run.history))
 					blockers.push(`Unknown run format: ${entry.path}`);
@@ -580,7 +581,13 @@ export function applyMigration(
 			writeFileSync(
 				path,
 				`${JSON.stringify(
-					transformState(readJson(path), manifest.source, manifest.destination),
+					(entry.path.startsWith("factory/runs/")
+						? transformRun
+						: transformState)(
+						readJson(path),
+						manifest.source,
+						manifest.destination,
+					),
 					null,
 					2,
 				)}\n`,

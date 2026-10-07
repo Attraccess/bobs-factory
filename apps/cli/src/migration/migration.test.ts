@@ -289,7 +289,7 @@ it("blocks external MCP reconciliation and owned server collisions before backup
 	expect(existsSync(backup)).toBe(false);
 });
 
-it("migrates saved and frozen workflow tool steps, including nested definitions, while preserving gates and history", () => {
+it("migrates saved and frozen workflow tool steps while preserving workflow-shaped receipts and gates", () => {
 	const { source, destination, backup } = fixture();
 	mkdirSync(join(source, "factory/runs"), { recursive: true });
 	const workflow = {
@@ -322,14 +322,30 @@ it("migrates saved and frozen workflow tool steps, including nested definitions,
 			},
 		],
 	};
+	const receipt = {
+		workflow,
+		workflowDefinitions: [workflow],
+		allowedTools: ["mcp__cyrus-tools"],
+		path: source,
+		cyrusHome: source,
+	};
 	const run = {
 		id: "run",
 		workflow,
 		workflowDefinitions: [workflow],
-		history: [{ workflow, allowedTools: ["mcp__cyrus-tools"], path: source }],
-		checkpoint: { status: "waiting", step: "ask" },
-		humanDecisions: [],
-		outputs: { receipt: { tool: "mcp__cyrus-tools__get_child_issues" } },
+		history: [{ step: "completed", output: receipt }],
+		checkpoint: {
+			status: "waiting",
+			step: "ask",
+			active: { child: { outputs: { completed: receipt } } },
+		},
+		reviewGate: { id: "original-gate", workflow, path: source },
+		humanDecisions: [{ workflow, path: source }],
+		ticketSync: { receipts: [{ key: "completed", output: receipt }] },
+		outputs: {
+			completed: receipt,
+			opaque: { workflowDefinitions: ["arbitrary step result"] },
+		},
 	};
 	writeFileSync(
 		join(source, "factory/workflows.json"),
