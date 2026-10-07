@@ -56,7 +56,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Retain generated recommendations on requirement-extraction questions while enforcing specialist inventory validation and explicit human submission. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Retain generated recommendations on requirement-extraction questions while enforcing specialist inventory validation and explicit human submission. Notify the originating ticket when restored questions or recommendations change, without duplicating unchanged waits. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve resolved specialist disagreements, their rationale and supporting evidence in exported review guide Markdown. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 - Preserve pending QA question drafts across restarts when questions and recommendations are unchanged; changed assistance still requires reviewing the new batch. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))

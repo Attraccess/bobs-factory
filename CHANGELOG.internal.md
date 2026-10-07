@@ -6,7 +6,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
-- Integrate specialist review with refinement recommendations and wait for capacity initialization in persistence test fixtures before cleanup. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Integrate specialist review with refinement recommendations and wait for capacity initialization in persistence test fixtures before cleanup. Cover assistance-batch notification and restart deduplication through the durable outbox and mocked F1 tracking. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Integrate refinement recommendations with the latest workflow recovery changes, retaining recommendation validation and bounded retry regression coverage. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 

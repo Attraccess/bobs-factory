@@ -1408,11 +1408,23 @@ export class WorkflowRuntime {
 		signal.addEventListener("abort", abort, { once: true });
 		this.log(run, run.step ?? "clarify", questions.join("\n"));
 		try {
-			if (run.ticketReference && this.hooks.track)
+			if (run.ticketReference && this.hooks.track) {
+				const body = `Factory needs assistance:\n\n${questionNotification(questions, run.questionRecommendations)}`;
+				const legacyKey = `questions:${run.step}:${run.answers.length}`;
+				const batchKey = `${legacyKey}:${run.questionBatchId}`;
+				// Keep the original outbox marker for an unchanged pre-batch receipt.
+				const receipts = run.ticketSync?.receipts ?? [];
+				const legacyReceipt =
+					restored &&
+					!receipts.some((receipt) => receipt.key === batchKey) &&
+					receipts.some(
+						(receipt) => receipt.key === legacyKey && receipt.body === body,
+					);
 				await this.track(run, {
-					key: `questions:${run.step}:${run.answers.length}`,
-					body: `Factory needs assistance:\n\n${questionNotification(questions, run.questionRecommendations)}`,
+					key: legacyReceipt ? legacyKey : batchKey,
+					body,
 				});
+			}
 			if (!restored) await this.hooks.question?.(run);
 			signal.throwIfAborted();
 			await waiting;

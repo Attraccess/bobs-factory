@@ -376,6 +376,9 @@ Drafts retain both the choice and text through navigation and PWA updates. Older
 text drafts remain custom answers. Changed question batches or recommendations
 require draft review, and contextual API submissions reject outdated batch IDs,
 even when the question wording repeats.
+Changed questions or recommendations also generate a new originating-ticket
+notification. Unchanged waits retain notification deduplication across restarts,
+including saved receipts from older versions.
 
 The factory runs clarification → decisions → planner/plan-review loop →
 implementation → push/draft PR → requirement inventory → specialist review/fix loop → CI/fix loop → QA story and screenshot
