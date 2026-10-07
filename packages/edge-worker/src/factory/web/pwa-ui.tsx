@@ -62,7 +62,13 @@ export function InstallControl() {
 		</>
 	);
 }
-export function ConnectionNotice({ hasData }: { hasData: boolean }) {
+export function ConnectionNotice({
+	hasData,
+	signedOut = false,
+}: {
+	hasData: boolean;
+	signedOut?: boolean;
+}) {
 	const pwa = usePwa(),
 		[later, setLater] = useState(false);
 	const update = pwa.status === "mismatch" || pwa.waiting;
@@ -78,7 +84,9 @@ export function ConnectionNotice({ hasData }: { hasData: boolean }) {
 			{pwa.status !== "ready" && (
 				<div className="connection-error" role="status">
 					{pwa.status === "mismatch"
-						? "Factory updated. Actions are paused until you update."
+						? signedOut
+							? "Factory updated. Update the app before signing in."
+							: "Factory updated. Actions are paused until you update."
 						: pwa.status === "checking"
 							? "Checking the factory connection and refreshing current state…"
 							: "Can’t reach the factory. Check your connection and try again. Current runs and actions need the factory server."}
@@ -103,7 +111,9 @@ export function ConnectionNotice({ hasData }: { hasData: boolean }) {
 				<div className="update-notice" role="status">
 					<strong>{later ? "Update deferred" : "Update available"}</strong>{" "}
 					<span>
-						Unsent edits will be discarded. Active runs continue on the server.
+						{signedOut
+							? "Update this device’s app to continue. Active runs continue on the server."
+							: "Unsent edits will be discarded. Active runs continue on the server."}
 					</span>
 					<div className="actions">
 						<Button

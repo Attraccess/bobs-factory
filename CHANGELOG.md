@@ -42,7 +42,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Keep unsent form edits only while their current form and context remain open. Navigation, context changes, reloads, app updates and canceling follow-up feedback now discard them without stale-draft warnings; saved server data and pending-request guards remain intact. ([#41](https://github.com/Attraccess/bobs-factory/pull/41))
+- Keep unsent form edits only while their current form and context remain open. Navigation, context changes, reloads, app updates and canceling follow-up feedback or new-passkey setup now discard them without stale-draft warnings; saved server data and pending-request guards remain intact. ([#41](https://github.com/Attraccess/bobs-factory/pull/41))
 
 - Factory QA now tests agreed user stories across UI, API and CLI changes, captures representative screenshots during those flows, and requires fixes and retesting for consequential failures. QA evidence and optional improvements remain visible for human review. ([Taskbot #74](https://taskbot.apps.janjaap.de/p/bobs-factory/t/74))
 
@@ -56,6 +56,8 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Make passkey sign-in the default, fold operator setup away for existing installations, and move key management and sign-out into Settings. Let signed-out Factory users update a cached app after deployment so passkey login can continue, including from Settings and after signing out there. Honor the configured session lifetime when launching Factory, with explicit CLI settings taking precedence and invalid values rejected. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Retry Codex startup failures without saving nonexistent conversations, and recover older invalid capture checkpoints while preserving completed work, evidence and review allowances. ([#40](https://github.com/Attraccess/bobs-factory/pull/40))
 

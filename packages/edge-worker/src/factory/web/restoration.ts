@@ -5,6 +5,7 @@ import {
 	useEffect,
 	useState,
 } from "react";
+import { onAccessLost } from "./auth-state";
 
 const snapshotKey = "bobs-factory-view-update-v2";
 const maxBytes = 512000,
@@ -95,7 +96,7 @@ export function decodeSnapshot(
 			!/^[a-f0-9]{24}$/.test(data.target) ||
 			typeof data.route !== "string" ||
 			data.route.length > 2048 ||
-			!/^#\/(?:$|recipes$|runs\/[^/?#]+(?:\/review(?:\?[^#\s]*)?)?$)/.test(
+			!/^#\/(?:$|recipes$|settings$|runs\/[^/?#]+(?:\/review(?:\?[^#\s]*)?)?$)/.test(
 				data.route,
 			) ||
 			!data.views ||
@@ -281,3 +282,9 @@ export function completeRestoration() {
 	}
 	restored = undefined;
 }
+
+onAccessLost(() => {
+	views.clear();
+	collectors.clear();
+	restored = undefined;
+});

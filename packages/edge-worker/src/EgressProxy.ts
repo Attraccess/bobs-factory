@@ -1,3 +1,5 @@
+import "reflect-metadata";
+import { createPrivateKey, randomBytes, type webcrypto } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
@@ -14,9 +16,24 @@ import {
 	connect as netConnect,
 } from "node:net";
 import { join } from "node:path";
+import {
+	BasicConstraintsExtension,
+	KeyUsageFlags,
+	KeyUsagesExtension,
+	PemConverter,
+	SubjectAlternativeNameExtension,
+	X509Certificate,
+	X509CertificateGenerator,
+} from "@peculiar/x509";
 import type { NetworkPolicy, SandboxConfig } from "cyrus-core";
 import { createLogger, type ILogger, TRUSTED_DOMAINS } from "cyrus-core";
-import forge from "node-forge";
+
+const signingAlgorithm = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
+const keyAlgorithm = {
+	...signingAlgorithm,
+	modulusLength: 2048,
+	publicExponent: new Uint8Array([1, 0, 1]),
+};
 
 /**
  * Resolved transform rules for a matched domain.
@@ -60,8 +77,8 @@ export class EgressProxy {
 	private logger: ILogger;
 
 	/** CA key pair and certificate for on-the-fly cert generation */
-	private caKey: forge.pki.rsa.KeyPair | null = null;
-	private caCert: forge.pki.Certificate | null = null;
+	private caKey: webcrypto.CryptoKey | null = null;
+	private caCert: X509Certificate | null = null;
 	private caKeyPem: string = "";
 	private caCertPem: string = "";
 
@@ -95,7 +112,6 @@ export class EgressProxy {
 		// Generate CA cert and store path
 		this.certsDir = join(cyrusHome, "certs");
 		this.caCertPath = join(this.certsDir, "cyrus-egress-ca.pem");
-		this.generateCA(this.certsDir);
 
 		// Parse policy into fast-lookup structures
 		this.parsePolicy();
@@ -163,6 +179,7 @@ export class EgressProxy {
 	async start(): Promise<void> {
 		if (this.isRunning) return;
 
+		await this.generateCA(this.certsDir);
 		await this.startHttpProxy();
 		await this.startSocksProxy();
 		this.isRunning = true;
@@ -265,102 +282,108 @@ export class EgressProxy {
 	// CA Certificate Generation
 	// ---------------------------------------------------------------------------
 
-	private generateCA(certsDir: string): void {
-		// Reuse existing CA if present
+	private async generateCA(certsDir: string): Promise<void> {
 		const caKeyPath = join(certsDir, "cyrus-egress-ca-key.pem");
 		if (existsSync(this.caCertPath) && existsSync(caKeyPath)) {
 			this.caCertPem = readFileSync(this.caCertPath, "utf8");
 			this.caKeyPem = readFileSync(caKeyPath, "utf8");
-			this.caCert = forge.pki.certificateFromPem(this.caCertPem);
-			this.caKey = {
-				publicKey: this.caCert.publicKey as forge.pki.rsa.PublicKey,
-				privateKey: forge.pki.privateKeyFromPem(this.caKeyPem),
-			};
+			this.caCert = new X509Certificate(this.caCertPem);
+			// Forge wrote PKCS#1 keys. Normalize in memory only, preserving existing CA trust.
+			const pkcs8 = createPrivateKey(this.caKeyPem).export({
+				type: "pkcs8",
+				format: "der",
+			});
+			this.caKey = await crypto.subtle.importKey(
+				"pkcs8",
+				new Uint8Array(pkcs8),
+				signingAlgorithm,
+				false,
+				["sign"],
+			);
 			this.logger.debug("[EgressProxy] Loaded existing CA certificate");
 			return;
 		}
-
-		if (!existsSync(certsDir)) {
-			mkdirSync(certsDir, { recursive: true });
-		}
-
+		mkdirSync(certsDir, { recursive: true });
 		this.logger.info(
 			"[EgressProxy] Generating CA certificate for TLS termination...",
 		);
-		const keys = forge.pki.rsa.generateKeyPair(2048);
-		const cert = forge.pki.createCertificate();
-
-		cert.publicKey = keys.publicKey;
-		cert.serialNumber = "01";
-		cert.validity.notBefore = new Date();
-		cert.validity.notAfter = new Date();
-		cert.validity.notAfter.setFullYear(
-			cert.validity.notBefore.getFullYear() + 10,
-		);
-
-		const attrs = [
-			{ name: "commonName", value: "Cyrus Egress Proxy CA" },
-			{ name: "organizationName", value: "Cyrus" },
-		];
-		cert.setSubject(attrs);
-		cert.setIssuer(attrs);
-		cert.setExtensions([
-			{ name: "basicConstraints", cA: true },
-			{
-				name: "keyUsage",
-				keyCertSign: true,
-				digitalSignature: true,
-				cRLSign: true,
-			},
+		const keys = await crypto.subtle.generateKey(keyAlgorithm, true, [
+			"sign",
+			"verify",
 		]);
-
-		cert.sign(keys.privateKey, forge.md.sha256.create());
-
-		this.caKey = keys;
-		this.caCert = cert;
-		this.caCertPem = forge.pki.certificateToPem(cert);
-		this.caKeyPem = forge.pki.privateKeyToPem(keys.privateKey);
-
-		writeFileSync(this.caCertPath, this.caCertPem);
+		const notBefore = new Date(),
+			notAfter = new Date();
+		notAfter.setFullYear(notBefore.getFullYear() + 10);
+		this.caCert = await X509CertificateGenerator.createSelfSigned(
+			{
+				serialNumber: "01",
+				name: "CN=Cyrus Egress Proxy CA, O=Cyrus",
+				notBefore,
+				notAfter,
+				signingAlgorithm,
+				keys,
+				extensions: [
+					new BasicConstraintsExtension(true, undefined, true),
+					new KeyUsagesExtension(
+						KeyUsageFlags.keyCertSign |
+							KeyUsageFlags.digitalSignature |
+							KeyUsageFlags.cRLSign,
+						true,
+					),
+				],
+			},
+			crypto,
+		);
+		this.caKey = keys.privateKey;
+		this.caCertPem = this.caCert.toString("pem");
+		this.caKeyPem = PemConverter.encode(
+			await crypto.subtle.exportKey("pkcs8", keys.privateKey),
+			"PRIVATE KEY",
+		);
 		writeFileSync(caKeyPath, this.caKeyPem, { mode: 0o600 });
+		writeFileSync(this.caCertPath, this.caCertPem);
 		this.logger.info(
 			`[EgressProxy] CA certificate written to ${this.caCertPath}`,
 		);
 	}
 
-	// ---------------------------------------------------------------------------
-	// On-the-fly Server Certificate Generation
-	// ---------------------------------------------------------------------------
-
-	private generateServerCert(hostname: string): { key: string; cert: string } {
+	// On-the-fly certificates use the same Node crypto provider as the CA.
+	private async generateServerCert(
+		hostname: string,
+	): Promise<{ key: string; cert: string }> {
 		const cached = this.certCache.get(hostname);
 		if (cached) return cached;
-
-		const keys = forge.pki.rsa.generateKeyPair(2048);
-		const cert = forge.pki.createCertificate();
-
-		cert.publicKey = keys.publicKey;
-		cert.serialNumber = String(Date.now());
-		cert.validity.notBefore = new Date();
-		cert.validity.notAfter = new Date();
-		cert.validity.notAfter.setFullYear(
-			cert.validity.notBefore.getFullYear() + 1,
-		);
-
-		cert.setSubject([{ name: "commonName", value: hostname }]);
-		cert.setIssuer(this.caCert!.subject.attributes);
-		cert.setExtensions([
-			{
-				name: "subjectAltName",
-				altNames: [{ type: 2, value: hostname }], // DNS
-			},
+		const keys = await crypto.subtle.generateKey(keyAlgorithm, true, [
+			"sign",
+			"verify",
 		]);
-
-		cert.sign(this.caKey!.privateKey, forge.md.sha256.create());
-
+		const notBefore = new Date(),
+			notAfter = new Date();
+		notAfter.setFullYear(notBefore.getFullYear() + 1);
+		const cert = await X509CertificateGenerator.create(
+			{
+				serialNumber: randomBytes(16).toString("hex"),
+				subject: [{ CN: [hostname] }],
+				issuer: this.caCert!.subjectName,
+				notBefore,
+				notAfter,
+				signingAlgorithm,
+				publicKey: keys.publicKey,
+				signingKey: this.caKey!,
+				extensions: [
+					new SubjectAlternativeNameExtension([
+						{ type: "dns", value: hostname },
+					]),
+				],
+			},
+			crypto,
+		);
 		const result = {
-			key: forge.pki.privateKeyToPem(keys.privateKey),
-			cert: forge.pki.certificateToPem(cert),
+			key: PemConverter.encode(
+				await crypto.subtle.exportKey("pkcs8", keys.privateKey),
+				"PRIVATE KEY",
+			),
+			cert: cert.toString("pem"),
 		};
 		this.certCache.set(hostname, result);
 		return result;
@@ -646,7 +669,15 @@ export class EgressProxy {
 
 		if (this.requiresTlsTermination(hostname)) {
 			// TLS termination: MITM to inject headers
-			this.handleTlsTermination(hostname, port, clientSocket, head);
+			void this.handleTlsTermination(hostname, port, clientSocket, head).catch(
+				(error) => {
+					this.logger.error(
+						`[EgressProxy] TLS certificate error for ${hostname}:`,
+						error,
+					);
+					clientSocket.destroy();
+				},
+			);
 		} else {
 			// Passthrough: direct TCP tunnel
 			if (this.logRequests) {
@@ -704,13 +735,14 @@ export class EgressProxy {
 	 * the client socket to it, then forwards decrypted HTTP upstream
 	 * with injected headers.
 	 */
-	private handleTlsTermination(
+	private async handleTlsTermination(
 		hostname: string,
 		port: number,
 		clientSocket: Socket,
 		head: Buffer,
-	): void {
-		const serverCert = this.generateServerCert(hostname);
+	): Promise<void> {
+		const serverCert = await this.generateServerCert(hostname);
+		if (clientSocket.destroyed) return;
 
 		// Create a real HTTPS server with the generated cert to terminate TLS
 		const localServer = createHttpsServer(

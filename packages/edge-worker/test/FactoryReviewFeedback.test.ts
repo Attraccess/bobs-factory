@@ -1,4 +1,5 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { accessRequired, checkAccess } from "../src/factory/web/auth-state.js";
 import {
 	emptyFeedback,
 	type FeedbackDraft,
@@ -11,7 +12,20 @@ import {
 import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
 import { reviewKey } from "../src/factory/web/review-state.js";
 
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(async () => {
+	const previous = globalThis.fetch;
+	globalThis.fetch = async () =>
+		Response.json({ authenticated: true, expires: Date.now() + 3600000 });
+	try {
+		await checkAccess();
+	} finally {
+		globalThis.fetch = previous;
+	}
+});
+afterEach(() => {
+	accessRequired();
+	vi.unstubAllGlobals();
+});
 const target = (
 	path: string,
 	order: number[],
@@ -254,4 +268,33 @@ it("edits and submits without access to browser storage", () => {
 		draft: emptyFeedback(),
 		busy: false,
 	});
+});
+
+it("releases access-lost locks without letting old callbacks alter a new session", async () => {
+	const old = feedbackSession("logout-gate");
+	old.update((draft) => ({ ...draft, feedback: "Before logout" }));
+	const submitted = old.getSnapshot().draft;
+	expect(old.lock()).toBe(true);
+	const notify = vi.fn();
+	const unsubscribe = old.subscribe(notify);
+	accessRequired("Signed out");
+	expect(notify).toHaveBeenCalled();
+	old.clear(submitted);
+	expect(old.getSnapshot().busy).toBe(false);
+	vi.stubGlobal("fetch", async () =>
+		Response.json({ authenticated: true, expires: Date.now() + 3600000 }),
+	);
+	await checkAccess();
+	const current = feedbackSession("logout-gate");
+	expect(current.getSnapshot().draft).toEqual(emptyFeedback());
+	current.update((draft) => ({ ...draft, feedback: "After login" }));
+	expect(current.lock()).toBe(true);
+	old.clear(submitted);
+	old.unlock();
+	expect(current.getSnapshot()).toEqual({
+		draft: { ...emptyFeedback(), feedback: "After login" },
+		busy: true,
+	});
+	current.unlock();
+	unsubscribe();
 });

@@ -12,8 +12,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { runInNewContext } from "node:vm";
 import { buildSync } from "esbuild";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { factoryWebAssets } from "../src/factory/FactoryWebAssets.js";
+import { accessRequired, checkAccess } from "../src/factory/web/auth-state.js";
 import {
 	installApp,
 	pwaState,
@@ -31,6 +32,13 @@ import {
 	restoredView,
 } from "../src/factory/web/restoration.js";
 
+beforeEach(async () => {
+	const previous = globalThis.fetch;
+	globalThis.fetch = async () =>
+		Response.json({ authenticated: true, expires: Date.now() + 3600000 });
+	await checkAccess();
+	globalThis.fetch = previous;
+});
 const build = "b".repeat(24),
 	oldBuild = "a".repeat(24),
 	prefix = "bobs-factory-shell-";
@@ -417,6 +425,30 @@ it("round-trips only view state and excludes every editable surface", () => {
 		expect(restoredView(key)).toBeUndefined();
 		expect(snapshot?.views[key]).toBeUndefined();
 	}
+	completeRestoration();
+	expect(saved.values.size).toBe(0);
+});
+it.each([
+	false,
+	true,
+])("preserves the Settings route without inputs during updates with signed-out state %s", (signedOut) => {
+	browserState();
+	vi.stubGlobal("location", { hash: "#/settings" });
+	const saved = storage();
+	vi.stubGlobal("sessionStorage", saved);
+	rememberView("chat/r", "private draft");
+	rememberView("inspector/selection", { runId: "r", name: "plan" });
+	if (signedOut) accessRequired("Signed out");
+	preserveForUpdate(build, saved);
+	const snapshot = decodeSnapshot([...saved.values.values()][0]);
+	expect(snapshot?.route).toBe("#/settings");
+	expect(snapshot?.views["chat/r"]).toBeUndefined();
+	expect(snapshot?.views["inspector/selection"]).toEqual(
+		signedOut ? undefined : { value: { runId: "r", name: "plan" } },
+	);
+	location.hash = "#/";
+	loadRestoration(build, saved);
+	expect(location.hash).toBe("#/settings");
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });

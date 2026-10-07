@@ -1,0 +1,62 @@
+{
+	"findingId": "QA79-SCREENSHOT-001",
+	"area": "Passkey login and app update",
+	"state": "Signed-out Settings cached-shell mismatch at 1280\u00d7900 in dark theme",
+	"caption": "Signed-out Settings update barrier with disabled sign-in at the selected desktop viewport.",
+	"path": "login-settings-mismatch-1280x900-dark.png",
+	"url": "http://localhost:46257/#/settings",
+	"capturedAt": "2026-10-07T13:07:54.114Z",
+	"viewport": {
+		"width": 1280,
+		"height": 900
+	},
+	"pngDimensions": {
+		"width": 1280,
+		"height": 900
+	},
+	"theme": "dark",
+	"headSha": "6b4d734859d4f253161ab7378fe403617cb0cc68",
+	"imageSha256": "4b5ab85bf8a0f063352745a8591ac78595b6381a8313648636d5446ce1e26b03",
+	"sourceProvenance": {
+		"fingerprintVersion": 2,
+		"dependencyManifest": "55bf7da618563f0ead3c52e0a65d11a8dd69822f0fddb0b4d6b1de85eab957f1",
+		"note": "Inherited unchanged source fingerprint from qa79-round5 selected authentication screenshots; runtime-generated compact provenance, no reconstructed hash inventory."
+	},
+	"shellBefore": {
+		"version": {
+			"build": "67b0579f0706927c4f41d8cf",
+			"protocol": 1
+		},
+		"script": "http://localhost:46257/app.e25837a7d54fc7b2f416a6fa.js",
+		"controller": "http://localhost:46257/sw.js"
+	},
+	"serverAfter": {
+		"build": "43fc55b5870fd18c845bf0c3",
+		"protocol": 1
+	},
+	"loadedScript": "http://localhost:46257/app.e25837a7d54fc7b2f416a6fa.js",
+	"browserViewport": {
+		"width": 1280,
+		"height": 900,
+		"dpr": 1
+	},
+	"scroll": {
+		"x": 0,
+		"y": 0
+	},
+	"checks": {
+		"explicitViewport": true,
+		"pngDimensions": true,
+		"signedOutProtectedAPI": 401,
+		"signInDisabled": true,
+		"updateAvailable": true,
+		"waitingWorker": true,
+		"settingsRoutePreserved": true
+	},
+	"fixture": {
+		"agents": "mock",
+		"authenticator": "Chromium virtual authenticator",
+		"productionChanged": false
+	},
+	"evidencePath": "/Users/jappy/.cyrus/factory/evidence/manual-09e877cd-6bbb-4ad8-9aec-85b6d59877e8/fix-screenshot-001/login-settings-mismatch-1280x900-dark.png"
+}

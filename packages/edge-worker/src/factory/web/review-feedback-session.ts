@@ -1,3 +1,4 @@
+import { accessState, onAccessLost } from "./auth-state";
 import { emptyFeedback, type FeedbackDraft } from "./review-feedback";
 
 /** Remove only comments whose submitted contents are still unchanged. */
@@ -61,9 +62,15 @@ class FeedbackSession {
 		changed();
 	};
 	clear = (submitted: FeedbackDraft) => {
+		if (accessState().status !== "authenticated") return;
 		this.publish(withoutSubmitted(this.state.draft, submitted));
 	};
 }
 export function feedbackSession(key: string) {
 	return new FeedbackSession(key);
 }
+
+onAccessLost(() => {
+	pending.clear();
+	changed();
+});

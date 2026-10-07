@@ -1,8 +1,16 @@
-import { existsSync, rmSync } from "node:fs";
+import { createPrivateKey, X509Certificate } from "node:crypto";
+import {
+	existsSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import tls from "node:tls";
 import type { NetworkPolicy, SandboxConfig } from "cyrus-core";
 import { TRUSTED_DOMAINS } from "cyrus-core";
 import { afterEach, describe, expect, it } from "vitest";
@@ -38,30 +46,94 @@ describe("EgressProxy", () => {
 	});
 
 	describe("constructor", () => {
-		it("generates CA certificate on first run", () => {
+		it("generates CA certificate before listening on first start", async () => {
 			proxy = new EgressProxy(
 				createConfig({ httpProxyPort: httpPort, socksProxyPort: socksPort }),
 				TEST_CYRUS_HOME,
 			);
 
+			await proxy.start();
 			const caCertPath = proxy.getCACertPath();
 			expect(caCertPath).toContain("cyrus-egress-ca.pem");
 			expect(existsSync(caCertPath)).toBe(true);
 		});
 
-		it("reuses existing CA certificate", () => {
+		it("reuses an existing CA and legacy PKCS#1 key without changing trust", async () => {
 			const config = createConfig({
 				httpProxyPort: httpPort,
 				socksProxyPort: socksPort,
 			});
+			proxy = new EgressProxy(config, TEST_CYRUS_HOME);
+			await proxy.start();
+			const original = readFileSync(proxy.getCACertPath(), "utf8");
+			const keyPath = join(TEST_CYRUS_HOME, "certs", "cyrus-egress-ca-key.pem");
+			const key = createPrivateKey(readFileSync(keyPath));
+			writeFileSync(keyPath, key.export({ type: "pkcs1", format: "pem" }));
+			await proxy.stop();
+			proxy = new EgressProxy(config, TEST_CYRUS_HOME);
+			await proxy.start();
+			expect(readFileSync(proxy.getCACertPath(), "utf8")).toBe(original);
+			expect(new X509Certificate(original).checkPrivateKey(key)).toBe(true);
+			expect(statSync(keyPath).mode & 0o777).toBe(0o600);
+		});
 
-			const proxy1 = new EgressProxy(config, TEST_CYRUS_HOME);
-			const cert1 = proxy1.getCACertPath();
-
-			const proxy2 = new EgressProxy(config, TEST_CYRUS_HOME);
-			const cert2 = proxy2.getCACertPath();
-
-			expect(cert1).toEqual(cert2);
+		it("issues trusted hostname certificates and completes a real TLS handshake after CA reuse", async () => {
+			const config = createConfig({
+				networkPolicy: {
+					allow: {
+						"factory-egress.test": [
+							{ transform: [{ headers: { "x-test": "injected" } }] },
+						],
+					},
+				},
+			});
+			proxy = new EgressProxy(config, TEST_CYRUS_HOME);
+			await proxy.start();
+			const ca = readFileSync(proxy.getCACertPath(), "utf8");
+			const keyPath = join(TEST_CYRUS_HOME, "certs", "cyrus-egress-ca-key.pem");
+			writeFileSync(
+				keyPath,
+				createPrivateKey(readFileSync(keyPath)).export({
+					type: "pkcs1",
+					format: "pem",
+				}),
+			);
+			await proxy.stop();
+			proxy = new EgressProxy(config, TEST_CYRUS_HOME);
+			await proxy.start();
+			const connect = async (servername: string) =>
+				new Promise<X509Certificate>((resolve, reject) => {
+					const req = http.request({
+						hostname: "127.0.0.1",
+						port: proxy.getHttpProxyPort(),
+						method: "CONNECT",
+						path: "factory-egress.test:443",
+					});
+					req.on("error", reject);
+					req.on("connect", (response, socket) => {
+						if (response.statusCode !== 200) {
+							socket.destroy();
+							reject(new Error("CONNECT rejected"));
+							return;
+						}
+						const secure = tls.connect({ socket, servername, ca }, () => {
+							const peer = secure.getPeerX509Certificate()!;
+							secure.destroy();
+							resolve(peer);
+						});
+						secure.setTimeout(3000, () =>
+							secure.destroy(new Error("TLS timeout")),
+						);
+						secure.on("error", reject);
+					});
+					req.end();
+				});
+			const leaf = await connect("factory-egress.test");
+			expect(leaf.verify(new X509Certificate(ca).publicKey)).toBe(true);
+			expect(leaf.checkHost("factory-egress.test")).toBe("factory-egress.test");
+			await expect(connect("wrong.test")).rejects.toThrow(
+				/Hostname|Altname|altnames/,
+			);
 		});
 
 		it("returns actual bound ports after start", async () => {

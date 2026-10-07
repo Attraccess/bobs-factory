@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
 	existsSync,
@@ -11,6 +10,8 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { compile, optimize } from "@tailwindcss/node";
+import { Scanner } from "@tailwindcss/oxide";
 import { build } from "esbuild";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -55,19 +56,28 @@ try {
 			__SHELL__: "FACTORY_SHELL_REPLACED_AT_BUILD_TIME",
 		},
 	});
-	execFileSync(
-		"pnpm",
-		[
-			"exec",
-			"tailwindcss",
-			"-i",
-			join(source, "styles.css"),
-			"-o",
-			join(stage, "styles.css"),
-			"--minify",
-		],
-		{ cwd: root, stdio: "inherit" },
-	);
+	// One-shot compilation does not need the CLI's file watcher dependency.
+	const inputCss = join(source, "styles.css");
+	const compiler = await compile(readFileSync(inputCss, "utf8"), {
+		base: source,
+		from: inputCss,
+		onDependency() {},
+	});
+	const sources = (
+		compiler.root === "none"
+			? []
+			: compiler.root === null
+				? [{ base: root, pattern: "**/*", negated: false }]
+				: [{ ...compiler.root, negated: false }]
+	).concat(compiler.sources);
+	sources.push({ base: source, pattern: "styles.css", negated: false });
+	const scanner = new Scanner({ sources });
+	const css = optimize(compiler.build(scanner.scan()), {
+		file: inputCss,
+		minify: true,
+	}).code;
+	writeFileSync(join(stage, "styles.css"), css);
+
 	const inputs = new Map([
 		["app.js", readFileSync(join(stage, "app.js"))],
 		["styles.css", readFileSync(join(stage, "styles.css"))],
