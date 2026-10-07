@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useFormState } from "./form-state";
 import {
 	disablePush,
 	enablePush,
@@ -17,8 +18,11 @@ export function NotificationsControl() {
 		[busy, setBusy] = useState(false),
 		[error, setError] = useState(""),
 		[message, setMessage] = useState("");
-	const [label, setLabel] = useState("This browser"),
-		[status, setStatus] = useState<PushStatus>(),
+	const [label, setLabel] = useFormState(
+		open ? "open" : "closed",
+		"This browser",
+	);
+	const [status, setStatus] = useState<PushStatus>(),
 		[enabled, setEnabled] = useState(false);
 	const [registration, setRegistration] = useState<ServiceWorkerRegistration>(),
 		[permission, setPermission] = useState<

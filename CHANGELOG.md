@@ -50,6 +50,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Keep unsent form edits only while their current form and context remain open. Navigation, context changes, reloads, app updates and canceling follow-up feedback or new-passkey setup now discard them without stale-draft warnings; saved server data and pending-request guards remain intact. ([#41](https://github.com/Attraccess/bobs-factory/pull/41))
+
 - Factory QA now tests agreed user stories across UI, API and CLI changes, captures representative screenshots during those flows, and requires fixes and retesting for consequential failures. QA evidence and optional improvements remain visible for human review. ([Taskbot #74](https://taskbot.apps.janjaap.de/p/bobs-factory/t/74))
 
 - Review guides open on a dedicated reading page, with a compact entry on Today, saved reading positions and feedback drafts, and a clear empty state when no guide is available. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59), [#9](https://github.com/Attraccess/bobs-factory/pull/9))
@@ -63,7 +65,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Restore notification device removal and deferred cleanup after reconnect, use the served app icon for notification images, and avoid duplicate alerts when a pending question is rephrased. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+- Restore notification device removal and deferred cleanup after reconnect, use the served app icon for notification images, and avoid duplicate alerts when a pending question is rephrased. Discard unsent device-label edits when Notifications closes, matching the current form behavior. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Recover PR/worktree revision mismatches through the configured CI fixer; preserve both revisions and wait for assistance when synchronization makes no progress, keeping old CI from approving newer work. ([#43](https://github.com/Attraccess/bobs-factory/pull/43))
 
 - Reconcile compact Factory review history with the binary fork, retaining original evidence, explicit answers and explanation revision records across restart. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
