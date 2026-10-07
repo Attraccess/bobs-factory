@@ -1,4 +1,4 @@
-import { CLIIssueTrackerService } from "cyrus-core";
+import { CLIIssueTrackerService } from "bobs-factory-core";
 import { expect, it } from "vitest";
 import { issueSnapshot } from "../src/factory/issueSnapshot.js";
 

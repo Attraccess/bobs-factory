@@ -824,7 +824,7 @@ function RunPage({
 		visited = new Set(run.history?.map((h: any) => h.step));
 	const graphRows = steps.length
 			? steps
-			: [{ id: "simple", key: "simple", name: "Cyrus session" }],
+			: [{ id: "simple", key: "simple", name: "Bob’s Factory session" }],
 		rows = [
 			...graphRows,
 			...Object.keys(run.capacityLeaves ?? {})

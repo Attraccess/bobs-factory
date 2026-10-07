@@ -21,8 +21,8 @@ import type {
 	AskUserQuestionResult,
 	IIssueTrackerService,
 	ILogger,
-} from "cyrus-core";
-import { AgentActivitySignal, createLogger } from "cyrus-core";
+} from "bobs-factory-core";
+import { AgentActivitySignal, createLogger } from "bobs-factory-core";
 
 /**
  * Pending question data stored while awaiting user response

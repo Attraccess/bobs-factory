@@ -2,13 +2,17 @@ import {
 	getAllTools,
 	getCoordinatorTools,
 	getSafeTools,
-} from "cyrus-claude-runner";
-import type { EdgeWorkerConfig, ILogger, RepositoryConfig } from "cyrus-core";
+} from "bobs-factory-claude-runner";
+import type {
+	EdgeWorkerConfig,
+	ILogger,
+	RepositoryConfig,
+} from "bobs-factory-core";
 import {
 	GITHUB_DEFAULT_ALLOWED_TOOLS,
 	LINEAR_DEFAULT_ALLOWED_TOOLS,
 	SLACK_DEFAULT_ALLOWED_TOOLS,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 /** Prompt type used for label-based tool/prompt selection */
 export type PromptType =
@@ -23,10 +27,10 @@ export type PromptType =
  * sessions.
  *
  * The resolver is **additive only**: it never appends or strips tools after
- * the explicit list is chosen. The per-platform defaults live in cyrus-core
+ * the explicit list is chosen. The per-platform defaults live in bobs-factory-core
  * (`LINEAR_DEFAULT_ALLOWED_TOOLS`, `SLACK_DEFAULT_ALLOWED_TOOLS`,
  * `GITHUB_DEFAULT_ALLOWED_TOOLS`) and include workspace MCP prefixes
- * (`mcp__linear`, `mcp__cyrus-tools`, etc.) explicitly. Callers that want a
+ * (`mcp__linear`, `mcp__bobs-factory-tools`, etc.) explicitly. Callers that want a
  * tighter list pass `linearAllowedTools` / `slackAllowedTools` /
  * `githubAllowedTools` on `EdgeWorkerConfig`, or set repo-level
  * `allowedTools`. The repo override is a verbatim replacement, not an

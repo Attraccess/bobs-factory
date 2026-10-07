@@ -3,8 +3,15 @@ import {
 	LinearWebhookClient,
 	type LinearWebhookPayload,
 } from "@linear/sdk/webhooks";
-import type { IAgentEventTransport, TranslationContext } from "cyrus-core";
-import { createLogger, type ILogger, ipMatchesAllowlist } from "cyrus-core";
+import type {
+	IAgentEventTransport,
+	TranslationContext,
+} from "bobs-factory-core";
+import {
+	createLogger,
+	type ILogger,
+	ipMatchesAllowlist,
+} from "bobs-factory-core";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import { LinearMessageTranslator } from "./LinearMessageTranslator.js";
 import type {

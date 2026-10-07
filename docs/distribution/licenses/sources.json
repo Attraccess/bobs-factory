@@ -1,0 +1,321 @@
+{
+	"linear.txt": {
+		"source": "https://raw.githubusercontent.com/linear/linear/master/LICENSE",
+		"sha256": "6d01159ad48e1c4a2c053ec32a97afc658786aa69362ead7d3adc912f9a10ce2",
+		"packages": ["@linear/sdk"]
+	},
+	"ngrok.txt": {
+		"source": "https://raw.githubusercontent.com/ngrok/ngrok-javascript/v1.7.0/LICENSE-MIT",
+		"sha256": "c2664a4824981f91129427522ac84f278cd499ad21c4a7f35fc4401d961896b9",
+		"packages": ["@ngrok/ngrok-darwin-arm64", "@ngrok/ngrok-darwin-universal"]
+	},
+	"sentry.txt": {
+		"source": "https://raw.githubusercontent.com/getsentry/sentry-javascript/10.65.0/LICENSE",
+		"sha256": "497d5a7036220d5763088d161612f9f7f2e499fe3ce186826f4369b465769312",
+		"packages": ["@sentry/server-utils"]
+	},
+	"unfetch.txt": {
+		"source": "https://raw.githubusercontent.com/developit/unfetch/3.1.0/LICENSE.md",
+		"sha256": "48847c33de7ee90f023d97dd90055cb8fe1e54edb7b956c90e19db852773ce18",
+		"packages": ["isomorphic-unfetch"]
+	},
+	"standardwebhooks.txt": {
+		"source": "https://raw.githubusercontent.com/standard-webhooks/standard-webhooks/main/LICENSE",
+		"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+		"packages": ["standardwebhooks"]
+	},
+	"connect.txt": {
+		"source": "https://raw.githubusercontent.com/connectrpc/connect-es/v1.7.0/LICENSE",
+		"sha256": "5780f83112ef0026ca40dd55d88535f4475962a2edc90f39410bf908502d7e62",
+		"packages": [
+			"@connectrpc/connect",
+			"@connectrpc/connect-node",
+			"@connectrpc/connect-web"
+		]
+	},
+	"protobuf.txt": {
+		"source": "https://raw.githubusercontent.com/bufbuild/protobuf-es/v1.10.0/LICENSE",
+		"sha256": "6da19f017fad6716cbc9c938972ebee29957c295b8a4d51060dfb03da51d8502",
+		"packages": ["@bufbuild/protobuf"]
+	},
+	"statsig.txt": {
+		"source": "https://raw.githubusercontent.com/statsig-io/js-client-monorepo/main/LICENSE",
+		"sha256": "27cc00620b2a268e83c28709e19c28228d32cda69f4d7c62ffb09d4ed3822075",
+		"packages": ["@statsig/client-core"]
+	},
+	"tr46.txt": {
+		"source": "https://raw.githubusercontent.com/Sebmaster/tr46.js/master/LICENSE.md",
+		"sha256": "499d6d466d064e0460427967a344e2a32fcb86ea8c6cd1a285ec4f1fa03fba67",
+		"packages": ["tr46"]
+	},
+	"abstract-logging.txt": {
+		"source": "http://jsumners.mit-license.org",
+		"sha256": "59423021c5227d7b6e55355239ff7216ec9690d0eb5a29f7a788f33f44b8673f",
+		"packages": ["abstract-logging"]
+	},
+	"bun-runtime.txt": {
+		"source": "https://raw.githubusercontent.com/oven-sh/bun/bun-v1.4.2/LICENSE.md",
+		"sha256": "b9caf52728691b4057e371232c221a132883198be2f3d2ddf92c90404c984b1a",
+		"packages": ["bun-runtime"]
+	},
+	"bun-boringssl.txt": {
+		"source": "https://raw.githubusercontent.com/google/boringssl/main/LICENSE",
+		"sha256": "827c8d8fc207c2392794eef9e00fe246f9f61fdcc132556c275be3dd8c3cd97f",
+		"packages": ["bun-runtime"]
+	},
+	"bun-brotli.txt": {
+		"source": "https://raw.githubusercontent.com/google/brotli/master/LICENSE",
+		"sha256": "3d180008e36922a4e8daec11c34c7af264fed5962d07924aea928c38e8663c94",
+		"packages": ["bun-runtime"]
+	},
+	"bun-libarchive.txt": {
+		"source": "https://raw.githubusercontent.com/libarchive/libarchive/master/COPYING",
+		"sha256": "30e556b3959e3985d66efefec5eaac51d4995053caa1d3cffe6eb916f146f229",
+		"packages": ["bun-runtime"]
+	},
+	"bun-lol-html.txt": {
+		"source": "https://raw.githubusercontent.com/cloudflare/lol-html/main/LICENSE",
+		"sha256": "e4ddaa9d7391bb9536fcb8c59b570a8b85a0bf6da54df5b3b26f098f6f99c9cc",
+		"packages": ["bun-runtime"]
+	},
+	"bun-ls-hpack.txt": {
+		"source": "https://raw.githubusercontent.com/litespeedtech/ls-hpack/master/LICENSE",
+		"sha256": "0490f9666828ad1b6b5503102e7ebbe491451b7174511f3b6255caa967caf955",
+		"packages": ["bun-runtime"]
+	},
+	"bun-ls-qpack.txt": {
+		"source": "https://raw.githubusercontent.com/litespeedtech/ls-qpack/master/LICENSE",
+		"sha256": "bf66df64b9819a4f2b7093332e35111f16a1c013180b2c30dd456f682a9c63fd",
+		"packages": ["bun-runtime"]
+	},
+	"bun-lsquic.txt": {
+		"source": "https://raw.githubusercontent.com/litespeedtech/lsquic/master/LICENSE",
+		"sha256": "9bc22643b3ea2b55c547c83e332253d04ba3df4f26696091e6fa9f7a1ccc65ef",
+		"packages": ["bun-runtime"]
+	},
+	"bun-lsquic-chrome.txt": {
+		"source": "https://raw.githubusercontent.com/litespeedtech/lsquic/master/LICENSE.chrome",
+		"sha256": "85d5dcb0d30ea89fa5922451957ff2a1a2c3c24f1ad2bb9ab23b5d6080763fc9",
+		"packages": ["bun-runtime"]
+	},
+	"bun-mimalloc.txt": {
+		"source": "https://raw.githubusercontent.com/microsoft/mimalloc/master/LICENSE",
+		"sha256": "82ade5d7d9b029044b5fbbc326207fc47c2d44ee4dd71e8a559c36d728217de9",
+		"packages": ["bun-runtime"]
+	},
+	"bun-zstd.txt": {
+		"source": "https://raw.githubusercontent.com/facebook/zstd/dev/LICENSE",
+		"sha256": "7055266497633c9025b777c78eb7235af13922117480ed5c674677adc381c9d8",
+		"packages": ["bun-runtime"]
+	},
+	"bun-simdutf.txt": {
+		"source": "https://raw.githubusercontent.com/simdutf/simdutf/master/LICENSE-APACHE",
+		"sha256": "3d34610fc6b5e1b0bfe4e2f36171c2d62c28ef05cb8d704f5a0073be41a43b3d",
+		"packages": ["bun-runtime"]
+	},
+	"bun-tinycc.txt": {
+		"source": "https://raw.githubusercontent.com/TinyCC/tinycc/mob/COPYING",
+		"sha256": "512d2d21b6b3384ba64781abb0208a1b87740bc31e2df48e2b206ddb7e4d5779",
+		"packages": ["bun-runtime"]
+	},
+	"bun-usockets.txt": {
+		"source": "https://raw.githubusercontent.com/uNetworking/uSockets/master/LICENSE",
+		"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+		"packages": ["bun-runtime"]
+	},
+	"bun-zlib-ng.txt": {
+		"source": "https://raw.githubusercontent.com/zlib-ng/zlib-ng/develop/LICENSE.md",
+		"sha256": "6c9f0d975b41afaa34d22f55bb8986ce69e5cb7ad327cb2b28820cd425edf5ee",
+		"packages": ["bun-runtime"]
+	},
+	"bun-c-ares.txt": {
+		"source": "https://raw.githubusercontent.com/c-ares/c-ares/main/LICENSE.md",
+		"sha256": "460f5e768fda3752ca2169a95df062578a10fb126bfd65f3b9b1a1bed2f84807",
+		"packages": ["bun-runtime"]
+	},
+	"bun-icu.txt": {
+		"source": "https://raw.githubusercontent.com/unicode-org/icu/main/icu4c/LICENSE",
+		"sha256": "1e881ecf2862d01e6e5bc2b861e46886d2a6fb01499c0c508a209a7271b13cf2",
+		"packages": ["bun-runtime"]
+	},
+	"bun-libbase64.txt": {
+		"source": "https://raw.githubusercontent.com/aklomp/base64/master/LICENSE",
+		"sha256": "42871ad9f4e5e9255a4ec80b6c5ec9989bab6964693cf5fee6bb33f3afe39220",
+		"packages": ["bun-runtime"]
+	},
+	"bun-libdeflate.txt": {
+		"source": "https://raw.githubusercontent.com/ebiggers/libdeflate/master/COPYING",
+		"sha256": "4ad69099cb4374836fd27583d9991e2838cd86b6e4666ab26b2d32582c91e73a",
+		"packages": ["bun-runtime"]
+	},
+	"bun-libjpeg-turbo.txt": {
+		"source": "https://raw.githubusercontent.com/libjpeg-turbo/libjpeg-turbo/main/LICENSE.md",
+		"sha256": "ba6bceebcba0fdd35488477c2cca8c4632ce82c74dbfbc87d886ce6fc4433579",
+		"packages": ["bun-runtime"]
+	},
+	"bun-libspng.txt": {
+		"source": "https://raw.githubusercontent.com/randy408/libspng/master/LICENSE",
+		"sha256": "41f242e040256b7f1dc00a0c041e7ff373b1eab31eea9ac42a8eee9cc6ada747",
+		"packages": ["bun-runtime"]
+	},
+	"bun-libwebp.txt": {
+		"source": "https://raw.githubusercontent.com/webmproject/libwebp/main/COPYING",
+		"sha256": "5aec868f669e384a22372a4e8a1a6cd7d44c64cd451f960ca69cc170d1e13acf",
+		"packages": ["bun-runtime"]
+	},
+	"bun-highway.txt": {
+		"source": "https://raw.githubusercontent.com/google/highway/master/LICENSE",
+		"sha256": "85de9303e7a81f35d81befd51a4004c41b5e7f7e40cd4e3f5ff609ecd71a0e44",
+		"packages": ["bun-runtime"]
+	},
+	"bun-uwebsockets.txt": {
+		"source": "https://raw.githubusercontent.com/jarred-sumner/uwebsockets/master/LICENSE",
+		"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+		"packages": ["bun-runtime"]
+	},
+	"bun-tigerbeetle.txt": {
+		"source": "https://raw.githubusercontent.com/tigerbeetle/tigerbeetle/532c8b70b9142c17e07737ab6d3da68d7500cbca/LICENSE",
+		"sha256": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+		"packages": ["bun-runtime"]
+	},
+	"bun-llvm.txt": {
+		"source": "https://raw.githubusercontent.com/llvm/llvm-project/llvmorg-19.1.0/libcxxabi/LICENSE.TXT",
+		"sha256": "e2b35be49f7284a45b7baca8fc7b3ab7440e7902392b2528a457816b5bb2a15c",
+		"packages": ["bun-runtime"]
+	},
+	"bun-webkit.txt": {
+		"source": "https://raw.githubusercontent.com/oven-sh/WebKit/main/Source/JavaScriptCore/COPYING.LIB",
+		"sha256": "5094ecb9c9dcd0eadc34f3c11511d9b5535063032bc150164ecd1a5d5a445547",
+		"packages": ["bun-runtime"]
+	},
+	"bun-picohttp.txt": {
+		"source": "https://raw.githubusercontent.com/h2o/picohttpparser/master/picohttpparser.c",
+		"sha256": "38a1881166cfd8b7e727bb1ad96996f7e96ce726ae4cea1dddf5d531503341d0",
+		"packages": ["bun-runtime"]
+	},
+	"bun-uucode-license.md.txt": {
+		"source": "https://raw.githubusercontent.com/jacobsandlund/uucode/main/LICENSE.md",
+		"sha256": "312e901e142be2477b4ca859e9311f9e3f80d33372991759b7921c1893605f33",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-acorn.txt": {
+		"source": "https://registry.npmjs.org/acorn/-/acorn-8.19.0.tgz",
+		"sha256": "6727ea85e117eaeaf60ffe78ceef4f4838353442ace69d7b9ebaec6b78c407d1",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-acorn-walk.txt": {
+		"source": "https://registry.npmjs.org/acorn-walk/-/acorn-walk-8.3.5.tgz",
+		"sha256": "841486a516e71d9cf61d59cbc6adca78464d7eb376320019b065ee58c74b7d00",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-assert.txt": {
+		"source": "https://registry.npmjs.org/assert/-/assert-2.1.0.tgz",
+		"sha256": "e238817f2a493d9f41005dfe351532492a3027c3dda05bc82397f71f11d4ed00",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-browserify-zlib.txt": {
+		"source": "https://registry.npmjs.org/browserify-zlib/-/browserify-zlib-0.2.0.tgz",
+		"sha256": "d3322e42dd99cd51d0cfb23e4147bfc091f8acf3f1749fea00827e991c0a2f61",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-buffer.txt": {
+		"source": "https://registry.npmjs.org/buffer/-/buffer-6.0.3.tgz",
+		"sha256": "7e10ddef784a37d2f133aae2702bef8e0035520f7785c17eba6ba212c25a8266",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-constants-browserify.txt": {
+		"source": "https://registry.npmjs.org/constants-browserify/-/constants-browserify-1.0.0.tgz",
+		"sha256": "213bb0aedc376a7e83db0394c15bbfac1509746bd3f7ae1a0da324eeae6ce96a",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-crypto-browserify.txt": {
+		"source": "https://registry.npmjs.org/crypto-browserify/-/crypto-browserify-3.12.1.tgz",
+		"sha256": "42f69a946dbc00a8da751ebc30dc69fabc5ada1a5e0de33c24a7c0a17b11b016",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-domain-browser.txt": {
+		"source": "https://registry.npmjs.org/domain-browser/-/domain-browser-5.7.0.tgz",
+		"sha256": "fce6f043ebb2f54de7788d2fa8020aa9e87dbcb068f941a8bb966e21e5f10fcd",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-events.txt": {
+		"source": "https://registry.npmjs.org/events/-/events-3.3.0.tgz",
+		"sha256": "f362349ab93e55556923bb08f24c20fbd252405e9897788575b2f83443807244",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-https-browserify.txt": {
+		"source": "https://registry.npmjs.org/https-browserify/-/https-browserify-1.0.0.tgz",
+		"sha256": "e2ade04602b6d817c3599e9a87376021a9346e6f48c696e3de570e5132d70a3a",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-os-browserify.txt": {
+		"source": "https://registry.npmjs.org/os-browserify/-/os-browserify-0.3.0.tgz",
+		"sha256": "a502048ab76de0a97d916062380a0556098b055f04483aad34cff61bee29999c",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-path-browserify.txt": {
+		"source": "https://registry.npmjs.org/path-browserify/-/path-browserify-1.0.1.tgz",
+		"sha256": "8517450828bf0a5cae0b3851e8821eba016652fb76b0a9d279746ea601fb5fc5",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-process.txt": {
+		"source": "https://registry.npmjs.org/process/-/process-0.11.10.tgz",
+		"sha256": "39ad0bc3a83a829baa966ebea7f80a18d99bd948e87dce0261d05f0f5933b074",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-punycode.txt": {
+		"source": "https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz",
+		"sha256": "d8aa964238f79fc059c2b41a8c61b42ed4050af0abe84b2aa773dd491816daf6",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-querystring-es3.txt": {
+		"source": "https://registry.npmjs.org/querystring-es3/-/querystring-es3-0.2.1.tgz",
+		"sha256": "d0a5ea4483f193d4cbf183585307022c80fc69e773b2010f2ff4f41672cbebb3",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-stream-browserify.txt": {
+		"source": "https://registry.npmjs.org/stream-browserify/-/stream-browserify-3.0.0.tgz",
+		"sha256": "563c7f66b8f84bb846435aec97ffe1aeddfb132d6eae0af68d7638f90cd0888f",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-stream-http.txt": {
+		"source": "https://registry.npmjs.org/stream-http/-/stream-http-3.2.0.tgz",
+		"sha256": "0f6d54cb74442ea21429ea7dfa52b7c686fad6ed98c084a56a71414185ef0e42",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-string_decoder.txt": {
+		"source": "https://registry.npmjs.org/string_decoder/-/string_decoder-1.3.0.tgz",
+		"sha256": "25076391984f90defe4830eec0c5b4d17390b1e72fad4076e89fbb884bf2cdcc",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-timers-browserify.txt": {
+		"source": "https://registry.npmjs.org/timers-browserify/-/timers-browserify-2.0.12.tgz",
+		"sha256": "9a1c67520327c9a6f1b03701dcd4ba10f653715a9b18c285ad879a30c0e4cae7",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-tty-browserify.txt": {
+		"source": "https://registry.npmjs.org/tty-browserify/-/tty-browserify-0.0.1.tgz",
+		"sha256": "461953174ce7fc9243f8e523c1635f84293dd5333118edae7f905cf6d4273590",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-url.txt": {
+		"source": "https://registry.npmjs.org/url/-/url-0.11.4.tgz",
+		"sha256": "58e46378884cc3dda5cbd47a3f09f8ee5e3d0de67e1eaabfbe113476b81130cf",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-util.txt": {
+		"source": "https://registry.npmjs.org/util/-/util-0.12.5.tgz",
+		"sha256": "68641949688114c262926cb4beb1d74932962a19f58a73d162441e1bd601397c",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-vm-browserify.txt": {
+		"source": "https://registry.npmjs.org/vm-browserify/-/vm-browserify-1.1.2.tgz",
+		"sha256": "889d5475f86a2ccd35f82287f11b6d24aabccd81dd59dd84a53eaa0f019649be",
+		"packages": ["bun-runtime"]
+	},
+	"bun-polyfill-esbuild.txt": {
+		"source": "https://registry.npmjs.org/esbuild/-/esbuild-0.28.2.tgz",
+		"sha256": "de7192e025b7a0372f7aa27be99dca6a7a2dfbeced1186154d1f0393304ad6f1",
+		"packages": ["bun-runtime"]
+	}
+}

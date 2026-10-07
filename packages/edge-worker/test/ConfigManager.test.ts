@@ -1,7 +1,11 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { EdgeWorkerConfig, ILogger, RepositoryConfig } from "cyrus-core";
+import type {
+	EdgeWorkerConfig,
+	ILogger,
+	RepositoryConfig,
+} from "bobs-factory-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConfigManager } from "../src/ConfigManager.js";
 

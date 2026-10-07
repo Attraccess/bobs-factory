@@ -1,13 +1,13 @@
 {
-	"name": "cyrus-monorepo",
+	"name": "bobs-factory-monorepo",
 	"version": "1.0.1",
 	"private": true,
-	"description": "Monorepo for Cyrus - Linear Claude Agent integration",
+	"description": "Monorepo for Bob’s Factory - Linear Claude Agent integration",
 	"packageManager": "pnpm@10.33.1",
 	"type": "module",
 	"scripts": {
-		"factory": "pnpm --filter 'cyrus-edge-worker...' build && bun run scripts/factory.ts",
-		"build": "pnpm -r --filter='!@cyrus/electron' build",
+		"factory": "pnpm --filter 'bobs-factory...' build && bun run scripts/factory.ts",
+		"build": "pnpm -r --filter='!bobs-factory-electron' build",
 		"dev": "pnpm -r --parallel dev",
 		"test": "pnpm -r test",
 		"lint": "biome check",
@@ -16,7 +16,8 @@
 		"test:packages:run": "pnpm --filter './packages/*' test:run",
 		"test:apps": "pnpm --filter './apps/*' test",
 		"typecheck": "pnpm -r typecheck",
-		"prepare": "husky"
+		"prepare": "husky",
+		"binary:build": "bun run scripts/build-binary.ts"
 	},
 	"keywords": [
 		"linear",
@@ -29,10 +30,10 @@
 		"monorepo"
 	],
 	"author": "Ceedar",
-	"license": "MIT",
+	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/cyrusagents/cyrus"
+		"url": "git+https://github.com/Attraccess/bobs-factory.git"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.1.3",

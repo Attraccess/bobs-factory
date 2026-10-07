@@ -21,8 +21,10 @@ export function CopyCommand({
 			aria-label={`Copy command: ${command}`}
 		>
 			<span className="text-r6">$</span>
-			<span>{command}</span>
-			<span className="relative ml-1 inline-flex w-14 justify-end text-xs font-bold text-muted">
+			<span className="min-w-0 whitespace-normal break-all text-left">
+				{command}
+			</span>
+			<span className="relative ml-1 inline-flex w-14 shrink-0 justify-end text-xs font-bold text-muted">
 				<AnimatePresence mode="wait" initial={false}>
 					<motion.span
 						key={copied ? "y" : "n"}

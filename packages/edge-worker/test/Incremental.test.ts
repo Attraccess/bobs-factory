@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { EdgeWorker } from "../src/EdgeWorker.js";
 import { captureEvidence } from "../src/factory/FactoryTools.js";
 import {
 	completedAgentResult,
@@ -82,6 +83,49 @@ it("keeps per-role results and exposes only new history and exact revision chang
 	expect(changed.visit).toBe(2);
 	writeFileSync(join(workspace, "a.txt"), "dirty");
 	expect((await roleProgress(ctx)).uncertain).toBe(true);
+});
+it("keeps explanation progress and completion separate from the blocked role revision", async () => {
+	const { context: ctx, workspace, git } = context();
+	ctx.step = {
+		id: "visual-fix",
+		name: "Fix",
+		type: "agent",
+		branches: [],
+		maxVisits: 1,
+	};
+	ctx.stepKey = ctx.run.step = "pipeline/visual-fix";
+	ctx.run.workflow = { id: "custom" } as ExecutionContext["run"]["workflow"];
+	const original = (await roleProgress(ctx)).currentRevision!;
+	const output = { summary: "Needs a decision", questions: ["Decision?"] };
+	ctx.run.roleRevisions = { [ctx.stepKey]: original };
+	ctx.run.history = [{ step: ctx.stepKey, at: "", output }];
+	writeFileSync(join(workspace, "b.txt"), "Changed while waiting");
+	git("add", ".");
+	git("commit", "-m", "fix: while waiting");
+	const before = await roleProgress(ctx);
+	const explanation: ExecutionContext = {
+		...ctx,
+		stepKey: `${ctx.stepKey}/question-explanation`,
+		step: { ...ctx.step, id: "question-explanation", askQuestions: true },
+	};
+	const explanationProgress = await roleProgress(explanation);
+	expect(explanationProgress.previousRevision).toBeUndefined();
+	expect(explanationProgress.previousOutput).toBeUndefined();
+	expect(explanationProgress.visit).toBe(1);
+	const worker = Object.create(EdgeWorker.prototype);
+	await (worker as any).finalizeFactoryAgentOutput(explanation, {
+		questions: ["Clearer decision?"],
+	});
+	expect(ctx.run.roleRevisions[ctx.stepKey]).toEqual(original);
+	expect(ctx.run.roleRevisions[explanation.stepKey!]?.headSha).toBe(
+		git("rev-parse", "HEAD"),
+	);
+	const after = await roleProgress(ctx);
+	expect(after.changedFiles).toEqual(["b.txt"]);
+	expect(after.diff).toBe(before.diff);
+	expect(after.unchangedCode).toBe(false);
+	expect(after.previousOutput).toEqual(output);
+	expect(after.previousRevision).toEqual(original);
 });
 it("fingerprints recursive dependency groups, additions/deletions and missing paths without escaping the repository", () => {
 	const { workspace } = context();

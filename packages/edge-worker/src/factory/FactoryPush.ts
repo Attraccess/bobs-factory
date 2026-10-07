@@ -101,7 +101,7 @@ export interface PushSource {
 export class FactoryPush {
 	private store?: z.infer<typeof StoreSchema>;
 	private diagnostic =
-		"Push is not configured. Set CYRUS_FACTORY_PUSH_SUBJECT to a contact mailto: or HTTPS URL.";
+		"Push is not configured. Set BOBS_FACTORY_FACTORY_PUSH_SUBJECT to a contact mailto: or HTTPS URL.";
 	private readonly path: string;
 	private readonly pending = new Map<string, Pending>();
 	private timer?: ReturnType<typeof setTimeout>;
@@ -112,7 +112,7 @@ export class FactoryPush {
 		home: string,
 		private readonly sender: PushSender = sendPush,
 		private readonly now = Date.now,
-		subject = process.env.CYRUS_FACTORY_PUSH_SUBJECT,
+		subject = process.env.BOBS_FACTORY_FACTORY_PUSH_SUBJECT,
 	) {
 		this.path = join(home, "factory", "push.json");
 		try {

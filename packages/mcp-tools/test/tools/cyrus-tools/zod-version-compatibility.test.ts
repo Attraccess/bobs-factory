@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { createCyrusToolsServer } from "../../../src/tools/cyrus-tools/index.js";
+import { createCyrusToolsServer } from "../../../src/tools/bobs-factory-tools/index.js";
 
 describe("CYPACK-478: Zod v3 vs v4 peer dependency mismatch", () => {
 	it("should document the version mismatch causing keyValidator._parse error", () => {
@@ -20,7 +20,7 @@ describe("CYPACK-478: Zod v3 vs v4 peer dependency mismatch", () => {
 		expect(true).toBe(true);
 	});
 
-	it("should create cyrus-tools server successfully (but fail at runtime)", () => {
+	it("should create bobs-factory-tools server successfully (but fail at runtime)", () => {
 		// Server creation succeeds because the tool() function doesn't
 		// validate schemas at definition time
 		const server = createCyrusToolsServer({} as any);
@@ -34,7 +34,7 @@ describe("CYPACK-478: Zod v3 vs v4 peer dependency mismatch", () => {
 	});
 
 	it("should demonstrate Zod v4 API is different from v3", () => {
-		// Create a schema like those in cyrus-tools
+		// Create a schema like those in bobs-factory-tools
 		const schema = z.object({
 			issueId: z.string().describe("The issue ID"),
 			externalLink: z.string().optional().describe("Optional link"),
@@ -81,7 +81,7 @@ describe("CYPACK-478: Zod v3 vs v4 peer dependency mismatch", () => {
 		// This test represents what happens when Claude tries to use the tool
 		//
 		// Expected behavior:
-		// 1. Claude calls mcp__cyrus-tools__linear_agent_session_create({ issueId: "TEST-123" })
+		// 1. Claude calls mcp__bobs-factory-tools__linear_agent_session_create({ issueId: "TEST-123" })
 		// 2. SDK validates the input using the tool's schema
 		// 3. SDK calls internal Zod method (e.g., keyValidator._parse)
 		// 4. ERROR: keyValidator._parse is not a function (because Zod v4 doesn't have this method)

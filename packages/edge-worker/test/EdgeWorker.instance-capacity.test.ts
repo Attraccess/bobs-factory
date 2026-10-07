@@ -20,10 +20,10 @@ function home() {
 	return directory;
 }
 
-function capacity(cyrusHome: string, maxConcurrentSessions?: number) {
+function capacity(factoryHome: string, maxConcurrentSessions?: number) {
 	const worker = new EdgeWorker({
 		platform: "cli",
-		cyrusHome,
+		factoryHome,
 		repositories: [],
 		maxConcurrentSessions,
 	});
@@ -34,7 +34,7 @@ function capacity(cyrusHome: string, maxConcurrentSessions?: number) {
 
 it("admits F1 work independently of a saturated parent instance and isolates settings", async () => {
 	// An inherited override must not reconnect a temporary worker to its parent pool.
-	vi.stubEnv("CYRUS_CAPACITY_DIRECTORY", join(home(), "legacy-pool"));
+	vi.stubEnv("BOBS_FACTORY_CAPACITY_DIRECTORY", join(home(), "legacy-pool"));
 	const parent = capacity(home(), 1);
 	const test = capacity(home(), 2);
 	const parentLease = await parent.acquireLease();

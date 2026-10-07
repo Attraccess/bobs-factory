@@ -3,7 +3,7 @@
  *
  * This interface provides a unified API for interacting with issue tracking
  * platforms like Linear, GitHub Issues, Jira, etc. It abstracts away platform-specific
- * details while supporting all operations needed for Cyrus agent functionality.
+ * details while supporting all operations needed for Bob’s Factory agent functionality.
  *
  * @module issue-tracker/IIssueTrackerService
  */
@@ -801,7 +801,7 @@ export interface IIssueTrackerService {
 	 * const transport = issueTracker.createEventTransport({
 	 *   fastifyServer: server.getFastifyInstance(),
 	 *   verificationMode: 'proxy',
-	 *   secret: process.env.CYRUS_API_KEY
+	 *   secret: process.env.BOBS_FACTORY_API_KEY
 	 * });
 	 *
 	 * // Register HTTP endpoints

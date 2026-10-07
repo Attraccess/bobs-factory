@@ -2,7 +2,7 @@ import { access, mkdir, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ILogger } from "cyrus-core";
+import type { ILogger } from "bobs-factory-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DefaultSkillsDeployer } from "../src/DefaultSkillsDeployer.js";
 
@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const BUNDLED_SKILLS_DIR = join(
 	__dirname,
 	"..",
-	"cyrus-skills-plugin",
+	"bobs-factory-skills-plugin",
 	"skills",
 );
 
@@ -57,7 +57,7 @@ describe("DefaultSkillsDeployer", () => {
 	it("should deploy default skills when plugin directory does not exist", async () => {
 		await deployer.ensureDeployed();
 
-		const pluginPath = join(testHome, "cyrus-skills-plugin");
+		const pluginPath = join(testHome, "bobs-factory-skills-plugin");
 		expect(await exists(pluginPath)).toBe(true);
 
 		// Plugin manifest should exist
@@ -65,7 +65,7 @@ describe("DefaultSkillsDeployer", () => {
 		expect(await exists(manifestPath)).toBe(true);
 
 		const manifest = JSON.parse(await readFile(manifestPath, "utf-8"));
-		expect(manifest.name).toBe("cyrus-skills");
+		expect(manifest.name).toBe("bobs-factory-skills");
 
 		// Skills directory should exist with skills copied
 		const skillsPath = join(pluginPath, "skills");
@@ -85,7 +85,7 @@ describe("DefaultSkillsDeployer", () => {
 		// Deploy once
 		await deployer.ensureDeployed();
 
-		const pluginPath = join(testHome, "cyrus-skills-plugin");
+		const pluginPath = join(testHome, "bobs-factory-skills-plugin");
 		const skillsPath = join(pluginPath, "skills");
 
 		// Remove a skill to simulate user customization
@@ -101,7 +101,7 @@ describe("DefaultSkillsDeployer", () => {
 	it("should create SKILL.md files in each deployed skill directory", async () => {
 		await deployer.ensureDeployed();
 
-		const skillsPath = join(testHome, "cyrus-skills-plugin", "skills");
+		const skillsPath = join(testHome, "bobs-factory-skills-plugin", "skills");
 		const skillDirs = await readdir(skillsPath, { withFileTypes: true });
 
 		for (const entry of skillDirs) {

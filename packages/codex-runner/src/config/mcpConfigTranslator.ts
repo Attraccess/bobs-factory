@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { McpServerConfig } from "cyrus-core";
+import type { McpServerConfig } from "bobs-factory-core";
 import type { CodexConfigOverrides } from "../types.js";
 
 const CODEX_MCP_DOCS_URL = "https://platform.openai.com/docs/docs-mcp";
@@ -199,7 +199,7 @@ function applyCyrusMcpAllowedToolsSemantics(
 		mapped.enabled_tools = allowedToolsFilter.tools;
 	}
 
-	// Codex separates tool visibility (`enabled_tools`) from MCP approval. Cyrus
+	// Codex separates tool visibility (`enabled_tools`) from MCP approval. Bob’s Factory
 	// allowedTools are already the operator's allow-list, so generated allowances
 	// must also be approved for non-interactive Codex exec runs.
 	if (!Object.hasOwn(mapped, "default_tools_approval_mode")) {
@@ -263,7 +263,7 @@ function copyConfigObject(
 }
 
 /**
- * Translate Cyrus MCP server configs (file-based + inline) and Cyrus
+ * Translate Bob’s Factory MCP server configs (file-based + inline) and Bob’s Factory
  * `allowedTools` semantics into Codex-native `mcp_servers` config overrides.
  *
  * Reference: {@link https://platform.openai.com/docs/docs-mcp}
@@ -346,7 +346,7 @@ export function buildCodexMcpServersConfig(
 		}
 		// If the MCP config already contains Codex-native enabled_tools or
 		// disabled_tools, keep those exact filters. They are more specific to
-		// Codex than Claude-style Cyrus allowedTools entries. A bare
+		// Codex than Claude-style Bob’s Factory allowedTools entries. A bare
 		// `mcp__server` intentionally emits no enabled_tools filter because it
 		// means "allow every tool exposed by this configured server".
 

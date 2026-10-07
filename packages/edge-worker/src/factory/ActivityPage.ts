@@ -60,7 +60,7 @@ export function activityPage(
 			if (Date.parse(markers[mid]!.at) <= Date.parse(at)) low = mid + 1;
 			else high = mid;
 		}
-		return markers[Math.max(0, low - 1)]?.step ?? "Cyrus";
+		return markers[Math.max(0, low - 1)]?.step ?? "Bob’s Factory";
 	};
 	const rows = [
 		...entries.map((value, index) => {

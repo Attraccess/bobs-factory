@@ -1,8 +1,8 @@
 # Cloudflare Tunnel Setup (Optional)
 
-This guide covers setting up a Cloudflare Tunnel to expose your local Cyrus instance to the public internet for receiving Linear webhooks.
+This guide covers setting up a Cloudflare Tunnel to expose your local Bob’s Factory instance to the public internet for receiving Linear webhooks.
 
-> **Note:** This is one option for exposing your Cyrus instance. Other options include ngrok, a reverse proxy with a public domain, or a server with a public IP. See [Self-Hosting Guide](./SELF_HOSTING.md) for alternatives.
+> **Note:** This is one option for exposing your Bob’s Factory instance. Other options include ngrok, a reverse proxy with a public domain, or a server with a public IP. See [Self-Hosting Guide](./SELF_HOSTING.md) for alternatives.
 
 ---
 
@@ -35,7 +35,7 @@ This guide covers setting up a Cloudflare Tunnel to expose your local Cyrus inst
 
 3. **Create New Tunnel:**
    - Click **Create a tunnel**
-   - Name it: `cyrus-local`
+   - Name it: `bobs-factory-local`
    - Click **Save tunnel**
 
 4. **Copy Tunnel Token:**
@@ -49,7 +49,7 @@ This guide covers setting up a Cloudflare Tunnel to expose your local Cyrus inst
    - Click **Add a public hostname**
 
    Fill in:
-   - **Subdomain:** `cyrus` (or whatever you want)
+   - **Subdomain:** `bobs-factory` (or whatever you want)
    - **Domain:** Select your domain from dropdown
    - **Path:** Leave empty
    - **Type:** HTTP
@@ -57,8 +57,8 @@ This guide covers setting up a Cloudflare Tunnel to expose your local Cyrus inst
 
 6. **Save Hostname:**
    - Click **Save hostname**
-   - **Copy the full public URL** (e.g., `https://cyrus.yourdomain.com`)
-   - **SAVE THIS** - this is your `CYRUS_BASE_URL`
+   - **Copy the full public URL** (e.g., `https://bobs-factory.yourdomain.com`)
+   - **SAVE THIS** - this is your `BOBS_FACTORY_BASE_URL`
 
 ---
 
@@ -67,12 +67,12 @@ This guide covers setting up a Cloudflare Tunnel to expose your local Cyrus inst
 Set these environment variables for Cloudflare Tunnel integration:
 
 ```bash
-export CYRUS_BASE_URL=https://cyrus.yourdomain.com
-export CYRUS_SERVER_PORT=3456
+export BOBS_FACTORY_BASE_URL=https://bobs-factory.yourdomain.com
+export BOBS_FACTORY_SERVER_PORT=3456
 export CLOUDFLARE_TOKEN=eyJhIjoiXXXXXXX...your_token_here...XXXXXXX
 ```
 
-Cyrus will automatically start the Cloudflare tunnel in the background when it detects the `CLOUDFLARE_TOKEN` environment variable.
+Bob’s Factory will automatically start the Cloudflare tunnel in the background when it detects the `CLOUDFLARE_TOKEN` environment variable.
 
 ---
 
@@ -105,19 +105,19 @@ If you see an error like "Timeout waiting for Cloudflare tunnel (0/4 connections
 If you cannot resolve the connectivity issue, consider these alternatives:
 - Use [ngrok](https://ngrok.com/) instead of Cloudflare tunnel
 - Set up a reverse proxy on a server with a public IP
-- Use a cloud VM with Docker to host Cyrus
+- Use a cloud VM with Docker to host Bob’s Factory
 - See [Self-Hosting Guide](./SELF_HOSTING.md) for more options
 
 ### Tunnel Not Starting
 
 - Verify `CLOUDFLARE_TOKEN` is set correctly
-- Check Cyrus logs for tunnel-related errors
+- Check Bob’s Factory logs for tunnel-related errors
 - Ensure the token hasn't expired in Cloudflare dashboard
 
 ### Webhooks Not Received
 
 - Verify the public hostname is configured correctly in Cloudflare
-- Check that `CYRUS_BASE_URL` matches your Cloudflare hostname exactly
+- Check that `BOBS_FACTORY_BASE_URL` matches your Cloudflare hostname exactly
 - Ensure Linear webhook URL uses the same base URL
 
 ---

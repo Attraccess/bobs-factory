@@ -1,10 +1,10 @@
 {
-	"name": "cyrus-edge-worker",
+	"name": "bobs-factory-edge-worker",
 	"version": "0.2.73",
 	"description": "Unified edge worker for processing Linear issues with Claude",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/cyrusagents/cyrus.git",
+		"url": "git+https://github.com/Attraccess/bobs-factory.git",
 		"directory": "packages/edge-worker"
 	},
 	"type": "module",
@@ -19,7 +19,7 @@
 	],
 	"scripts": {
 		"build": "tsgo && tsgo -p tsconfig.web.json && npm run copy-prompts",
-		"copy-prompts": "cp label-prompt-template.md dist/ && cp -r prompts dist/ && rm -rf dist/cyrus-skills-plugin && cp -rL cyrus-skills-plugin dist/cyrus-skills-plugin && node scripts/build-factory-web.mjs",
+		"copy-prompts": "cp label-prompt-template.md dist/ && cp -r prompts dist/ && rm -rf dist/bobs-factory-skills-plugin && cp -rL bobs-factory-skills-plugin dist/bobs-factory-skills-plugin && node scripts/build-factory-web.mjs",
 		"dev": "tsgo --watch",
 		"test": "vitest",
 		"test:run": "vitest run",
@@ -35,21 +35,21 @@
 		"@simplewebauthn/browser": "^14.0.0",
 		"@simplewebauthn/server": "^14.0.3",
 		"chokidar": "^4.0.3",
-		"cyrus-claude-runner": "workspace:*",
-		"cyrus-cloudflare-tunnel-client": "workspace:*",
-		"cyrus-codex-runner": "workspace:*",
-		"cyrus-config-updater": "workspace:*",
-		"cyrus-core": "workspace:*",
-		"cyrus-cursor-runner": "workspace:*",
-		"cyrus-gemini-runner": "workspace:*",
-		"cyrus-github-event-transport": "workspace:*",
-		"cyrus-gitlab-event-transport": "workspace:*",
-		"cyrus-linear-event-transport": "workspace:*",
-		"cyrus-mcp-tools": "workspace:*",
-		"cyrus-opencode-runner": "workspace:*",
-		"cyrus-simple-agent-runner": "workspace:*",
-		"cyrus-slack-event-transport": "workspace:*",
-		"cyrus-zulip-event-transport": "workspace:*",
+		"bobs-factory-claude-runner": "workspace:*",
+		"bobs-factory-cloudflare-tunnel-client": "workspace:*",
+		"bobs-factory-codex-runner": "workspace:*",
+		"bobs-factory-config-updater": "workspace:*",
+		"bobs-factory-core": "workspace:*",
+		"bobs-factory-cursor-runner": "workspace:*",
+		"bobs-factory-gemini-runner": "workspace:*",
+		"bobs-factory-github-event-transport": "workspace:*",
+		"bobs-factory-gitlab-event-transport": "workspace:*",
+		"bobs-factory-linear-event-transport": "workspace:*",
+		"bobs-factory-mcp-tools": "workspace:*",
+		"bobs-factory-opencode-runner": "workspace:*",
+		"bobs-factory-simple-agent-runner": "workspace:*",
+		"bobs-factory-slack-event-transport": "workspace:*",
+		"bobs-factory-zulip-event-transport": "workspace:*",
 		"fastify": "^5.12.5",
 		"fastify-mcp": "^2.1.0",
 		"file-type": "^21.3.2",
@@ -86,7 +86,6 @@
 		"workbox-precaching": "^7.4.1",
 		"workbox-routing": "^7.4.1"
 	},
-	"publishConfig": {
-		"access": "public"
-	}
+	"private": true,
+	"license": "Apache-2.0"
 }

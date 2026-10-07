@@ -452,8 +452,8 @@ function MachineCapacitySettings({ config }: { config: any }) {
 			<h2 id="machine-capacity">Instance capacity</h2>
 			<DraftNotice conflict={stale} draftKey={draftKey} />
 			<p>
-				One pool for this Cyrus instance's agents and intensive workflow steps.
-				Default: {capacity.defaultLimit} slots.
+				One pool for this Bob’s Factory instance’s agents and intensive workflow
+				steps. Default: {capacity.defaultLimit} slots.
 			</p>
 			<p role="status">
 				Instance limit: {capacity.limit}{" "}

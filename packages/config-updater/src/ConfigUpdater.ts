@@ -36,21 +36,21 @@ import type {
  * Handles: cyrus-config, cyrus-env, repository, update/test-mcp, update/configure-mcp, check-gh endpoints
  *
  * `getApiKey` is invoked on every auth check, so callers reading from
- * `process.env.CYRUS_API_KEY` pick up `.env` reloads (triggered by
+ * `process.env.BOBS_FACTORY_API_KEY` pick up `.env` reloads (triggered by
  * `cyrus auth` after a credential rotation) without restarting the process.
  */
 export class ConfigUpdater {
 	private fastify: FastifyInstance;
-	private cyrusHome: string;
+	private factoryHome: string;
 	private getApiKey: () => string;
 
 	constructor(
 		fastify: FastifyInstance,
-		cyrusHome: string,
+		factoryHome: string,
 		getApiKey: () => string,
 	) {
 		this.fastify = fastify;
-		this.cyrusHome = cyrusHome;
+		this.factoryHome = factoryHome;
 		this.getApiKey = getApiKey;
 	}
 
@@ -59,8 +59,14 @@ export class ConfigUpdater {
 	 */
 	register(): void {
 		// Register all routes with authentication
-		this.registerRoute("/api/update/cyrus-config", this.handleCyrusConfigRoute);
-		this.registerRoute("/api/update/cyrus-env", this.handleCyrusEnvRoute);
+		this.registerRoute(
+			"/api/update/bobs-factory-config",
+			this.handleCyrusConfigRoute,
+		);
+		this.registerRoute(
+			"/api/update/bobs-factory-env",
+			this.handleCyrusEnvRoute,
+		);
 		this.registerRoute("/api/update/repository", this.handleRepositoryRoute);
 		this.registerDeleteRoute(
 			"/api/update/repository",
@@ -194,11 +200,11 @@ export class ConfigUpdater {
 	private async handleCyrusConfigRoute(
 		payload: CyrusConfigPayload,
 	): Promise<ApiResponse> {
-		const response = await handleCyrusConfig(payload, this.cyrusHome);
+		const response = await handleCyrusConfig(payload, this.factoryHome);
 
 		// Emit restart event if requested
 		if (response.success && response.data?.restartCyrus) {
-			this.fastify.log.info("Config update requested Cyrus restart");
+			this.fastify.log.info("Config update requested Bob’s Factory restart");
 		}
 
 		return response;
@@ -210,11 +216,11 @@ export class ConfigUpdater {
 	private async handleCyrusEnvRoute(
 		payload: CyrusEnvPayload,
 	): Promise<ApiResponse> {
-		const response = await handleCyrusEnv(payload, this.cyrusHome);
+		const response = await handleCyrusEnv(payload, this.factoryHome);
 
 		// Emit restart event if requested
 		if (response.success && response.data?.restartCyrus) {
-			this.fastify.log.info("Env update requested Cyrus restart");
+			this.fastify.log.info("Env update requested Bob’s Factory restart");
 		}
 
 		return response;
@@ -226,7 +232,7 @@ export class ConfigUpdater {
 	private async handleRepositoryRoute(
 		payload: RepositoryPayload,
 	): Promise<ApiResponse> {
-		return handleRepository(payload, this.cyrusHome);
+		return handleRepository(payload, this.factoryHome);
 	}
 
 	/**
@@ -244,7 +250,7 @@ export class ConfigUpdater {
 	private async handleConfigureMcpRoute(
 		payload: ConfigureMcpPayload,
 	): Promise<ApiResponse> {
-		return handleConfigureMcp(payload, this.cyrusHome);
+		return handleConfigureMcp(payload, this.factoryHome);
 	}
 
 	/**
@@ -253,7 +259,7 @@ export class ConfigUpdater {
 	private async handleGitHubTokensRoute(
 		payload: GitHubTokensPayload,
 	): Promise<ApiResponse> {
-		return handleGitHubTokens(payload, this.cyrusHome);
+		return handleGitHubTokens(payload, this.factoryHome);
 	}
 
 	/**
@@ -262,7 +268,7 @@ export class ConfigUpdater {
 	private async handleCheckGhRoute(
 		payload: CheckGhPayload,
 	): Promise<ApiResponse> {
-		return handleCheckGh(payload, this.cyrusHome);
+		return handleCheckGh(payload, this.factoryHome);
 	}
 
 	/**
@@ -271,7 +277,7 @@ export class ConfigUpdater {
 	private async handleCheckGlabRoute(
 		payload: CheckGlabPayload,
 	): Promise<ApiResponse> {
-		return handleCheckGlab(payload, this.cyrusHome);
+		return handleCheckGlab(payload, this.factoryHome);
 	}
 
 	/**
@@ -280,7 +286,7 @@ export class ConfigUpdater {
 	private async handleRepositoryDeleteRoute(
 		payload: DeleteRepositoryPayload,
 	): Promise<ApiResponse> {
-		return handleRepositoryDelete(payload, this.cyrusHome);
+		return handleRepositoryDelete(payload, this.factoryHome);
 	}
 
 	/**
@@ -289,7 +295,7 @@ export class ConfigUpdater {
 	private async handleUpdateSkillRoute(
 		payload: UpdateSkillPayload,
 	): Promise<ApiResponse> {
-		return handleUpdateSkill(payload, this.cyrusHome);
+		return handleUpdateSkill(payload, this.factoryHome);
 	}
 
 	/**
@@ -298,7 +304,7 @@ export class ConfigUpdater {
 	private async handleDeleteSkillRoute(
 		payload: DeleteSkillPayload,
 	): Promise<ApiResponse> {
-		return handleDeleteSkill(payload, this.cyrusHome);
+		return handleDeleteSkill(payload, this.factoryHome);
 	}
 
 	/**
@@ -307,6 +313,6 @@ export class ConfigUpdater {
 	private async handleListSkillsRoute(
 		payload: ListSkillsPayload,
 	): Promise<ApiResponse> {
-		return handleListSkills(payload, this.cyrusHome);
+		return handleListSkills(payload, this.factoryHome);
 	}
 }

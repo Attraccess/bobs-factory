@@ -1,4 +1,4 @@
-import type { IAgentRunner } from "cyrus-core";
+import type { IAgentRunner } from "bobs-factory-core";
 import { expect, it, vi } from "vitest";
 import { SessionChat } from "../src/factory/SessionChat.js";
 

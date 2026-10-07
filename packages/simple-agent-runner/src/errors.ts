@@ -1,4 +1,4 @@
-import type { SDKMessage } from "cyrus-core";
+import type { SDKMessage } from "bobs-factory-core";
 
 /**
  * Error codes for SimpleAgentRunner operations

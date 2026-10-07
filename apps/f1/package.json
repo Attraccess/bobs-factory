@@ -1,8 +1,8 @@
 {
-	"name": "cyrus-f1",
+	"name": "bobs-factory-f1",
 	"version": "0.1.0",
 	"type": "module",
-	"description": "F1 Testing Framework CLI for Cyrus",
+	"description": "F1 Testing Framework CLI for Bob’s Factory",
 	"main": "dist/src/cli.js",
 	"types": "dist/src/cli.d.ts",
 	"bin": {
@@ -27,15 +27,12 @@
 		"README.md",
 		"CLAUDE.md"
 	],
-	"publishConfig": {
-		"access": "public"
-	},
 	"dependencies": {
 		"commander": "^14.0.2",
-		"cyrus-claude-runner": "workspace:*",
-		"cyrus-core": "workspace:*",
-		"cyrus-edge-worker": "workspace:*",
-		"cyrus-slack-event-transport": "workspace:*"
+		"bobs-factory-claude-runner": "workspace:*",
+		"bobs-factory-core": "workspace:*",
+		"bobs-factory-edge-worker": "workspace:*",
+		"bobs-factory-slack-event-transport": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",
@@ -44,5 +41,7 @@
 	},
 	"engines": {
 		"node": ">=18.0.0"
-	}
+	},
+	"private": true,
+	"license": "Apache-2.0"
 }

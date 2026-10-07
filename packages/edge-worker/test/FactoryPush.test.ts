@@ -55,6 +55,29 @@ afterEach(() => {
 	for (const path of homes.splice(0))
 		rmSync(path, { recursive: true, force: true });
 });
+it("configures push from the Bob’s Factory environment and preserves its stored identity", async () => {
+	vi.stubEnv("BOBS_FACTORY_FACTORY_PUSH_SUBJECT", subject);
+	const path = home();
+	let push = new FactoryPush(path);
+	try {
+		expect(push.status().available).toBe(true);
+		const publicKey = push.status().publicKey;
+		await push.stop();
+		vi.stubEnv(
+			"BOBS_FACTORY_FACTORY_PUSH_SUBJECT",
+			"mailto:changed@example.com",
+		);
+		push = new FactoryPush(path);
+		expect(push.status().publicKey).toBe(publicKey);
+		expect(
+			JSON.parse(readFileSync(join(path, "factory/push.json"), "utf8")).vapid
+				.subject,
+		).toBe(subject);
+	} finally {
+		await push.stop();
+		vi.unstubAllEnvs();
+	}
+});
 it("baselines attention, deduplicates saves, captures eligible devices and coalesces destinations", async () => {
 	vi.useFakeTimers();
 	const sender = vi.fn(async () => {});

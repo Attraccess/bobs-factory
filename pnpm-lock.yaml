@@ -49,28 +49,34 @@ importers:
         version: 64.0.0(encoding@0.1.13)
       '@sentry/node':
         specifier: ^10.65.0
-        version: 10.65.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))
+        version: 10.65.0(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))
+      bobs-factory-claude-runner:
+        specifier: workspace:*
+        version: link:../../packages/claude-runner
+      bobs-factory-cloudflare-tunnel-client:
+        specifier: workspace:*
+        version: link:../../packages/cloudflare-tunnel-client
+      bobs-factory-config-updater:
+        specifier: workspace:*
+        version: link:../../packages/config-updater
+      bobs-factory-core:
+        specifier: workspace:*
+        version: link:../../packages/core
+      bobs-factory-cursor-runner:
+        specifier: workspace:*
+        version: link:../../packages/cursor-runner
+      bobs-factory-edge-worker:
+        specifier: workspace:*
+        version: link:../../packages/edge-worker
+      bobs-factory-mcp-tools:
+        specifier: workspace:*
+        version: link:../../packages/mcp-tools
+      bobs-factory-slack-event-transport:
+        specifier: workspace:*
+        version: link:../../packages/slack-event-transport
       commander:
         specifier: ^14.0.2
         version: 14.0.3
-      cyrus-claude-runner:
-        specifier: workspace:*
-        version: link:../../packages/claude-runner
-      cyrus-cloudflare-tunnel-client:
-        specifier: workspace:*
-        version: link:../../packages/cloudflare-tunnel-client
-      cyrus-config-updater:
-        specifier: workspace:*
-        version: link:../../packages/config-updater
-      cyrus-core:
-        specifier: workspace:*
-        version: link:../../packages/core
-      cyrus-edge-worker:
-        specifier: workspace:*
-        version: link:../../packages/edge-worker
-      cyrus-slack-event-transport:
-        specifier: workspace:*
-        version: link:../../packages/slack-event-transport
       dotenv:
         specifier: ^16.5.0
         version: 16.6.1
@@ -92,6 +98,9 @@ importers:
       open:
         specifier: ^10.0.0
         version: 10.2.0
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
       zod:
         specifier: ^4.3.5
         version: 4.3.6
@@ -111,21 +120,21 @@ importers:
 
   apps/f1:
     dependencies:
+      bobs-factory-claude-runner:
+        specifier: workspace:*
+        version: link:../../packages/claude-runner
+      bobs-factory-core:
+        specifier: workspace:*
+        version: link:../../packages/core
+      bobs-factory-edge-worker:
+        specifier: workspace:*
+        version: link:../../packages/edge-worker
+      bobs-factory-slack-event-transport:
+        specifier: workspace:*
+        version: link:../../packages/slack-event-transport
       commander:
         specifier: ^14.0.2
         version: 14.0.3
-      cyrus-claude-runner:
-        specifier: workspace:*
-        version: link:../../packages/claude-runner
-      cyrus-core:
-        specifier: workspace:*
-        version: link:../../packages/core
-      cyrus-edge-worker:
-        specifier: workspace:*
-        version: link:../../packages/edge-worker
-      cyrus-slack-event-transport:
-        specifier: workspace:*
-        version: link:../../packages/slack-event-transport
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
@@ -148,7 +157,7 @@ importers:
       '@linear/sdk':
         specifier: ^64.0.0
         version: 64.0.0(encoding@0.1.13)
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
       dotenv:
@@ -201,10 +210,10 @@ importers:
       '@openai/codex-sdk':
         specifier: ^0.159.2
         version: 0.159.2
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
-      cyrus-simple-agent-runner:
+      bobs-factory-simple-agent-runner:
         specifier: workspace:*
         version: link:../simple-agent-runner
     devDependencies:
@@ -223,7 +232,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.31.0
         version: 1.31.0(zod@4.3.6)
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
       fastify:
@@ -273,13 +282,16 @@ importers:
 
   packages/cursor-runner:
     dependencies:
+      '@connectrpc/connect-node':
+        specifier: ^1.7.0
+        version: 1.7.0(@bufbuild/protobuf@1.10.0)(@connectrpc/connect@1.7.0(@bufbuild/protobuf@1.10.0))
       '@cursor/sdk':
         specifier: ^1.0.19
         version: 1.0.19
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
-      cyrus-simple-agent-runner:
+      bobs-factory-simple-agent-runner:
         specifier: workspace:*
         version: link:../simple-agent-runner
     devDependencies:
@@ -313,54 +325,54 @@ importers:
       '@simplewebauthn/server':
         specifier: ^14.0.3
         version: 14.0.3
+      bobs-factory-claude-runner:
+        specifier: workspace:*
+        version: link:../claude-runner
+      bobs-factory-cloudflare-tunnel-client:
+        specifier: workspace:*
+        version: link:../cloudflare-tunnel-client
+      bobs-factory-codex-runner:
+        specifier: workspace:*
+        version: link:../codex-runner
+      bobs-factory-config-updater:
+        specifier: workspace:*
+        version: link:../config-updater
+      bobs-factory-core:
+        specifier: workspace:*
+        version: link:../core
+      bobs-factory-cursor-runner:
+        specifier: workspace:*
+        version: link:../cursor-runner
+      bobs-factory-gemini-runner:
+        specifier: workspace:*
+        version: link:../gemini-runner
+      bobs-factory-github-event-transport:
+        specifier: workspace:*
+        version: link:../github-event-transport
+      bobs-factory-gitlab-event-transport:
+        specifier: workspace:*
+        version: link:../gitlab-event-transport
+      bobs-factory-linear-event-transport:
+        specifier: workspace:*
+        version: link:../linear-event-transport
+      bobs-factory-mcp-tools:
+        specifier: workspace:*
+        version: link:../mcp-tools
+      bobs-factory-opencode-runner:
+        specifier: workspace:*
+        version: link:../opencode-runner
+      bobs-factory-simple-agent-runner:
+        specifier: workspace:*
+        version: link:../simple-agent-runner
+      bobs-factory-slack-event-transport:
+        specifier: workspace:*
+        version: link:../slack-event-transport
+      bobs-factory-zulip-event-transport:
+        specifier: workspace:*
+        version: link:../zulip-event-transport
       chokidar:
         specifier: ^4.0.3
         version: 4.0.3
-      cyrus-claude-runner:
-        specifier: workspace:*
-        version: link:../claude-runner
-      cyrus-cloudflare-tunnel-client:
-        specifier: workspace:*
-        version: link:../cloudflare-tunnel-client
-      cyrus-codex-runner:
-        specifier: workspace:*
-        version: link:../codex-runner
-      cyrus-config-updater:
-        specifier: workspace:*
-        version: link:../config-updater
-      cyrus-core:
-        specifier: workspace:*
-        version: link:../core
-      cyrus-cursor-runner:
-        specifier: workspace:*
-        version: link:../cursor-runner
-      cyrus-gemini-runner:
-        specifier: workspace:*
-        version: link:../gemini-runner
-      cyrus-github-event-transport:
-        specifier: workspace:*
-        version: link:../github-event-transport
-      cyrus-gitlab-event-transport:
-        specifier: workspace:*
-        version: link:../gitlab-event-transport
-      cyrus-linear-event-transport:
-        specifier: workspace:*
-        version: link:../linear-event-transport
-      cyrus-mcp-tools:
-        specifier: workspace:*
-        version: link:../mcp-tools
-      cyrus-opencode-runner:
-        specifier: workspace:*
-        version: link:../opencode-runner
-      cyrus-simple-agent-runner:
-        specifier: workspace:*
-        version: link:../simple-agent-runner
-      cyrus-slack-event-transport:
-        specifier: workspace:*
-        version: link:../slack-event-transport
-      cyrus-zulip-event-transport:
-        specifier: workspace:*
-        version: link:../zulip-event-transport
       fastify:
         specifier: ^5.12.5
         version: 5.12.5
@@ -467,13 +479,13 @@ importers:
       '@linear/sdk':
         specifier: ^60.0.0
         version: 60.0.0(encoding@0.1.13)
-      cyrus-claude-runner:
+      bobs-factory-claude-runner:
         specifier: workspace:*
         version: link:../claude-runner
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
-      cyrus-simple-agent-runner:
+      bobs-factory-simple-agent-runner:
         specifier: workspace:*
         version: link:../simple-agent-runner
       dotenv:
@@ -501,7 +513,7 @@ importers:
 
   packages/github-event-transport:
     dependencies:
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
       fastify:
@@ -520,7 +532,7 @@ importers:
 
   packages/gitlab-event-transport:
     dependencies:
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
       fastify:
@@ -542,7 +554,7 @@ importers:
       '@linear/sdk':
         specifier: ^64.0.0
         version: 64.0.0(encoding@0.1.13)
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
       fastify:
@@ -592,10 +604,10 @@ importers:
 
   packages/opencode-runner:
     dependencies:
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
-      cyrus-simple-agent-runner:
+      bobs-factory-simple-agent-runner:
         specifier: workspace:*
         version: link:../simple-agent-runner
     devDependencies:
@@ -614,10 +626,10 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.281
         version: 0.3.281(@anthropic-ai/sdk@0.128.0(zod@4.3.6))(@modelcontextprotocol/sdk@1.31.0(zod@4.3.6))(zod@4.3.6)
-      cyrus-claude-runner:
+      bobs-factory-claude-runner:
         specifier: workspace:*
         version: link:../claude-runner
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
     devDependencies:
@@ -633,7 +645,7 @@ importers:
 
   packages/slack-event-transport:
     dependencies:
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
       fastify:
@@ -652,7 +664,7 @@ importers:
 
   packages/zulip-event-transport:
     dependencies:
-      cyrus-core:
+      bobs-factory-core:
         specifier: workspace:*
         version: link:../core
       fastify:
@@ -830,6 +842,13 @@ packages:
 
   '@bufbuild/protobuf@1.10.0':
     resolution: {integrity: sha512-QDdVFLoN93Zjg36NoQPZfsVH9tZew7wKDKyV5qRdj8ntT4wQCOradQjRaTdwMhWUYsgKsvCINKKm87FdEk96Ag==}
+
+  '@connectrpc/connect-node@1.7.0':
+    resolution: {integrity: sha512-6vaPIkG/NyhxlYgytLoR9KYbPhczEboFB2OYWkA9qvUz1K7efXfeGrlRxoLtpa+r8VxyIOw73w5ktNe743nD+A==}
+    engines: {node: '>=16.0.0'}
+    peerDependencies:
+      '@bufbuild/protobuf': ^1.10.0
+      '@connectrpc/connect': 1.7.0
 
   '@connectrpc/connect-web@1.7.0':
     resolution: {integrity: sha512-qyP0YOnUPRWwCc/VfsoydMJvkb7EyUPr2q9sHgBuJzbADjiqck1gKH5V5ZPzPhTLBvmz5UvG+wiZ5sMRQHU1MQ==}
@@ -1284,8 +1303,8 @@ packages:
       '@cfworker/json-schema':
         optional: true
 
-  '@napi-rs/wasm-runtime@1.2.4':
-    resolution: {integrity: sha512-AJxoUD2/15ESHbvpcyjU274nsAPLuOtPHCk0vKJM5pj//Fg/B1FXNWjPnXTT9PymCYYiHo4zPj0ZomXBKhoy7g==}
+  '@napi-rs/wasm-runtime@1.2.5':
+    resolution: {integrity: sha512-HshSvXzmBxNzqejd3k/KemgQ3hdREUYFRRrgxOZ+gPljDIsO2SDZrVZMd4Z/HsxudQbE62OVyVFE8z9BCurfjA==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
     peerDependencies:
       '@emnapi/core': ^1.7.1 || ^2.0.0-alpha.4
@@ -1433,8 +1452,8 @@ packages:
     resolution: {integrity: sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==}
     engines: {node: '>=8.0.0'}
 
-  '@opentelemetry/core@2.11.0':
-    resolution: {integrity: sha512-7YP44XH0tV6+Mb54x2YGf84i7yi+31MBZlE8JwvozkxyTvXbSp10X7cI7YE49ChJ3shMJoBmCJF3+1QFBJctGA==}
+  '@opentelemetry/core@2.12.0':
+    resolution: {integrity: sha512-1HsSAuvT4/my0QrXWsyXFdWjKaPeCHsismKZgEEIb8NK13LP6DrMRlsUbvD/0F9mDWK3xDom9AMv3IscxgOnOQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': '>=1.0.0 <1.10.0'
@@ -3113,8 +3132,8 @@ packages:
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
-  magicast@0.5.3:
-    resolution: {integrity: sha512-pVKE4UdSQ7DvHzivsCIFx2BJn1mHG6KsyrFcaxFx6tONdneEuThrDx0Cj3AMg58KyN4pzYT+LHOotxDQDjNvkw==}
+  magicast@0.5.5:
+    resolution: {integrity: sha512-UicdXN8zQ3JHlxVq+28afMXPr1z7WNY6+7EJnzTdQWkTAlMLF5fNCCKxJHBQwGaNGR11581EiQmQzx73+MvszA==}
 
   make-dir@4.0.0:
     resolution: {integrity: sha512-hXdUTZYIVOt1Ex//jAQi+wTZZpUpwBj/0QsOzqegb3rGMMeJiSEu5xLHnYfBrRV4RH2+OCSOO95Is/7x1WJ4bw==}
@@ -3307,8 +3326,8 @@ packages:
   ms@2.1.3:
     resolution: {integrity: sha512-6FlzubTLZG3J2a/NVCAleEhjzq5oxgHyaCU9yYXvcLsvoVaHJq/s5xXI6/XXP6tz7R9xAOtHnSO/tXtF3WRTlA==}
 
-  nanoid@3.3.19:
-    resolution: {integrity: sha512-Y2tUNy4ouw6tq5oDSKeQYGOyhkUBhNOcGV/02KC+6kd9eDGqdZd++mjMiIDilrBYvjEnCYvVtsuHCuP+okSfug==}
+  nanoid@3.3.20:
+    resolution: {integrity: sha512-uKdg2G3GNCKQn9byYOpxbGqrT2fGO5KRt5J/8b3pok8rT6qxGWF6hxMyJiEYtAf+FVyYuD9hRaDqX5uPFYJ4ZQ==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
 
@@ -3410,8 +3429,8 @@ packages:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
 
-  postcss@8.5.28:
-    resolution: {integrity: sha512-RRuzqDtt5Y9h3quz5hWhK+TPnsmVs6WwSU6LkJMeY4HstUEDuYTG8UJSdawMRzmzAtV+KEoG8N3Qg2qLy5vM/A==}
+  postcss@8.5.29:
+    resolution: {integrity: sha512-49cGhUbXj8Qenv0iTMxA1cFBzxXoctpC9Ujd77t1WcbJIr6nF/eI7g/8MgxrYldFRuAXvja7xQRwavoW7kgrxQ==}
     engines: {node: ^10 || ^12 || >=14}
 
   process-warning@4.0.1:
@@ -3824,6 +3843,10 @@ packages:
   undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
 
+  undici@8.11.2:
+    resolution: {integrity: sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ==}
+    engines: {node: '>=22.19.0'}
+
   unfetch@4.2.0:
     resolution: {integrity: sha512-F9p7yYCn6cIW9El1zi0HI6vqpeIvBsr3dSuRO6Xuppb1u5rXpCPmMvLSyECLhybr9isec8Ohl0hPekMVrEinDA==}
 
@@ -4176,6 +4199,12 @@ snapshots:
 
   '@bufbuild/protobuf@1.10.0': {}
 
+  '@connectrpc/connect-node@1.7.0(@bufbuild/protobuf@1.10.0)(@connectrpc/connect@1.7.0(@bufbuild/protobuf@1.10.0))':
+    dependencies:
+      '@bufbuild/protobuf': 1.10.0
+      '@connectrpc/connect': 1.7.0(@bufbuild/protobuf@1.10.0)
+      undici: 8.11.2
+
   '@connectrpc/connect-web@1.7.0(@bufbuild/protobuf@1.10.0)(@connectrpc/connect@1.7.0(@bufbuild/protobuf@1.10.0))':
     dependencies:
       '@bufbuild/protobuf': 1.10.0
@@ -4497,7 +4526,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@napi-rs/wasm-runtime@1.2.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
+  '@napi-rs/wasm-runtime@1.2.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
       '@emnapi/core': 1.10.0
       '@emnapi/runtime': 1.10.0
@@ -4601,7 +4630,7 @@ snapshots:
 
   '@opentelemetry/api@1.9.1': {}
 
-  '@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1)':
+  '@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/semantic-conventions': 1.43.0
@@ -4614,7 +4643,7 @@ snapshots:
   '@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/otlp-exporter-base': 0.218.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/otlp-transformer': 0.218.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.1)
@@ -4633,7 +4662,7 @@ snapshots:
   '@opentelemetry/otlp-exporter-base@0.218.0(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/otlp-transformer': 0.218.0(@opentelemetry/api@1.9.1)
     optional: true
 
@@ -4641,7 +4670,7 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/api-logs': 0.218.0
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-logs': 0.218.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-metrics': 2.7.1(@opentelemetry/api@1.9.1)
@@ -4651,7 +4680,7 @@ snapshots:
   '@opentelemetry/resources@2.7.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     optional: true
 
@@ -4665,7 +4694,7 @@ snapshots:
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/api-logs': 0.218.0
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     optional: true
@@ -4673,14 +4702,14 @@ snapshots:
   '@opentelemetry/sdk-metrics@2.7.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.1)
     optional: true
 
   '@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.1)':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.1)
       '@opentelemetry/semantic-conventions': 1.43.0
     optional: true
@@ -5130,7 +5159,7 @@ snapshots:
     dependencies:
       '@emnapi/core': 1.10.0
       '@emnapi/runtime': 1.10.0
-      '@napi-rs/wasm-runtime': 1.2.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
+      '@napi-rs/wasm-runtime': 1.2.5(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)
     optional: true
 
   '@rolldown/binding-win32-arm64-msvc@1.0.3':
@@ -5147,28 +5176,28 @@ snapshots:
     dependencies:
       '@sentry/conventions': 0.15.1
 
-  '@sentry/node-core@10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))':
+  '@sentry/node-core@10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))':
     dependencies:
       '@sentry/conventions': 0.15.1
       '@sentry/core': 10.65.0
-      '@sentry/opentelemetry': 10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))
+      '@sentry/opentelemetry': 10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))
       import-in-the-middle: 3.0.1
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/exporter-trace-otlp-http': 0.218.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/instrumentation': 0.220.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.9.0(@opentelemetry/api@1.9.1)
 
-  '@sentry/node@10.65.0(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))':
+  '@sentry/node@10.65.0(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))':
     dependencies:
       '@opentelemetry/api': 1.9.1
       '@opentelemetry/instrumentation': 0.220.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.9.0(@opentelemetry/api@1.9.1)
       '@sentry/conventions': 0.15.1
       '@sentry/core': 10.65.0
-      '@sentry/node-core': 10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))
-      '@sentry/opentelemetry': 10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))
+      '@sentry/node-core': 10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/exporter-trace-otlp-http@0.218.0(@opentelemetry/api@1.9.1))(@opentelemetry/instrumentation@0.220.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))
+      '@sentry/opentelemetry': 10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))
       '@sentry/server-utils': 10.65.0
       import-in-the-middle: 3.0.1
     transitivePeerDependencies:
@@ -5176,10 +5205,10 @@ snapshots:
       - '@opentelemetry/exporter-trace-otlp-http'
       - supports-color
 
-  '@sentry/opentelemetry@10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.11.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))':
+  '@sentry/opentelemetry@10.65.0(@opentelemetry/api@1.9.1)(@opentelemetry/core@2.12.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.9.0(@opentelemetry/api@1.9.1))':
     dependencies:
       '@opentelemetry/api': 1.9.1
-      '@opentelemetry/core': 2.11.0(@opentelemetry/api@1.9.1)
+      '@opentelemetry/core': 2.12.0(@opentelemetry/api@1.9.1)
       '@opentelemetry/sdk-trace-base': 2.9.0(@opentelemetry/api@1.9.1)
       '@sentry/conventions': 0.15.1
       '@sentry/core': 10.65.0
@@ -5407,7 +5436,7 @@ snapshots:
       istanbul-lib-coverage: 3.2.2
       istanbul-lib-report: 3.0.1
       istanbul-reports: 3.2.0
-      magicast: 0.5.3
+      magicast: 0.5.5
       obug: 2.1.4
       std-env: 4.2.0
       tinyrainbow: 3.1.0
@@ -6322,7 +6351,7 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  magicast@0.5.3:
+  magicast@0.5.5:
     dependencies:
       '@babel/parser': 7.29.7
       '@babel/types': 7.29.7
@@ -6718,7 +6747,7 @@ snapshots:
 
   ms@2.1.3: {}
 
-  nanoid@3.3.19: {}
+  nanoid@3.3.20: {}
 
   negotiator@1.0.0: {}
 
@@ -6806,9 +6835,9 @@ snapshots:
 
   pkce-challenge@5.0.1: {}
 
-  postcss@8.5.28:
+  postcss@8.5.29:
     dependencies:
-      nanoid: 3.3.19
+      nanoid: 3.3.20
       picocolors: 1.1.1
       source-map-js: 1.2.2
 
@@ -7241,6 +7270,8 @@ snapshots:
 
   undici-types@6.21.0: {}
 
+  undici@8.11.2: {}
+
   unfetch@4.2.0: {}
 
   unified@11.0.5:
@@ -7311,7 +7342,7 @@ snapshots:
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
-      postcss: 8.5.28
+      postcss: 8.5.29
       rolldown: 1.0.3
       tinyglobby: 0.2.17
     optionalDependencies:

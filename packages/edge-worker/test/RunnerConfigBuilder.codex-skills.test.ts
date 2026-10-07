@@ -1,4 +1,8 @@
-import type { CyrusAgentSession, ILogger, RepositoryConfig } from "cyrus-core";
+import type {
+	CyrusAgentSession,
+	ILogger,
+	RepositoryConfig,
+} from "bobs-factory-core";
 import { describe, expect, it } from "vitest";
 import {
 	type IChatToolResolver,
@@ -60,7 +64,7 @@ describe("RunnerConfigBuilder Codex managed skills", () => {
 			allowedTools: ["Read(**)"],
 			allowedDirectories: ["/repos/repo-a"],
 			disallowedTools: [],
-			cyrusHome: "/tmp/cyrus-home",
+			factoryHome: "/tmp/home",
 			linearWorkspaceId: "ws-1",
 			logger: silentLogger,
 			onMessage: () => {},

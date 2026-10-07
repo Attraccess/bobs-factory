@@ -1520,14 +1520,14 @@ it.each([
 	"public",
 ] as const)("protects and redacts push device APIs with the exact configured HTTPS origin (%s)", async (proxy) => {
 	vi.stubEnv(
-		"CYRUS_FACTORY_PUBLIC_ORIGIN",
+		"BOBS_FACTORY_FACTORY_PUBLIC_ORIGIN",
 		proxy === "public" ? "https://factory.example.ts.net" : "",
 	);
 	vi.stubEnv(
-		"CYRUS_FACTORY_ORIGIN",
+		"BOBS_FACTORY_FACTORY_ORIGIN",
 		proxy === "trusted" ? "https://factory.example.ts.net" : "",
 	);
-	if (proxy === "public") delete process.env.CYRUS_FACTORY_ORIGIN;
+	if (proxy === "public") delete process.env.BOBS_FACTORY_FACTORY_ORIGIN;
 	const home = mkdtempSync(join(tmpdir(), "factory-push-api-"));
 	const sender = vi.fn(async () => {}),
 		push = new FactoryPush(home, sender, Date.now, "mailto:test@example.com");

@@ -1,4 +1,4 @@
-import type { AgentRunnerConfig, McpServerConfig } from "cyrus-core";
+import type { AgentRunnerConfig, McpServerConfig } from "bobs-factory-core";
 import { AppServerClient } from "./backend/appServerClient.js";
 import { resolveCodexAppServerLaunch } from "./backend/codexBinary.js";
 import { buildCodexMcpServersConfig } from "./config/mcpConfigTranslator.js";

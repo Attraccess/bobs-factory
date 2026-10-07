@@ -10,7 +10,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GitHubTokenStore } from "cyrus-core";
+import { GitHubTokenStore } from "bobs-factory-core";
 import {
 	type ApiResponse,
 	type GitHubTokensPayload,
@@ -27,14 +27,14 @@ function bundledScriptPath(scriptName: string): string {
 
 /**
  * Install the per-invocation gh token resolver to
- * `<cyrusHome>/scripts/gh-cyrus.cjs`. The droplet's `~/.local/bin/gh`
+ * `<factoryHome>/scripts/gh-cyrus.cjs`. The droplet's `~/.local/bin/gh`
  * wrapper execs into it so each gh command authenticates with the
  * installation token for the org it targets (explicit -R/--repo arg, else
  * the cwd's origin remote) — required for multi-repo sessions that span
  * GitHub orgs. Idempotent.
  */
-export function ensureGhTokenResolver(cyrusHome: string): string {
-	const scriptDir = join(cyrusHome, "scripts");
+export function ensureGhTokenResolver(factoryHome: string): string {
+	const scriptDir = join(factoryHome, "scripts");
 	const scriptDest = join(scriptDir, "gh-cyrus.cjs");
 	mkdirSync(scriptDir, { recursive: true });
 	copyFileSync(bundledScriptPath("gh-cyrus.cjs"), scriptDest);
@@ -43,23 +43,23 @@ export function ensureGhTokenResolver(cyrusHome: string): string {
 }
 
 /**
- * Install the Cyrus git credential helper and wire it into the global git
+ * Install the Bob’s Factory git credential helper and wire it into the global git
  * config for github.com. Idempotent — safe to run on every token push and
  * on EdgeWorker startup.
  *
  * - Copies the self-contained helper script to
- *   `<cyrusHome>/scripts/git-credential-cyrus.cjs` (executable).
+ *   `<factoryHome>/scripts/git-credential-cyrus.cjs` (executable).
  * - Enables `credential."https://github.com".useHttpPath` so git passes the
  *   repo path (and thus the org) to the helper.
  * - Replaces any inherited helpers for github.com (e.g. gh's keyring helper)
- *   with an empty entry followed by the Cyrus helper. Helper values must be
+ *   with an empty entry followed by the Bob’s Factory helper. Helper values must be
  *   prefixed with `!` to invoke an arbitrary command — without it git would
  *   look for a `git credential-<name>` binary.
  *
  * Returns the absolute path of the installed helper script.
  */
-export function ensureGitHubCredentialHelper(cyrusHome: string): string {
-	const scriptDir = join(cyrusHome, "scripts");
+export function ensureGitHubCredentialHelper(factoryHome: string): string {
+	const scriptDir = join(factoryHome, "scripts");
 	const scriptDest = join(scriptDir, "git-credential-cyrus.cjs");
 
 	mkdirSync(scriptDir, { recursive: true });
@@ -90,12 +90,12 @@ export function ensureGitHubCredentialHelper(cyrusHome: string): string {
 }
 
 /**
- * Self-heal the droplet's `~/.local/bin/gh` wrapper to exec the Cyrus gh
+ * Self-heal the droplet's `~/.local/bin/gh` wrapper to exec the Bob’s Factory gh
  * token resolver.
  *
  * Droplet images bake a gh wrapper that strips injected GH_TOKEN /
  * GITHUB_TOKEN env vars. The current design routes gh through
- * `<cyrusHome>/scripts/gh-cyrus.cjs`, which resolves the installation
+ * `<factoryHome>/scripts/gh-cyrus.cjs`, which resolves the installation
  * token PER INVOCATION for the org the command targets (multi-repo
  * sessions span orgs, so a session-wide token is not enough). Droplets
  * provisioned from older images keep their baked wrapper until rebuilt;
@@ -112,22 +112,22 @@ export function ensureGhWrapperSupportsCyrusToken(
 
 	const current = readFileSync(wrapperPath, "utf8");
 	// Only rewrite the known droplet wrapper shapes (the original
-	// strip-everything wrapper and the interim CYRUS_GH_TOKEN one), and
+	// strip-everything wrapper and the interim BOBS_FACTORY_GH_TOKEN one), and
 	// only when they predate the resolver.
 	if (current.includes("gh-cyrus.cjs") || !current.includes("/usr/bin/gh")) {
 		return false;
 	}
 
 	const updated = `#!/usr/bin/env bash
-# Cyrus-managed gh wrapper. The resolver picks the GitHub App installation
+# Bob’s Factory-managed gh wrapper. The resolver picks the GitHub App installation
 # token for the org each command targets (multi-org support); without it,
 # strip injected tokens so gh falls back to its own stored auth.
-RESOLVER="$HOME/.cyrus/scripts/gh-cyrus.cjs"
+RESOLVER="$HOME/.bobs-factory/scripts/gh-cyrus.cjs"
 if [ -f "$RESOLVER" ]; then
   exec node "$RESOLVER" "$@"
 fi
-if [ -n "\${CYRUS_GH_TOKEN:-}" ]; then
-  exec env -u GITHUB_TOKEN GH_TOKEN="$CYRUS_GH_TOKEN" /usr/bin/gh "$@"
+if [ -n "\${BOBS_FACTORY_GH_TOKEN:-}" ]; then
+  exec env -u GITHUB_TOKEN GH_TOKEN="$BOBS_FACTORY_GH_TOKEN" /usr/bin/gh "$@"
 fi
 exec env -u GITHUB_TOKEN -u GH_TOKEN /usr/bin/gh "$@"
 `;
@@ -155,20 +155,18 @@ export function configureGhCliAuth(token: string): void {
 }
 
 /**
- * Handle a GitHub installation tokens push from cyrus-hosted.
+ * Persist refreshed GitHub installation tokens for session-local authentication.
  *
- * Persists the per-installation tokens to `<cyrusHome>/github-tokens.json`
- * (atomically, mode 0600), ensures the git credential helper is installed
- * so concurrent git operations against different GitHub orgs each
- * authenticate with the right token, and refreshes the `gh` CLI's stored
- * auth with the first pushed token.
+ * Persists the per-installation tokens to `<factoryHome>/github-tokens.json`
+ * (atomically, mode 0600). Host Git helpers, gh authentication and native
+ * credential stores remain owned by the service account.
  *
  * @param rawPayload - Unvalidated payload from the request
- * @param cyrusHome - Path to the Cyrus home directory
+ * @param factoryHome - Path to the Bob’s Factory home directory
  */
 export async function handleGitHubTokens(
 	rawPayload: unknown,
-	cyrusHome: string,
+	factoryHome: string,
 ): Promise<ApiResponse> {
 	const parseResult = GitHubTokensPayloadSchema.safeParse(rawPayload);
 	if (!parseResult.success) {
@@ -184,10 +182,9 @@ export async function handleGitHubTokens(
 
 	const payload: GitHubTokensPayload = parseResult.data;
 
-	// Persist the tokens first — even if git configuration fails below, the
-	// EdgeWorker can still resolve tokens from the store for API calls.
+	// EdgeWorker resolves these tokens without changing host authentication.
 	try {
-		new GitHubTokenStore(cyrusHome).save(payload.tokens);
+		new GitHubTokenStore(factoryHome).save(payload.tokens);
 	} catch (error) {
 		return {
 			success: false,
@@ -196,62 +193,15 @@ export async function handleGitHubTokens(
 		};
 	}
 
-	try {
-		ensureGitHubCredentialHelper(cyrusHome);
-	} catch (error) {
-		return {
-			success: false,
-			error: "Failed to configure git credential helper",
-			details: error instanceof Error ? error.message : String(error),
-		};
-	}
-
-	try {
-		ensureGhTokenResolver(cyrusHome);
-	} catch (error) {
-		// Non-fatal: gh falls back to CYRUS_GH_TOKEN / hosts.yml auth.
-		console.warn(
-			"[githubTokens] gh token resolver install failed:",
-			error instanceof Error ? error.message : String(error),
-		);
-	}
-
-	try {
-		// cyrusHome is <home>/.cyrus on droplets, so the wrapper lives at
-		// <parent of cyrusHome>/.local/bin/gh. Using the parent (rather than
-		// os.homedir()) keeps this no-op for custom cyrus-home layouts and
-		// hermetic in tests.
-		ensureGhWrapperSupportsCyrusToken(dirname(cyrusHome));
-	} catch (error) {
-		// Non-fatal: the wrapper rewrite is a droplet-only nicety.
-		console.warn(
-			"[githubTokens] gh wrapper self-heal failed:",
-			error instanceof Error ? error.message : String(error),
-		);
-	}
-
-	let ghAuthConfigured = false;
-	const firstToken = payload.tokens[0]?.token;
-	if (firstToken) {
-		try {
-			configureGhCliAuth(firstToken);
-			ghAuthConfigured = true;
-		} catch (error) {
-			// Non-fatal: gh may not be installed (self-host), and git auth via
-			// the credential helper is unaffected.
-			console.warn(
-				"[githubTokens] gh CLI auth refresh failed:",
-				error instanceof Error ? error.message : String(error),
-			);
-		}
-	}
+	// Installation tokens are used in session-local environments. Host credential
+	// helpers, keychains and gh authentication belong to the service account.
 
 	return {
 		success: true,
 		message: "GitHub installation tokens updated successfully",
 		data: {
 			tokensCount: payload.tokens.length,
-			ghAuthConfigured,
+			ghAuthConfigured: false,
 		},
 	};
 }

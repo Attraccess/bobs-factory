@@ -147,7 +147,7 @@ export class PersistenceManager {
 
 	constructor(persistencePath?: string, logger?: ILogger) {
 		this.persistencePath =
-			persistencePath || join(homedir(), ".cyrus", "state");
+			persistencePath || join(homedir(), ".bobs-factory", "state");
 		this.logger = logger ?? createLogger({ component: "PersistenceManager" });
 	}
 

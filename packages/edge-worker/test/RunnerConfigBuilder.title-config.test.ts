@@ -14,11 +14,11 @@ import {
 	AgentSessionType,
 	type RepositoryConfig,
 	type RunnerType,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import {
 	convertToGeminiMcpConfig,
 	loadMcpConfigFromPaths,
-} from "cyrus-gemini-runner";
+} from "bobs-factory-gemini-runner";
 import { afterEach, expect, it, vi } from "vitest";
 import { titleSystemPrompt } from "../src/factory/RunTitleGenerator.js";
 import { RunnerConfigBuilder } from "../src/RunnerConfigBuilder.js";
@@ -145,7 +145,7 @@ it.each([
 			platformMcpConfigOverrides: [override],
 			linearWorkspaceId: "ws",
 			requireLinearWorkspaceId: () => "ws",
-			cyrusHome: project,
+			factoryHome: project,
 			logger: {
 				debug: () => {},
 				info: () => {},
@@ -247,7 +247,7 @@ it.each([
 	});
 	expect(readFileSync(projectConfig, "utf8")).toBe(originalProjectConfig);
 	expect(config.allowedTools).toEqual(["mcp__context__lookup_ticket"]);
-	expect(config.additionalEnv?.CYRUS_GH_TOKEN).toBe("fixture-token");
+	expect(config.additionalEnv?.BOBS_FACTORY_GH_TOKEN).toBe("fixture-token");
 	expect(config.hooks).toBeUndefined();
 	expect(config.resumeSessionId).toBeUndefined();
 	expect(config.onAskUserQuestion).toBeUndefined();

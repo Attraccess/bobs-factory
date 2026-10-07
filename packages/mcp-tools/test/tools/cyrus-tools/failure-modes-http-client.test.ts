@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createFetchFailureModesClient } from "../../../src/tools/cyrus-tools/failure-modes-http-client.js";
+import { createFetchFailureModesClient } from "../../../src/tools/bobs-factory-tools/failure-modes-http-client.js";
 
 describe("createFetchFailureModesClient", () => {
 	it("sends Bearer token + JSON body to /api/failure-modes", async () => {

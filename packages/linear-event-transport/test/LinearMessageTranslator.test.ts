@@ -1,5 +1,5 @@
 import type { LinearWebhookPayload } from "@linear/sdk/webhooks";
-import type { LinearSessionStartPlatformData } from "cyrus-core";
+import type { LinearSessionStartPlatformData } from "bobs-factory-core";
 import { describe, expect, it } from "vitest";
 import { LinearMessageTranslator } from "../src/LinearMessageTranslator.js";
 

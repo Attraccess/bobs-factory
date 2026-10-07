@@ -43,7 +43,7 @@ Cyrus is a pnpm monorepo with the following layout:
 ```
 cyrus/
 ├── apps/
-│   ├── cli/        # Main CLI application (the `cyrus-ai` npm package)
+│   ├── cli/        # Main CLI application (the `bobs-factory-ai` npm package)
 │   └── f1/         # F1 testing framework for end-to-end test drives
 └── packages/
     ├── core/                     # Shared types and session management

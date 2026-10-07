@@ -1,5 +1,4 @@
-import { getCyrusAppUrl } from "cyrus-cloudflare-tunnel-client";
-import type { EdgeConfig } from "cyrus-core";
+import type { EdgeConfig } from "bobs-factory-core";
 import { BaseCommand } from "./ICommand.js";
 
 /**
@@ -8,7 +7,7 @@ import { BaseCommand } from "./ICommand.js";
 export class StartCommand extends BaseCommand {
 	async execute(_args: string[]): Promise<void> {
 		try {
-			process.env.CYRUS_FACTORY_PORT ??= "3457";
+			process.env.BOBS_FACTORY_FACTORY_PORT ??= "3457";
 			// Load edge configuration
 			const edgeConfig = this.app.config.load();
 			const repositories = edgeConfig.repositories || [];
@@ -39,7 +38,9 @@ export class StartCommand extends BaseCommand {
 				});
 			} else {
 				this.logger.info("\n⏸️  No repositories configured");
-				this.logger.info("   Add one with: cyrus self-add-repo <git-url>");
+				this.logger.info(
+					"   Add one with: bobs-factory self-add-repo <git-url>",
+				);
 			}
 			this.logger.divider(70);
 
@@ -52,9 +53,7 @@ export class StartCommand extends BaseCommand {
 			if (error.message?.includes("CLOUDFLARE_TOKEN")) {
 				this.logger.info("\n💡 Cloudflare tunnel requires:");
 				this.logger.info("   - CLOUDFLARE_TOKEN environment variable");
-				this.logger.info(
-					`   - Get your token from: ${getCyrusAppUrl()}/onboarding`,
-				);
+				this.logger.info("   - Configure your own Cloudflare tunnel token");
 			} else if (error.message?.includes("Failed to connect")) {
 				this.logger.info("\n💡 Connection issues can occur when:");
 				this.logger.info("   - Linear OAuth tokens have expired");

@@ -9,7 +9,7 @@ import type {
 	SDKStatusMessage,
 	SDKSystemMessage,
 	SDKUserMessage,
-} from "cyrus-claude-runner";
+} from "bobs-factory-claude-runner";
 import {
 	type AgentPendingWork,
 	AgentSessionStatus,
@@ -25,7 +25,7 @@ import {
 	type SerializedCyrusAgentSession,
 	type SerializedCyrusAgentSessionEntry,
 	type Workspace,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 import {
 	formatPendingWorkThought,
@@ -322,7 +322,7 @@ export class AgentSessionManager extends EventEmitter {
 		// Extract SDK error from assistant messages (e.g., rate_limit, billing_error)
 		// SDKAssistantMessage has optional `error?: SDKAssistantMessageError` field
 		// See: @anthropic-ai/claude-agent-sdk sdk.d.ts lines 1013-1022
-		// Evidence from ~/.cyrus/logs/CYGROW-348 session jsonl shows assistant messages with
+		// Evidence from ~/.bobs-factory/logs/CYGROW-348 session jsonl shows assistant messages with
 		// "error":"rate_limit" field when usage limits are hit
 		const sdkError =
 			sdkMessage.type === "assistant" ? sdkMessage.error : undefined;

@@ -4,7 +4,13 @@ This changelog documents internal development changes, refactors, tooling update
 
 ## [Unreleased]
 
+### Changed
+
+- Prepare private workspace packages, embedded runtime assets, binary candidate verification and migration preservation checks for Taskbot #38. Retire upstream npm publication; retain historical tooling. Load user-prepared Cursor through a separate Node process with native ID, MCP, stream and cancellation regression checks; exclude its SDK/native sidecars from archives. Validate referenced MCP configuration before migration, preserve frozen workflow history while updating executable tool names, and share environment-file ownership between bootstrap and reload. Cover visual-review assistance batch recovery with regression tests and a simulated-agent F1 restart drive. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
 ### Fixed
+
+- Reconcile Web Push with the Bob’s Factory fork and current CI recovery, using the renamed home and environment settings while retaining subscriptions, passkey protection and transition bookkeeping. Make context snapshot checks work with packaged launch arguments and allow the full-history fixture to finish under suite load. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 
 - Integrate Web Push with Factory passkey authentication, protecting device management and refreshed notification destinations after sign-in, while retaining opt-out and deferred device cleanup across session loss. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 
@@ -14,6 +20,9 @@ This changelog documents internal development changes, refactors, tooling update
 - Integrate Web Push with the current Factory base, retaining configured public/trusted proxy access, refinement guidance and both PWA regression suites. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Update the routing prompt test fixture for the accepted Web Push capability description, retaining complete prompt assertions and restoring CI. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 
+- Initialize reflection support before bundled certificate imports; verify renamed passkey commands, protected runtime recovery and packaged macOS startup while integrating main. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Cover Codex cancellation during configuration, initialization, thread setup and delayed turn startup; close failed initialization and await shared cleanup. Retain cancellation handlers for late notifications and timed-out start requests until thread completion or process exit, without reviving stopped runners or interrupting other threads. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 - Correct the selected signed-out passkey update screenshot to 1280×900 and retain explicit viewport, build and protected-access receipts for QA reassessment. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
