@@ -4,6 +4,10 @@ This changelog documents internal development changes, refactors, tooling update
 
 ## [Unreleased]
 
+### Fixed
+
+- Update the complete routing-prompt expectation for refinement recommendations so CI validates the current capability guidance. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
+
 ### Added
 
 - Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))
