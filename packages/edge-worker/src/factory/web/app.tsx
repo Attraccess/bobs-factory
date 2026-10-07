@@ -854,7 +854,7 @@ function RunPage({
 				</div>
 				<div className="actions">
 					{run.status === "capacity-waiting" && (
-						<p role="status">Waiting for machine capacity</p>
+						<p role="status">Waiting for instance capacity</p>
 					)}
 					{active(run.status) ? (
 						<ConfirmStop

@@ -541,7 +541,7 @@ export class ChatSessionHandler<TEvent> {
 				mode: "queue",
 				queuedMessageIds: queuedMessages.map((message) => message.id),
 				reason: capacityQueued
-					? "Waiting for machine capacity. Messages are queued and will be processed later."
+					? "Waiting for instance capacity. Messages are queued and will be processed later."
 					: "Messages are queued and will be processed after the current turn.",
 			};
 		}

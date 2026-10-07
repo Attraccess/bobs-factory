@@ -184,6 +184,7 @@ import {
 	parseAgentOutput,
 	toolArguments,
 } from "./factory/FactoryTools.js";
+import { factoryFeedbackContext } from "./factory/FeedbackPolicy.js";
 import {
 	validateGuideCoverage,
 	validateGuideGeneration,
@@ -201,7 +202,11 @@ import {
 } from "./factory/LaunchAdmission.js";
 import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
-import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
+import {
+	assessFeedback,
+	type MergeReadiness,
+	recordFeedbackAssessment,
+} from "./factory/MergeReadiness.js";
 import {
 	confirmedMerge,
 	pendingMergeConfirmation,
@@ -211,8 +216,17 @@ import {
 	outputValidationError,
 } from "./factory/OutputValidation.js";
 import { type QaScope, qaDigest, qaRequirementIssues } from "./factory/Qa.js";
-import { questionInstructions } from "./factory/Questions.js";
+import {
+	normalizeQuestionResult,
+	questionInstructions,
+	questionNotification,
+} from "./factory/Questions.js";
 import { finalizeGuideFiles } from "./factory/ReviewFiles.js";
+import {
+	factoryReviewFixContext,
+	recordReviewFix,
+	validateReviewFix,
+} from "./factory/ReviewRecovery.js";
 import {
 	buildTitleContext,
 	RunTitleGenerator,
@@ -373,7 +387,7 @@ export class EdgeWorker extends EventEmitter {
 	// Extracted service modules
 	private attachmentService: AttachmentService;
 	private runnerSelectionService: RunnerSelectionService;
-	/** Global cap on concurrently executing runner sessions (see maxConcurrentSessions). */
+	/** Instance cap on concurrently executing runner sessions (see maxConcurrentSessions). */
 	private runnerSlots: MachineCapacity;
 	private toolPermissionResolver: ToolPermissionResolver;
 	private mcpConfigService: McpConfigService;
@@ -709,7 +723,10 @@ export class EdgeWorker extends EventEmitter {
 			this.config.linearWorkspaces || {},
 		);
 		this.runnerSelectionService = new RunnerSelectionService(this.config);
-		this.runnerSlots = new MachineCapacity(this.config.maxConcurrentSessions);
+		this.runnerSlots = new MachineCapacity(
+			this.config.maxConcurrentSessions,
+			join(this.cyrusHome, "machine-capacity"),
+		);
 		this.toolPermissionResolver = new ToolPermissionResolver(
 			this.config,
 			this.logger,
@@ -6797,7 +6814,7 @@ ${taskSection}`;
 	 * Instantiate the appropriate runner for the given type.
 	 *
 	 * Every runner is wrapped so its `start()`/`startStreaming()` hold a
-	 * global concurrency slot for the session's lifetime — this is the single
+	 * instance concurrency slot for the session's lifetime — this is the single
 	 * choke point that makes `maxConcurrentSessions` cover Linear, GitHub,
 	 * GitLab, and chat sessions alike.
 	 */
@@ -6860,7 +6877,7 @@ ${taskSection}`;
 					return tools.tool(context);
 				},
 				question: async (run) => {
-					const body = `## Factory clarification\n\n${run.questions.map((question, index) => `${index + 1}. ${question}`).join("\n")}\n\nReply here or answer in the factory UI. The run waits for your answers.`;
+					const body = `## Factory clarification\n\n${questionNotification(run.questions, run.questionRecommendations)}`;
 					if (!run.ticketReference) await this.postFactoryComment(run, body);
 					await this.agentSessionManager.createResponseActivity(run.id, body);
 				},
@@ -7091,9 +7108,7 @@ ${taskSection}`;
 					);
 				},
 				createRunner: (snapshot, config) =>
-					snapshot.settings.runner === "claude"
-						? new ClaudeRunner(this.managedRunnerConfig(config), false)
-						: this.buildRunnerForType(snapshot.settings.runner, config),
+					this.buildRunnerForType(snapshot.settings.runner, config, true),
 			},
 		);
 		this.titleGenerator.start(id, job);
@@ -7464,6 +7479,21 @@ ${taskSection}`;
 					}
 					return output;
 				} catch (error) {
+					context.signal.throwIfAborted();
+					if (
+						error instanceof Error &&
+						/^Agent step failed:.*codex app-server produced no activity for \d+ms/.test(
+							error.message,
+						) &&
+						context.resumeAgent?.runner === "codex" &&
+						(context.resumeAgent.idleRetries ?? 0) < 1
+					) {
+						context.checkpointAgent({ ...context.resumeAgent, idleRetries: 1 });
+						context.log(
+							"Codex turn went silent; resuming the saved conversation once. Completed role work and checkpoints are retained.",
+						);
+						continue;
+					}
 					const capture = error instanceof CaptureReuseError;
 					if (!(error instanceof OutputValidationError) && !capture)
 						throw error;
@@ -7610,6 +7640,7 @@ ${taskSection}`;
 				agentCheckpoint = {
 					runner: runnerType,
 					sessionId: message.session_id,
+					idleRetries: context.resumeAgent?.idleRetries,
 					...(context.resumeAgent?.result
 						? { result: context.resumeAgent.result }
 						: {}),
@@ -7629,11 +7660,18 @@ ${taskSection}`;
 				context.log(JSON.stringify(message), "agent");
 		};
 		context.progress = await roleProgress(context);
+		this.refreshFactoryFeedbackContext(context);
 		const factoryContext = prepareFactoryContext({
 			...(context.input && typeof context.input === "object"
 				? context.input
 				: { input: context.input }),
 			progress: context.progress,
+			...(step.id === "ci-fix"
+				? { feedback: factoryFeedbackContext(context) }
+				: {}),
+			...(["code-fix", "visual-fix"].includes(step.id)
+				? { reviewFix: factoryReviewFixContext(context) }
+				: {}),
 			...(captureCorrection ? { captureCorrection } : {}),
 			...(outputCorrection ? { outputCorrection } : {}),
 		});
@@ -7643,9 +7681,7 @@ ${taskSection}`;
 				"factory-context": factoryContext.config,
 			};
 			const runner = capRunnerStarts(
-				runnerType === "claude"
-					? new ClaudeRunner(this.managedRunnerConfig(built.config), false)
-					: this.buildRunnerForType(runnerType, built.config),
+				this.buildRunnerForType(runnerType, built.config, true),
 				this.runnerSlots,
 				context.signal,
 				{ ...context.capacity, remote: runnerType === "cursor" },
@@ -7703,6 +7739,7 @@ ${taskSection}`;
 					context.checkpointAgent?.({
 						runner: agentCheckpoint.runner,
 						sessionId: agentCheckpoint.sessionId,
+						idleRetries: context.resumeAgent?.idleRetries,
 						...(context.resumeAgent?.rejected
 							? { rejected: context.resumeAgent.rejected }
 							: {}),
@@ -7729,7 +7766,7 @@ ${taskSection}`;
 	): unknown {
 		const { run, step } = context;
 		try {
-			let output = value;
+			let output = step.askQuestions ? normalizeQuestionResult(value) : value;
 			if (
 				step.qaContract ||
 				["factory", "takeover"].includes(run.workflow.id) ||
@@ -7750,9 +7787,39 @@ ${taskSection}`;
 				validateGuideGeneration(output);
 				validateGuideCoverage(context, output);
 			}
+			if (step.id === "ci-fix") {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				output = recordFeedbackAssessment(context, output);
+			}
+			if (["code-fix", "visual-fix"].includes(step.id)) {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				validateReviewFix(context, output);
+			}
 			return output;
 		} catch (error) {
 			throw outputValidationError(value, error);
+		}
+	}
+
+	private refreshFactoryFeedbackContext(context: ExecutionContext): void {
+		if (!["ci-fix", "code-fix", "visual-fix"].includes(context.step.id)) return;
+		if (this.factoryRuntime) {
+			context.chatMessages = this.factoryRuntime.chatMessages(context.run.id);
+			context.input = {
+				...(context.input as Record<string, unknown>),
+				chatMessages: context.chatMessages,
+			};
+		}
+		if (context.step.id === "ci-fix") {
+			const receipt = (context.run.outputs["merge-readiness"] ??
+				context.run.outputs.ci) as MergeReadiness | undefined;
+			// Runs paused before feedback recovery was installed retain legacy
+			// receipts. Derive the exact pending versions before exposing context
+			// or validating a recovered result, without inventing assessments.
+			if (receipt && receipt.unassessedComments === undefined)
+				assessFeedback(context, receipt);
 		}
 	}
 
@@ -7764,9 +7831,9 @@ ${taskSection}`;
 		let output = this.validateFactoryAgentOutput(context, value);
 		if (step.id === "guide") output = await finalizeGuideFiles(context, output);
 		if (step.id === "capture") output = captureEvidence(context, output);
-		if (step.id === "ci-fix")
-			output = recordFeedbackAssessment(context, output);
 		const completed = (await roleProgress(context)).currentRevision;
+		if (["code-fix", "visual-fix"].includes(step.id))
+			output = recordReviewFix(context, output, completed);
 		if (completed && step.id === "visual-review" && step.qaContract) {
 			output = {
 				...(output as Record<string, unknown>),
@@ -8682,16 +8749,23 @@ ${taskSection}`;
 	private buildRunnerForType(
 		runnerType: RunnerType,
 		config: AgentRunnerConfig,
+		coldClaude = false,
 	): IAgentRunner {
 		config = this.managedRunnerConfig(config);
+		if (this.config.handlers?.createAgentRunner)
+			return this.config.handlers.createAgentRunner(runnerType, config);
 		switch (runnerType) {
 			case "claude": {
 				// Inject the hosted SessionStore at the last moment so it only
 				// attaches to Claude runners (the field is Claude-specific).
-				const claudeConfig = this.claudeSessionStore
-					? { ...config, sessionStore: this.claudeSessionStore }
-					: config;
-				return new ClaudeRunner(claudeConfig, this.isWarmSessionsEnabled());
+				const claudeConfig =
+					!coldClaude && this.claudeSessionStore
+						? { ...config, sessionStore: this.claudeSessionStore }
+						: config;
+				return new ClaudeRunner(
+					claudeConfig,
+					coldClaude ? false : this.isWarmSessionsEnabled(),
+				);
 			}
 			case "gemini":
 				return new GeminiRunner(config);

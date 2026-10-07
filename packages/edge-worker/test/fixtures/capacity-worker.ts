@@ -2,7 +2,7 @@ import { spawnExecution } from "cyrus-core";
 import { MachineCapacity } from "../../src/MachineCapacity.js";
 
 const [directory, home, ledger, mode] = process.argv.slice(2);
-const capacity = new MachineCapacity(undefined, directory);
+const capacity = new MachineCapacity(undefined, directory!);
 await capacity.ready();
 const work = async (kind: string, duration: number) => {
 	const lease = await capacity.acquireLease(undefined, {

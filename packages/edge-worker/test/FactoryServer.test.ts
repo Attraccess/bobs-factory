@@ -309,6 +309,22 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		});
 		expect(staleAnswer.statusCode).toBe(409);
 		expect(runtime.get(id).answers).toHaveLength(0);
+		const staleBatch = await server.app.inject({
+			method: "POST",
+			url: `/api/runs/${id}/answer`,
+			headers,
+			payload: {
+				answer: "Old batch",
+				context: {
+					questions: detail.json().questions,
+					step: detail.json().step,
+					questionBatchId: "previous-batch",
+				},
+			},
+		});
+		expect(staleBatch.statusCode).toBe(409);
+		expect(runtime.get(id).answers).toHaveLength(0);
+
 		expect(
 			(
 				await server.app.inject({
@@ -319,6 +335,7 @@ it("starts, displays, answers and terminates runs through the local API", async 
 						answer: "Codex",
 						context: {
 							questions: detail.json().questions,
+							questionBatchId: detail.json().questionBatchId,
 							step: detail.json().step,
 						},
 					},
@@ -1488,7 +1505,14 @@ it("protects and validates machine settings, exposing durable cross-worker polic
 	}
 });
 
-it("protects and redacts push device APIs with the exact configured HTTPS origin", async () => {
+it.each([
+	"trusted",
+	"public",
+] as const)("protects and redacts push device APIs with the exact configured HTTPS origin (%s)", async (proxy) => {
+	vi.stubEnv(
+		"CYRUS_FACTORY_PUBLIC_ORIGIN",
+		proxy === "public" ? "https://factory.example.ts.net" : "",
+	);
 	const home = mkdtempSync(join(tmpdir(), "factory-push-api-"));
 	const sender = vi.fn(async () => {}),
 		push = new FactoryPush(home, sender, Date.now, "mailto:test@example.com");
@@ -1499,7 +1523,8 @@ it("protects and redacts push device APIs with the exact configured HTTPS origin
 	});
 	const server = new FactoryServer(runtime, {
 		push,
-		trustedOrigin: "https://factory.example.ts.net",
+		trustedOrigin:
+			proxy === "trusted" ? "https://factory.example.ts.net" : undefined,
 		repositories: () => [],
 		sessions: () => [],
 		entries: () => [],
@@ -1636,5 +1661,6 @@ it("protects and redacts push device APIs with the exact configured HTTPS origin
 		await runtime.shutdown();
 		await server.stop();
 		rmSync(home, { recursive: true, force: true });
+		vi.unstubAllEnvs();
 	}
 });

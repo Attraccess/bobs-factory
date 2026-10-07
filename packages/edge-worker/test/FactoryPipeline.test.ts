@@ -653,6 +653,13 @@ it("waits on blocked implementation across restart and supplies the answer witho
 			summary: "Implementation deferred by the plan.",
 			checks: ["Worktree clean"],
 			questions: [question],
+			questionRecommendations: [
+				{
+					questionIndex: 0,
+					answer: "Keep backlog only.",
+					reason: "The plan forbids implementation.",
+				},
+			],
 		});
 	});
 	const tool = vi.fn(async () => ({}));
@@ -712,6 +719,15 @@ it("waits on blocked implementation across restart and supplies the answer witho
 	const second = restarted.launch(restored);
 	await vi.waitFor(() => expect(restored.status).toBe("waiting"));
 	expect(resumedAgent).not.toHaveBeenCalled();
+	expect(restored.questionBatchId).toBe(run.questionBatchId);
+	expect(restored.questionRecommendations).toEqual([
+		{
+			questionIndex: 0,
+			answer: "Keep backlog only.",
+			reason: "The plan forbids implementation.",
+		},
+	]);
+	expect(restored.answers).toEqual([]);
 	restarted.answer(run.id, "Proceed with implementation now.");
 	await second;
 	expect(resumedAgent).toHaveBeenCalledTimes(1);
@@ -814,7 +830,9 @@ it.each([
 		})),
 	};
 	const first = runtime.launch(run);
-	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	await vi.waitFor(() => expect(run.status).toBe("waiting"), {
+		timeout: 10000,
+	});
 	expect(run.step).toBe("pipeline/visual-gate");
 	expect(run.questions.join("\n")).toContain("Test-card login timed out");
 	expect(questionPosted).toHaveBeenCalledTimes(1);
@@ -837,13 +855,17 @@ it.each([
 	if (legacy) restarted.retry(run.id);
 	else restarted.resumeAll();
 	const restored = restarted.get(run.id);
-	await vi.waitFor(() => expect(restored.status).toBe("waiting"));
+	await vi.waitFor(() => expect(restored.status).toBe("waiting"), {
+		timeout: 10000,
+	});
 	expect(agents).toHaveBeenCalledTimes(2);
 	expect(questionPosted).toHaveBeenCalledTimes(1);
 	expect(restored.error).toBeUndefined();
 	const retained = structuredClone(restored.history);
 	restarted.answer(run.id, "The test card now works; capture Reader desktop.");
-	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	await vi.waitFor(() => expect(restored.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(restored.history.slice(0, retained.length)).toEqual(retained);
 	expect(restored.workflowDefinitions).toEqual(frozen);
 	expect(restored.history.slice(retained.length).map((h) => h.step)).toEqual([
@@ -1192,7 +1214,7 @@ it("keeps independently reported consequential findings blocking even when all c
 		findings: [{ id: "data-loss" }],
 	});
 });
-it("requests assistance for blocked, missing, mismatched or stale QA rather than approving", async () => {
+it("waits for missing access and automatically retries malformed or stale QA", async () => {
 	const ctx = qaContext();
 	stampQa(ctx, qaExecution("blocked"));
 	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
@@ -1205,7 +1227,7 @@ it("requests assistance for blocked, missing, mismatched or stale QA rather than
 	stampQa(ctx, absent);
 	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
 		approved: false,
-		qaBlocked: true,
+		qaRetry: true,
 	});
 	stampQa(ctx);
 	(
@@ -1213,14 +1235,14 @@ it("requests assistance for blocked, missing, mismatched or stale QA rather than
 	).stories[0].criteria[0].expected = "Changed criterion";
 	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
 		approved: false,
-		qaBlocked: true,
+		qaRetry: true,
 	});
 	ctx.run.outputs["visual-scope"] = qaScope();
 	stampQa(ctx);
 	ctx.run.roleRevisions!.capture!.headSha = "old";
 	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
 		approved: false,
-		qaBlocked: true,
+		qaRetry: true,
 	});
 });
 it("requires selected UI screenshots and exact inspected-image receipts, rejecting unknown tasks", async () => {
@@ -1244,7 +1266,7 @@ it("requires selected UI screenshots and exact inspected-image receipts, rejecti
 	stampQa(ctx, capture);
 	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
 		approved: false,
-		qaBlocked: true,
+		qaRetry: true,
 	});
 	const stamped = ctx.run.outputs.capture as typeof capture;
 	(
@@ -1398,4 +1420,76 @@ it("uses a reported open criterion failure without generating a duplicate, but n
 	expect(rejected.approved).toBe(false);
 	expect(rejected.findings).toHaveLength(1);
 	expect(rejected.findings[0].id).not.toBe("save-failure");
+});
+
+it("routes confirmed failures to correction even when findings have extra references and other QA needs access", async () => {
+	const ctx = qaContext();
+	const capture = qaExecution("failed");
+	capture.findings.push({
+		id: "pointer-defect",
+		rating: 2,
+		status: "open",
+		summary: "Pointer clear fails",
+		evidence: "Click left the value unchanged",
+		storyId: "save",
+		criterionId: "saved",
+		requirementRefs: ["requirements/0", "saved"],
+		reproduction: ["Click clear"],
+		expected: "Cleared",
+		actual: "Unchanged",
+	});
+	const second = structuredClone(capture.results[0]);
+	second.storyId = "device";
+	second.outcome = "blocked";
+	second.criteria[0].criterionId = "delivered";
+	second.criteria[0].outcome = "blocked";
+	second.criteria[0].evidence = [];
+	second.criteria[0].blockedReason = "Physical device unavailable";
+	const scope = ctx.run.outputs["visual-scope"] as ReturnType<typeof qaScope>;
+	scope.stories.push({
+		...scope.stories[0],
+		id: "device",
+		criteria: [{ id: "delivered", expected: "Record is persisted" }],
+	});
+	capture.results.push(second);
+	stampQa(ctx, capture);
+	const gate = await qaTools().tool(ctx);
+	expect(gate).toMatchObject({
+		approved: false,
+		findings: [expect.objectContaining({ id: "pointer-defect" })],
+	});
+	expect(gate).not.toHaveProperty("qaBlocked");
+});
+
+it.each([
+	"head",
+	"old",
+])("recovers live handoff blockers and stale CI revisions through the configured fixer (saved head %s)", async (savedHead) => {
+	const ctx = context();
+	ctx.run.outputs.ci = {
+		headSha: savedHead,
+		reviewReady: false,
+		approved: false,
+	};
+	ctx.step.branches = [{ when: { path: "fix", equals: true }, next: "ci-fix" }];
+	const tools = new FactoryTools({
+		postComment: vi.fn(),
+		command: async (_ctx, exe, args) => {
+			if (exe === "git") return args[0] === "status" ? "" : "head";
+			if (args.includes("graphql"))
+				return JSON.stringify(providerReceipt({ mergeable: "CONFLICTING" }));
+			if (args.includes("--slurp")) return "[[]]";
+			return JSON.stringify({
+				headRefOid: "head",
+				state: "OPEN",
+				isDraft: true,
+			});
+		},
+	});
+	await expect(tools.tool(ctx)).resolves.toMatchObject({
+		fix: true,
+		blockers: expect.arrayContaining([
+			expect.objectContaining({ kind: "conflicts" }),
+		]),
+	});
 });

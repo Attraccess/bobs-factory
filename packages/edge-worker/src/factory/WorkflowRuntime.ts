@@ -31,6 +31,11 @@ import {
 	upgradeWorkflows,
 } from "./defaultWorkflows.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
+import {
+	normalizeQuestionResult,
+	type QuestionRecommendation,
+	questionNotification,
+} from "./Questions.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
 	isComputeIntensive,
@@ -65,6 +70,8 @@ export interface WorkflowCall {
 	workflowId: string;
 }
 export interface AgentCheckpoint {
+	/** Persisted per-role budget for resuming a silent provider turn. */
+	idleRetries?: number;
 	runner: NonNullable<WorkflowStep["runner"]>;
 	sessionId: string;
 	result?: {
@@ -175,6 +182,8 @@ export interface FactoryRun {
 	history: { step: string; output: unknown; at: string; call?: WorkflowCall }[];
 	answers: { questions: string[]; answer: string; at: string }[];
 	questions: string[];
+	questionRecommendations?: QuestionRecommendation[];
+	questionBatchId?: string;
 	events: RunEvent[];
 	activitySteps?: { at: string; step: string }[];
 	iterationLimit?: { step: string; visits: number; limit: number };
@@ -190,6 +199,7 @@ export interface ExecutionContext {
 	stepKey?: string;
 	capacity?: CapacityOptions;
 	chat?: boolean;
+	chatMessages?: ChatMessage[];
 	progress?: RoleProgress;
 	run: FactoryRun;
 	step: WorkflowStep;
@@ -605,7 +615,7 @@ export class WorkflowRuntime {
 		if (this.controllers.has(run.id))
 			throw new Error("Run is already executing");
 		const controller = new AbortController();
-		if (run.ticketReference && run.status === "waiting") run.status = "running";
+		if (run.status === "waiting") run.status = "running";
 		this.controllers.set(run.id, controller);
 		const execution = this.execute(run, controller, task);
 		this.executions.set(run.id, execution);
@@ -729,10 +739,10 @@ export class WorkflowRuntime {
 						run,
 						key,
 						request.phase === "queued"
-							? "Waiting for machine capacity."
+							? "Waiting for instance capacity."
 							: request.phase === "stopping"
 								? "Stopping execution; capacity remains reserved until it settles."
-								: "Machine capacity admitted execution.",
+								: "Instance capacity admitted execution.",
 					);
 				if (request)
 					run.capacityLeaves[key] = { phase: request.phase, request };
@@ -828,6 +838,7 @@ export class WorkflowRuntime {
 				stepKey: key,
 				capacity: this.capacityOptions(run, key, count),
 				chat: step.chat ?? chat,
+				chatMessages: structuredClone(this.chatMessages(run.id)),
 				input,
 				outputs,
 				signal,
@@ -979,6 +990,25 @@ export class WorkflowRuntime {
 				state.phase = "result";
 				this.save(run);
 			}
+			// Restored waits must use current gate logic, retaining all role evidence.
+			if (
+				step.tool === "visual-gate" &&
+				state.phase === "waiting" &&
+				step.qaContract
+			) {
+				output = outputs[step.id] = await this.hooks.tool(context);
+				// Keep the restored wait until its questions and suggestions are compared
+				// below. Gate revalidation alone does not create a new question batch.
+				this.save(run);
+			}
+			if (
+				step.tool === "visual-gate" &&
+				Array.isArray(readPath(output, "findings")) &&
+				(readPath(output, "findings") as unknown[]).length
+			) {
+				run.status = "running";
+				run.questions = [];
+			}
 			if (
 				step.tool === "draft-pr" ||
 				step.tool === "handoff" ||
@@ -1036,7 +1066,12 @@ export class WorkflowRuntime {
 			if (
 				step.tool === "visual-gate" &&
 				(readPath(output, "captureBlocked") === true ||
-					readPath(output, "qaBlocked") === true)
+					readPath(output, "qaBlocked") === true ||
+					readPath(output, "qaRetry") === true) &&
+				!(
+					Array.isArray(readPath(output, "findings")) &&
+					(readPath(output, "findings") as unknown[]).length
+				)
 			) {
 				// Existing runs keep their frozen graph. Recover inside that graph rather
 				// than replacing its recipe or rerunning implementation/code fixes.
@@ -1057,6 +1092,18 @@ export class WorkflowRuntime {
 					throw new Error(
 						"QA or visual evidence is incomplete and this recipe has no capture → visual-review → visual-gate recovery path. Configure that path for a new run; missing evidence cannot be approved.",
 					);
+				if (readPath(output, "qaRetry") === true) {
+					checkpoint.current = capture.id;
+					checkpoint.active = undefined;
+					run.questions = [];
+					run.status = "running";
+					this.log(
+						run,
+						key,
+						`Retrying invalid QA evidence: ${JSON.stringify(readPath(output, "evidenceIssues"))}`,
+					);
+					continue;
+				}
 				const questions = readPath(output, "questions");
 				if (
 					!Array.isArray(questions) ||
@@ -1065,7 +1112,15 @@ export class WorkflowRuntime {
 				)
 					throw new Error("QA/capture assistance requires a question");
 				if (state.phase !== "answered")
-					await this.waitForAnswers(run, questions, signal, state);
+					await this.waitForAnswers(
+						run,
+						questions,
+						signal,
+						state,
+						normalizeQuestionResult(output).questionRecommendations as
+							| QuestionRecommendation[]
+							| undefined,
+					);
 				checkpoint.current = capture.id;
 				checkpoint.active = undefined;
 				this.log(
@@ -1075,7 +1130,58 @@ export class WorkflowRuntime {
 				);
 				continue;
 			}
-			if (step.askQuestions) {
+			if (
+				step.tool === "review-after-fix" &&
+				Array.isArray(readPath(output, "questions")) &&
+				(readPath(output, "questions") as unknown[]).length
+			) {
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
+				if (!steps.some((item) => item.id === "ci-fix"))
+					throw new Error("CI assistance has no configured fixer");
+				if (state.phase !== "answered")
+					await this.waitForAnswers(
+						run,
+						readPath(output, "questions") as string[],
+						signal,
+						state,
+					);
+				checkpoint.current = "ci-fix";
+				checkpoint.active = undefined;
+				continue;
+			}
+			if (
+				["review-gate", "visual-gate"].includes(step.tool ?? "") &&
+				readPath(output, "reviewBlocked") === true
+			) {
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
+				const fixer = this.nextStep(steps, step, output);
+				if (
+					!steps.some(
+						(item) =>
+							item.id === fixer && ["agent", "script"].includes(item.type),
+					)
+				)
+					throw new Error(
+						"Review assistance has no configured fixer recovery path",
+					);
+				if (state.phase !== "answered")
+					await this.waitForAnswers(
+						run,
+						readPath(output, "questions") as string[],
+						signal,
+						state,
+					);
+				checkpoint.current = fixer;
+				checkpoint.active = undefined;
+				continue;
+			}
+			if (
+				step.askQuestions ||
+				(["ci-fix", "code-fix", "visual-fix"].includes(step.id) &&
+					Array.isArray(readPath(output, "questions")))
+			) {
 				const questions = readPath(output, "questions");
 				if (
 					!Array.isArray(questions) ||
@@ -1083,8 +1189,18 @@ export class WorkflowRuntime {
 				)
 					throw new Error("Clarifier must return a questions array");
 				if (questions.length) {
+					if (parallel)
+						throw new Error("Human checkpoints belong outside fanout branches");
 					if (state.phase !== "answered")
-						await this.waitForAnswers(run, questions, signal, state);
+						await this.waitForAnswers(
+							run,
+							questions,
+							signal,
+							state,
+							normalizeQuestionResult(output).questionRecommendations as
+								| QuestionRecommendation[]
+								| undefined,
+						);
 					checkpoint.active = undefined;
 					this.save(run);
 					continue;
@@ -1130,10 +1246,16 @@ export class WorkflowRuntime {
 		questions: string[],
 		signal: AbortSignal,
 		state: NonNullable<GraphCheckpoint["active"]>,
+		recommendations?: QuestionRecommendation[],
 	): Promise<void> {
-		const restored = state.phase === "waiting";
+		const restored =
+			state.phase === "waiting" &&
+			isDeepStrictEqual(run.questions, questions) &&
+			isDeepStrictEqual(run.questionRecommendations, recommendations);
 		state.phase = "waiting";
 		run.questions = questions;
+		run.questionRecommendations = recommendations;
+		if (!restored || !run.questionBatchId) run.questionBatchId = randomUUID();
 		run.status = "waiting";
 		const waiting = new Promise<void>((resolve, reject) =>
 			this.pendingAnswers.set(run.id, { resolve, reject }),
@@ -1148,7 +1270,7 @@ export class WorkflowRuntime {
 			if (run.ticketReference && this.hooks.track)
 				await this.track(run, {
 					key: `questions:${run.step}:${run.answers.length}`,
-					body: `Factory needs assistance:\n\n${questions.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nReply on the ticket or answer in the Factory UI to resume.`,
+					body: `Factory needs assistance:\n\n${questionNotification(questions, run.questionRecommendations)}`,
 				});
 			if (!restored) await this.hooks.question?.(run);
 			signal.throwIfAborted();
@@ -1174,6 +1296,8 @@ export class WorkflowRuntime {
 		state.phase = "waiting";
 		run.status = "waiting";
 		run.questions = [];
+		run.questionRecommendations = undefined;
+		run.questionBatchId = undefined;
 		const waiting = new Promise<void>((resolve, reject) =>
 			this.pendingAnswers.set(run.id, { resolve, reject }),
 		);
@@ -1250,6 +1374,8 @@ export class WorkflowRuntime {
 		};
 		markAnswered(run.checkpoint);
 		run.questions = [];
+		run.questionRecommendations = undefined;
+		run.questionBatchId = undefined;
 		run.status = "running";
 		this.log(run, run.step ?? "clarify", `Human answer: ${answer}`);
 		pending.resolve();
