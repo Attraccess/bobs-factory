@@ -55,7 +55,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Make passkey sign-in the default, fold operator setup away for existing installations, and move key management and sign-out into Settings. Let signed-out Factory users update a cached app after deployment so passkey login can continue. Honor the configured session lifetime when launching Factory, with explicit CLI settings taking precedence and invalid values rejected. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
+- Make passkey sign-in the default, fold operator setup away for existing installations, and move key management and sign-out into Settings. Let signed-out Factory users update a cached app after deployment so passkey login can continue, including from Settings and after signing out there. Honor the configured session lifetime when launching Factory, with explicit CLI settings taking precedence and invalid values rejected. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Preserve pending QA question drafts across restarts when questions and recommendations are unchanged; changed assistance still requires reviewing the new batch. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 

@@ -16,7 +16,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { factoryWebAssets } from "../src/factory/FactoryWebAssets.js";
-import { checkAccess } from "../src/factory/web/auth-state.js";
+import { accessRequired, checkAccess } from "../src/factory/web/auth-state.js";
 import {
 	installApp,
 	pwaState,
@@ -439,6 +439,28 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	expect(snapshot?.drafts["recipe/title-settings"]?.revision).toBe(
 		"old-title-settings",
 	);
+	completeRestoration();
+	expect(saved.values.size).toBe(0);
+});
+it.each([
+	false,
+	true,
+])("preserves the Settings route during updates with signed-out state %s", (signedOut) => {
+	browserState();
+	vi.stubGlobal("location", { hash: "#/settings" });
+	const saved = storage();
+	vi.stubGlobal("sessionStorage", saved);
+	rememberDraft("chat/r", "private draft");
+	if (signedOut) accessRequired("Signed out");
+	preserveForUpdate(build, saved);
+	const snapshot = decodeSnapshot([...saved.values.values()][0]);
+	expect(snapshot?.route).toBe("#/settings");
+	expect(snapshot?.drafts["chat/r"]).toEqual(
+		signedOut ? undefined : { value: "private draft" },
+	);
+	location.hash = "#/";
+	loadRestoration(build, saved);
+	expect(location.hash).toBe("#/settings");
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });
