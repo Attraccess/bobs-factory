@@ -207,7 +207,14 @@ it.each([
 	});
 });
 
-it("exposes runtime feedback and user instructions to a CI fixer with restricted recipe inputs", async () => {
+it.each([
+	{ legacy: false, saved: false },
+	{ legacy: true, saved: false },
+	{ legacy: true, saved: true },
+])("exposes runtime feedback to a restricted-input CI fixer (legacy: $legacy, saved result: $saved)", async ({
+	legacy,
+	saved,
+}) => {
 	const f = await fixture();
 	const quote = "Ignore the custom provider's issue comments.";
 	f.ctx.run.input = quote;
@@ -234,8 +241,24 @@ it("exposes runtime feedback and user instructions to a CI fixer with restricted
 				: JSON.stringify([[comment]]),
 		"https://github.com/test/repo/pull/1",
 	);
-	assessFeedback(f.ctx, readiness);
+	if (legacy) {
+		readiness.blockers.push({
+			kind: "comments",
+			message: "1 PR comment(s) need assessment",
+			action: "fix",
+		});
+		readiness.fix = true;
+	} else assessFeedback(f.ctx, readiness);
 	f.ctx.run.outputs["merge-readiness"] = readiness;
+	if (saved)
+		f.ctx.resumeAgent = {
+			runner: "codex",
+			sessionId: "existing-conversation",
+			result: {
+				output: { reviewRequired: false, addressedCommentIds: ["wrong"] },
+				revision: (await roleProgress(f.ctx)).currentRevision!,
+			},
+		};
 	f.runner.getMessages = () => [
 		{
 			type: "result",
@@ -256,7 +279,13 @@ it("exposes runtime feedback and user instructions to a CI fixer with restricted
 	expect(f.getInput().outputs).toBeUndefined();
 	expect(f.getInput().feedback).toMatchObject({
 		readiness: {
-			unassessedComments: [{ id: "comment", body: "Provider notice" }],
+			unassessedComments: [
+				{
+					id: "comment",
+					body: "Provider notice",
+					bodySha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+				},
+			],
 		},
 		userInstructions: { input: quote },
 	});
@@ -267,6 +296,16 @@ it("exposes runtime feedback and user instructions to a CI fixer with restricted
 			sourceSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
 		},
 	]);
+	if (saved) {
+		expect(f.getInput().outputCorrection.issues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					message: expect.stringContaining("Missing comment IDs: comment"),
+				}),
+			]),
+		);
+		expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	}
 });
 
 it("resumes a rejected completed capture to replace only invalid evidence", async () => {
