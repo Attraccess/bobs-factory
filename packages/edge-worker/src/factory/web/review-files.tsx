@@ -6,6 +6,7 @@ import type { ReviewFile, ReviewFilesManifest } from "../ReviewFiles";
 import { api } from "./client";
 import {
 	areaColor,
+	areaName,
 	chapterColor,
 	type FileTree,
 	fileArea,
@@ -155,7 +156,12 @@ function Tree({
 						<details open>
 							<summary className="folder-row">
 								<strong>{node.name}/</strong>
-								<span>{node.files.length - (node.file ? 1 : 0)} files</span>
+								<span className="count-pill">
+									{node.files.length - (node.file ? 1 : 0)}{" "}
+									{node.files.length - (node.file ? 1 : 0) === 1
+										? "file"
+										: "files"}
+								</span>
 								<span className="folder-counts">
 									<Counts
 										files={node.files.filter((file) => file !== node.file)}
@@ -175,44 +181,17 @@ function Tree({
 		</ul>
 	);
 }
-function DiffBody({ patch }: { patch: string }) {
-	const [split, setSplit] = useState(true),
-		[narrow, setNarrow] = useState(
-			() => matchMedia("(max-width: 650px)").matches,
-		),
-		[limit, setLimit] = useState(500);
-	useEffect(() => {
-		const media = matchMedia("(max-width: 650px)"),
-			change = () => setNarrow(media.matches);
-		media.addEventListener("change", change);
-		return () => media.removeEventListener("change", change);
-	}, []);
+function DiffBody({ patch, split }: { patch: string; split: boolean }) {
+	const [limit, setLimit] = useState(500);
 	const lines = parsePatch(patch),
 		paired = splitPatch(lines),
-		isSplit = split && !narrow,
+		isSplit = split,
 		rows = isSplit ? paired : lines;
 	return (
 		<>
-			<div className="actions diff-mode">
-				{!narrow && (
-					<>
-						<Button
-							variant="secondary"
-							aria-pressed={!split}
-							onClick={() => setSplit(false)}
-						>
-							Unified
-						</Button>
-						<Button
-							variant="secondary"
-							aria-pressed={split}
-							onClick={() => setSplit(true)}
-						>
-							Split
-						</Button>
-					</>
-				)}
-			</div>
+			{!lines.length && (
+				<p role="status">No text hunks. This file has metadata changes only.</p>
+			)}
 			<section
 				className={`diff-body ${isSplit ? "split" : "unified"}`}
 				tabIndex={0}
@@ -287,13 +266,13 @@ function DiffFile({
 	manifest,
 	guideHash,
 	runId,
-	url,
+	split,
 }: {
+	split: boolean;
 	file: ReviewFile;
 	manifest: ReviewFilesManifest;
 	guideHash: string;
 	runId: string;
-	url?: string;
 }) {
 	const query = useQuery({
 		queryKey: ["review-patch", runId, manifest.snapshotId, file.id, guideHash],
@@ -307,8 +286,7 @@ function DiffFile({
 	});
 	return (
 		<>
-			<p className="muted">
-				Reviewed {manifest.baseSha.slice(0, 8)} → {manifest.headSha.slice(0, 8)}
+			<p className="muted diff-metadata">
 				{file.oldPath && <> · Renamed from {file.oldPath}</>}
 				{file.oldMode !== file.newMode && (
 					<>
@@ -328,16 +306,13 @@ function DiffFile({
 					</Button>
 				</div>
 			) : query.data?.patch ? (
-				<DiffBody patch={query.data.patch} />
+				<DiffBody patch={query.data.patch} split={split} />
 			) : (
 				<p role="status">
 					{query.data?.reason ??
 						"No text changes. This file has metadata changes only."}
 				</p>
 			)}
-			<FileLink path={file.path} url={url}>
-				Open PR file
-			</FileLink>
 		</>
 	);
 }
@@ -346,12 +321,24 @@ export function ChangedFiles({
 	chapters,
 	run,
 	onChapter,
+	reviewed = {},
 }: {
+	reviewed?: Record<string, boolean>;
 	query: ReturnType<typeof useReviewFiles>;
 	chapters: GuideChapter[];
 	run: any;
 	onChapter: (i: number) => void;
 }) {
+	const [split, setSplit] = useState(true),
+		[narrow, setNarrow] = useState(
+			() => matchMedia("(max-width: 650px)").matches,
+		);
+	useEffect(() => {
+		const media = matchMedia("(max-width: 650px)"),
+			change = () => setNarrow(media.matches);
+		media.addEventListener("change", change);
+		return () => media.removeEventListener("change", change);
+	}, []);
 	const [viewer, setViewer] = useState<{
 			files: ReviewFile[];
 			index: number;
@@ -401,11 +388,16 @@ export function ChangedFiles({
 				}
 			>
 				<summary>
-					<span className="step-badge">{owner < 0 ? "!" : owner + 1}</span>
+					<span className="step-badge">
+						{owner < 0 ? "!" : reviewed[chapter!.id] ? "✓" : owner + 1}
+					</span>
 					<span className="group-title">
 						<strong>{chapter?.title ?? "Not explained by any step"}</strong>
 						<span>
-							{files.length} files · <Counts files={files} />
+							<span className="count-pill">
+								{files.length} {files.length === 1 ? "file" : "files"}
+							</span>{" "}
+							· <Counts files={files} />
 							{exclusive.length > 0 && (
 								<span className="exclusive">
 									{" "}
@@ -418,7 +410,7 @@ export function ChangedFiles({
 					<span
 						role="img"
 						className="area-bar"
-						aria-label={`Areas: ${areas.join(", ")}`}
+						aria-label={`Areas: ${areas.map(areaName).join(", ")}`}
 					>
 						{areas.map((area) => (
 							<i
@@ -436,6 +428,11 @@ export function ChangedFiles({
 						{areas.map((area) => (
 							<span
 								className={`chip ${exclusive.includes(area) ? "exclusive-area" : ""}`}
+								aria-description={
+									exclusive.includes(area)
+										? "No other step touches this area."
+										: undefined
+								}
 								key={area}
 								title={
 									exclusive.includes(area)
@@ -448,7 +445,8 @@ export function ChangedFiles({
 									aria-hidden="true"
 									style={{ background: areaColor(area) }}
 								/>
-								{area} · {files.filter((f) => fileArea(f.path) === area).length}
+								{areaName(area)} ·{" "}
+								{files.filter((f) => fileArea(f.path) === area).length}
 								{exclusive.includes(area) && (
 									<span
 										className="exclusive"
@@ -502,7 +500,9 @@ export function ChangedFiles({
 	return (
 		<>
 			<div className="guide-facts">
-				<span className="chip">{totals.files} files</span>
+				<span className="chip">
+					{totals.files} {totals.files === 1 ? "file" : "files"}
+				</span>
 				<span className="chip">
 					<Counts files={manifest.files} />
 				</span>
@@ -522,22 +522,50 @@ export function ChangedFiles({
 				}}
 				className="diff-viewer"
 				title={
-					<>
-						{file?.status} · {file?.path} {file && <Counts files={[file]} />}
-					</>
+					file && (
+						<>
+							<span
+								role="img"
+								className={`file-status status-${file.status}`}
+								aria-label={`File status ${file.status}`}
+							>
+								{file.status}
+							</span>{" "}
+							<span className="diff-path">
+								<span className="muted">
+									{file.path.slice(0, file.path.lastIndexOf("/") + 1)}
+								</span>
+								<strong>
+									{file.path.slice(file.path.lastIndexOf("/") + 1)}
+								</strong>
+							</span>{" "}
+							<Counts files={[file]} />
+						</>
+					)
 				}
-				description="Exact reviewed revision · Esc to close"
-				onKeyDown={(e: React.KeyboardEvent) => {
-					if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-						e.preventDefault();
-						e.stopPropagation();
-						move(e.key === "ArrowLeft" ? -1 : 1);
-					}
-				}}
-			>
-				{viewer && file && (
-					<>
-						<div className="actions">
+				description={`Reviewed ${manifest.baseSha.slice(0, 8)} → ${manifest.headSha.slice(0, 8)} · Esc to close`}
+				headerControls={
+					viewer &&
+					file && (
+						<div className="diff-toolbar">
+							{!narrow && (
+								<fieldset className="diff-mode" aria-label="Diff format">
+									<Button
+										variant="secondary"
+										aria-pressed={!split}
+										onClick={() => setSplit(false)}
+									>
+										Unified
+									</Button>
+									<Button
+										variant="secondary"
+										aria-pressed={split}
+										onClick={() => setSplit(true)}
+									>
+										Split
+									</Button>
+								</fieldset>
+							)}
 							<Button
 								variant="secondary"
 								aria-label="Previous file"
@@ -547,7 +575,7 @@ export function ChangedFiles({
 								←
 							</Button>
 							<span>
-								{viewer.index + 1} / {viewer.files.length}
+								{viewer.index + 1}/{viewer.files.length}
 							</span>
 							<Button
 								variant="secondary"
@@ -561,15 +589,25 @@ export function ChangedFiles({
 								PR file
 							</FileLink>
 						</div>
-						<DiffFile
-							key={`${manifest.snapshotId}/${file.id}`}
-							file={file}
-							manifest={manifest}
-							guideHash={query.data!.guideHash}
-							runId={run.id}
-							url={url}
-						/>
-					</>
+					)
+				}
+				onKeyDown={(e: React.KeyboardEvent) => {
+					if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+						e.preventDefault();
+						e.stopPropagation();
+						move(e.key === "ArrowLeft" ? -1 : 1);
+					}
+				}}
+			>
+				{viewer && file && (
+					<DiffFile
+						key={`${manifest.snapshotId}/${file.id}`}
+						file={file}
+						manifest={manifest}
+						guideHash={query.data!.guideHash}
+						runId={run.id}
+						split={split && !narrow}
+					/>
 				)}
 			</Modal>
 		</>

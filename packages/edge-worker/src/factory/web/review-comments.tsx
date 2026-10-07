@@ -315,7 +315,8 @@ export function CollectedFeedback({
 	const controller = useReviewFeedback();
 	if (!controller) return null;
 	const { draft, update, busy } = controller,
-		items = orderedComments(draft, true);
+		items = orderedComments(draft, true),
+		count = items.filter((i) => i.text.trim()).length;
 	return (
 		<details
 			className="collected-feedback"
@@ -327,8 +328,7 @@ export function CollectedFeedback({
 			}}
 		>
 			<summary>
-				Collected feedback · {items.filter((i) => i.text.trim()).length} item{" "}
-				{items.length === 1 ? "comment" : "comments"}
+				Collected feedback · {count} {count === 1 ? "comment" : "comments"}
 				{draft.feedback.trim() ? " + additional feedback" : ""}
 			</summary>
 			<p className="muted">

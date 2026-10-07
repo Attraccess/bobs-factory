@@ -1,6 +1,8 @@
 import { expect, it } from "vitest";
 import type { ReviewFile } from "../src/factory/ReviewFiles.js";
 import {
+	areaColor,
+	areaName,
 	fileArea,
 	fileTotals,
 	fileTree,
@@ -10,6 +12,7 @@ import {
 	pageTokens,
 	parsePatch,
 	resolvePage,
+	screenshotDevice,
 	splitPatch,
 	treeFiles,
 } from "../src/factory/web/review-model.js";
@@ -93,7 +96,7 @@ it("preserves empty lines, hunk numbers and no-final-newline markers and pairs u
 	const lines = parsePatch(
 		"diff --git a/x b/x\n@@ -2,3 +2,4 @@\n context\n-old\n+new\n+\n+more\n\\ No newline at end of file\n",
 	);
-	expect(lines.slice(2)).toEqual([
+	expect(lines.slice(1)).toEqual([
 		{ kind: "context", text: "context", old: 2, next: 2 },
 		{ kind: "remove", text: "old", old: 3 },
 		{ kind: "add", text: "new", next: 3 },
@@ -102,11 +105,11 @@ it("preserves empty lines, hunk numbers and no-final-newline markers and pairs u
 		{ kind: "meta", text: "\\ No newline at end of file" },
 	]);
 	const rows = splitPatch(lines);
-	expect(rows[3]).toMatchObject({
+	expect(rows[2]).toMatchObject({
 		left: { text: "old", old: 3 },
 		right: { text: "new", next: 3 },
 	});
-	expect(rows[4]).toMatchObject({
+	expect(rows[3]).toMatchObject({
 		left: undefined,
 		right: { text: "", next: 4 },
 	});
@@ -173,4 +176,73 @@ it("pairs a replacement across no-final-newline markers without losing either no
 			},
 		},
 	]);
+});
+
+it("keeps nested plugins and individual libraries distinct with unique chapter ownership", () => {
+	const files = [
+		file("apps/plugins/wago/src/a.ts"),
+		file("apps/plugins/shelly/src/b.ts"),
+		file("libs/shared/a.ts"),
+		file("libs/plugins-backend/a.ts"),
+	];
+	const grouped = groupReviewFiles(files, [
+		{ files: [files[0]!.path, files[2]!.path, files[2]!.path] },
+		{ files: [files[1]!.path, files[3]!.path, files[0]!.path] },
+	]);
+	expect(files.map((f) => fileArea(f.path))).toEqual([
+		"apps/plugins/wago",
+		"apps/plugins/shelly",
+		"libs/shared",
+		"libs/plugins-backend",
+	]);
+	expect(files.map((f) => areaName(fileArea(f.path)))).toEqual([
+		"Plugin · wago",
+		"Plugin · shelly",
+		"Shared lib",
+		"SDK · plugins-backend",
+	]);
+	expect(grouped.areaOwners.get("libs/shared")).toEqual(new Set([0]));
+	expect(grouped.areaOwners.get("apps/plugins/wago")).toEqual(new Set([0, 1]));
+	expect(areaColor("libs/shared")).toMatch(/^var\(--area-/);
+	expect(areaColor("libs/shared")).toBe(areaColor(fileArea(files[2]!.path)));
+});
+it("filters patch preamble but preserves hunk numbers and in-hunk metadata", () => {
+	expect(
+		parsePatch(
+			"diff --git a/x b/x\nindex 1..2\n--- a/x\n+++ b/x\n@@ -8 +9 @@\n-old\n+new\n\\ No newline at end of file\n",
+		),
+	).toEqual([
+		{ kind: "hunk", text: "@@ -8 +9 @@" },
+		{ kind: "remove", text: "old", old: 8 },
+		{ kind: "add", text: "new", next: 9 },
+		{ kind: "meta", text: "\\ No newline at end of file" },
+	]);
+	expect(parsePatch("old mode 100644\nnew mode 100755\n")).toEqual([]);
+});
+it("uses accepted screenshot context with an honest historical fallback", () => {
+	expect(
+		screenshotDevice({ device: "Email" }, { context: "390x844 mobile" }),
+	).toBe("Email");
+	expect(screenshotDevice({}, { context: "480×480 reader" })).toBe(
+		"Reader · 480×480",
+	);
+	expect(screenshotDevice({}, { context: "desktop 1280x1000" })).toBe(
+		"Desktop · 1280×1000",
+	);
+	expect(
+		screenshotDevice(
+			{},
+			{ state: "success", caption: "Mobile 390x844 receipt" },
+		),
+	).toBe("Mobile · 390×844");
+	expect(
+		screenshotDevice(
+			{},
+			{ state: "desktop", caption: "Desktop and mobile evidence" },
+		),
+	).toBe("Desktop");
+	expect(screenshotDevice({}, { caption: "Desktop and mobile evidence" })).toBe(
+		"Device not recorded",
+	);
+	expect(screenshotDevice({})).toBe("Device not recorded");
 });
