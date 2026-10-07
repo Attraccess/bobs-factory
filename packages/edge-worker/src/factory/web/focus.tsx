@@ -30,7 +30,12 @@ import {
 	useFeedbackController,
 	useReviewFeedback,
 } from "./review-comments";
-import { feedbackKey, hasFeedback, serializeFeedback } from "./review-feedback";
+import {
+	emptyFeedback,
+	feedbackKey,
+	hasFeedback,
+	serializeFeedback,
+} from "./review-feedback";
 import { guideMatchesGate, reviewRevision, signature } from "./review-state";
 import { Bob, Button, ConfirmStop, External, Markdown, useToast } from "./ui";
 export const labels: Record<string, string> = {
@@ -587,7 +592,10 @@ function ReviewDecisions({
 							<Button
 								variant="ghost"
 								disabled={busy}
-								onClick={() => setFeedbackOpen(false)}
+								onClick={() => {
+									update(emptyFeedback);
+									setValidationError("");
+								}}
 							>
 								Cancel
 							</Button>
