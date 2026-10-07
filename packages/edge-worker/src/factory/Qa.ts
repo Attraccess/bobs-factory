@@ -145,6 +145,7 @@ export type QaExecution = z.infer<typeof QaExecutionSchema>;
 
 export function qaCoverage(scope: QaScope, capture: QaExecution) {
 	const blocked: string[] = [],
+		errors: string[] = [],
 		failed: z.infer<typeof QaFindingSchema>[] = [];
 	const knownStories = new Set(scope.stories.map((s) => s.id));
 	if (
@@ -152,7 +153,7 @@ export function qaCoverage(scope: QaScope, capture: QaExecution) {
 		new Set(capture.results.map((r) => r.storyId)).size !==
 			capture.results.length
 	)
-		blocked.push(
+		errors.push(
 			"QA execution contains unknown or duplicate stories. Supply one result per planned story.",
 		);
 	const tasks = new Set(
@@ -163,7 +164,7 @@ export function qaCoverage(scope: QaScope, capture: QaExecution) {
 	for (const story of scope.stories) {
 		const result = capture.results.find((r) => r.storyId === story.id);
 		if (!result) {
-			blocked.push(`${story.id}: no execution result supplied`);
+			errors.push(`${story.id}: no execution result supplied`);
 			continue;
 		}
 		const known = new Set(story.criteria.map((c) => c.id));
@@ -172,19 +173,19 @@ export function qaCoverage(scope: QaScope, capture: QaExecution) {
 			new Set(result.criteria.map((c) => c.criterionId)).size !==
 				result.criteria.length
 		)
-			blocked.push(`${story.id}: unknown or duplicate criterion results`);
+			errors.push(`${story.id}: unknown or duplicate criterion results`);
 		for (const criterion of story.criteria) {
 			const receipt = result.criteria.find(
 				(c) => c.criterionId === criterion.id,
 			);
 			if (!receipt) {
-				blocked.push(
+				errors.push(
 					`${story.id}/${criterion.id}: no execution evidence supplied`,
 				);
 				continue;
 			}
 			if (receipt.expected !== criterion.expected)
-				blocked.push(
+				errors.push(
 					`${story.id}/${criterion.id}: expected outcome differs from the accepted QA scope`,
 				);
 			if (
@@ -194,7 +195,7 @@ export function qaCoverage(scope: QaScope, capture: QaExecution) {
 					),
 				)
 			)
-				blocked.push(
+				errors.push(
 					`${story.id}/${criterion.id}: unknown screenshot evidence reference`,
 				);
 			if (receipt.outcome === "blocked")
@@ -202,7 +203,7 @@ export function qaCoverage(scope: QaScope, capture: QaExecution) {
 					`${story.id}/${criterion.id}: ${receipt.blockedReason ?? receipt.observed}`,
 				);
 			else if (!receipt.evidence.length)
-				blocked.push(
+				errors.push(
 					`${story.id}/${criterion.id}: the check was not executed with evidence`,
 				);
 			if (receipt.outcome === "failed")
@@ -226,7 +227,7 @@ export function qaCoverage(scope: QaScope, capture: QaExecution) {
 				? "blocked"
 				: "passed";
 		if (result.outcome !== expectedOutcome)
-			blocked.push(`${story.id}: story outcome disagrees with its criteria`);
+			errors.push(`${story.id}: story outcome disagrees with its criteria`);
 	}
 	for (const finding of capture.findings) {
 		const story = scope.stories.find((s) => s.id === finding.storyId);
@@ -234,11 +235,11 @@ export function qaCoverage(scope: QaScope, capture: QaExecution) {
 			!story?.criteria.some((c) => c.id === finding.criterionId) ||
 			finding.requirementRefs.some((r) => !story.requirementRefs.includes(r))
 		)
-			blocked.push(
+			errors.push(
 				`${finding.id}: finding references an unknown story, criterion or requirement`,
 			);
 	}
-	return { blocked, failed };
+	return { blocked, errors, failed };
 }
 
 /** References identify the actual accepted record, rather than invented requirements. */
