@@ -1,7 +1,7 @@
 // biome-ignore-all lint/a11y/noNoninteractiveTabindex: scrollable maps need keyboard focus
 import { useEffect, useId, useState } from "react";
 import type { GuideChapter, GuideFlow, GuideSystem } from "../FactoryResults";
-import { LazyImage } from "./media";
+import { LazyImage, LazyVideo, type VideoInventory } from "./media";
 import type { Annotate } from "./review";
 import { useReviewFeedback } from "./review-comments";
 import { mapConnections } from "./review-model";
@@ -610,6 +610,7 @@ export function Screens({
 }
 export function ChapterVisual({
 	chapter,
+	videos = [],
 	annotate,
 	base,
 	system,
@@ -619,6 +620,7 @@ export function ChapterVisual({
 	loading,
 }: {
 	chapter: GuideChapter;
+	videos?: VideoInventory[];
 	annotate?: Annotate;
 	base?: string;
 	system?: GuideSystem;
@@ -638,9 +640,21 @@ export function ChapterVisual({
 			setMode("visual");
 		if (editing?.startsWith(`${base}/flow/`) && logic) setMode("logic");
 	}, [editing, base, visual, logic]);
-	if (!visual && !logic) return null;
+	if (!visual && !logic && !chapter.videos?.length) return null;
 	return (
 		<section className="primary-visual">
+			{(chapter.videos ?? []).map((ref) => {
+				const video = videos.find(
+					(v) => v.taskId === ref.taskId && v.sha256 === ref.sha256,
+				);
+				return video ? (
+					<LazyVideo key={video.sha256} runId={runId} video={video} />
+				) : (
+					<p key={ref.taskId} role="status">
+						Recording unavailable; refresh evidence.
+					</p>
+				);
+			})}
 			{visual && logic && (
 				<div className="actions">
 					<Button
@@ -659,7 +673,7 @@ export function ChapterVisual({
 					</Button>
 				</div>
 			)}
-			{mode === "visual" ? (
+			{visual && mode === "visual" ? (
 				<Screens
 					refs={chapter.screenshots}
 					annotate={annotate}

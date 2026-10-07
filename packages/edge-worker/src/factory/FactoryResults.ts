@@ -139,6 +139,15 @@ export const GuideSchema = z.object({
 				after: text.max(600),
 				requirementIndexes: z.array(z.number().int().nonnegative()).min(1),
 				files: z.array(text),
+				videos: z
+					.array(
+						z.object({
+							taskId: text,
+							sha256: z.string().regex(/^[a-f0-9]{64}$/),
+						}),
+					)
+					.max(3)
+					.optional(),
 				screenshots: z.array(
 					z.object({
 						area: text,
@@ -254,7 +263,10 @@ export function validateFactoryResult(
 	step: string,
 	output: unknown,
 	qaContract?: "qa-v1",
+	videoContract?: "video-v1",
 ): unknown {
+	if (videoContract && ["visual-scope", "capture"].includes(step))
+		z.object({ videoContract: z.literal(videoContract) }).parse(output);
 	switch (step) {
 		case "clarify":
 			return z

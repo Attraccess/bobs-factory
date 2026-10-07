@@ -118,6 +118,9 @@ export interface RunViewState {
 	keptOpen?: boolean;
 	seenAt?: string;
 }
+
+import { cleanupVideoEvidence } from "./Video.js";
+
 export interface FactoryRun {
 	ticketReference?: import("./TicketTracking.js").TicketReference;
 	ticketSync?: import("./TicketTracking.js").TicketSync;
@@ -299,6 +302,7 @@ export class WorkflowRuntime {
 				run.workflow.chat = true;
 			this.runs.set(run.id, run);
 		}
+		cleanupVideoEvidence(join(this.directory, "evidence"), this.runs.values());
 	}
 
 	chatMessages(id: string): ChatMessage[] {

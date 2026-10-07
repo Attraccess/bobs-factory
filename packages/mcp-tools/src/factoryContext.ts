@@ -20,9 +20,16 @@ export function compactFactoryContext(input: unknown): unknown {
 		if (Array.isArray(value)) return value.map(project);
 		return Object.fromEntries(
 			Object.entries(value).map(([key, child]) => {
-				if (key === "dependencyManifests" && child && typeof child === "object")
+				if (
+					(key === "dependencyManifests" ||
+						key === "videoDependencyManifests") &&
+					child &&
+					typeof child === "object"
+				)
 					return [
-						"manifestInventory",
+						key === "videoDependencyManifests"
+							? "videoManifestInventory"
+							: "manifestInventory",
 						{ count: Object.keys(child).length, runtimeOnly: true },
 					];
 				if (key === "dependencyHashes" && child && typeof child === "object") {

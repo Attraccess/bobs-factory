@@ -1,10 +1,16 @@
-import { createHash } from "node:crypto";
+import { qaDigest } from "./EvidenceDigest.js";
+
+export { qaDigest } from "./EvidenceDigest.js";
+
 import { z } from "zod";
+
+import { VideoScopeFields, videoScopeIssues } from "./Video.js";
 
 export const QA_CONTRACT = "qa-v1" as const;
 const text = z.string().min(1);
 const task = z.object({ area: text, state: text });
 export const QaScopeFields = {
+	...VideoScopeFields,
 	qaContract: z.literal(QA_CONTRACT),
 	stories: z.array(
 		z.object({
@@ -28,7 +34,7 @@ export type QaScope = z.infer<typeof QaScopeFieldsSchema> & {
 	areas: { name: string; states: string[] }[];
 };
 export function scopeIssues(scope: QaScope): string[] {
-	const issues: string[] = [];
+	const issues: string[] = videoScopeIssues(scope);
 	const unique = (ids: string[], label: string) => {
 		if (new Set(ids).size !== ids.length)
 			issues.push(`${label} must be unique`);
@@ -136,21 +142,7 @@ export const QaExecutionFields = {
 };
 export const QaExecutionSchema = z.object(QaExecutionFields);
 export type QaExecution = z.infer<typeof QaExecutionSchema>;
-export function qaDigest(value: unknown): string {
-	const canonical = (item: unknown): unknown =>
-		Array.isArray(item)
-			? item.map(canonical)
-			: item && typeof item === "object"
-				? Object.fromEntries(
-						Object.entries(item)
-							.sort(([a], [b]) => a.localeCompare(b))
-							.map(([key, v]) => [key, canonical(v)]),
-					)
-				: item;
-	return createHash("sha256")
-		.update(JSON.stringify(canonical(value)))
-		.digest("hex");
-}
+
 export function qaCoverage(scope: QaScope, capture: QaExecution) {
 	const blocked: string[] = [],
 		failed: z.infer<typeof QaFindingSchema>[] = [];
