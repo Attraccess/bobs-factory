@@ -1473,6 +1473,18 @@ export class WorkflowRuntime {
 		) => {
 			const step = steps.find((item) => item.id === frame.current);
 			if (!step) return;
+			const key = `${prefix}${step.id}`;
+			if (
+				frame.active?.phase === "executing" &&
+				this.isUnstartedCodexAgent(run, frame.active.agent, key)
+			) {
+				delete frame.active.agent;
+				this.log(
+					run,
+					"run",
+					`Removed invalid Codex startup checkpoint for ${key}; retry starts this role with saved context, work and evidence retained.`,
+				);
+			}
 			const limit = step.maxVisits + (frame.additionalVisits?.[step.id] ?? 0);
 			if ((frame.visits[step.id] ?? 0) > limit) {
 				frame.additionalVisits ??= {};
@@ -1504,6 +1516,68 @@ export class WorkflowRuntime {
 		this.log(run, "run", "Retry requested; continuing from saved progress.");
 		void this.launch(run);
 		return run;
+	}
+	private isUnstartedCodexAgent(
+		run: FactoryRun,
+		agent: AgentCheckpoint | undefined,
+		key: string,
+	): boolean {
+		if (!agent || agent.runner !== "codex" || agent.result || agent.rejected)
+			return false;
+		const parse = (text: string) => {
+			try {
+				return JSON.parse(text);
+			} catch {
+				return undefined;
+			}
+		};
+		const failure = parse(
+			run.error?.replace(/^Agent(?: step)? failed: /, "") ?? "",
+		);
+		const missing = `thread/resume failed: no rollout found for thread id ${agent.sessionId}`;
+		const isStartupTimeout = (error: unknown) =>
+			typeof error === "string" &&
+			/^initialize timed out after \d+ms$/.test(error);
+		if (
+			failure?.type !== "result" ||
+			failure.is_error !== true ||
+			failure.session_id !== agent.sessionId ||
+			!Array.isArray(failure.errors) ||
+			!failure.errors.includes(missing)
+		)
+			return false;
+		// Older runners emitted synthetic init IDs even when initialize failed.
+		// Require that exact startup receipt as well as the missing-rollout error;
+		// never discard an established conversation or a saved output/correction.
+		let startupFailed = false;
+		const completedAt =
+			[...run.history].reverse().find((receipt) => receipt.step === key)?.at ??
+			run.createdAt;
+		for (const event of run.events) {
+			if (
+				event.step !== key ||
+				event.source !== "agent" ||
+				event.at < completedAt
+			)
+				continue;
+			const message = parse(event.message);
+			// Truncated activity cannot establish that the conversation never ran.
+			if (!message) return false;
+			if (message?.session_id !== agent.sessionId) continue;
+			if (message.type === "system" && message.subtype === "init") continue;
+			if (
+				message.type !== "result" ||
+				message.is_error !== true ||
+				!Array.isArray(message.errors) ||
+				!message.errors.length ||
+				!message.errors.every(
+					(error: unknown) => isStartupTimeout(error) || error === missing,
+				)
+			)
+				return false;
+			if (message.errors.some(isStartupTimeout)) startupFailed = true;
+		}
+		return startupFailed;
 	}
 	isShuttingDown(): boolean {
 		return this.shuttingDown;
