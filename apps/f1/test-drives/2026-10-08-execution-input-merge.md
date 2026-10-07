@@ -59,6 +59,13 @@ validation resolved the five title cases; all 42 prompt/title/PWA tests passed.
 The initial full run retained 1,515 passes, one skip and six failures; it is not
 claimed as passing. Logs remain in the evidence directory.
 
+The source-mode full worker run then passed 1,520 tests with one existing skip,
+but its feedback test exceeded an existing 100ms wall-clock assertion during
+concurrent compilation. Both feedback tests now use controlled pending child
+promises, proving delivery returns before session completion without depending
+on host scheduling. Their focused rerun passed both tests in 11ms. The broader
+failed receipts remain available; final CI establishes the complete suite result.
+
 The three CI Claude failures reproduced before updating their exact SDK-option
 expectations to include the prepared executable path.
 

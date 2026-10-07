@@ -64,7 +64,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Reconcile execution-profile forms with fresh-input behavior and cover the prepared Claude executable in cross-platform runner tests. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+- Reconcile execution-profile forms with fresh-input behavior, cover the prepared Claude executable in cross-platform runner tests, and check background feedback delivery without a fragile timing limit. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
 - Keep the fixer’s existing conversation when answering assistance questions, including after a restart or a request for a simpler explanation. Process new replies without replaying the previous answer or completed steps. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
