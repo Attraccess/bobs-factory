@@ -16,6 +16,7 @@ import {
 	assessFeedback,
 	inspectMergeReadiness,
 } from "../src/factory/MergeReadiness.js";
+import { questionInstructions } from "../src/factory/Questions.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 import { SessionSemaphore } from "../src/RunnerConcurrency.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
@@ -659,6 +660,35 @@ it("corrects invalid recommendation indices from a custom question-enabled role"
 		]),
 	);
 	expect(f.runner.start).toHaveBeenCalledOnce();
+});
+
+it("gives saved review fixers question guidance even without askQuestions", async () => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "visual-fix",
+		name: "Fix review findings",
+		type: "agent",
+		prompt: "Saved custom fixer prompt",
+		askQuestions: false,
+	};
+	f.ctx.run.step = "pipeline/visual-fix";
+	f.ctx.resumeAgent = { runner: "codex", sessionId: "existing-conversation" };
+	const output = {
+		summary: "Real-agent checks still need a decision.",
+		questions: ["Should I run the remaining tests with real agents?"],
+		dispositions: [],
+	};
+	f.runner.getMessages = () => [
+		{ type: "result", result: JSON.stringify(output) },
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		output,
+	);
+	const instruction = f.worker.buildAgentRunnerConfig.mock.calls[0]![3];
+	expect(instruction).toContain(questionInstructions(f.ctx.run.id));
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	expect(f.ctx.step.prompt).toBe("Saved custom fixer prompt");
+	expect(f.ctx.step.askQuestions).toBe(false);
 });
 
 it("resumes one silent Codex turn in the same conversation and persists the retry budget", async () => {
