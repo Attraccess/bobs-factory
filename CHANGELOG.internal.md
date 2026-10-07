@@ -6,6 +6,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
+- Integrate Web Push with the current question guidance, preserving both changelog entries and the saved review-fix instruction path. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Integrate Web Push with the current Factory base, retaining configured public/trusted proxy access, refinement guidance and both PWA regression suites. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Update the routing prompt test fixture for the accepted Web Push capability description, retaining complete prompt assertions and restoring CI. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 
