@@ -143,6 +143,26 @@ describe("AppServerProcessManager pool", () => {
 		await resumed.release();
 		await manager.closeAll();
 	});
+	it("closes failed initialization and allows the next acquisition to start fresh", async () => {
+		const { clients, factory } = recordingFactory();
+		const manager = new AppServerProcessManager(() => {
+			const client = factory();
+			if (clients.length === 1)
+				vi.spyOn(client, "request").mockRejectedValue(
+					new Error("initialize failed"),
+				);
+			return client;
+		});
+		await expect(manager.acquire(configWithEnv())).rejects.toThrow(
+			"initialize failed",
+		);
+		expect(clients[0]!.closeCalls).toBe(1);
+		const lease = await manager.acquire(configWithEnv());
+		expect(clients).toHaveLength(2);
+		await lease.release();
+		await manager.closeAll();
+	});
+
 	it("shares one process for identical launch configs", async () => {
 		const { clients, factory } = recordingFactory();
 		const manager = new AppServerProcessManager(factory, { idleCloseMs: 0 });

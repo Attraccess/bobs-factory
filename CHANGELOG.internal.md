@@ -10,6 +10,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
+- Cover Codex cancellation during configuration, initialization, thread setup and delayed turn startup; close failed initialization and await shared cleanup. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
 - Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Preserve refinement recommendation metadata when review fixers request assistance, retaining both recovery and question-restart contracts during main integration. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Integrate refinement recommendations with the latest workflow recovery changes, retaining recommendation validation and bounded retry regression coverage. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))

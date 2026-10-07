@@ -117,6 +117,128 @@ describe("AppServerCodexBackend", () => {
 		});
 		await backend.close();
 	});
+	it("cancels a pending initialize without starting a thread", async () => {
+		const { backend, client } = makeBackend();
+		client.responses.initialize = () => new Promise(() => {});
+		const opened = backend
+			.open({ ...baseConfig, codexPath: "/bin/true" })
+			.catch(() => "cancelled");
+		await vi.waitFor(() => expect(client.startCalls).toBe(1));
+		await backend.close();
+		const outcome = await Promise.race([
+			opened,
+			new Promise((resolve) => setTimeout(() => resolve("hung"), 100)),
+		]);
+		expect(outcome).toBe("cancelled");
+		expect(client.closeCalls).toBe(1);
+		expect(client.lastRequest("thread/start")).toBeUndefined();
+	});
+
+	it("cancels only one waiter while a shared process initializes", async () => {
+		const client = new FakeClient();
+		let initialized!: () => void;
+		client.responses.initialize = () =>
+			new Promise((resolve) => {
+				initialized = () => resolve({});
+			});
+		const manager = new AppServerProcessManager(() => client, {
+			idleCloseMs: 0,
+		});
+		const cancelled = new AppServerCodexBackend(manager);
+		const survivor = new AppServerCodexBackend(manager);
+		const config = { ...baseConfig, codexPath: "/bin/true" };
+		const first = cancelled.open(config).catch(() => "cancelled");
+		const second = survivor.open(config);
+		await vi.waitFor(() => expect(client.startCalls).toBe(1));
+		expect(client.lastRequest("thread/start")).toBeUndefined();
+		await cancelled.close();
+		expect(await first).toBe("cancelled");
+		expect(client.closeCalls).toBe(0);
+		initialized();
+		expect(await second).toEqual({ threadId: "thread-1" });
+		expect(
+			client.requests.filter((r) => r.method === "thread/start"),
+		).toHaveLength(1);
+		await survivor.close();
+		expect(client.closeCalls).toBe(1);
+	});
+
+	it.each([
+		"thread/start",
+		"thread/resume",
+	])("cancels a pending %s and ignores its late response", async (method) => {
+		const { backend, client } = makeBackend();
+		let finish!: () => void;
+		client.responses[method] = () =>
+			new Promise((resolve) => {
+				finish = () => resolve({ thread: { id: "late-thread" } });
+			});
+		const event = vi.fn();
+		backend.on("event", event);
+		const opening = backend
+			.open({
+				...baseConfig,
+				codexPath: "/bin/true",
+				...(method === "thread/resume" ? { resumeSessionId: "saved" } : {}),
+			})
+			.catch(() => "cancelled");
+		await vi.waitFor(() => expect(client.lastRequest(method)).toBeDefined());
+		await backend.close();
+		expect(await opening).toBe("cancelled");
+		expect(client.closeCalls).toBe(1);
+		finish();
+		await Promise.resolve();
+		expect(event).not.toHaveBeenCalled();
+		expect(client.lastRequest("turn/start")).toBeUndefined();
+	});
+
+	it("interrupts a late turn/start response without closing another active lease", async () => {
+		const client = new FakeClient();
+		let thread = 0;
+		client.responses["thread/start"] = () => ({
+			thread: { id: `thread-${++thread}` },
+		});
+		let finish!: () => void;
+		client.responses["turn/start"] = (params) =>
+			(params as { threadId: string }).threadId === "thread-1"
+				? new Promise((resolve) => {
+						finish = () => resolve({ turn: { id: "late-turn" } });
+					})
+				: { turn: { id: "surviving-turn" } };
+		const manager = new AppServerProcessManager(() => client, {
+			idleCloseMs: 0,
+		});
+		const cancelled = new AppServerCodexBackend(manager);
+		const survivor = new AppServerCodexBackend(manager);
+		const config = { ...baseConfig, codexPath: "/bin/true" };
+		await cancelled.open(config);
+		await survivor.open(config);
+		const first = cancelled
+			.runTurn([{ type: "text", text: "cancel me" }])
+			.catch(() => "cancelled");
+		const second = survivor.runTurn([{ type: "text", text: "keep running" }]);
+		await vi.waitFor(() => expect(survivor.isTurnActive()).toBe(true));
+		await cancelled.close();
+		expect(await first).toBe("cancelled");
+		expect(client.closeCalls).toBe(0);
+		finish();
+		await vi.waitFor(() =>
+			expect(client.lastRequest("turn/interrupt")?.params).toEqual({
+				threadId: "thread-1",
+				turnId: "late-turn",
+			}),
+		);
+		expect(cancelled.isTurnActive()).toBe(false);
+		expect(survivor.isTurnActive()).toBe(true);
+		client.push("turn/completed", {
+			threadId: "thread-2",
+			turn: { id: "surviving-turn", status: "completed" },
+		});
+		await second;
+		await survivor.close();
+		expect(client.closeCalls).toBe(1);
+	});
+
 	it("declares steering support", () => {
 		const { backend } = makeBackend();
 		expect(backend.supportsSteer).toBe(true);

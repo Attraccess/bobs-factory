@@ -53,6 +53,7 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 	private sessionInfo: CodexSessionInfo | null = null;
 	private backend: CodexBackend | null = null;
 	private wasStopped = false;
+	private cleanupPromise: Promise<void> | null = null;
 	/** Set once the turn reaches a terminal state; gates {@link isStreaming}. */
 	private turnFinished = false;
 	/**
@@ -115,7 +116,10 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		// startup gap before the turn is active — so callers stream follow-ups in
 		// (buffered if needed) rather than deferring them.
 		return (
-			this.supportsStreamingInput && this.isRunning() && !this.turnFinished
+			this.supportsStreamingInput &&
+			this.isRunning() &&
+			!this.turnFinished &&
+			!this.wasStopped
 		);
 	}
 
@@ -164,17 +168,18 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		this.backend = backend;
 		backend.on("event", (event) => this.handleBackendEvent(event));
 
-		const resolved = await new CodexConfigBuilder(this.config).build();
-		this.skillStager.stage();
-
-		const input: CodexUserInput[] = prompt?.trim()
-			? [{ type: "text", text: prompt.trim() }]
-			: [];
-
 		let caughtError: unknown;
 		try {
+			const resolved = await new CodexConfigBuilder(this.config).build();
+			if (this.wasStopped) return this.sessionInfo;
+			this.skillStager.stage();
+
+			const input: CodexUserInput[] = prompt?.trim()
+				? [{ type: "text", text: prompt.trim() }]
+				: [];
+
 			await backend.open(resolved);
-			await backend.runTurn(input);
+			if (!this.wasStopped) await backend.runTurn(input);
 		} catch (error) {
 			caughtError = error;
 		} finally {
@@ -256,11 +261,24 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	private async cleanupRuntimeState(): Promise<void> {
+		if (this.cleanupPromise) {
+			await this.cleanupPromise;
+			return;
+		}
 		const backend = this.backend;
 		this.backend = null;
-		if (backend) {
-			await backend.close();
+		const cleanup = (async () => {
+			try {
+				await backend?.close();
+			} finally {
+				this.skillStager.cleanup();
+			}
+		})();
+		this.cleanupPromise = cleanup;
+		try {
+			await cleanup;
+		} finally {
+			this.cleanupPromise = null;
 		}
-		this.skillStager.cleanup();
 	}
 }

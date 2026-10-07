@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import type { CodexConfigOverrides } from "../types.js";
+import { waitWithAbort } from "./abort.js";
 import type { AppServerClientFactory } from "./appServerClient.js";
 import {
 	type AppServerNotification,
@@ -39,6 +40,8 @@ export class AppServerCodexBackend
 	readonly supportsSteer = true;
 
 	private appServer: AppServerProcessLease | null = null;
+	private readonly cancellation = new AbortController();
+	private closePromise: Promise<void> | null = null;
 	private threadId: string | null = null;
 	private activeTurnId: string | null = null;
 	private turnActive = false;
@@ -95,13 +98,20 @@ export class AppServerCodexBackend
 
 	async open(config: ResolvedCodexConfig): Promise<{ threadId: string }> {
 		this.outputSchema = config.outputSchema;
-		const appServer = await this.processManager.acquire(config);
+		const signal = this.cancellation.signal;
+		signal.throwIfAborted();
+		const appServer = await this.processManager.acquire(config, signal);
 		this.appServer = appServer;
 
 		try {
-			const threadId = config.resumeSessionId
-				? await this.resumeThread(config)
-				: await this.startThread(config);
+			signal.throwIfAborted();
+			const threadId = await waitWithAbort(
+				config.resumeSessionId
+					? this.resumeThread(config)
+					: this.startThread(config),
+				signal,
+			);
+			signal.throwIfAborted();
 
 			this.threadId = threadId;
 			appServer.registerThread(threadId, this.threadHandler);
@@ -125,30 +135,37 @@ export class AppServerCodexBackend
 		this.turnActive = true;
 		this.armIdleWatchdog();
 
+		const appServer = this.appServer;
+		const threadId = this.threadId;
+		const signal = this.cancellation.signal;
+		const started = appServer.request<TurnStartResult>("turn/start", {
+			threadId: this.threadId,
+			input: this.toProtocolInput(input),
+			...(this.outputSchema !== undefined
+				? { outputSchema: this.outputSchema }
+				: {}),
+		});
+		const request = started.then((result) => {
+			const turnId = result?.turn?.id;
+			if (signal.aborted) {
+				// The process may still serve another lease. Interrupt a turn whose
+				// start response arrived after this backend was closed.
+				if (turnId)
+					void appServer
+						.request("turn/interrupt", { threadId, turnId })
+						.catch(() => undefined);
+				return;
+			}
+			if (this.turnActive) this.activeTurnId = turnId ?? this.activeTurnId;
+		});
 		try {
-			const result = await this.appServer.request<TurnStartResult>(
-				"turn/start",
-				{
-					threadId: this.threadId,
-					input: this.toProtocolInput(input),
-					...(this.outputSchema !== undefined
-						? { outputSchema: this.outputSchema }
-						: {}),
-				},
-			);
-			this.activeTurnId = result?.turn?.id ?? this.activeTurnId;
-			// NOTE: the turn is not steerable the instant turn/start returns — the
-			// server only accepts turn/steer once it has emitted the `turn/started`
-			// notification. The runner is signalled to flush buffered follow-ups
-			// from that notification handler, not here.
+			// Observe both promises immediately: close can settle the turn while
+			// turn/start is still pending on a shared connection.
+			await Promise.all([waitWithAbort(request, signal), turnPromise]);
 		} catch (error) {
-			this.turnActive = false;
-			this.turnResolve = null;
-			this.turnReject = null;
+			this.settleTurn();
 			throw error;
 		}
-
-		await turnPromise;
 	}
 
 	async steer(input: CodexUserInput[]): Promise<void> {
@@ -187,6 +204,12 @@ export class AppServerCodexBackend
 	}
 
 	async close(): Promise<void> {
+		this.cancellation.abort(new Error("app-server backend closed"));
+		if (!this.closePromise) this.closePromise = this.releaseProcess();
+		await this.closePromise;
+	}
+
+	private async releaseProcess(): Promise<void> {
 		const appServer = this.appServer;
 		const threadId = this.threadId;
 		const turnId = this.activeTurnId;

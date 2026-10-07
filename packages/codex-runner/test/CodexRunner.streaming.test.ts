@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import type { CodexBackend, CodexUserInput } from "../src/backend/types.js";
 import { CodexRunner } from "../src/CodexRunner.js";
+import { CodexConfigBuilder } from "../src/config/CodexConfigBuilder.js";
 
 /** Minimal fake backend for exercising runner-level streaming wiring. */
 class FakeBackend extends EventEmitter implements CodexBackend {
@@ -117,5 +118,48 @@ describe("CodexRunner streaming input selection", () => {
 		expect(() => runner.addStreamMessage("too late")).toThrow(
 			/no active codex turn/i,
 		);
+	});
+});
+
+describe("CodexRunner startup cancellation", () => {
+	it("does not open or run a backend after Stop during configuration", async () => {
+		const runner = new CodexRunner({
+			workingDirectory: "/tmp",
+			factoryHome: "/tmp",
+		});
+		const backend = new FakeBackend({ supportsSteer: true, active: false });
+		vi.spyOn(
+			runner as unknown as { createBackend(): CodexBackend },
+			"createBackend",
+		).mockReturnValue(backend);
+		const resolved = await new CodexConfigBuilder({
+			workingDirectory: "/tmp",
+			factoryHome: "/tmp",
+		}).build();
+		let finishBuild!: () => void;
+		const build = vi
+			.spyOn(CodexConfigBuilder.prototype, "build")
+			.mockImplementation(
+				() =>
+					new Promise((resolve) => {
+						finishBuild = () => resolve(resolved);
+					}),
+			);
+		const open = vi.spyOn(backend, "open");
+		const runTurn = vi.spyOn(backend, "runTurn");
+		const complete = vi.fn();
+		runner.on("complete", complete);
+		try {
+			const started = runner.start("hold");
+			runner.stop();
+			finishBuild();
+			await started;
+			expect(open).not.toHaveBeenCalled();
+			expect(runTurn).not.toHaveBeenCalled();
+			expect(runner.isRunning()).toBe(false);
+			expect(complete).toHaveBeenCalledTimes(1);
+		} finally {
+			build.mockRestore();
+		}
 	});
 });
