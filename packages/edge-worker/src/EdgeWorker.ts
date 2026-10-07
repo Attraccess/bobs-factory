@@ -376,7 +376,7 @@ export class EdgeWorker extends EventEmitter {
 	// Extracted service modules
 	private attachmentService: AttachmentService;
 	private runnerSelectionService: RunnerSelectionService;
-	/** Global cap on concurrently executing runner sessions (see maxConcurrentSessions). */
+	/** Instance cap on concurrently executing runner sessions (see maxConcurrentSessions). */
 	private runnerSlots: MachineCapacity;
 	private toolPermissionResolver: ToolPermissionResolver;
 	private mcpConfigService: McpConfigService;
@@ -712,7 +712,10 @@ export class EdgeWorker extends EventEmitter {
 			this.config.linearWorkspaces || {},
 		);
 		this.runnerSelectionService = new RunnerSelectionService(this.config);
-		this.runnerSlots = new MachineCapacity(this.config.maxConcurrentSessions);
+		this.runnerSlots = new MachineCapacity(
+			this.config.maxConcurrentSessions,
+			join(this.cyrusHome, "machine-capacity"),
+		);
 		this.toolPermissionResolver = new ToolPermissionResolver(
 			this.config,
 			this.logger,
@@ -6771,7 +6774,7 @@ ${taskSection}`;
 	 * Instantiate the appropriate runner for the given type.
 	 *
 	 * Every runner is wrapped so its `start()`/`startStreaming()` hold a
-	 * global concurrency slot for the session's lifetime — this is the single
+	 * instance concurrency slot for the session's lifetime — this is the single
 	 * choke point that makes `maxConcurrentSessions` cover Linear, GitHub,
 	 * GitLab, and chat sessions alike.
 	 */
@@ -7065,9 +7068,7 @@ ${taskSection}`;
 					);
 				},
 				createRunner: (snapshot, config) =>
-					snapshot.settings.runner === "claude"
-						? new ClaudeRunner(this.managedRunnerConfig(config), false)
-						: this.buildRunnerForType(snapshot.settings.runner, config),
+					this.buildRunnerForType(snapshot.settings.runner, config, true),
 			},
 		);
 		this.titleGenerator.start(id, job);
@@ -7438,6 +7439,21 @@ ${taskSection}`;
 					}
 					return output;
 				} catch (error) {
+					context.signal.throwIfAborted();
+					if (
+						error instanceof Error &&
+						/^Agent step failed:.*codex app-server produced no activity for \d+ms/.test(
+							error.message,
+						) &&
+						context.resumeAgent?.runner === "codex" &&
+						(context.resumeAgent.idleRetries ?? 0) < 1
+					) {
+						context.checkpointAgent({ ...context.resumeAgent, idleRetries: 1 });
+						context.log(
+							"Codex turn went silent; resuming the saved conversation once. Completed role work and checkpoints are retained.",
+						);
+						continue;
+					}
 					const capture = error instanceof CaptureReuseError;
 					if (!(error instanceof OutputValidationError) && !capture)
 						throw error;
@@ -7584,6 +7600,7 @@ ${taskSection}`;
 				agentCheckpoint = {
 					runner: runnerType,
 					sessionId: message.session_id,
+					idleRetries: context.resumeAgent?.idleRetries,
 					...(context.resumeAgent?.result
 						? { result: context.resumeAgent.result }
 						: {}),
@@ -7617,9 +7634,7 @@ ${taskSection}`;
 				"factory-context": factoryContext.config,
 			};
 			const runner = capRunnerStarts(
-				runnerType === "claude"
-					? new ClaudeRunner(this.managedRunnerConfig(built.config), false)
-					: this.buildRunnerForType(runnerType, built.config),
+				this.buildRunnerForType(runnerType, built.config, true),
 				this.runnerSlots,
 				context.signal,
 				{ ...context.capacity, remote: runnerType === "cursor" },
@@ -7677,6 +7692,7 @@ ${taskSection}`;
 					context.checkpointAgent?.({
 						runner: agentCheckpoint.runner,
 						sessionId: agentCheckpoint.sessionId,
+						idleRetries: context.resumeAgent?.idleRetries,
 						...(context.resumeAgent?.rejected
 							? { rejected: context.resumeAgent.rejected }
 							: {}),
@@ -8661,16 +8677,23 @@ ${taskSection}`;
 	private buildRunnerForType(
 		runnerType: RunnerType,
 		config: AgentRunnerConfig,
+		coldClaude = false,
 	): IAgentRunner {
 		config = this.managedRunnerConfig(config);
+		if (this.config.handlers?.createAgentRunner)
+			return this.config.handlers.createAgentRunner(runnerType, config);
 		switch (runnerType) {
 			case "claude": {
 				// Inject the hosted SessionStore at the last moment so it only
 				// attaches to Claude runners (the field is Claude-specific).
-				const claudeConfig = this.claudeSessionStore
-					? { ...config, sessionStore: this.claudeSessionStore }
-					: config;
-				return new ClaudeRunner(claudeConfig, this.isWarmSessionsEnabled());
+				const claudeConfig =
+					!coldClaude && this.claudeSessionStore
+						? { ...config, sessionStore: this.claudeSessionStore }
+						: config;
+				return new ClaudeRunner(
+					claudeConfig,
+					coldClaude ? false : this.isWarmSessionsEnabled(),
+				);
 			}
 			case "gemini":
 				return new GeminiRunner(config);

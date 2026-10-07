@@ -9,13 +9,13 @@ import {
 	upgradeWorkflows,
 } from "../src/factory/defaultWorkflows.js";
 import { GuideSchema } from "../src/factory/FactoryResults.js";
-import { FactoryTools } from "../src/factory/FactoryTools.js";
+import { captureEvidence, FactoryTools } from "../src/factory/FactoryTools.js";
 import {
 	attachRequirementCoverage,
 	validateGuideCoverage,
 } from "../src/factory/Guide.js";
 import { roleProgress } from "../src/factory/Incremental.js";
-import { qaRequirementIssues } from "../src/factory/Qa.js";
+import { qaDigest, qaRequirementIssues } from "../src/factory/Qa.js";
 import {
 	type AggregateReview,
 	aggregateForContext,
@@ -33,7 +33,7 @@ import {
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
-import { qaScope } from "./fixtures/qa.js";
+import { qaExecution, qaScope } from "./fixtures/qa.js";
 
 const dirs: string[] = [];
 afterEach(() =>
@@ -244,6 +244,51 @@ it.each([
 						aggregateForContext(context)?.baseline.inventory,
 					),
 				).toEqual([]);
+				const gate: ExecutionContext = {
+					...context,
+					step: { ...context.step, tool: "visual-gate", qaContract: "qa-v1" },
+				};
+				gate.progress = await roleProgress(gate);
+				gate.run.outputs["visual-scope"] = scope;
+				const capture = captureEvidence(gate, qaExecution());
+				Object.assign(gate.run.outputs, {
+					"visual-scope": scope,
+					capture,
+					"visual-review": {
+						qaContract: "qa-v1",
+						summary: "Inspected executed QA receipts",
+						findings: [],
+						qaReviewStamp: {
+							headSha: accepted!.baseline.headSha,
+							dirty: false,
+							scopeHash: qaDigest(scope),
+							captureHash: qaDigest(capture),
+						},
+					},
+				});
+				gate.outputs!["visual-scope"] = scope;
+				const prefix = gate.stepKey!.replace(/[^/]+$/, "");
+				gate.run.roleRevisions ??= {};
+				for (const id of ["capture", "visual-review"])
+					gate.run.roleRevisions[`${prefix}${id}`] =
+						gate.progress.currentRevision!;
+				const qaTools = new FactoryTools({
+					postComment: vi.fn(),
+					command: async (_ctx, _exe, args) =>
+						args[0] === "status" ? "" : accepted!.baseline.headSha,
+				});
+				await expect(qaTools.tool(gate)).resolves.toMatchObject({
+					approved: true,
+				});
+				// Missing specialist requirements need evidence correction, not an access wait.
+				scope.stories[0]!.requirementRefs = ["unrelated"];
+				await expect(qaTools.tool(gate)).resolves.toMatchObject({
+					approved: false,
+					qaRetry: true,
+					evidenceIssues: expect.arrayContaining([
+						expect.stringContaining("unknown active requirement ID unrelated"),
+					]),
+				});
 				return {};
 			}
 			// The parent human-review step must detect the changed revision.
