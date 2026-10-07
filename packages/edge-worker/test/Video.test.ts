@@ -16,6 +16,7 @@ import {
 	defaultWorkflows,
 	upgradeWorkflows,
 } from "../src/factory/defaultWorkflows.js";
+import { qaDigest } from "../src/factory/EvidenceDigest.js";
 import { FactoryServer } from "../src/factory/FactoryServer.js";
 import { CaptureSchema } from "../src/factory/FactoryTools.js";
 import {
@@ -35,6 +36,7 @@ import {
 	type ExecutionContext,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { qaScope } from "./fixtures/qa.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -86,11 +88,12 @@ function setup() {
 		environment: "seeded record 42",
 		targetSeconds: 30,
 	});
-	run.outputs["visual-scope"] = {
+	const scope = {
 		videoContract: "video-v1",
 		videoTasks: [task],
-		stories: [{ id: "save", criteria: [{ id: "saved" }] }],
+		stories: qaScope("ui").stories,
 	};
+	run.outputs["visual-scope"] = scope;
 	const ctx = {
 		run,
 		step: defaultWorkflows
@@ -165,7 +168,18 @@ function setup() {
 			},
 		],
 	});
-	return { home, runtime, run, ctx, task, output, path, posterPath, git };
+	return {
+		home,
+		runtime,
+		run,
+		ctx,
+		scope,
+		task,
+		output,
+		path,
+		posterPath,
+		git,
+	};
 }
 
 it("bounds tasks, links scenarios and supports nonvisual/no-video selection", () => {
@@ -269,6 +283,66 @@ it("validates actual media, stamps provenance, preserves original capture revisi
 	f.ctx.progress!.uncertain = true;
 	await expect(
 		finalizeVideoEvidence(f.ctx, structuredClone(capture)),
+	).rejects.toThrow("Reuse lacks");
+});
+it("requires fresh recordings after linked scenario changes but permits unrelated story changes", async () => {
+	const f = setup();
+	const capture = (await finalizeVideoEvidence(
+		f.ctx,
+		f.output,
+	)) as VideoCapture;
+	const video = capture.videos![0];
+	f.run.outputs.capture = capture;
+	f.run.outputs["visual-review"] = {
+		acceptedVideos: [
+			{
+				taskId: video.taskId,
+				sha256: video.validation!.sha256,
+				inspectedPlayback: true,
+			},
+		],
+	};
+	f.ctx.progress!.previousOutput = structuredClone(capture);
+	const original = structuredClone(f.scope.stories[0]);
+	for (const change of [
+		{ fixtures: ["Different seeded record"] },
+		{ preconditions: ["Read-only account"] },
+		{ actions: ["Save then reload"] },
+		{ criteria: [{ id: "saved", expected: "Record survives reload" }] },
+	]) {
+		f.scope.stories[0] = { ...original, ...change };
+		await expect(
+			finalizeVideoEvidence(f.ctx, structuredClone(capture)),
+		).rejects.toThrow("Reuse lacks");
+		expect(
+			(await videoGateIssues(f.ctx, f.git("rev-parse", "HEAD"))).blocked,
+		).toEqual(["save-demo: Stale or unverified recording"]);
+	}
+	f.scope.stories[0] = original;
+	f.scope.stories.push({
+		...original,
+		id: "unrelated",
+		fixtures: ["Unrelated fixture"],
+	});
+	const reused = (await finalizeVideoEvidence(
+		f.ctx,
+		structuredClone(capture),
+	)) as VideoCapture;
+	expect(reused.videos![0].reused).toBe(true);
+	f.run.outputs.capture = reused;
+	expect(await videoGateIssues(f.ctx, f.git("rev-parse", "HEAD"))).toEqual({
+		blocked: [],
+		failures: [],
+	});
+	// Older receipts only hashed the task, so cannot establish scenario equivalence.
+	const legacy = structuredClone(capture);
+	legacy.videos![0].validation!.taskDigest = qaDigest({
+		...f.task,
+		changed: undefined,
+	});
+	f.ctx.progress!.previousOutput = legacy;
+	await expect(
+		finalizeVideoEvidence(f.ctx, structuredClone(legacy)),
 	).rejects.toThrow("Reuse lacks");
 });
 it("rejects escaped assets, truncated media, fabricated metadata, absent captions and changed bytes", async () => {
@@ -399,6 +473,86 @@ it("cleans only expired terminal evidence and keeps active referenced files and 
 	expect(
 		(f.run.outputs.capture as VideoCapture).videos![0].validation,
 	).toBeDefined();
+});
+it("expires superseded recordings and their posters/captions retained in capture history", async () => {
+	const f = setup();
+	const earlier = (await finalizeVideoEvidence(
+		f.ctx,
+		f.output,
+	)) as VideoCapture;
+	const captions = join(f.ctx.evidenceDir, "earlier.vtt");
+	writeFileSync(captions, "WEBVTT\n\n00:00.000 --> 00:01.000\nSaved\n");
+	earlier.videos![0].captionsPath = captions;
+	f.run.history.push({
+		step: "pipeline/capture",
+		output: structuredClone(earlier),
+		at: f.run.updatedAt,
+	});
+	// Reuse can leave duplicate references in multiple historical capture rounds.
+	f.run.history.push({
+		step: "pipeline/capture",
+		output: structuredClone(earlier),
+		at: f.run.updatedAt,
+	});
+	const latest = structuredClone(earlier);
+	latest.videos![0].path = join(f.ctx.evidenceDir, "latest.mp4");
+	latest.videos![0].posterPath = join(f.ctx.evidenceDir, "latest.png");
+	delete latest.videos![0].captionsPath;
+	copyFileSync(f.path, latest.videos![0].path);
+	copyFileSync(f.posterPath, latest.videos![0].posterPath);
+	f.run.outputs.capture = latest;
+	f.run.status = "completed";
+	const now = Date.parse(f.run.updatedAt) + videoLimits.terminalMs + 1000;
+	cleanupVideoEvidence(join(f.runtime.directory, "evidence"), [f.run], now);
+	for (const path of [
+		f.path,
+		f.posterPath,
+		captions,
+		latest.videos![0].path,
+		latest.videos![0].posterPath,
+	])
+		expect(existsSync(path)).toBe(false);
+	expect(f.run.history[0].output).toEqual(earlier);
+	expect(f.run.outputs.capture).toEqual(latest);
+});
+it("makes progress across cleanup passes without deleted or missing assets consuming the budget", () => {
+	const f = setup();
+	const root = join(f.runtime.directory, "evidence");
+	const runs = Array.from({ length: 101 }, (_, i) => {
+		const id = `expired-${i}`;
+		const directory = join(root, id);
+		mkdirSync(directory);
+		const path = join(directory, "save.mp4"),
+			posterPath = join(directory, "save.png");
+		writeFileSync(path, "encoded media placeholder for deletion");
+		writeFileSync(posterPath, "poster placeholder for deletion");
+		return {
+			...f.run,
+			id,
+			status: "completed" as const,
+			outputs: {
+				capture: {
+					videos: [
+						{
+							...f.output.videos![0],
+							path,
+							posterPath,
+							captionsPath: join(directory, "missing.vtt"),
+						},
+					],
+				},
+			},
+		};
+	});
+	const now = Date.parse(f.run.updatedAt) + videoLimits.terminalMs + 1000;
+	cleanupVideoEvidence(root, runs, now);
+	expect(existsSync(runs[99].outputs.capture.videos[0].path)).toBe(false);
+	expect(existsSync(runs[100].outputs.capture.videos[0].path)).toBe(true);
+	cleanupVideoEvidence(root, runs, now);
+	for (const run of runs) {
+		expect(existsSync(run.outputs.capture.videos[0].path)).toBe(false);
+		expect(existsSync(run.outputs.capture.videos[0].posterPath)).toBe(false);
+	}
 });
 it("upgrades previous coherent stock prompts idempotently and leaves custom recipes unchanged", () => {
 	const saved = structuredClone(defaultWorkflows),

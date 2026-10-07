@@ -488,12 +488,15 @@ remain blocked. Product failures are actionable failed QA.
 
 Reviewers must inspect actual playback to return exact task/hash acceptance
 receipts. Reuse requires that receipt, unchanged media/poster/captions, task and
-scenario definitions, source dependencies and fixture/environment assumptions.
+linked QA story definitions (including preconditions, fixtures, actions and
+expected criteria), source dependencies and fixture/environment assumptions.
 Dirty, uncertain or unexplained shared changes require recapture. Runtime retains
 the original capture revision and separately stamps the revision validating
 reuse; fresh behavioral execution still runs on each visit. Legacy persisted
-outputs default to no video. Frozen runs keep their definitions; only coherent
-stock recipes migrate automatically, preserving runner/model choices. Custom
+outputs default to no video. Older task-only validation receipts require fresh
+recordings because they cannot establish unchanged scenarios. Frozen runs keep
+their definitions; only coherent stock recipes migrate automatically, preserving
+runner/model choices. Custom
 recipes opt in explicitly using `videoContract: "video-v1"` across scope, capture,
 review, gate, guide and handoff.
 
@@ -514,7 +517,10 @@ Limits are three clips, **120 seconds and 50 MiB per finalized clip**, with a
 **512 MiB evidence budget per run**. Keep binaries outside source control. Remove
 failed temporary exports owned by the capture attempt. Bounded startup maintenance
 prunes unreferenced `video-temp-*` files older than 24 hours in terminal runs;
-finalized video/poster/caption assets expire 30 days after completed/stopped runs.
+finalized video/poster/caption assets from current and historical capture rounds
+expire 30 days after completed/stopped runs. Each pass removes at most 200 files;
+missing or already removed files do not consume that budget, so later restarts
+continue cleanup across runs while retaining metadata.
 Active, waiting, failed and interrupted runs retain evidence for review/recovery.
 Metadata and receipts survive cleanup and the UI reports expired assets. Cleanup
 never runs on playback requests or deletes files outside the run evidence root.

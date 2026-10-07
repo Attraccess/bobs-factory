@@ -271,6 +271,17 @@ async function captionAsset(path: string, directory: string) {
 		throw new Error("Captions must be a bounded WebVTT track with timed cues");
 	return { path: real, sha256: await fileHash(real) };
 }
+
+/** Only linked stories affect reuse; include their fixtures, actions and criteria. */
+function videoTaskDigest(task: VideoTask, scope: VideoScope): string {
+	return qaDigest({
+		task: { ...task, changed: undefined },
+		stories: scope.stories
+			.filter((story) => task.storyIds.includes(story.id))
+			.sort((a, b) => a.id.localeCompare(b.id)),
+	});
+}
+
 export async function finalizeVideoEvidence(
 	context: ExecutionContext,
 	output: unknown,
@@ -365,7 +376,7 @@ export async function finalizeVideoEvidence(
 					task.dependencies,
 				),
 				dependencyFingerprint = qaDigest(sources),
-				taskDigest = qaDigest({ ...task, changed: undefined }),
+				taskDigest = videoTaskDigest(task, scope),
 				scopeDigest = qaDigest(scope);
 			manifests[dependencyFingerprint] = sources;
 			const old = previous?.videos?.find(
@@ -520,7 +531,7 @@ export async function videoGateIssues(
 				!v ||
 				v.dirty ||
 				v.validatedRevision !== headSha ||
-				v.taskDigest !== qaDigest({ ...task, changed: undefined }) ||
+				v.taskDigest !== videoTaskDigest(task, scope) ||
 				v.scopeDigest !== qaDigest(scope)
 			)
 				throw new Error("Stale or unverified recording");
@@ -601,14 +612,11 @@ export function cleanupVideoEvidence(
 			continue;
 		const terminalExpired =
 			now - Date.parse(run.updatedAt) > videoLimits.terminalMs;
-		const capture = run.outputs.capture as VideoCapture | undefined;
-		const assets = terminalExpired
-			? (capture?.videos ?? []).flatMap((v) => [
-					v.path,
-					v.posterPath,
-					...(v.captionsPath ? [v.captionsPath] : []),
-				])
-			: [];
+		const referenced = new Set([
+			...videoAssetPaths(run.outputs.capture),
+			...run.history.flatMap((entry) => videoAssetPaths(entry.output)),
+		]);
+		const assets = terminalExpired ? [...referenced] : [];
 		for (const name of readdirSync(directory).slice(0, 200))
 			if (/^video-temp-[\w.-]+\.(mp4|webm|vtt|png|jpe?g)$/.test(name)) {
 				const path = join(directory, name);
@@ -621,24 +629,36 @@ export function cleanupVideoEvidence(
 				if (!stat.isFile()) continue;
 				if (
 					now - stat.mtimeMs > videoLimits.temporaryMs &&
-					!(capture?.videos ?? []).some((v) =>
-						[v.path, v.posterPath, v.captionsPath].includes(path),
-					)
+					!referenced.has(path)
 				)
 					assets.push(path);
 			}
 		for (const path of new Set(assets)) {
-			if (!budget--) return;
+			if (!budget) return;
 			try {
 				if (lstatSync(path).isSymbolicLink()) continue;
 				unlinkSync(
 					evidenceFile(path, directory, Number.MAX_SAFE_INTEGER, true),
 				);
+				budget--;
 			} catch {
 				/* Missing, symlink escape or already expired: retain metadata. */
 			}
 		}
 	}
+}
+
+function videoAssetPaths(output: unknown): string[] {
+	if (!output || typeof output !== "object") return [];
+	const videos = (output as VideoCapture).videos;
+	if (!Array.isArray(videos)) return [];
+	return videos.flatMap((video) =>
+		video && typeof video === "object"
+			? [video.path, video.posterPath, video.captionsPath].filter(
+					(path): path is string => typeof path === "string",
+				)
+			: [],
+	);
 }
 
 /** Bound scanning as well as storage; do not follow directory symlinks. */
