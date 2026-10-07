@@ -14,10 +14,14 @@ the modal, and a rejected JSON-off save retains its draft without changing saved
 configuration. The check writes interaction logs, assertions and screenshots and
 closes only its fresh, explicitly headless browser session.
 
-Run against an isolated Factory server with stock recipes:
+Run against an isolated Factory server with stock recipes. Passkey access is now
+required, so export authenticated browser state from a fresh, headless fixture
+session first. Use an isolated test session; retain the state file privately and
+never commit it. The helper loads that state into its own headless session and
+reads configuration through the browser, preserving the authentication boundary:
 
 ```sh
-node scripts/qa-recipes-focus.mjs http://127.0.0.1:3903 /tmp/recipes-focus-evidence
+node scripts/qa-recipes-focus.mjs http://localhost:3903 /tmp/recipes-focus-evidence /tmp/fixture-auth-state.json
 ```
 
 On 2026-10-07, all four cases passed: pointer and keyboard opening at 1280×900
@@ -41,3 +45,8 @@ initial script-label assertion failure: textarea contents were included by
 `label.textContent`; the final check reads the label's own text nodes.
 These results supplement the prior accepted images and other passing criteria;
 they do not replace the pipeline's subsequent QA reassessment.
+
+The passkey integration retains these exact focus assertions. Export state with
+`agent-browser --headed false --session <isolated-fixture> state save /tmp/fixture-auth-state.json`
+after authenticating the isolated fixture. Sign-in may use a virtual authenticator
+or a server-seeded fixture session; record which was used.

@@ -5,7 +5,11 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
-import { setGlobalErrorReporter } from "cyrus-core";
+import { resolvePath, setGlobalErrorReporter } from "cyrus-core";
+import {
+	authorizeFactoryEnrollment,
+	requestFactoryAuthRecovery,
+} from "cyrus-edge-worker";
 import dotenv from "dotenv";
 import { Application } from "./Application.js";
 import { AuthCommand } from "./commands/AuthCommand.js";
@@ -51,6 +55,27 @@ program
 		resolve(homedir(), ".cyrus"),
 	)
 	.option("--env-file <path>", "Path to environment variables file");
+
+// Machine-owner setup/recovery must remain outside the dashboard auth boundary.
+program
+	.command("factory-auth")
+	.description(
+		"Authorize one Factory passkey enrollment or deliberately recover Factory authentication",
+	)
+	.option("--recover", "Revoke all Factory credentials and sessions")
+	.option("--confirm <text>", "Deliberate recovery confirmation")
+	.action((options: { recover?: boolean; confirm?: string }) => {
+		const home = resolve(resolvePath(program.opts().cyrusHome));
+		if (options.recover) {
+			requestFactoryAuthRecovery(home, options.confirm);
+			console.log(
+				"Factory authentication recovery requested. Use the new setup code from factory/auth/enroll.json.",
+			);
+		} else
+			console.log(
+				`Single-use Factory setup code (expires in ten minutes): ${authorizeFactoryEnrollment(home)}`,
+			);
+	});
 
 // Start command (default)
 program

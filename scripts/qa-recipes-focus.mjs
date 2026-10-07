@@ -1,13 +1,13 @@
-// Run against an isolated Factory server: node scripts/qa-recipes-focus.mjs URL EVIDENCE_DIR
+// Run against an isolated Factory server: node scripts/qa-recipes-focus.mjs URL EVIDENCE_DIR AUTH_STATE
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
-const [url, directory] = process.argv.slice(2);
+const [url, directory, authState] = process.argv.slice(2);
 assert(
-	url && directory,
-	"Provide an isolated Factory URL and evidence directory",
+	url && directory && authState,
+	"Provide an isolated Factory URL, evidence directory and authenticated test browser state",
 );
 const origin = new URL(url).origin;
 const evidence = resolve(directory);
@@ -24,6 +24,7 @@ const receipt = {
 const pause = () => new Promise((resolve) => setTimeout(resolve, 500));
 async function browser(...args) {
 	const command = ["--headed", "false", "--session", session, ...args];
+	if (args[0] === "open") command.splice(4, 0, "--state", resolve(authState));
 	const result = spawnSync("agent-browser", command, { encoding: "utf8" });
 	receipt.commands.push({
 		args: command,
@@ -36,11 +37,12 @@ async function browser(...args) {
 	return result.stdout.trim();
 }
 const evaluate = async (script) => JSON.parse(await browser("eval", script));
-const config = async () => {
-	const response = await fetch(`${origin}/api/config`);
-	assert.equal(response.status, 200);
-	return response.json();
-};
+const config = async () =>
+	evaluate(`(async () => {
+		const response = await fetch('/api/config', {cache: 'no-store'});
+		if (!response.ok) throw new Error('Authenticated fixture config read failed: ' + response.status);
+		return response.json();
+	})()`);
 const saveReceipt = () =>
 	writeFileSync(
 		join(evidence, "focus-receipts.json"),
@@ -48,8 +50,8 @@ const saveReceipt = () =>
 	);
 
 try {
-	receipt.before = await config();
 	await browser("open", `${origin}/#/recipes`);
+	receipt.before = await config();
 	for (const width of [1280, 430]) {
 		for (const method of ["pointer", "keyboard"]) {
 			await browser("set", "viewport", String(width), "900");

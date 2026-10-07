@@ -11,6 +11,7 @@ This changelog documents internal development changes, refactors, tooling update
 - Correct Recipes focus-recovery QA to open the reviewer dialog through trusted pointer or keyboard interaction and compare focus with the exact opening button after Escape. Retain reproducible browser receipts for desktop and narrow layouts. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Integrate specialist review with refinement recommendations and wait for capacity initialization in persistence test fixtures before cleanup. Cover assistance-batch notification and restart deduplication through the durable outbox and mocked F1 tracking. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Correct the selected signed-out passkey update screenshot to 1280×900 and retain explicit viewport, build and protected-access receipts for QA reassessment. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Preserve refinement recommendation metadata when review fixers request assistance, retaining both recovery and question-restart contracts during main integration. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
@@ -26,9 +27,14 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Integrate specialist review with passkey-protected Factory access, retain the complete launch guidance, and load authenticated test browser state in Recipes focus QA. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
 - Integrate Codex startup recovery with specialist review and retain focused coverage of retry, restart, requirement validation and approval safeguards. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Integrate specialist review with current QA recovery and instance-capacity behavior; retain inventory validation across nested workflows and refresh the complete routing-prompt expectation. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Integrate passkey access with refinement recommendations, preserving explicit answer submission, protected drafts and both capability references. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
+
+- Restore CI coverage for authenticated Factory review drafts and the complete passkey-aware routing prompt; integrate capacity/recovery updates while preserving passkey gates and the public-origin compatibility setting; format the authentication CSS for the repository-wide Biome gate. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Run F1 agents as deterministic mocks by default, including Factory roles, chat sessions, and background titles; require an explicit live-mode opt-in for provider usage.
 
