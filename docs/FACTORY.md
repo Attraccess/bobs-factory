@@ -1,34 +1,153 @@
-# Software factory MVP
+# Bob’s Factory
 
-The factory reuses Cyrus's runners, Git worktrees and ticket integrations. Its
-local dashboard and JSON workflow graph are deliberately small: no database,
-hosted login, queue service or separate orchestration platform.
+The factory builds on Cyrus’s runners, Git worktrees and ticket integrations. Its
+dashboard and JSON workflow graph are deliberately small: passkeys and a private
+local authentication file, without accounts, a database or a hosted identity service.
 
 ## Start locally
 
-Install Node/pnpm, Bun, Git, `gh` and the agent CLI you want to use. Authenticate
-the agent CLI and run `gh auth login`. The target repository needs an `origin`
-remote you can push to, a base branch, and configured branch/merge rules for the factory pipeline.
+Install a verified macOS/Linux binary and prepare Git, `gh` and your selected
+agent CLI. Authenticate the agent and GitHub CLI. The repository needs a checked-out
+base branch and writable origin for delivery. The factory needs no separate Node,
+npm or Bun. See [binary distribution](distribution/README.md) for availability.
 
 ```sh
-pnpm install
-pnpm factory --repo /absolute/path/to/repo --agent codex --model gpt-6.1-sol
+bobs-factory --repo /absolute/path/to/repo --agent codex --model gpt-6.1-sol
 ```
 
 Open http://127.0.0.1:3457. `--port`, `--home` and `--agent` are optional;
-defaults are 3457, `~/.bobs-factory` and `claude`. The launcher builds the
-required packages first. Its issue-tracker RPC listener uses the next port.
-It works without Linear credentials for manually triggered tasks.
+defaults are 3457, `~/.bobs-factory` and `claude`. Local launch uses the next port
+for RPC/webhooks and works without Linear credentials for manually triggered tasks.
 
-An existing `cyrus start` also starts the dashboard on port 3457. Set
-`CYRUS_FACTORY_PORT` to choose another port, or `0` to disable it. That uses
-your existing Cyrus repository configuration and state directory. The dashboard
-binds to loopback separately from the webhook listener and is intended for one
-trusted local operator.
+`bobs-factory start` uses configured repositories/integrations and starts the
+dashboard on port 3457. Set `BOBS_FACTORY_FACTORY_PORT` to choose another port,
+or `0` to disable it. Development checkouts can still use `pnpm factory`.
+The dashboard binds to loopback separately from the webhook listener and is
+intended for one operator. Every dashboard address requires a passkey session,
+including localhost. Provider webhooks and OAuth callbacks stay independent of
+dashboard authentication.
+
+## Passkey access and first setup
+
+Factory requires a server-verified passkey session for all dashboard data and
+controls. Localhost has no authentication bypass. An empty store displays the
+first-passkey setup screen; it does not give a remote visitor permission to enroll.
+Development checkouts use Node 22 or newer (SimpleWebAuthn 14). The binary includes its runtime.
+
+For an HTTPS tunnel, configure the exact browser origin before starting Factory:
+
+```sh
+bobs-factory --repo /absolute/path/to/repo \
+  --origin https://bobs-factory-schlepptop.zrok.apps.janjaap.de
+```
+
+Configured services use `BOBS_FACTORY_FACTORY_ORIGIN` for the same setting.
+`BOBS_FACTORY_FACTORY_PUBLIC_ORIGIN` remains a compatibility alias; the explicit
+`BOBS_FACTORY_FACTORY_ORIGIN` setting takes precedence when both are supplied.
+`BOBS_FACTORY_FACTORY_PORT` remains 3457 by default. The server binds only to loopback,
+accepts only explicitly configured authorities and checks exact browser Origin
+on writes. Request headers and loopback proxy peers never waive authentication.
+The tunnel must preserve the public authority and origin. No forwarded header
+is used as an authentication or identity claim. There is no extra UI listener.
+Remote access is denied when its origin has not been configured.
+
+At first startup, a ten-minute, single-use setup code is written to
+`<home>/factory/auth/enroll.json`, readable only by the operator. Copy its `token`
+value into the setup screen. Generate another code on the machine when it expires
+or a registration is cancelled:
+
+```sh
+bobs-factory --home /absolute/path/to/the/effective/factory-home factory-auth
+```
+
+An installed CLI also supports `bobs-factory --home /absolute/home factory-auth`
+and `bobs-factory --home /absolute/home factory-auth --recover --confirm
+"RESET FACTORY AUTHENTICATION"`. Neither command starts services.
+
+Start the server before generating a code: pending grants/challenges are
+invalidated on restart. Both launch modes default to `~/.bobs-factory`; `--home` selects another
+state directory. Always choose the home used by the running service. Setup codes authorize one enrollment, expire in ten minutes and
+never belong in URLs, screenshots, run prompts or ticket comments. Transfer the
+code privately to the phone, then open the exact configured HTTPS origin there.
+
+Each passkey belongs to the address where it was created. Localhost and the
+public hostname need separate keys. The `http://127.0.0.1:3457` entrypoint redirects
+to `http://localhost:3457` because WebAuthn rejects IP addresses as RP IDs.
+Both addresses protect data; the redirect provides a usable local login.
+`Settings` in the main navigation contains passkey management and sign-out.
+The sign-in screen folds new-key setup under `Set up a new passkey` once the
+first key exists. First-time setup opens automatically. In Settings, add a named
+phone/security key or remove a saved key; each change explicitly verifies an
+existing passkey first. Viewing keys also requires verification within the last
+five minutes, with a verification button when that window has expired. Keep at least one key per enrolled address;
+removing the last key requires local recovery. Removing a key revokes its sessions
+and live streams. Labels and metadata are shown; public keys and session tokens
+are never returned.
+
+Sessions last twelve hours without sliding renewal. `--session-hours` or
+`BOBS_FACTORY_FACTORY_SESSION_HOURS` permits 1–24 hours; the explicit CLI option takes
+precedence over the environment, and twelve hours applies only when neither is
+set. Invalid values fail startup. Sessions survive a restart;
+credentials, counters and token hashes live in private atomic files. HTTPS uses
+host-only `__Host-` cookies with Secure, HttpOnly, SameSite=Strict and Path=/.
+Loopback HTTP uses a host-only HttpOnly/SameSite=Strict cookie. Both paths require
+a verified, unexpired server record. Ceremonies require user verification, exact
+origin/RP binding and a single-use browser-bound challenge valid for five minutes.
+
+Sign out warns that unsent edits, review comments and saved restoration drafts
+will be discarded across tabs. Expiry/revocation also clears sensitive views and
+stops retries, streams and late responses. Reopening, restored navigation and
+reconnection recheck the session. Offline access shows an inert sign-in screen.
+The service worker caches only the static shell, never auth/API/media responses.
+Theme and settled-view preferences are retained.
+
+### Local recovery
+
+If every passkey is lost or the store is corrupt, deliberately reset only Factory
+authentication on the machine:
+
+```sh
+bobs-factory --home /absolute/path/to/the/effective/factory-home factory-auth \
+  --recover --confirm "RESET FACTORY AUTHENTICATION"
+```
+
+A running server consumes the private recovery request and revokes every key,
+session, stream and pending ceremony. No service restart is required. If corrupt
+state prevented startup, rerun the server after recovery. Run history, workflows,
+integrations, credentials for provider services and worktrees are preserved.
+The old auth file is retained privately as a recovery backup and is never read
+automatically. Use the new setup code in `factory/auth/enroll.json`. Corrupt state
+and incompatible configured origins fail closed; restore the old configuration
+or deliberately recover rather than silently rebinding existing keys.
+
+| Surface | Access |
+| --- | --- |
+| Local and public dashboard data/actions/media/SSE | Passkey session required |
+| Static app shell, version, access status and ceremonies | Public; no run or configuration data |
+| First or recovery enrollment | Operator setup code; one key only |
+| Additional enrollment/removal | Recently verified session or a fresh operator code |
+| Provider webhook/OAuth listener (3456 in production) | Existing provider signature/OAuth checks; independent of dashboard login |
+
+### Rollout and device checks
+
+This change does not deploy, restart or alter production Nix/zrok2 services.
+The parent must review the code, configure the reserved HTTPS origin, confirm
+that zrok2 preserves authority/Origin and retire the legacy localhost-rewriting
+proxy before public rollout. The UI tunnel can keep target `127.0.0.1:3457`;
+authentication applies even to rewritten localhost requests. Verify signed
+Linear deliveries, rejection of unsigned deliveries and OAuth callback access
+on the separate provider listener.
+
+Physical iPhone Safari and installed-PWA validation remains a human check: enroll
+at the public HTTPS origin, log out/in, add a second key, revoke it, test expiry
+and reopen the installed app. Chromium emulation and a virtual authenticator do
+not prove biometric, Safari or synced-phone behavior. Connection failure means
+reconnect to sign in; a browser cancellation means retry with a fresh setup code
+when enrollment has consumed its previous authorization.
 
 ## Execution identities and tools
 
-**Settings** has separate pages for **Execution defaults**, **Identity profiles**, **Tool profiles**, **Instance capacity** and **Run titles**. Recipes manages workflow definitions and launch permissions. In Identity profiles, create an identity with separate Git author/committer, repository account, signing policy and per-runner API references. Create a tool profile with declared MCP sources/definitions, per-server credential references, removals, denials and supported ordinary settings. Enter credential names or protected-file paths, never token values.
+**Settings** has separate pages for **Access** (passkeys and sign-out), **Execution defaults**, **Identity profiles**, **Tool profiles**, **Instance capacity** and **Run titles**. Recipes manages workflow definitions and launch permissions. In Identity profiles, create an identity with separate Git author/committer, repository account, signing policy and per-runner API references. Create a tool profile with declared MCP sources/definitions, per-server credential references, removals, denials and supported ordinary settings. Enter credential names or protected-file paths, never token values.
 
 The composer selects identity and tools independently and offers an effective preview. Manual choices override repository defaults, which override factory defaults. No selection/default keeps Legacy behavior. Explicit profiles require both concerns and an authentication binding for every workflow provider and the title agent. Unsupported native sources fail before worktree setup. Saved runs keep their accepted definitions even when defaults change or profiles are deleted.
 
@@ -169,7 +288,7 @@ selected cards survive live updates. A reconnecting SSE connection sends coalesc
 pause following; **Scroll to latest** resumes it. Inspector Escape returns focus
 and screenshot Escape returns to the gallery first.
 
-**Simple / Cyrus** exposes a **Message Bob** composer below its conversation.
+**Simple / Bob’s Factory** exposes a **Message Bob** composer below its conversation.
 Send questions or instructions while Claude/Codex is working; after completion,
 a message resumes the same native conversation and worktree. Successful submissions
 appear as your chat bubbles and remain available after restart. Failed submissions
@@ -207,14 +326,14 @@ Messages target the current agent role. The composer explains when sending is
 unavailable: scripts/tools, multiple parallel agents, starting/finishing turns,
 unsupported streaming runners, and explicit clarification/review/recovery gates.
 Use those gates' existing controls; chat never approves a PR. Runners without
-streaming input can still receive follow-ups once a Cyrus session completes.
+streaming input can still receive follow-ups once a Bob’s Factory session completes.
 Completed multi-step workflows retain their existing **Follow-up** action, which
 starts a new run; chat does not reopen completed pipeline steps.
 Existing runs retain their saved chat setting; old Cyrus runs gain the default
 unless explicitly disabled.
 
 Select a repository and workflow in the composer, then fill its launch fields.
-**Simple / Cyrus** retains the existing Cyrus execution path and is the initial
+**Simple / Bob’s Factory** retains the existing Bob’s Factory execution path and is the initial
 default. **Software factory** adds the pipeline
 below. Apply `workflow:factory` (or `factory`) to a ticket to select it.
 Custom workflow labels are configurable. New launches use an explicit manual
@@ -275,7 +394,7 @@ including in fanout. A failed save leaves the previous configuration intact.
 
 | Stock or legacy definition without permissions | Normalized permissions |
 | --- | --- |
-| Simple / Cyrus | `manual`, `ticket-assignment` |
+| Simple / Bob’s Factory | `manual`, `ticket-assignment` |
 | Public stock/custom workflow | `workflow`, `manual`, `ticket-assignment` |
 | Internal/shared workflow | `workflow` |
 
@@ -350,6 +469,8 @@ fields inherit the run settings. Changing agent provider without specifying a
 model uses that provider's default model. Saved definitions apply to new runs;
 an active run retains its original definition.
 
+Explanation requests are kept separately from accepted answers. Bob rephrases the pending decision without restarting the blocked role or advancing the workflow; an explicit answer is still required. Rephrased questions survive restart only while their source questions and recommendations remain unchanged. Changed decisions invalidate the old answer batch. Older rephrasings without saved source context are refreshed once on restart. Explanation turns keep separate revision records, so later fixes still see changes made while waiting. The answer API also accepts `kind: "explanation"` for requests that free-text detection does not recognize.
+
 Clarification pauses until you answer in the dashboard or original agent-session
 ticket thread. There is no automatic answer or approval. Decisions and all Q&A
 are saved in run history and posted as a comment when a real ticket exists.
@@ -384,6 +505,8 @@ Drafts retain both the choice and text through navigation and PWA updates. Older
 text drafts remain custom answers. Changed question batches or recommendations
 require draft review, and contextual API submissions reject outdated batch IDs,
 even when the question wording repeats.
+Restart retains unchanged visual-review assistance questions and their batch ID,
+so saved answers remain usable without sending another question notification.
 
 The factory runs clarification → decisions → planner/plan-review loop →
 implementation → push/draft PR → code-review/fix loop → CI/fix loop → QA story and screenshot
@@ -405,7 +528,14 @@ Human decisions, review IDs, commit IDs and checkpoint state persist on restart.
 Repeated agents start with `/progress` through factory-context: their previous
 result, prior/current revision, changed files/diff and new history. Planning and
 reviews preserve decisions, stable findings and dispositions while assessing new
-feedback and affected code. QA scope keeps the cumulative story/criterion and area/state lists.
+feedback and affected code. The default history view is compact: `/history` and
+`/progress/newHistory` contain step indexes with references to original outputs.
+Reviewers and fixers read `/contextMemory/reviewLedger` and
+`/contextMemory/reviewRounds` for distinct verbatim claims, review reasoning and
+gate outcomes, then fetch original evidence only where needed. Repeated claims
+retain their first/latest round and source paths, so reopened complaints remain
+visible. A claimed fix never becomes reviewer acceptance through compaction.
+QA scope keeps the cumulative story/criterion and area/state lists.
 Capture can reuse real, previously approved images only when their revision is
 unchanged or declared dependencies are unchanged and all changed files are
 accounted for. Image hashes and dependency provenance are persisted; dirty,
@@ -416,7 +546,7 @@ and can use a short revision summary for a verified minor correction. Every new
 human review still requires an explicit decision.
 
 Visual capture requires browser/screenshot tools available to the selected
-agent through its CLI or existing Cyrus MCP configuration. Captures must be
+agent through its CLI or existing Bob’s Factory MCP configuration. Captures must be
 real PNG/JPEG files in the supplied evidence directory and cover every requested
 area/state. In the factory pipeline, missing capture evidence pauses at the
 visual gate with a question explaining the unavailable states and their causes.
@@ -662,11 +792,19 @@ otherwise agents receive the original input,
 launch inputs, outputs, answers and full structured history.
 
 Factory agent roles receive a short role prompt and a private `factory-context`
-MCP server. `list_context` browses object fields/array entries; `read_context`
-reads values in pages of at most 16,000 characters. Both return `nextOffset`;
-follow it until null to read complete discussions and review/fixer history.
+MCP server. `list_context` browses up to 50 object fields/array entries per page,
+including short identity/step previews; `read_context` reads values in pages of
+at most 16,000 characters. Both return `nextOffset`; follow it until null to read
+each relevant collection/value completely.
 Paths use JSON Pointer syntax, for example `/outputs/ticket/comments/0/body`.
-Strings use raw text pages; other values use JSON pages. Only the step's scoped
+Strings use raw text pages; other values use JSON pages. Default `view: "compact"`
+replaces historical outputs with indexes and adds deterministic review memory.
+Current requirements, decisions, answers, outputs and revision deltas remain
+complete. Index `outputPath` references work directly, including existing deep
+history paths. Pass `view: "full"` to either tool for original records at the
+same paths. Compaction preserves the private source snapshot and persisted
+checkpoints; it does not summarize with another model, reset provider
+conversations, change iteration limits or grant approval. Only the step's scoped
 input is served: `inputs: ["plan"]` exposes `/plan` without ticket/history.
 The stock implementer also receives `/answers` and returns `status`, `summary`,
 `checks`, and `questions`. A `blocked` status requires at least one actionable
@@ -705,7 +843,7 @@ Configured MCP tools can run directly:
 ```
 
 Exact template references preserve JSON types. String interpolation also works
-in `exec` arguments. MCP servers come from the existing Cyrus runner config
+in `exec` arguments. MCP servers come from the existing Bob’s Factory runner config
 (stdio, HTTP or SSE). Human checkpoints belong outside fanout groups. Parallel
 groups isolate their output dictionaries, but use the same worktree: reserve
 fanout for independent/read-only work to avoid file conflicts.
@@ -725,7 +863,7 @@ individual fanout branches. Unanswered clarification stays waiting for your
 answer; accepted answers survive restarts. An interrupted agent resumes its
 saved provider conversation in the same worktree, with a fresh context MCP
 connection. Manual Simple runs and original Linear/CLI ticket sessions use
-Cyrus's existing conversation continuation. Other standalone Cyrus chat/PR
+Bob’s Factory’s existing conversation continuation. Other standalone Bob’s Factory chat/PR
 comment sessions are outside factory recovery; use Takeover for existing PRs.
 Explicitly terminated, completed and failed runs do not restart. Active runs
 saved by earlier factory versions are upgraded using their retained history.
@@ -768,7 +906,7 @@ guarantee of flawless software.
 
 ### Instance capacity
 
-Factory and integration/chat sessions in one Cyrus instance use one pool. The default is
+Factory and integration/chat sessions in one Bob’s Factory instance use one pool. The default is
 four slots, including installations that previously omitted `maxConcurrentSessions`.
 Existing numeric settings seed a new pool. Joining workers without a setting adopt
 the persisted policy; an explicit conflicting setting is reported in Settings → Instance capacity.
@@ -777,12 +915,14 @@ it admits queued work; decreasing it lets existing execution drain. A deliberate
 configuration edit updates the policy, and removing the numeric setting restores
 four. Unrelated config reloads and stale startup settings do not reset it.
 
-The coordinator lives at `<cyrusHome>/machine-capacity`. Separate `--home`
+The coordinator lives at `<factoryHome>/machine-capacity`. Separate `--home`
 directories have independent limits and queues, so temporary F1 instances do not
 compete with the instance running their parent QA step. Processes using the same
-Cyrus home share its durable policy and restart queue. Repositories and worktrees
-within an instance share that instance's pool. `CYRUS_CAPACITY_DIRECTORY` no longer
-overrides this location. The default home retains `~/.cyrus/machine-capacity` and
+Factory home share its durable policy and restart queue. Repositories and worktrees
+within an instance share that instance's pool. `BOBS_FACTORY_CAPACITY_DIRECTORY` no longer
+overrides this location. Migration blocks capacity-directory overrides until the
+selected pool and its consumers are explicitly reconciled; follow the migration
+guide before cutover. The default home retains `~/.bobs-factory/machine-capacity` and
 its saved policy. This release requires POSIX
 process inspection (`ps`) for reconciliation; unsupported or inaccessible process
 inspection fails closed. Existing older worker versions must be upgraded to join.
@@ -835,7 +975,8 @@ that instruction is not a hard enforcement guarantee. Scheduled workflow childre
 receive their own slots. The cap bounds scheduled executions, not every subprocess,
 thread, inference request or arbitrary external program.
 
-Cursor's in-process SDK and intensive MCP tools cannot prove that all execution
+Cursor's SDK (in-process in checkout, user-prepared child process in binaries)
+and intensive MCP tools cannot prove that all execution
 has stopped after an owner crash or an interrupted external call. Their unverified leases remain counted and block
 new admission with a visible error; they are not reclaimed by heartbeat expiry.
 Reconcile the external execution before repairing its coordinator record. Never delete

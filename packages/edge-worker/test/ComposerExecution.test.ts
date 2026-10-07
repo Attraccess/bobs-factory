@@ -1,9 +1,17 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { checkAccess } from "../src/factory/web/auth-state.js";
 import {
 	readComposerExecution,
 	writeComposerExecution,
 } from "../src/factory/web/execution-selection.js";
 
+beforeEach(async () => {
+	const previous = globalThis.fetch;
+	globalThis.fetch = async () =>
+		Response.json({ authenticated: true, expires: Date.now() + 3600000 });
+	await checkAccess();
+	globalThis.fetch = previous;
+});
 afterEach(() => vi.unstubAllGlobals());
 it("round-trips independent profile IDs across reloads without storing profile contents", () => {
 	const values = new Map<string, string>();

@@ -15,10 +15,10 @@ import {
 	IdentityProfileSchema,
 	ToolProfileSchema,
 } from "../src/factory/ExecutionProfiles.js";
-import { FactoryServer } from "../src/factory/FactoryServer.js";
 import { executeCommand } from "../src/factory/FactoryTools.js";
 import { WorkflowSchema } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
+import { FactoryServer } from "./fixtures/authenticated-factory.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -235,7 +235,7 @@ it.each([
 		JSON.stringify({ mcpServers: { removed: { command: "node" } } }),
 	);
 	const config = {
-		cyrusHome: home,
+		factoryHome: home,
 		mcpConfigPath: join(home, ".mcp.json"),
 		additionalEnv: { CYRUS_GH_TOKEN: "unselected" },
 	};

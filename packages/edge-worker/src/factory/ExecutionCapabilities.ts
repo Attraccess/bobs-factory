@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import type { AgentRunnerConfig, RunnerType } from "cyrus-core";
+import type { AgentRunnerConfig, RunnerType } from "bobs-factory-core";
 import type { ExecutionSnapshot } from "./ExecutionProfiles.js";
 
 /** Version gates are deliberately explicit; native source suppression is not portable across releases. */
@@ -12,7 +12,7 @@ export function executionCapabilities(runner: RunnerType): {
 } {
 	const require = createRequire(import.meta.url);
 	if (runner === "cursor") {
-		const sdk = require.resolve("cyrus-cursor-runner");
+		const sdk = require.resolve("bobs-factory-cursor-runner");
 		const localRequire = createRequire(sdk);
 		const entry = localRequire.resolve("@cursor/sdk");
 		const version = JSON.parse(
@@ -27,7 +27,9 @@ export function executionCapabilities(runner: RunnerType): {
 	let binary = runner as string;
 	let args = ["--version"];
 	if (runner === "codex") {
-		const localRequire = createRequire(require.resolve("cyrus-codex-runner"));
+		const localRequire = createRequire(
+			require.resolve("bobs-factory-codex-runner"),
+		);
 		const file = localRequire.resolve("@openai/codex/package.json");
 		const pkg = localRequire(file);
 		binary = process.execPath;

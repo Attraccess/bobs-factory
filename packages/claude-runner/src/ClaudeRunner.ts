@@ -21,15 +21,17 @@ import {
 	type SessionCronSummary,
 	type StopHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { AgentPendingWork, AskUserQuestionInput } from "cyrus-core";
+import type { AgentPendingWork, AskUserQuestionInput } from "bobs-factory-core";
 import {
 	createLogger,
 	executionEnvironment,
 	type IAgentRunner,
 	type ILogger,
+	isPackagedExecutable,
 	LogLevel,
+	preparedExecutable,
 	StreamingPrompt,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import dotenv from "dotenv";
 import { ClaudeMessageFormatter, type IMessageFormatter } from "./formatter.js";
 import { buildHomeDirectoryDisallowedTools } from "./home-directory-restrictions.js";
@@ -273,7 +275,7 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 	private messages: SDKMessage[] = [];
 	private streamingPrompt: StreamingPrompt | null = null;
 	private activeQuery: Query | null = null;
-	private cyrusHome: string;
+	private factoryHome: string;
 	private formatter: IMessageFormatter;
 	private pendingResultMessage: SDKMessage | null = null;
 	private canUseToolCallback: CanUseTool | undefined;
@@ -287,7 +289,7 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 		this.config = config;
 		this.keepSessionWarm = keepSessionWarm;
 		this.logger = config.logger ?? createLogger({ component: "ClaudeRunner" });
-		this.cyrusHome = config.cyrusHome;
+		this.factoryHome = config.factoryHome;
 		this.formatter = new ClaudeMessageFormatter();
 
 		// Create canUseTool callback if onAskUserQuestion is provided
@@ -639,7 +641,9 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 				);
 			}
 
-			const pathToClaudeCodeExecutable = this.config.pathToClaudeCodeExecutable;
+			const pathToClaudeCodeExecutable =
+				this.config.pathToClaudeCodeExecutable ??
+				(isPackagedExecutable ? preparedExecutable("claude") : undefined);
 
 			// On Linux, setting CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 causes the SDK
 			// to run tool invocations under a bubblewrap-backed sandbox. If the
@@ -986,7 +990,7 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 		// If logging has already been set up and we now have versions, write the version file
 		if (this.logStream && versions) {
 			try {
-				const logsDir = join(this.cyrusHome, "logs");
+				const logsDir = join(this.factoryHome, "logs");
 				const workspaceName =
 					this.config.workspaceName ||
 					(this.config.workingDirectory
@@ -1260,7 +1264,7 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	/**
-	 * Set up logging to .cyrus directory
+	 * Set up logging to .bobs-factory directory
 	 */
 	private setupLogging(): void {
 		try {
@@ -1274,8 +1278,8 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 				this.readableLogStream = null;
 			}
 
-			// Create logs directory structure: <cyrusHome>/logs/<workspace-name>/
-			const logsDir = join(this.cyrusHome, "logs");
+			// Create logs directory structure: <factoryHome>/logs/<workspace-name>/
+			const logsDir = join(this.factoryHome, "logs");
 
 			// Get workspace name from config or extract from working directory
 			const workspaceName =

@@ -21,7 +21,7 @@ it("uses the selected complete environment for the app-server without inheriting
 		OPENAI_API_KEY: "selected-key",
 	};
 	const resolved = await new CodexConfigBuilder({
-		cyrusHome: directory,
+		factoryHome: directory,
 		workingDirectory: directory,
 		childEnvironment,
 	}).build();

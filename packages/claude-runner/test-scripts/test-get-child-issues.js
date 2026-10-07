@@ -25,14 +25,14 @@ async function testGetChildIssues() {
 		includeSystemRole: true,
 		apiKey: "test-key", // Not needed for MCP operations
 		mcpConfig: {
-			"cyrus-tools": {
+			"bobs-factory-tools": {
 				type: "inline-sdk",
 				module: path.join(
 					__dirname,
 					"..",
 					"dist",
 					"tools",
-					"cyrus-tools",
+					"bobs-factory-tools",
 					"index.js",
 				),
 				initParams: [linearToken],

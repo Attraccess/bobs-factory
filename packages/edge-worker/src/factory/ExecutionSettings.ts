@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { JsonObject, RunnerType } from "cyrus-core";
-import { resolvePath } from "cyrus-core";
+import type { JsonObject, RunnerType } from "bobs-factory-core";
+import { resolvePath } from "bobs-factory-core";
 import type { ToolProfile } from "./ExecutionProfiles.js";
 
 const fields: Record<RunnerType, string[]> = {

@@ -6,8 +6,8 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
-			"cyrus-core": ["../../packages/core/dist/index.d.ts"],
-			"cyrus-edge-worker": [
+			"bobs-factory-core": ["../../packages/core/dist/index.d.ts"],
+			"bobs-factory-edge-worker": [
 				"../../packages/edge-worker/dist/edge-worker/src/index.d.ts"
 			]
 		}

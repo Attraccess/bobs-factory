@@ -5,7 +5,7 @@ import {
 	type AgentRunnerConfig,
 	executionScope,
 	type RunnerType,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
@@ -15,11 +15,11 @@ const { nativeCall, directCall } = vi.hoisted(() => ({
 	nativeCall: vi.fn(),
 	directCall: vi.fn(),
 }));
-vi.mock("cyrus-codex-runner", async (original) => ({
+vi.mock("bobs-factory-codex-runner", async (original) => ({
 	...(await original<object>()),
 	callCodexMcpTool: nativeCall,
 }));
-vi.mock("cyrus-mcp-tools", async (original) => ({
+vi.mock("bobs-factory-mcp-tools", async (original) => ({
 	...(await original<object>()),
 	callConfiguredTool: directCall,
 }));
@@ -37,7 +37,7 @@ function fixture(runner: RunnerType, acceptedRunner?: RunnerType) {
 	homes.push(home);
 	const worker = new EdgeWorker({
 		platform: "cli",
-		cyrusHome: home,
+		factoryHome: home,
 		repositories: [
 			{
 				id: "repo",
@@ -96,7 +96,7 @@ function fixture(runner: RunnerType, acceptedRunner?: RunnerType) {
 		[],
 	);
 	const config: AgentRunnerConfig = {
-		cyrusHome: home,
+		factoryHome: home,
 		workingDirectory: home,
 		allowedTools: ["mcp__taskbot__get_ticket"],
 		mcpConfig: {
@@ -180,7 +180,7 @@ it.each([
 		expect.objectContaining({
 			env: {
 				CONFIGURED: "retained",
-				CYRUS_EXECUTION_LEASE: "capacity-test-lease",
+				BOBS_FACTORY_EXECUTION_LEASE: "capacity-test-lease",
 			},
 		}),
 		"get_ticket",

@@ -1,6 +1,6 @@
 import { fork } from "node:child_process";
 import { EventEmitter } from "node:events";
-import type { SDKMessage } from "cyrus-core";
+import { isPackagedExecutable, type SDKMessage } from "bobs-factory-core";
 import type { CursorRunnerConfig, CursorSessionInfo } from "./types.js";
 
 /** The local SDK inherits process.env. Give it a dedicated process, never a host mutation. */
@@ -33,12 +33,18 @@ export class CursorWorkerRunner extends EventEmitter {
 				return value;
 			},
 		);
-		const child = fork(new URL("./cursor-worker.js", import.meta.url), [], {
-			env: { ...childEnvironment, ...additionalEnv },
-			execArgv: [],
-			detached: process.platform !== "win32",
-			stdio: ["ignore", "ignore", "ignore", "ipc"],
-		});
+		const child = fork(
+			isPackagedExecutable
+				? "internal"
+				: new URL("./cursor-worker-entry.js", import.meta.url),
+			isPackagedExecutable ? ["cursor-worker"] : [],
+			{
+				env: { ...childEnvironment, ...additionalEnv },
+				execArgv: [],
+				detached: process.platform !== "win32",
+				stdio: ["ignore", "ignore", "ignore", "ipc"],
+			},
+		);
 		this.running = true;
 		this.messages = [];
 		return new Promise((resolve, reject) => {

@@ -13,7 +13,7 @@ import {
 	type SDKUserMessage,
 	StreamingPrompt,
 	spawnExecution as spawn,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { extractSessionId, geminiEventToSDKMessage } from "./adapters.js";
 import { GeminiMessageFormatter } from "./formatter.js";
 import {
@@ -62,7 +62,7 @@ export declare interface GeminiRunner {
  * @example
  * ```typescript
  * const runner = new GeminiRunner({
- *   cyrusHome: '/home/user/.cyrus',
+ *   factoryHome: '/home/user/.bobs-factory',
  *   workingDirectory: '/path/to/repo',
  *   model: 'gemini-2.5-flash',
  *   autoApprove: true
@@ -92,7 +92,7 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 	private readableLogStream: WriteStream | null = null;
 	private messages: SDKMessage[] = [];
 	private streamingPrompt: StreamingPrompt | null = null;
-	private cyrusHome: string;
+	private factoryHome: string;
 	// Delta message accumulation
 	private accumulatingMessage: SDKMessage | null = null;
 	private accumulatingRole: "user" | "assistant" | null = null;
@@ -113,11 +113,11 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 	constructor(config: GeminiRunnerConfig) {
 		super();
 		this.config = config;
-		this.cyrusHome = config.cyrusHome;
+		this.factoryHome = config.factoryHome;
 		// Use workspaceName for unique system prompt file paths (supports parallel execution)
 		const workspaceName = config.workspaceName || "default";
 		this.systemPromptManager = new SystemPromptManager(
-			config.cyrusHome,
+			config.factoryHome,
 			workspaceName,
 		);
 		// Use GeminiMessageFormatter for Gemini-specific tool names
@@ -274,7 +274,7 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 					settingsOptions,
 					this.config.workingDirectory,
 					this.config.runnerArtifactLeaseDirectory ??
-						join(this.cyrusHome, "runner-artifact-leases"),
+						join(this.factoryHome, "runner-artifact-leases"),
 					lease,
 				);
 			}
@@ -865,7 +865,7 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 	 * Set up logging streams for this session
 	 */
 	private setupLogging(): void {
-		const logsDir = join(this.cyrusHome, "logs");
+		const logsDir = join(this.factoryHome, "logs");
 		const workspaceName =
 			this.config.workspaceName ||
 			(this.config.workingDirectory

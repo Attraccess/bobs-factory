@@ -5,11 +5,13 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
-			"cyrus-core": ["../../packages/core/src"],
-			"cyrus-claude-runner": ["../../packages/claude-runner/src"],
-			"cyrus-simple-agent-runner": ["../../packages/simple-agent-runner/src"],
-			"cyrus-config-updater": ["../../packages/config-updater/src"],
-			"cyrus-edge-worker": [
+			"bobs-factory-core": ["../../packages/core/src"],
+			"bobs-factory-claude-runner": ["../../packages/claude-runner/src"],
+			"bobs-factory-simple-agent-runner": [
+				"../../packages/simple-agent-runner/src"
+			],
+			"bobs-factory-config-updater": ["../../packages/config-updater/src"],
+			"bobs-factory-edge-worker": [
 				"../../packages/edge-worker/dist/edge-worker/src/index.d.ts"
 			]
 		},

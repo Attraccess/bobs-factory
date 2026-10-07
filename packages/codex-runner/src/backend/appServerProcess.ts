@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import { executionEnvironment } from "cyrus-core";
+import { executionEnvironment } from "bobs-factory-core";
 import type { CodexConfigValue } from "../types.js";
+import { waitWithAbort } from "./abort.js";
 import {
 	AppServerClient,
 	type AppServerClientFactory,
@@ -9,7 +10,7 @@ import {
 import { resolveCodexAppServerLaunch } from "./codexBinary.js";
 import type { ResolvedCodexConfig } from "./types.js";
 
-const CLIENT_INFO = { name: "cyrus-codex-runner", version: "1.0.0" };
+const CLIENT_INFO = { name: "bobs-factory-codex-runner", version: "1.0.0" };
 const DEFAULT_IDLE_CLOSE_MS = 30_000;
 
 export interface AppServerThreadHandler {
@@ -67,7 +68,8 @@ class PooledAppServerProcess {
 		return this.disposed;
 	}
 
-	async acquireLease(): Promise<AppServerProcessLease> {
+	async acquireLease(signal?: AbortSignal): Promise<AppServerProcessLease> {
+		signal?.throwIfAborted();
 		if (this.disposed) {
 			throw new Error(
 				"Cannot acquire a lease on a disposed app-server process",
@@ -78,10 +80,12 @@ class PooledAppServerProcess {
 
 		let released = false;
 		try {
-			await this.ensureStarted();
+			const started = this.ensureStarted();
+			await (signal ? waitWithAbort(started, signal) : started);
+			signal?.throwIfAborted();
 		} catch (error) {
 			released = true;
-			await this.releaseRef();
+			await this.releaseRef(true);
 			throw error;
 		}
 
@@ -127,11 +131,11 @@ class PooledAppServerProcess {
 	}
 
 	private async ensureStarted(): Promise<void> {
-		if (this.client) {
-			return;
-		}
 		if (this.startPromise) {
 			await this.startPromise;
+			return;
+		}
+		if (this.client) {
 			return;
 		}
 
@@ -159,11 +163,12 @@ class PooledAppServerProcess {
 				capabilities: { experimentalApi: true },
 			})
 			.then(() => undefined)
-			.catch((error) => {
+			.catch(async (error) => {
 				// Failed to initialize — tear down so the pool re-creates cleanly.
 				if (this.client === client) {
 					this.client = null;
 					this.markDisposed();
+					await client.close();
 				}
 				throw error;
 			})
@@ -220,10 +225,10 @@ class PooledAppServerProcess {
 		}
 	}
 
-	private async releaseRef(): Promise<void> {
+	private async releaseRef(failedStartup = false): Promise<void> {
 		this.leaseCount = Math.max(0, this.leaseCount - 1);
 		if (this.leaseCount === 0) {
-			if (this.idleCloseMs <= 0) {
+			if (failedStartup || this.idleCloseMs <= 0) {
 				await this.close();
 				return;
 			}
@@ -291,7 +296,11 @@ export class AppServerProcessManager {
 		this.idleCloseMs = options?.idleCloseMs ?? DEFAULT_IDLE_CLOSE_MS;
 	}
 
-	async acquire(config: ResolvedCodexConfig): Promise<AppServerProcessLease> {
+	async acquire(
+		config: ResolvedCodexConfig,
+		signal?: AbortSignal,
+	): Promise<AppServerProcessLease> {
+		signal?.throwIfAborted();
 		const { command, args } = resolveCodexAppServerLaunch(config.codexPath);
 		const launchOptions: LaunchOptions = {
 			command,
@@ -322,7 +331,8 @@ export class AppServerProcessManager {
 				this.clientFactory,
 				// MCP endpoints can be ephemeral. Release cached transports and the
 				// thread's writer lock before a later invocation resumes from disk.
-				launchOptions.mcpServers || launchOptions.env?.CYRUS_EXECUTION_LEASE
+				launchOptions.mcpServers ||
+					launchOptions.env?.BOBS_FACTORY_EXECUTION_LEASE
 					? 0
 					: this.idleCloseMs,
 				() => {
@@ -337,7 +347,7 @@ export class AppServerProcessManager {
 			proc = created;
 		}
 
-		return proc.acquireLease();
+		return proc.acquireLease(signal);
 	}
 
 	/** Tear down every pooled process (e.g. on shutdown or in tests). */

@@ -1,4 +1,5 @@
 import { Navigate, NavLink, useParams } from "react-router-dom";
+import { AccessSettings } from "./auth";
 import { useAction, useConfig } from "./client";
 import { ExecutionEditor } from "./execution";
 import { AgentSettings } from "./forms";
@@ -7,6 +8,7 @@ import { forgetDraft, revisionOf, useRestorableState } from "./restoration";
 import { Button, useToast } from "./ui";
 
 const pages = [
+	{ id: "access", name: "Access", description: "Passkeys and sign-out" },
 	{
 		id: "execution",
 		name: "Execution defaults",
@@ -59,6 +61,7 @@ export function Settings() {
 				<div className="settings-content">
 					{/* Keep the execution draft mounted while navigating between sections. */}
 					<ExecutionEditor config={config} page={page} />
+					{page === "access" && <AccessSettings />}
 					{page === "capacity" && <MachineCapacitySettings config={config} />}
 					{page === "titles" && <RunTitleSettings config={config} />}
 				</div>
@@ -81,8 +84,8 @@ function MachineCapacitySettings({ config }: { config: any }) {
 			<h2 id="machine-capacity">Instance capacity</h2>
 			<DraftNotice conflict={stale} draftKey={draftKey} />
 			<p>
-				One pool for this Cyrus instance's agents and intensive workflow steps.
-				Default: {capacity.defaultLimit} slots.
+				One pool for this Bob’s Factory instance’s agents and intensive workflow
+				steps. Default: {capacity.defaultLimit} slots.
 			</p>
 			<p role="status">
 				Instance limit: {capacity.limit}{" "}

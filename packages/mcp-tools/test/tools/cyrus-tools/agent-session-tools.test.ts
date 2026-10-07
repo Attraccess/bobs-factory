@@ -1,8 +1,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { describe, expect, it, vi } from "vitest";
-import { createCyrusToolsServer } from "../../../src/tools/cyrus-tools/index.js";
+import { createCyrusToolsServer } from "../../../src/tools/bobs-factory-tools/index.js";
 
-describe("cyrus-tools agent-session permissions", () => {
+describe("bobs-factory-tools agent-session permissions", () => {
 	it("does not expose tools that create Linear agent sessions", () => {
 		const registerTool = vi.spyOn(McpServer.prototype, "registerTool");
 

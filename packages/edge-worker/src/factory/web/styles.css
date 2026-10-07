@@ -4271,6 +4271,152 @@ kbd {
 	height: 1.1rem;
 	flex: 0 0 auto;
 }
+.auth-screen {
+	min-height: 100dvh;
+	display: grid;
+	place-items: center;
+	padding: 1.25rem;
+}
+.auth-card {
+	width: min(100%, 32rem);
+	padding: 1.5rem;
+	border: 1px solid var(--line);
+	border-radius: 1rem;
+	background: var(--surface, Canvas);
+	color: var(--text);
+}
+.auth-card label {
+	display: grid;
+	gap: 0.5rem;
+	margin-block: 1rem;
+}
+.auth-card input {
+	width: 100%;
+	min-height: 2.75rem;
+	padding: 0.6rem;
+	border: 1px solid var(--line);
+	background: var(--field);
+	color: var(--text);
+	border-radius: 0.5rem;
+}
+.auth-card button {
+	margin: 0.4rem 0.4rem 0.4rem 0;
+}
+.auth-card h1 {
+	margin-block: 1rem 0.5rem;
+}
+.auth-card > p {
+	color: var(--secondary);
+}
+.auth-card .auth-sign-in {
+	width: 100%;
+	margin-block: 1rem;
+}
+.auth-setup {
+	border-top: 1px solid var(--line);
+	margin-top: 1rem;
+	padding-top: 1rem;
+}
+.auth-setup summary {
+	cursor: pointer;
+	font-weight: 700;
+	color: var(--secondary);
+}
+.auth-setup p {
+	color: var(--secondary);
+}
+.access-settings {
+	max-width: 44rem;
+	margin-inline: auto;
+}
+.settings-card {
+	padding: 1.5rem;
+	margin-top: 1.5rem;
+	border: 1px solid var(--line);
+	border-radius: 1.25rem;
+	background: var(--surface);
+	box-shadow: var(--shadow);
+}
+.settings-card h2 {
+	margin: 0;
+	font-size: 1.25rem;
+}
+.settings-card p {
+	color: var(--secondary);
+}
+.settings-heading {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+}
+.settings-heading p {
+	margin-bottom: 0;
+}
+.settings-heading > .button {
+	flex-shrink: 0;
+}
+.passkey-list {
+	list-style: none;
+	padding: 0;
+	margin-block: 1.5rem 0;
+}
+.passkey-list li {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding-block: 1rem;
+	border-top: 1px solid var(--line);
+}
+.passkey-list li > div {
+	min-width: 0;
+	display: grid;
+	gap: 0.25rem;
+}
+.passkey-list li span {
+	color: var(--muted);
+	font-size: 0.85rem;
+	overflow-wrap: anywhere;
+}
+.passkey-list .button {
+	flex-shrink: 0;
+}
+.settings-hint {
+	margin-bottom: 0;
+	font-size: 0.9rem;
+}
+.passkey-add {
+	margin-top: 1.5rem;
+	padding: 1rem;
+	border-radius: 0.75rem;
+	background: var(--quiet);
+}
+.passkey-add label {
+	display: grid;
+	gap: 0.5rem;
+	font-weight: 700;
+}
+.passkey-add input {
+	min-width: 0;
+	width: 100%;
+}
+.settings-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+.settings-card .settings-error {
+	color: var(--stuck-text);
+}
+@media (max-width: 640px) {
+	.settings-card {
+		padding: 1rem;
+	}
+	.settings-heading {
+		flex-wrap: wrap;
+	}
+}
 
 .queued-message {
 	display: block;

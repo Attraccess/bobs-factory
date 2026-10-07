@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { type McpServerConfig, ProjectArtifactLease } from "cyrus-core";
+import { type McpServerConfig, ProjectArtifactLease } from "bobs-factory-core";
 import type { GeminiMcpServerConfig } from "./types.js";
 
 interface GeminiSettingsPaths {
@@ -55,7 +55,7 @@ export interface GeminiSettingsOptions {
 }
 
 /**
- * Convert McpServerConfig (cyrus-core format) to GeminiMcpServerConfig (Gemini CLI format)
+ * Convert McpServerConfig (bobs-factory-core format) to GeminiMcpServerConfig (Gemini CLI format)
  * Gemini MCP config reference:
  * - https://geminicli.com/docs/cli/tutorials/mcp-setup/#how-to-configure-gemini-cli
  * - https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/configuration.md
@@ -69,7 +69,7 @@ export interface GeminiSettingsOptions {
  * This function maps to Gemini CLI's format which uses `httpUrl` for HTTP transport.
  *
  * @param serverName - Name of the MCP server (for logging)
- * @param config - McpServerConfig from cyrus-core
+ * @param config - McpServerConfig from bobs-factory-core
  * @returns GeminiMcpServerConfig or null if conversion not possible
  */
 export function convertToGeminiMcpConfig(

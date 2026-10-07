@@ -1,3 +1,13 @@
+# Bob’s Factory development
+
+Use `docs/PRODUCT_CONTRACTS.md` for maintained naming and explicit migration.
+The executable is `bobs-factory`, owned packages are `bobs-factory-*`, environment
+variables use `BOBS_FACTORY_*`, configuration uses `factoryHome`, and state defaults
+to `~/.bobs-factory`. Preserve native credential stores and upstream attribution.
+Binary build/verification guidance is in `docs/distribution/README.md`; upstream npm
+publishing is retired. For migrations read `skills/bobs-factory-migrate/SKILL.md`.
+The remaining architecture guidance describes the code inherited from Cyrus.
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
@@ -348,7 +358,7 @@ pnpm test:watch  # Watch mode
 
 # Local development setup (link development version globally)
 pnpm build                    # Build all packages first
-pnpm uninstall cyrus-ai -g    # Remove published version
+pnpm uninstall bobs-factory-ai -g    # Remove published version
 cd apps/cli                   # Navigate to CLI directory
 pnpm install -g .            # Install local version globally
 pnpm link -g .               # Link local development version
@@ -411,15 +421,15 @@ The agent automatically moves issues to the "started" state when assigned. Linea
    - Uses pnpm as package manager (v10.11.0)
    - TypeScript for all new packages
 
-3. **Git Worktrees**: When processing issues, the agent creates separate git worktrees. If a `cyrus-setup.sh` script exists in the repository root, it's executed in new worktrees for project-specific initialization. Symmetrically, if a `cyrus-teardown.sh` script exists in the repository root, it's executed in the worktree directory immediately before the worktree is removed when the issue reaches a terminal state (completed / canceled / deleted).
+3. **Git Worktrees**: When processing issues, the agent creates separate git worktrees. If a `bobs-factory-setup.sh` script exists in the repository root, it's executed in new worktrees for project-specific initialization. Symmetrically, if a `bobs-factory-teardown.sh` script exists in the repository root, it's executed in the worktree directory immediately before the worktree is removed when the issue reaches a terminal state (completed / canceled / deleted).
 
 4. **Testing**: Uses Vitest for automated tests. Choose proportionate pre-commit validation using the policy above; do not add tests solely because a file changed.
 
-5. **Sandbox Egress Proxy & CA Certificates**: When sandbox is enabled, the egress proxy generates a CA cert at `~/.cyrus/certs/cyrus-egress-ca.pem` for TLS interception. Per-session env vars are set in `RunnerConfigBuilder.buildSandboxConfig()` to cover most tools:
+5. **Sandbox Egress Proxy & CA Certificates**: When sandbox is enabled, the egress proxy generates a CA cert at `~/.bobs-factory/certs/cyrus-egress-ca.pem` for TLS interception. Per-session env vars are set in `RunnerConfigBuilder.buildSandboxConfig()` to cover most tools:
    - `NODE_EXTRA_CA_CERTS` (Node.js), `GIT_SSL_CAINFO` (Git), `SSL_CERT_FILE` (OpenSSL/Ruby), `REQUESTS_CA_BUNDLE` / `PIP_CERT` (Python), `CURL_CA_BUNDLE` (curl/OpenSSL), `CARGO_HTTP_CAINFO` (Rust), `AWS_CA_BUNDLE` (AWS CLI), `DENO_CERT` (Deno)
-   - **`systemWideCert` config flag**: When `sandbox.systemWideCert: true` is set in `config.json`, all per-session CA cert env vars above are skipped — the OS cert store handles trust for all tools. Set this after trusting the CA cert system-wide via `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.cyrus/certs/cyrus-egress-ca.pem` (macOS) or `sudo cp ~/.cyrus/certs/cyrus-egress-ca.pem /usr/local/share/ca-certificates/cyrus-egress-ca.crt && sudo update-ca-certificates` (Linux).
+   - **`systemWideCert` config flag**: When `sandbox.systemWideCert: true` is set in `config.json`, all per-session CA cert env vars above are skipped — the OS cert store handles trust for all tools. Set this after trusting the CA cert system-wide via `sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.bobs-factory/certs/cyrus-egress-ca.pem` (macOS) or `sudo cp ~/.bobs-factory/certs/cyrus-egress-ca.pem /usr/local/share/ca-certificates/cyrus-egress-ca.crt && sudo update-ca-certificates` (Linux).
    - **Gotchas — tools that ignore env vars and require system keychain trust**: Bun, .NET/nuget, curl on macOS (compiled against SecureTransport, the default). For these, users must trust the cert system-wide (see above) regardless of the `systemWideCert` setting.
-   - **Gotcha — parent process env vars**: If `GIT_SSL_CAINFO`, `SSL_CERT_FILE`, or `CURL_CA_BUNDLE` are set in the Cyrus parent process env (e.g., from a previous test or `.env`), they can break git push/fetch from the Cyrus process itself (not child sessions). The parent process does not route through the egress proxy, so these vars should not be set in `~/.cyrus/.env`.
+   - **Gotcha — parent process env vars**: If `GIT_SSL_CAINFO`, `SSL_CERT_FILE`, or `CURL_CA_BUNDLE` are set in the Cyrus parent process env (e.g., from a previous test or `.env`), they can break git push/fetch from the Cyrus process itself (not child sessions). The parent process does not route through the egress proxy, so these vars should not be set in `~/.bobs-factory/.env`.
    - Pre-existing `NODE_EXTRA_CA_CERTS` from the host environment are merged into a combined bundle via `EgressProxy.buildCACertBundle()`.
 
 6. **Two Separate Permission Systems — Tool vs. Sandbox**:
@@ -458,17 +468,17 @@ The agent automatically moves issues to the "started" state when assigned. Linea
 
    So the workflow for a new field is: add it to `EdgeConfigSchema`, let `tsc` and the CLI test point at the two sites, add the merge line + `RELOAD_MERGED_KEYS` entry (hot reload) and — only if it needs env precedence — an explicit override in `startEdgeWorker()`.
 
-10. **Changing the `cyrus-tools` MCP server's exposed tools**: When you add or remove a tool from the inline `cyrus-tools` MCP server (the one served by `apps/proxy` / wired up in `McpConfigService.buildMcpConfig`), you **must also update the catalog `cyrus-hosted` keeps for the `/settings/tools` UI**. cyrus-hosted maintains a per-server tool list so its grid can render a row per tool (with the right per-platform toggle) without having to introspect a live MCP server. Today that catalog lives in `apps/app/src/lib/cyrus-config/builder.ts` under the `KNOWN_MCP_TOOLS` map (look for the `"mcp__cyrus-tools"` key); update that array in the same PR — the same constants are also imported by the platform-default lists in `packages/core/src/allowed-tools-defaults.ts` when a particular `cyrus-tools` tool is enabled by default, so reflect that there too if the new tool should be on out of the box.
+10. **Changing the `bobs-factory-tools` MCP server's exposed tools**: When you add or remove a tool from the inline `bobs-factory-tools` MCP server (the one served by `apps/proxy` / wired up in `McpConfigService.buildMcpConfig`), you **must also update the catalog `cyrus-hosted` keeps for the `/settings/tools` UI**. cyrus-hosted maintains a per-server tool list so its grid can render a row per tool (with the right per-platform toggle) without having to introspect a live MCP server. Today that catalog lives in `apps/app/src/lib/cyrus-config/builder.ts` under the `KNOWN_MCP_TOOLS` map (look for the `"mcp__bobs-factory-tools"` key); update that array in the same PR — the same constants are also imported by the platform-default lists in `packages/core/src/allowed-tools-defaults.ts` when a particular `bobs-factory-tools` tool is enabled by default, so reflect that there too if the new tool should be on out of the box.
 
    Symptom of forgetting this: the new tool is callable at runtime (the runtime knows about it via the live MCP server) but it never appears in the `/settings/tools` MCP Servers section — so operators can't see it, can't toggle it on/off per platform, and per-repo overrides treat it as unknown.
 
-11. **Adding a new path-bearing field to `EdgeWorkerConfig`**: cyrus-hosted emits self-host paths with literal `~/` prefixes (e.g. `~/.cyrus/mcp-configs/mcp-supabase.json`) because the user's home directory is not known server-side. Node's `fs.readFileSync` does **not** expand `~`, so any path string that flows from `config.json` to `readFileSync` (or to a child SDK that does the same) must be run through `resolvePath` from `cyrus-core` first.
+11. **Adding a new path-bearing field to `EdgeWorkerConfig`**: cyrus-hosted emits self-host paths with literal `~/` prefixes (e.g. `~/.bobs-factory/mcp-configs/mcp-supabase.json`) because the user's home directory is not known server-side. Node's `fs.readFileSync` does **not** expand `~`, so any path string that flows from `config.json` to `readFileSync` (or to a child SDK that does the same) must be run through `resolvePath` from `bobs-factory-core` first.
 
    Per-repository paths (`repositoryPath`, `workspaceBaseDir`, `mcpConfigPath`, `promptTemplatePath`) are already normalized at three sites in `EdgeWorker.ts`: the constructor, `addNewRepositories`, and `updateModifiedRepositories`. Each builds a `resolvedRepo` via `resolvePath(...)` before inserting into `this.repositories`, so downstream consumers (e.g. `RunnerConfigBuilder`, `McpConfigService.buildMergedMcpConfigPath`) get already-absolute paths.
 
    **Top-level (non-repo-scoped) path fields are a separate, easy-to-miss codepath.** They live directly on `EdgeWorkerConfig` and are read straight off `this.config.<field>` — they do not go through the repo-resolution loop. When you add one, you must also normalize it. The canonical site for this is `EdgeWorker.normalizeConfigPaths()` (called once in the constructor and once on `configChanged`); add your field there alongside `slackMcpConfigs` / `linearMcpConfigs` / `githubMcpConfigs`.
 
-   Symptom of forgetting this: self-host sessions crash with `ENOENT: no such file or directory, open '~/.cyrus/...'` while cloud sessions (which get absolute paths from cyrus-hosted) work fine. This bit us with the three platform MCP config arrays added in CYHOST-967 / v0.2.53 — they were the only path-bearing fields on `EdgeWorkerConfig` that bypassed normalization, and crashed every self-host session that had a connected platform MCP integration.
+   Symptom of forgetting this: self-host sessions crash with `ENOENT: no such file or directory, open '~/.bobs-factory/...'` while cloud sessions (which get absolute paths from cyrus-hosted) work fine. This bit us with the three platform MCP config arrays added in CYHOST-967 / v0.2.53 — they were the only path-bearing fields on `EdgeWorkerConfig` that bypassed normalization, and crashed every self-host session that had a connected platform MCP integration.
 
 ## Dependency Security Policy (MANDATE)
 

@@ -1,10 +1,10 @@
 {
-	"name": "cyrus-config-updater",
+	"name": "bobs-factory-config-updater",
 	"version": "0.2.73",
-	"description": "Configuration update handlers for Cyrus agent",
+	"description": "Configuration update handlers for Bob’s Factory agent",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/cyrusagents/cyrus.git",
+		"url": "git+https://github.com/Attraccess/bobs-factory.git",
 		"directory": "packages/config-updater"
 	},
 	"type": "module",
@@ -29,7 +29,7 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.31.0",
-		"cyrus-core": "workspace:*",
+		"bobs-factory-core": "workspace:*",
 		"fastify": "^5.12.5",
 		"zod": "^4.3.6"
 	},
@@ -45,5 +45,6 @@
 		"cyrus"
 	],
 	"author": "Cyrus Team",
-	"license": "MIT"
+	"license": "Apache-2.0",
+	"private": true
 }

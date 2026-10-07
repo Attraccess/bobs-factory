@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ILogger, Issue, RepositoryConfig } from "cyrus-core";
+import type { ILogger, Issue, RepositoryConfig } from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { GitService } from "../src/GitService.js";
 
@@ -42,11 +42,11 @@ function fixture() {
 		execFileSync("git", args, { cwd: repo, env, stdio: "pipe" });
 	git(["init", "-q", "-b", "main"]);
 	writeFileSync(
-		join(repo, "cyrus-setup.sh"),
+		join(repo, "bobs-factory-setup.sh"),
 		`#!/bin/sh\nnode -e 'require("node:fs").writeFileSync("probe.json",JSON.stringify({author:process.env.GIT_AUTHOR_NAME,home:process.env.HOME,ambient:process.env.GIT_SERVICE_HOST_CANARY??null}))'\n`,
 		{ mode: 0o755 },
 	);
-	git(["add", "cyrus-setup.sh"]);
+	git(["add", "bobs-factory-setup.sh"]);
 	git(["commit", "-qm", "fixture"]);
 	git(["remote", "add", "origin", repo]);
 	const repository = {
@@ -73,7 +73,7 @@ afterEach(() => {
 it("keeps a scoped service environment through real worktree and hook grandchildren without changing the shared service", async () => {
 	const { root, env, repository, issue } = fixture();
 	vi.stubEnv("GIT_SERVICE_HOST_CANARY", "host-secret");
-	const base = new GitService({ cyrusHome: root }, logger);
+	const base = new GitService({ factoryHome: root }, logger);
 	const scoped = base.withEnvironment(env);
 	const workspace = await scoped.createGitWorktree(issue, [repository]);
 	expect(workspace.isGitWorktree).toBe(true);
@@ -93,7 +93,7 @@ it("keeps a scoped service environment through real worktree and hook grandchild
 it("rejects failed selected fetches without silently creating an unauthenticated fallback workspace", async () => {
 	const { root, env, repository, issue, git } = fixture();
 	git(["remote", "set-url", "origin", join(root, "missing-remote")]);
-	const service = new GitService({ cyrusHome: root }, logger).withEnvironment(
+	const service = new GitService({ factoryHome: root }, logger).withEnvironment(
 		env,
 	);
 	await expect(service.createGitWorktree(issue, [repository])).rejects.toThrow(
@@ -113,20 +113,20 @@ it("retains capacity admission and selected credentials through fetch and setup 
 	const upload = join(root, "upload.sh");
 	writeFileSync(
 		upload,
-		`#!/bin/sh\nnode -e 'require("node:fs").appendFileSync(${JSON.stringify(fetchProbe)},JSON.stringify({author:process.env.GIT_AUTHOR_NAME,ambient:process.env.GIT_SERVICE_HOST_CANARY??null,lease:process.env.CYRUS_EXECUTION_LEASE})+"\\n")'\nexec git-upload-pack "$@"\n`,
+		`#!/bin/sh\nnode -e 'require("node:fs").appendFileSync(${JSON.stringify(fetchProbe)},JSON.stringify({author:process.env.GIT_AUTHOR_NAME,ambient:process.env.GIT_SERVICE_HOST_CANARY??null,lease:process.env.BOBS_FACTORY_EXECUTION_LEASE})+"\\n")'\nexec git-upload-pack "$@"\n`,
 		{ mode: 0o755 },
 	);
 	git(["config", "remote.origin.uploadpack", upload]);
 	writeFileSync(
-		join(repo, "cyrus-setup.sh"),
-		`#!/bin/sh\nnode -e 'require("node:fs").writeFileSync("probe.json",JSON.stringify({author:process.env.GIT_AUTHOR_NAME,ambient:process.env.GIT_SERVICE_HOST_CANARY??null,lease:process.env.CYRUS_EXECUTION_LEASE}))'\n`,
+		join(repo, "bobs-factory-setup.sh"),
+		`#!/bin/sh\nnode -e 'require("node:fs").writeFileSync("probe.json",JSON.stringify({author:process.env.GIT_AUTHOR_NAME,ambient:process.env.GIT_SERVICE_HOST_CANARY??null,lease:process.env.BOBS_FACTORY_EXECUTION_LEASE}))'\n`,
 		{ mode: 0o755 },
 	);
-	git(["add", "cyrus-setup.sh"]);
+	git(["add", "bobs-factory-setup.sh"]);
 	git(["commit", "-qm", "capacity probe"]);
 	vi.stubEnv("GIT_SERVICE_HOST_CANARY", "host-secret");
 	const service = new GitService(
-		{ cyrusHome: root, capacity: () => capacity },
+		{ factoryHome: root, capacity: () => capacity },
 		logger,
 	).withEnvironment(env);
 	const pending = service.createGitWorktree(issue, [repository]);

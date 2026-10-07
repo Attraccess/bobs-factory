@@ -12,7 +12,6 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { FactoryServer } from "../src/factory/FactoryServer.js";
 import {
 	createReviewSnapshot,
 	finalizeGuideFiles,
@@ -25,6 +24,7 @@ import {
 	type ExecutionContext,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { FactoryServer } from "./fixtures/authenticated-factory.js";
 
 const directories: string[] = [];
 afterEach(() => {

@@ -12,6 +12,7 @@ import {
 	useParams,
 } from "react-router-dom";
 import { ArtifactCard, Inspector } from "./artifacts";
+import { AccessBoundary } from "./auth";
 import {
 	active,
 	ago,
@@ -824,7 +825,7 @@ function RunPage({
 		visited = new Set(run.history?.map((h: any) => h.step));
 	const graphRows = steps.length
 			? steps
-			: [{ id: "simple", key: "simple", name: "Cyrus session" }],
+			: [{ id: "simple", key: "simple", name: "Bob’s Factory session" }],
 		rows = [
 			...graphRows,
 			...Object.keys(run.capacityLeaves ?? {})
@@ -1230,7 +1231,9 @@ createRoot(document.getElementById("root")!).render(
 	<QueryClientProvider client={client}>
 		<HashRouter>
 			<ToastProvider>
-				<App />
+				<AccessBoundary>
+					<App />
+				</AccessBoundary>
 			</ToastProvider>
 		</HashRouter>
 	</QueryClientProvider>,

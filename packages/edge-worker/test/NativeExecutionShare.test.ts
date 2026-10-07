@@ -15,7 +15,7 @@ const native = vi.hoisted(() => ({
 	account: "native@example.test",
 	inspect: vi.fn(),
 }));
-vi.mock("cyrus-codex-runner", async (original) => ({
+vi.mock("bobs-factory-codex-runner", async (original) => ({
 	...(await original<any>()),
 	inspectCodexNativeLogin: native.inspect,
 }));
@@ -146,7 +146,7 @@ it.each([
 	expect(Object.keys(resolved.mcp)).toEqual(["declared"]);
 	if (runner === "codex")
 		expect(resolved.disabledMcp).toContain("unselectedNative");
-	const config: any = { cyrusHome: root };
+	const config: any = { factoryHome: root };
 	resolver.apply(config, snapshot, resolved);
 	expect(config.strictMcpConfig).toBe(true);
 	expect(config.settingSources).toEqual([]);

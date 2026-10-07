@@ -1,4 +1,4 @@
-import type { IAgentRunner } from "cyrus-core";
+import type { IAgentRunner } from "bobs-factory-core";
 
 export interface ChatState {
 	enabled: boolean;
@@ -21,7 +21,7 @@ export function steeringState(runner?: IAgentRunner): ChatState {
 			enabled: true,
 			available: false,
 			reason:
-				"This runner cannot receive messages while working. Wait for the Cyrus session to finish.",
+				"This runner cannot receive messages while working. Wait for the Bob’s Factory session to finish.",
 		};
 	if (runner.isStreaming && !runner.isStreaming())
 		return {

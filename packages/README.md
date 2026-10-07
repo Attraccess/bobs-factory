@@ -1,6 +1,6 @@
-# Cyrus Packages
+# Bob’s Factory Packages
 
-This directory contains the core packages that make up the Cyrus monorepo. Each package has a specific scope of concerns and well-defined responsibilities.
+This directory contains the core packages that make up the Bob’s Factory monorepo. Each package has a specific scope of concerns and well-defined responsibilities.
 
 ## Package Overview
 

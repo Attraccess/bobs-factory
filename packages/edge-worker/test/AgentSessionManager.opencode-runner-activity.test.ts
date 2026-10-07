@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OpenCodeRunner } from "cyrus-opencode-runner";
+import { OpenCodeRunner } from "bobs-factory-opencode-runner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager";
 import type { IActivitySink } from "../src/sinks/IActivitySink";
@@ -71,7 +71,7 @@ describe("AgentSessionManager - OpenCode activity mapping", () => {
 		const runner = new OpenCodeRunner({
 			openCodePath: writeFakeOpenCode(dir),
 			workingDirectory: dir,
-			cyrusHome: dir,
+			factoryHome: dir,
 			opencodeGlobalConfig: {
 				model: "anthropic/claude-sonnet-4.5",
 			},
@@ -181,7 +181,7 @@ describe("AgentSessionManager - OpenCode activity mapping", () => {
 		const runner = new OpenCodeRunner({
 			openCodePath: writeFakeOpenCode(dir),
 			workingDirectory: dir,
-			cyrusHome: dir,
+			factoryHome: dir,
 			model: "openai/gpt-5.5",
 		});
 		manager.addAgentRunner(sessionId, runner);

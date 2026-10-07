@@ -12,13 +12,13 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { inspectCodexNativeLogin } from "cyrus-codex-runner";
+import { inspectCodexNativeLogin } from "bobs-factory-codex-runner";
 import type {
 	AgentRunnerConfig,
 	McpServerConfig,
 	RunnerType,
-} from "cyrus-core";
-import { ProjectArtifactLease, resolvePath } from "cyrus-core";
+} from "bobs-factory-core";
+import { ProjectArtifactLease, resolvePath } from "bobs-factory-core";
 import { codexSystemMcp } from "./CodexSystemSources.js";
 import {
 	executionCapabilities,
@@ -35,7 +35,7 @@ export interface ResolvedExecutionEnvironment {
 	environment: Record<string, string>;
 	mcp: Record<string, McpServerConfig>;
 	root: string;
-	settings: import("cyrus-core").JsonObject;
+	settings: import("bobs-factory-core").JsonObject;
 	repositoryInstructions?: string;
 	git?: {
 		author: string;
@@ -262,7 +262,7 @@ export class ExecutionEnvironmentResolver {
 			throw new Error(
 				`Private ${runner} tools require an explicit API credential binding. Native login-cache relocation is unsupported; select an identity profile with an explicit credential reference.`,
 			);
-		validateProfileRunner({ cyrusHome: this.directory }, snapshot, runner);
+		validateProfileRunner({ factoryHome: this.directory }, snapshot, runner);
 		const native = auth?.kind === "native-login";
 		const root = join(this.directory, "execution-private", id);
 		const owned = ["cursor", "gemini"].includes(runner)
@@ -1147,7 +1147,7 @@ export class ExecutionEnvironmentResolver {
 				},
 			});
 		}
-		config.cyrusHome = join(resolved.root, "runner-logs");
+		config.factoryHome = join(resolved.root, "runner-logs");
 		config.runnerArtifactLeaseDirectory = ProjectArtifactLease.sharedDirectory;
 		config.opencodeStateScope = "inherit";
 		config.opencodeGlobalConfig = {

@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { spawnExecution as spawn } from "cyrus-core";
+import { spawnExecution as spawn } from "bobs-factory-core";
 import type { CapacityOptions, ExecutionCapacity } from "./MachineCapacity.js";
 export const setupExecutionScope = new AsyncLocalStorage<{
 	signal: AbortSignal;
@@ -26,13 +26,13 @@ import type {
 	RepoSetupHookEventHandler,
 	RepositoryConfig,
 	Workspace,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import {
 	createLogger,
 	executionEnvironment,
 	getDefaultWorktreesDir,
 	type ILogger,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { WorktreeIncludeService } from "./WorktreeIncludeService.js";
 
 export interface CreateGitWorktreeOptions {
@@ -53,7 +53,7 @@ export interface CreateGitWorktreeOptions {
 
 export interface GitServiceOptions {
 	capacity?: () => ExecutionCapacity;
-	cyrusHome?: string;
+	factoryHome?: string;
 	/** Complete process environment for a single accepted execution context. */
 	childEnvironment?: Record<string, string>;
 }
@@ -61,7 +61,7 @@ export interface GitServiceOptions {
 export interface DeleteWorktreeOptions {
 	/**
 	 * Repositories involved with this issue's workspace. When provided, each
-	 * repo's `cyrus-teardown.sh` (if present) is invoked before worktree removal,
+	 * repo's `bobs-factory-teardown.sh` (if present) is invoked before worktree removal,
 	 * with `cwd` set to that repo's worktree subdirectory.
 	 *
 	 * In the single-repo layout, the worktree subdirectory is the workspace root.
@@ -70,10 +70,10 @@ export interface DeleteWorktreeOptions {
 	repositories?: RepositoryConfig[];
 }
 
-/** Timeout for repo setup scripts (cyrus-setup.*). */
+/** Timeout for repo setup scripts (bobs-factory-setup.*). */
 const SETUP_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** Timeout for repo teardown scripts (cyrus-teardown.*). */
+/** Timeout for repo teardown scripts (bobs-factory-teardown.*). */
 const TEARDOWN_TIMEOUT_MS = 2 * 60 * 1000;
 
 const HOOK_OUTPUT_TAIL_MAX_BYTES = 64 * 1024;
@@ -232,7 +232,7 @@ class HookOutputCollector {
 export class GitService {
 	private logger: ILogger;
 	private worktreeIncludeService: WorktreeIncludeService;
-	private cyrusHome: string;
+	private factoryHome: string;
 	private childEnvironment?: Record<string, string>;
 
 	constructor(
@@ -241,7 +241,7 @@ export class GitService {
 	) {
 		this.logger = logger ?? createLogger({ component: "GitService" });
 		this.worktreeIncludeService = new WorktreeIncludeService(this.logger);
-		this.cyrusHome = options?.cyrusHome ?? join(homedir(), ".cyrus");
+		this.factoryHome = options?.factoryHome ?? join(homedir(), ".bobs-factory");
 		this.childEnvironment = options?.childEnvironment
 			? { ...options.childEnvironment }
 			: undefined;
@@ -252,7 +252,7 @@ export class GitService {
 		return new GitService(
 			{
 				...this.options,
-				cyrusHome: this.cyrusHome,
+				factoryHome: this.factoryHome,
 				childEnvironment: environment,
 			},
 			this.logger,
@@ -1071,7 +1071,7 @@ export class GitService {
 	 * directory is the root in both cases.
 	 *
 	 * If `options.repositories` is supplied, each repo's per-repo
-	 * `cyrus-teardown.sh` (if present in its repo root) is invoked **before**
+	 * `bobs-factory-teardown.sh` (if present in its repo root) is invoked **before**
 	 * the worktrees are removed, with `cwd` set to that repo's worktree
 	 * subdirectory. A failure in one repo's teardown does not block the others
 	 * or the final `rmSync`.
@@ -1084,7 +1084,7 @@ export class GitService {
 		options: DeleteWorktreeOptions = {},
 	): Promise<void> {
 		const workspacePath = join(
-			getDefaultWorktreesDir(this.cyrusHome),
+			getDefaultWorktreesDir(this.factoryHome),
 			issueIdentifier,
 		);
 
@@ -1297,7 +1297,7 @@ export class GitService {
 	}
 
 	/**
-	 * Find and run a repository-specific setup script (cyrus-setup.sh/.ps1/.cmd/.bat)
+	 * Find and run a repository-specific setup script (bobs-factory-setup.sh/.ps1/.cmd/.bat)
 	 */
 	private async runRepoSetupScript(
 		workspacePath: string,
@@ -1321,7 +1321,7 @@ export class GitService {
 	}
 
 	/**
-	 * Find and run a repository-specific teardown script (cyrus-teardown.sh/.ps1/.cmd/.bat).
+	 * Find and run a repository-specific teardown script (bobs-factory-teardown.sh/.ps1/.cmd/.bat).
 	 *
 	 * Mirrors {@link runRepoSetupScript} but is invoked from {@link deleteWorktree}
 	 * immediately before the worktree subdirectory is removed. Only
@@ -1344,7 +1344,7 @@ export class GitService {
 
 	/**
 	 * Shared discovery+dispatch for repo-scoped hook scripts (setup and teardown).
-	 * Looks in `workspacePath` for `cyrus-<hook>.{sh,ps1,cmd,bat}` and runs the
+	 * Looks in `workspacePath` for `bobs-factory-<hook>.{sh,ps1,cmd,bat}` and runs the
 	 * first compatible variant with `cwd` set to `workspacePath`.
 	 */
 	private async runRepoHookScript(opts: {
@@ -1358,10 +1358,10 @@ export class GitService {
 	}): Promise<void> {
 		const isWindows = process.platform === "win32";
 		const candidates = [
-			{ file: `cyrus-${opts.hook}.sh`, platform: "unix" as const },
-			{ file: `cyrus-${opts.hook}.ps1`, platform: "windows" as const },
-			{ file: `cyrus-${opts.hook}.cmd`, platform: "windows" as const },
-			{ file: `cyrus-${opts.hook}.bat`, platform: "windows" as const },
+			{ file: `bobs-factory-${opts.hook}.sh`, platform: "unix" as const },
+			{ file: `bobs-factory-${opts.hook}.ps1`, platform: "windows" as const },
+			{ file: `bobs-factory-${opts.hook}.cmd`, platform: "windows" as const },
+			{ file: `bobs-factory-${opts.hook}.bat`, platform: "windows" as const },
 		];
 
 		const available = candidates.find((c) => {
@@ -1490,7 +1490,7 @@ export class GitService {
 							durationMs: Date.now() - startedAt,
 							errorMessage: "Repository setup hook is not executable",
 							stderrTail:
-								"Make cyrus-setup.sh executable in the repository and commit the executable bit: git update-index --chmod=+x cyrus-setup.sh",
+								"Make bobs-factory-setup.sh executable in the repository and commit the executable bit: git update-index --chmod=+x bobs-factory-setup.sh",
 							truncated: false,
 						});
 					}

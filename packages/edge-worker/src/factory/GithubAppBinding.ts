@@ -1,6 +1,6 @@
 import { createSign } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
-import { resolvePath } from "cyrus-core";
+import { resolvePath } from "bobs-factory-core";
 import { z } from "zod";
 
 export interface GithubAppReference {

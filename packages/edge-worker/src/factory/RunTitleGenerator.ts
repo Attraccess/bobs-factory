@@ -5,7 +5,7 @@ import type {
 	IAgentRunner,
 	RunTitleJob,
 	SDKMessage,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import type { CapacityLease, ExecutionCapacity } from "../MachineCapacity.js";
 
 export const titleSystemPrompt = `Generate a useful task title of roughly 3–10 words, at most 120 characters. Return only {"title":"..."}.

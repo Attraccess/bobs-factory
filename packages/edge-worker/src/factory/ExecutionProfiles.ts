@@ -219,7 +219,10 @@ export const ToolProfileSchema = z
 			value.runnerSettings ?? {},
 		)) {
 			try {
-				ordinarySettings(runner as import("cyrus-core").RunnerType, settings);
+				ordinarySettings(
+					runner as import("bobs-factory-core").RunnerType,
+					settings,
+				);
 			} catch (error) {
 				context.addIssue({ code: "custom", message: (error as Error).message });
 			}

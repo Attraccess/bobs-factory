@@ -23,7 +23,7 @@ it("runs two workers with independent environments and forwards native session e
 			childEnvironment: {
 				HOME: root,
 				PATH: process.env.PATH!,
-				CYRUS_CURSOR_MOCK: "1",
+				BOBS_FACTORY_CURSOR_MOCK: "1",
 				CURSOR_API_KEY: name,
 			},
 			allowedTools: ["Read"],

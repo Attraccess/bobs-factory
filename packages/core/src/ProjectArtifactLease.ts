@@ -36,7 +36,7 @@ export class ProjectArtifactLease {
 	static get sharedDirectory(): string {
 		return join(
 			tmpdir(),
-			`cyrus-artifact-leases-${process.getuid?.() ?? "user"}`,
+			`bobs-factory-artifact-leases-${process.getuid?.() ?? "user"}`,
 		);
 	}
 	/** Wait only for the shared workspace resource, leaving unrelated jobs concurrent. */
@@ -111,7 +111,7 @@ export class ProjectArtifactLease {
 		resource: string,
 		privateDirectory = join(
 			tmpdir(),
-			`cyrus-artifact-leases-${process.getuid?.() ?? "user"}`,
+			`bobs-factory-artifact-leases-${process.getuid?.() ?? "user"}`,
 		),
 	) {
 		workspace = realpathSync(workspace);

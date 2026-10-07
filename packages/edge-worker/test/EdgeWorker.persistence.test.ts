@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type {
 	PersistenceManager,
 	SerializableEdgeWorkerState,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import type { MachineCapacity } from "../src/MachineCapacity.js";
@@ -33,7 +33,7 @@ it.each([
 	homes.push(home);
 	const worker = new EdgeWorker({
 		platform: "cli",
-		cyrusHome: home,
+		factoryHome: home,
 		repositories: [],
 	});
 	const access = worker as unknown as PersistenceAccess;
@@ -102,7 +102,7 @@ it.each([
 	homes.push(home);
 	const worker = new EdgeWorker({
 		platform: "cli",
-		cyrusHome: home,
+		factoryHome: home,
 		repositories: [],
 	});
 	const access = worker as unknown as PersistenceAccess;
