@@ -905,7 +905,13 @@ export function ExecutionSelectors({
 		</details>
 	);
 }
-export function ExecutionEditor({ config }: { config: any }) {
+export function ExecutionEditor({
+	config,
+	page,
+}: {
+	config: any;
+	page?: string;
+}) {
 	const action = useAction();
 	const [draft, setDraft] = useState<any>();
 	const [editing, setEditing] = useState<{
@@ -913,12 +919,22 @@ export function ExecutionEditor({ config }: { config: any }) {
 		index: number;
 	}>();
 	const profiles = draft ?? config.executionProfiles;
-	if (!profiles) return null;
+	if (!profiles || !["execution", "identities", "tools"].includes(page ?? ""))
+		return null;
 	const update = (next: any) => setDraft(next);
 	const selected = editing && profiles[editing.kind][editing.index];
 	return (
-		<details className="execution-editor">
-			<summary>Execution profiles and defaults</summary>
+		<section
+			className="execution-editor recipe"
+			aria-labelledby="execution-settings-heading"
+		>
+			<h2 id="execution-settings-heading">
+				{page === "execution"
+					? "Execution defaults"
+					: page === "identities"
+						? "Identity profiles"
+						: "Tool profiles"}
+			</h2>
 			<p>
 				Select Git identity, repository accounts and runner authentication
 				independently from MCP tools. Credentials stay in protected files or
@@ -939,48 +955,55 @@ export function ExecutionEditor({ config }: { config: any }) {
 					available for recovery.
 				</p>
 			)}
-			{(["identities", "tools"] as const).map((kind) => (
-				<fieldset key={kind}>
-					<legend>
-						{kind === "identities" ? "Identity profiles" : "Tool profiles"}
-					</legend>
-					{profiles[kind].map((p: any, index: number) => (
-						<div key={index}>
-							<Button onClick={() => setEditing({ kind, index })}>
-								{p.name || "New profile"} ({p.id || "choose an ID"})
-							</Button>
-							<Button
-								onClick={() => {
-									update({
-										...profiles,
-										[kind]: profiles[kind].filter(
-											(_: any, i: number) => i !== index,
-										),
-									});
-									setEditing(undefined);
-								}}
-							>
-								Remove
-							</Button>
-						</div>
-					))}
-					<Button
-						onClick={() => {
-							update({
-								...profiles,
-								[kind]: [
-									...profiles[kind],
-									kind === "identities" ? newIdentity() : newTools(),
-								],
-							});
-							setEditing({ kind, index: profiles[kind].length });
-						}}
-					>
-						Add {kind === "identities" ? "identity" : "tool"} profile
-					</Button>
-				</fieldset>
-			))}
-			{selected && editing && (
+			{(["identities", "tools"] as const)
+				.filter((kind) => kind === page)
+				.map((kind) => (
+					<fieldset key={kind}>
+						<legend>
+							{kind === "identities" ? "Identity profiles" : "Tool profiles"}
+						</legend>
+						{profiles[kind].map((p: any, index: number) => (
+							<div className="profile-row" key={index}>
+								<Button
+									aria-pressed={
+										editing?.kind === kind && editing.index === index
+									}
+									onClick={() => setEditing({ kind, index })}
+								>
+									{p.name || "New profile"} ({p.id || "choose an ID"})
+								</Button>
+								<Button
+									onClick={() => {
+										update({
+											...profiles,
+											[kind]: profiles[kind].filter(
+												(_: any, i: number) => i !== index,
+											),
+										});
+										setEditing(undefined);
+									}}
+								>
+									Remove
+								</Button>
+							</div>
+						))}
+						<Button
+							onClick={() => {
+								update({
+									...profiles,
+									[kind]: [
+										...profiles[kind],
+										kind === "identities" ? newIdentity() : newTools(),
+									],
+								});
+								setEditing({ kind, index: profiles[kind].length });
+							}}
+						>
+							Add {kind === "identities" ? "identity" : "tool"} profile
+						</Button>
+					</fieldset>
+				))}
+			{selected && editing && editing.kind === page && (
 				<fieldset>
 					<legend>Edit profile</legend>
 					<Text
@@ -1036,84 +1059,101 @@ export function ExecutionEditor({ config }: { config: any }) {
 					)}
 				</fieldset>
 			)}
-			{[{ id: "", name: "Factory defaults" }, ...config.repositories].map(
-				(repo: any) => (
-					<fieldset key={repo.id}>
-						<legend>{repo.name}</legend>
-						{[
-							["identityProfile", "Identity", profiles.identities],
-							["toolProfile", "Tools", profiles.tools],
-						].map(([key, label, list]: any) => {
-							const selection = repo.id
-								? (profiles.repositories[repo.id] ?? {})
-								: profiles.defaults;
-							return (
-								<label key={key}>
-									{label}
-									<select
-										value={selection[key] ?? ""}
-										onChange={(e) => {
-											const next = {
-												...selection,
-												[key]: e.target.value || undefined,
-											};
-											update(
-												repo.id
-													? {
-															...profiles,
-															repositories: {
-																...profiles.repositories,
-																[repo.id]: next,
-															},
-														}
-													: { ...profiles, defaults: next },
-											);
-										}}
-									>
-										<option value="">
-											{repo.id ? "Factory default" : "Legacy"}
-										</option>
-										{list.map((p: any, i: number) => (
-											<option value={p.id} key={i}>
-												{p.name}
-											</option>
-										))}
-									</select>
-								</label>
-							);
-						})}
-					</fieldset>
-				),
+			{page === "execution" && (
+				<>
+					<p>
+						Choose identity and tools independently. Repository choices override
+						factory defaults; Legacy preserves existing host configuration.
+					</p>
+					{[{ id: "", name: "Factory defaults" }, ...config.repositories].map(
+						(repo: any) => (
+							<fieldset key={repo.id}>
+								<legend>{repo.name}</legend>
+								{[
+									["identityProfile", "Identity", profiles.identities],
+									["toolProfile", "Tools", profiles.tools],
+								].map(([key, label, list]: any) => {
+									const selection = repo.id
+										? (profiles.repositories[repo.id] ?? {})
+										: profiles.defaults;
+									return (
+										<label key={key}>
+											{label}
+											<select
+												value={selection[key] ?? ""}
+												onChange={(e) => {
+													const next = {
+														...selection,
+														[key]: e.target.value || undefined,
+													};
+													update(
+														repo.id
+															? {
+																	...profiles,
+																	repositories: {
+																		...profiles.repositories,
+																		[repo.id]: next,
+																	},
+																}
+															: { ...profiles, defaults: next },
+													);
+												}}
+											>
+												<option value="">
+													{repo.id ? "Factory default" : "Legacy"}
+												</option>
+												{list.map((p: any, i: number) => (
+													<option value={p.id} key={i}>
+														{p.name}
+													</option>
+												))}
+											</select>
+										</label>
+									);
+								})}
+							</fieldset>
+						),
+					)}
+				</>
 			)}
-			{action.error && <p role="alert">{action.error.message}</p>}
-			<Button
-				disabled={!draft || action.isPending}
-				onClick={() => {
-					void action
-						.mutateAsync({
-							path: "/api/execution-profiles",
-							method: "PUT",
-							body: { profiles, expectedRevision: profiles.revision },
-						})
-						.then(() => {
-							setDraft(undefined);
-							setEditing(undefined);
-						})
-						.catch(() => {});
-				}}
-			>
-				Save profiles and defaults
-			</Button>
-			<Button
-				disabled={!draft}
-				onClick={() => {
-					setDraft(undefined);
-					setEditing(undefined);
-				}}
-			>
-				Discard draft
-			</Button>
-		</details>
+			<div className="settings-save">
+				{draft && (
+					<p role="status">
+						Unsaved execution changes. Saving applies your edits across
+						defaults, identity profiles and tool profiles.
+					</p>
+				)}
+				{action.error && <p role="alert">{action.error.message}</p>}
+				<Button
+					disabled={!draft || action.isPending}
+					onClick={() => {
+						void action
+							.mutateAsync({
+								path: "/api/execution-profiles",
+								method: "PUT",
+								body: { profiles, expectedRevision: profiles.revision },
+							})
+							.then(() => {
+								setDraft(undefined);
+								setEditing(undefined);
+							})
+							.catch(() => {});
+					}}
+				>
+					Save execution settings
+				</Button>
+				<Button
+					disabled={!draft || action.isPending}
+					onClick={() => {
+						setDraft(undefined);
+						setEditing(undefined);
+						action.reset();
+					}}
+				>
+					Discard draft
+				</Button>
+			</div>
+		</section>
 	);
 }
 

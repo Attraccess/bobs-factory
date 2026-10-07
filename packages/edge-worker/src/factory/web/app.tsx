@@ -62,6 +62,7 @@ import {
 	writeStored,
 	writeTextStored,
 } from "./review-state";
+import { Settings } from "./settings";
 import {
 	applyTheme,
 	readThemeChoice,
@@ -174,7 +175,12 @@ function Header({
 				</Link>
 				<nav className="nav-pill" aria-label="Main navigation">
 					<Link
-						aria-current={location.pathname !== "/recipes" ? "page" : undefined}
+						aria-current={
+							location.pathname === "/" ||
+							location.pathname.startsWith("/runs/")
+								? "page"
+								: undefined
+						}
 						to="/"
 						state={todayContext(location.pathname, location.state)}
 					>
@@ -186,6 +192,14 @@ function Header({
 						to="/recipes"
 					>
 						Recipes
+					</Link>
+					<Link
+						aria-current={
+							location.pathname.startsWith("/settings") ? "page" : undefined
+						}
+						to="/settings"
+					>
+						Settings
 					</Link>
 				</nav>
 				<div className="header-actions">
@@ -1130,6 +1144,7 @@ function App() {
 								}
 							/>
 							<Route path="/recipes" element={<Recipes />} />
+							<Route path="/settings/*" element={<Settings />} />
 							<Route
 								path="/runs/:id/review"
 								element={

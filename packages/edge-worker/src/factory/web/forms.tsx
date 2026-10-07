@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { passiveTools } from "../CapacityPolicy";
 import { useAction, useConfig } from "./client";
-import { ExecutionEditor, ExecutionSelectors } from "./execution";
+import { ExecutionSelectors } from "./execution";
 import {
 	readComposerExecution,
 	writeComposerExecution,
@@ -460,71 +460,6 @@ function ownRoles(
 				: [],
 	);
 }
-function MachineCapacitySettings({ config }: { config: any }) {
-	const capacity = config.capacity;
-	const action = useAction();
-	const draftKey = "recipe/machine-capacity";
-	const [draft, setDraft, stale] = useRestorableState<
-		{ limit: string } | undefined
-	>(draftKey, undefined, revisionOf(capacity?.limit));
-	const limit = draft?.limit ?? String(capacity?.limit ?? 4);
-	if (!capacity) return null;
-	return (
-		<section className="recipe" aria-labelledby="machine-capacity">
-			<h2 id="machine-capacity">Machine capacity</h2>
-			<DraftNotice conflict={stale} draftKey={draftKey} />
-			<p>
-				One shared pool for agents and intensive workflow steps. Default:{" "}
-				{capacity.defaultLimit} slots.
-			</p>
-			<p role="status">
-				Shared limit: {capacity.limit} {capacity.limit === 1 ? "slot" : "slots"}
-				. {capacity.active} executing · {capacity.stopping} stopping ·{" "}
-				{capacity.queued} waiting for capacity
-			</p>
-			{capacity.error && <p role="alert">{capacity.error}</p>}
-			{capacity.conflict && <p role="alert">{capacity.conflict}</p>}
-			<form
-				onSubmit={async (event) => {
-					event.preventDefault();
-					if (stale || action.isPending) return;
-					try {
-						await action.mutateAsync({
-							path: "/api/capacity",
-							method: "PUT",
-							body: { limit: Number(limit) },
-						});
-						setDraft(undefined);
-						forgetDraft(draftKey);
-					} catch {}
-				}}
-			>
-				<label>
-					Shared slot limit{" "}
-					<input
-						type="number"
-						min="1"
-						step="1"
-						required
-						disabled={action.isPending}
-						value={limit}
-						onChange={(event) => {
-							setDraft({ limit: event.target.value });
-						}}
-					/>
-				</label>
-				<Button
-					type="submit"
-					requiresConnection
-					disabled={draft === undefined || stale || action.isPending}
-				>
-					Save machine limit
-				</Button>
-				{action.error && <p role="alert">{action.error.message}</p>}
-			</form>
-		</section>
-	);
-}
 function CapacityClassification({
 	disabled,
 	steps,
@@ -591,59 +526,6 @@ function CapacityClassification({
 		</div>
 	);
 }
-function RunTitleSettings({ config }: { config: any }) {
-	const draftKey = "recipe/title-settings";
-	const [draft, setDraft, stale] = useRestorableState<
-		{ value: any } | undefined
-	>(draftKey, undefined, revisionOf(config.titleGeneration ?? {}));
-	const value = draft?.value ?? config.titleGeneration ?? {};
-	const dirty = draft !== undefined;
-	const action = useAction(),
-		toast = useToast();
-	return (
-		<section className="recipe" aria-labelledby="run-title-settings">
-			<h2 id="run-title-settings">Run titles</h2>
-			<DraftNotice conflict={stale} draftKey={draftKey} />
-			<p>
-				Choose a fast, inexpensive agent to name all new runs. Runs start with
-				their ID while titles generate in the background. These settings are
-				independent of execution agents.
-			</p>
-			<AgentSettings
-				config={config}
-				value={value}
-				label="Global default"
-				modelPlaceholder="Provider global default"
-				onChange={(next) => {
-					setDraft({ value: next });
-				}}
-			/>
-			<Button
-				requiresConnection
-				disabled={!dirty || stale || action.isPending}
-				onClick={() =>
-					!stale &&
-					void action
-						.mutateAsync({
-							path: "/api/title-settings",
-							method: "PUT",
-							body: value,
-						})
-						.then(() => {
-							setDraft(undefined);
-							forgetDraft(draftKey);
-							toast({ text: "Run title settings saved" });
-						})
-						.catch(() => {})
-				}
-			>
-				Save title settings
-			</Button>
-			{action.error && <p role="alert">{action.error.message}</p>}
-		</section>
-	);
-}
-
 export function Recipes() {
 	const configQuery = useConfig(),
 		toast = useToast(),
@@ -693,11 +575,10 @@ export function Recipes() {
 				recipe is used when nothing else matches. Launch methods apply to new
 				runs; existing runs retain their definitions.
 			</p>
-			<ExecutionEditor config={config} />
-			<div className="recipe-settings">
-				<MachineCapacitySettings config={config} />
-				<RunTitleSettings config={config} />
-			</div>
+			<p className="muted">
+				Factory-wide profiles, defaults, capacity and run titles are in{" "}
+				<Link to="/settings">Settings</Link>.
+			</p>
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (
 					<article className="recipe" key={workflow.id}>
