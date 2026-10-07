@@ -6,6 +6,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
+- Correct the selected signed-out passkey update screenshot to 1280×900 and retain explicit viewport, build and protected-access receipts for QA reassessment. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
+
 - Integrate refinement recommendations with the latest workflow recovery changes, retaining recommendation validation and bounded retry regression coverage. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Update the complete routing-prompt expectation for refinement recommendations so CI validates the current capability guidance. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
