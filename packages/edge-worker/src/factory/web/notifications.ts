@@ -62,7 +62,7 @@ export async function pushApi<T>(
 		cache: "no-store",
 		signal: AbortSignal.timeout(10000),
 		headers: {
-			"Content-Type": "application/json",
+			...(options.body != null ? { "Content-Type": "application/json" } : {}),
 			"X-Factory-Request": "1",
 			"X-Factory-Build": uiBuild,
 		},

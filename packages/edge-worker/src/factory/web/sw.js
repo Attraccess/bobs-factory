@@ -187,8 +187,8 @@ self.addEventListener("push", (event) => {
 			body: valid
 				? notificationBodies[payload.category]
 				: "Open Factory to check current state.",
-			icon: "/icon-192.png",
-			badge: "/icon-192.png",
+			icon: "/icons/icon-192.png",
+			badge: "/icons/icon-192.png",
 			tag:
 				typeof data.runId === "string" &&
 				/^[A-Za-z0-9_-]{1,200}$/.test(data.runId)

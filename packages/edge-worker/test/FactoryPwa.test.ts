@@ -927,6 +927,8 @@ it("displays minimal visible push, focuses a same-origin tab without reload, and
 		"Bob’s Factory",
 		expect.objectContaining({
 			body: "A new review needs your approval.",
+			icon: "/icons/icon-192.png",
+			badge: "/icons/icon-192.png",
 			data: {
 				category: "review",
 				runId: "run",

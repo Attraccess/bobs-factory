@@ -1,7 +1,9 @@
+import Fastify from "fastify";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
 	disablePush,
 	enablePush,
+	pushApi,
 	pushPreference,
 	reconcilePush,
 	savePushPreference,
@@ -131,6 +133,41 @@ it("unsubscribes before a failed server cleanup and preserves an opt-out to reco
 		optOut: true,
 		cleanup: "one",
 	});
+});
+
+it("removes devices and recovers deferred cleanup through the server JSON parser", async () => {
+	const server = Fastify();
+	server.delete<{ Params: { id: string } }>(
+		"/api/push/devices/:id",
+		(request) => {
+			devices = devices.filter((device) => device.id !== request.params.id);
+			return { ok: true };
+		},
+	);
+	const otherFetch = fetch;
+	vi.stubGlobal("fetch", async (path: string, options: RequestInit = {}) => {
+		if (options.method !== "DELETE") return otherFetch(path, options);
+		const result = await server.inject({
+			method: "DELETE",
+			url: path,
+			headers: Object.fromEntries(new Headers(options.headers)),
+			payload: options.body as string | undefined,
+		});
+		return response(result.json(), result.statusCode);
+	});
+	try {
+		devices.push({ id: "other", enabled: true });
+		await pushApi("/devices/other", { method: "DELETE" });
+		expect(devices).toEqual([{ id: "one", enabled: true }]);
+		savePushPreference({ id: "one", optOut: true, cleanup: "one" });
+		expect((await reconcilePush(registration)).enabled).toBe(false);
+		expect(devices).toEqual([]);
+		expect(pushPreference().cleanup).toBeUndefined();
+		expect(pushPreference().optOut).toBe(true);
+		expect(registration.pushManager.subscribe).not.toHaveBeenCalled();
+	} finally {
+		await server.close();
+	}
 });
 
 it("keeps a later cross-tab disable when an earlier enable finishes registration", async () => {
