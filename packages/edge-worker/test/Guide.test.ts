@@ -3,6 +3,8 @@ import {
 	defaultWorkflows,
 	upgradeWorkflows,
 } from "../src/factory/defaultWorkflows.js";
+import { GuideSchema } from "../src/factory/FactoryResults.js";
+import { reviewGuideMarkdown } from "../src/factory/FactoryTools.js";
 import { validateGuideCoverage } from "../src/factory/Guide.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 
@@ -54,6 +56,52 @@ function fixture() {
 	};
 	return { context, guide };
 }
+it.each([
+	true,
+	false,
+])("exports resolved specialist disputes with attribution in Markdown (chapters: %s)", (withChapters) => {
+	const { guide } = fixture();
+	const value = GuideSchema.parse({
+		...guide,
+		chapters: withChapters ? guide.chapters : undefined,
+		requirementCoverage: {
+			inventoryVersion: 1,
+			inventoryDigest: "inventory-digest",
+			headSha: "reviewed-head",
+			baseSha: "reviewed-base",
+			assessments: [],
+			reviewers: [
+				{
+					reviewer: "business",
+					summary: "Accepted caller contract verified",
+					findings: [],
+					disagreements: [],
+					disputeResolutions: [
+						{
+							disagreement: "Strict validation conflicts with permissive input",
+							reason: "Accepted caller contract requires strict validation",
+							evidence: "Blank-input and return-value assertions passed",
+						},
+					],
+				},
+				{
+					reviewer: "architecture",
+					summary: "Legacy receipt without resolutions",
+					findings: [],
+					disagreements: ["Unresolved interface concern"],
+				},
+			],
+		},
+	});
+	const markdown = reviewGuideMarkdown(value, "reviewed-head");
+	expect(markdown).toContain(
+		"**business:** Accepted caller contract verified\n\n\n- Resolved disagreement: Strict validation conflicts with permissive input; Reason: Accepted caller contract requires strict validation; Evidence: Blank-input and return-value assertions passed",
+	);
+	expect(markdown).toContain(
+		"**architecture:** Legacy receipt without resolutions\n\nUnresolved interface concern",
+	);
+	expect(markdown).toContain("Revision: reviewed-head");
+});
 it("rejects a last-iteration-only guide, missing requirements and fabricated screenshot references", () => {
 	const { context, guide } = fixture();
 	expect(() => validateGuideCoverage(context, guide)).not.toThrow();

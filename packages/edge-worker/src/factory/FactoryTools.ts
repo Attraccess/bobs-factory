@@ -80,7 +80,7 @@ export function reviewGuideMarkdown(value: unknown, headSha: string): string {
 	const guide = value as z.infer<typeof GuideSchema>;
 	const list = (items: string[]) => items.map((item) => `- ${item}`).join("\n");
 	const coverage = guide.requirementCoverage
-		? `\n\n<details><summary>Complete requirement coverage and specialist evidence</summary>\n\n${guide.requirementCoverage.assessments.map((a) => `- **${a.requirementId}: ${a.criterion}** (${a.status}): ${a.reason}; ${a.evidence.join("; ")}${a.decision ? `; Accepted by ${a.decision.acceptedBy}: ${a.decision.rationale} (${a.decision.source.reference})` : ""}`).join("\n")}\n\n${guide.requirementCoverage.reviewers.map((r) => `**${r.reviewer}:** ${r.summary}\n${r.findings.map((f) => `- ${r.reviewer}:${f.id} · ${f.rating} · ${f.status}: ${f.summary}; ${f.evidence}; ${f.reason ?? ""}`).join("\n")}\n${r.disagreements.join("\n")}`).join("\n\n")}\n\n</details>`
+		? `\n\n<details><summary>Complete requirement coverage and specialist evidence</summary>\n\n${guide.requirementCoverage.assessments.map((a) => `- **${a.requirementId}: ${a.criterion}** (${a.status}): ${a.reason}; ${a.evidence.join("; ")}${a.decision ? `; Accepted by ${a.decision.acceptedBy}: ${a.decision.rationale} (${a.decision.source.reference})` : ""}`).join("\n")}\n\n${guide.requirementCoverage.reviewers.map((r) => `**${r.reviewer}:** ${r.summary}\n${r.findings.map((f) => `- ${r.reviewer}:${f.id} · ${f.rating} · ${f.status}: ${f.summary}; ${f.evidence}; ${f.reason ?? ""}`).join("\n")}\n${r.disagreements.join("\n")}\n${(r.disputeResolutions ?? []).map((d) => `- Resolved disagreement: ${d.disagreement}; Reason: ${d.reason}; Evidence: ${d.evidence}`).join("\n")}`).join("\n\n")}\n\n</details>`
 		: "";
 
 	if (guide.chapters?.length) {
