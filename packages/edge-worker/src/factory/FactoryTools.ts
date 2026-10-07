@@ -29,6 +29,7 @@ import {
 	qaDigest,
 	qaRequirementIssues,
 } from "./Qa.js";
+import { reviewRecoveryQuestions } from "./ReviewRecovery.js";
 import { inspectPullRequest } from "./Takeover.js";
 import { readPath } from "./Workflow.js";
 
@@ -628,6 +629,32 @@ export class FactoryTools {
 			}
 			case "review-gate":
 			case "visual-gate": {
+				const recovery = async (gate: Record<string, unknown>) => {
+					if (gate.approved || gate.questions) return gate;
+					const prefix = (run.step ?? context.step.id).replace(/[^/]+$/, "");
+					const fixer =
+						context.step.tool === "visual-gate" ? "visual-fix" : "code-fix";
+					if (
+						!run.history.some(
+							(item) =>
+								item.step === `${prefix}${fixer}` &&
+								readPath(item.output, "reviewAssessment.unchangedCode") ===
+									true,
+						)
+					)
+						return gate;
+					const headSha = (await command("git", ["rev-parse", "HEAD"])).trim();
+					const dirty = Boolean(
+						(await command("git", ["status", "--porcelain"])).trim(),
+					);
+					const questions = reviewRecoveryQuestions(context, gate, {
+						headSha,
+						dirty,
+					});
+					return questions.length
+						? { ...gate, reviewBlocked: true, questions }
+						: gate;
+				};
 				const source =
 					context.step.tool === "review-gate" ? "code-review" : "visual-review";
 				const review = filterReview(run.outputs[source]);
@@ -635,7 +662,7 @@ export class FactoryTools {
 					(finding) => finding.status === "open",
 				);
 				if (source === "visual-review" && context.step.qaContract) {
-					return this.qaGate(context, command);
+					return recovery(await this.qaGate(context, command));
 				}
 				if (source === "visual-review") {
 					const capture = CaptureSchema.parse(run.outputs.capture);
@@ -655,7 +682,7 @@ export class FactoryTools {
 					for (const shot of capture.screenshots)
 						verifiedScreenshot(shot.path, context.evidenceDir);
 				}
-				return { approved: open.length === 0, findings: open };
+				return recovery({ approved: open.length === 0, findings: open });
 			}
 			case "review-after-fix": {
 				const prefix = (run.step ?? context.step.id).replace(/[^/]+$/, "");

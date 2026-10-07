@@ -149,6 +149,50 @@ async function fixture() {
 	};
 }
 
+it.each([
+	"code-fix",
+	"visual-fix",
+])("retains structured assistance and runtime findings for %s with restricted recipe inputs", async (fixer) => {
+	const f = await fixture();
+	const finding = {
+		id: "external-access",
+		rating: 3,
+		status: "open",
+		summary: "Missing deployment access",
+		evidence: "Required validation could not execute",
+	};
+	f.ctx.run.input = "Validate the feature";
+	f.ctx.run.answers = [];
+	f.ctx.run.step = `pipeline/${fixer}`;
+	f.ctx.step = { ...f.ctx.step, id: fixer, inputs: ["draft-pr"] };
+	f.ctx.input = { "draft-pr": { url: "fixture" } };
+	f.ctx.resumeAgent = undefined;
+	f.ctx.run.outputs[fixer === "visual-fix" ? "visual-gate" : "review-gate"] = {
+		approved: false,
+		findings: [finding],
+	};
+	f.ctx.run.roleRevisions![
+		`pipeline/${fixer === "visual-fix" ? "visual-review" : "code-review"}`
+	] = (await roleProgress(f.ctx)).currentRevision!;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify({
+				summary: "Blocked",
+				dispositions: [],
+				questions: ["Provide the protected deployment"],
+			}),
+		},
+	];
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(f.getInput().outputs).toBeUndefined();
+	expect(f.getInput().reviewFix).toEqual({ findings: [finding], answers: [] });
+	expect(output).toMatchObject({
+		questions: ["Provide the protected deployment"],
+		reviewAssessment: { unchangedCode: true },
+	});
+});
+
 it("exposes runtime feedback and user instructions to a CI fixer with restricted recipe inputs", async () => {
 	const f = await fixture();
 	const quote = "Ignore the custom provider's issue comments.";

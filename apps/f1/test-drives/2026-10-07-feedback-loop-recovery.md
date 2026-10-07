@@ -91,3 +91,64 @@ retained at `/tmp/factory-feedback-f1-37kzgf`.
 This is deterministic orchestration evidence. It establishes generic runtime
 behavior, persistence, correction, and review routing; it does not establish how
 an unmocked model will interpret every natural-language instruction.
+
+## Internal review recovery extension
+
+The second reported run, `manual-56a8faa8-c83d-4083-a81b-b98174357df8`, completed
+15 code reviews and 12 code-fix visits before exhausting its limit. Eleven
+reviews retained the same protected-environment QA finding on clean, unchanged
+revision `d3b5c920`. Fixers asked for deployment access only in their summaries,
+returning no dispositions. Their frozen schema had no structured assistance
+field, so the graph repeatedly advanced to review.
+
+Replaying its retained final fixer result against the new contract identifies
+`Missing finding IDs: WP-QA-003`; this now uses bounded correction in the same
+role instead of restarting review. Code and visual fixers can return structured
+questions. Runtime-owned review provenance also parks an unchanged attempt when
+the reviewer still rejects the same consequential finding IDs, regardless of
+changes to prose, timestamps or probe results. The finding remains blocking.
+
+Driver: `/tmp/factory-review-recovery-drive.ts`. Initial supplemental evidence:
+`/tmp/factory-review-recovery-f1-WKjobt`; output:
+`/tmp/factory-review-recovery-drive.log`. This tested the working tree based on
+`8acdaa90`, using another unrelated Git repository, isolated home, real CLI
+EdgeWorker, RPC 3600/UI 3540 and deterministic MockAgentRunner for every role.
+No inference or provider mutation occurred. Background naming was disabled.
+The final drive also covers the completed parallel-checkpoint safeguards:
+evidence `/tmp/factory-review-recovery-f1-hwUBNH`, output
+`/tmp/factory-review-recovery-drive-complete.log`. All four scenarios passed.
+
+- **Summary-only request with restricted inputs:** the first fixer omitted its
+  required finding disposition. Same-role correction returned a real assistance
+  question and waited before another review. The worker was replaced using the
+  same home, tracker and activity sink; its wait recovered without launching a
+  role. An API answer resumed the fixer, then fresh review accepted the resolved
+  fixture. Three mock fixer invocations included one output correction; two
+  reviews and one PR-fixture role completed.
+- **Rejected unchanged attempt:** an evidence-backed rejection received one
+  reviewer reassessment. The review retained the same finding with a newer 502
+  probe rather than 404. The gate waited before another fixer. Restart preserved
+  that gate and its unapproved finding; an API answer resumed the configured
+  fixer, followed by fresh review. Two fixers and three reviews completed.
+- **Actual source correction:** a real fixture commit changed the head SHA.
+  Runtime provenance marked the fix changed and allowed fresh review without an
+  assistance wait. One fixer and two reviews completed.
+- **Visual fixer assistance:** the legacy visual flow retained a mock screenshot
+  fixture and an unresolved finding while waiting for access. An answer resumed
+  the visual fixer and a fresh visual review; no capture replay occurred. Two
+  fixers and two visual reviews completed.
+
+Every case launched via `create-issue` and `start-session`; `view-session`
+verified response activities. Full run JSON, contexts and role-count receipts
+were retained. Final capacity was zero active and queued; cleanup freed both
+ports. Completion in these minimal fixtures means the review gate accepted
+resolved scripted evidence, not human approval or a real merge. These drives
+verify orchestration; they do not establish deployed HTTPS/device behavior.
+
+Regression tests also cover unchanged rejected findings, real/uncertain/dirty
+revision changes, changing findings, new answers/chat, restricted inputs and
+unsafe assistance checkpoints inside parallel branches. The initial broad run
+exposed the same pre-existing constructor-write cleanup race in workflow-trigger
+fixtures; their cleanup now awaits capacity initialization as well.
+The final full EdgeWorker suite passed 1,379 tests (one skipped); build, types,
+Biome and diff checks passed, retaining the 29 existing Biome warnings.

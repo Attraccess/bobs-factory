@@ -6,7 +6,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
-- Await capacity initialization before cleaning up persistence and merge-recovery test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
+- Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 
 ### Added
 

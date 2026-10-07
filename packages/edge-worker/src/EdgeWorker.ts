@@ -214,6 +214,11 @@ import { type QaScope, qaDigest, qaRequirementIssues } from "./factory/Qa.js";
 import { questionInstructions } from "./factory/Questions.js";
 import { finalizeGuideFiles } from "./factory/ReviewFiles.js";
 import {
+	factoryReviewFixContext,
+	recordReviewFix,
+	validateReviewFix,
+} from "./factory/ReviewRecovery.js";
+import {
 	buildTitleContext,
 	RunTitleGenerator,
 	type TitleContext,
@@ -7625,6 +7630,9 @@ ${taskSection}`;
 			...(step.id === "ci-fix"
 				? { feedback: factoryFeedbackContext(context) }
 				: {}),
+			...(["code-fix", "visual-fix"].includes(step.id)
+				? { reviewFix: factoryReviewFixContext(context) }
+				: {}),
 			...(captureCorrection ? { captureCorrection } : {}),
 			...(outputCorrection ? { outputCorrection } : {}),
 		});
@@ -7745,6 +7753,11 @@ ${taskSection}`;
 				output = validateFactoryResult(step.id, output);
 				output = recordFeedbackAssessment(context, output);
 			}
+			if (["code-fix", "visual-fix"].includes(step.id)) {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				validateReviewFix(context, output);
+			}
 			return output;
 		} catch (error) {
 			throw outputValidationError(value, error);
@@ -7752,10 +7765,15 @@ ${taskSection}`;
 	}
 
 	private refreshFactoryFeedbackContext(context: ExecutionContext): void {
-		if (context.step.id !== "ci-fix" || !this.factoryRuntime) return;
+		if (
+			!["ci-fix", "code-fix", "visual-fix"].includes(context.step.id) ||
+			!this.factoryRuntime
+		)
+			return;
+		context.chatMessages = this.factoryRuntime.chatMessages(context.run.id);
 		context.input = {
 			...(context.input as Record<string, unknown>),
-			chatMessages: this.factoryRuntime.chatMessages(context.run.id),
+			chatMessages: context.chatMessages,
 		};
 	}
 
@@ -7768,6 +7786,8 @@ ${taskSection}`;
 		if (step.id === "guide") output = await finalizeGuideFiles(context, output);
 		if (step.id === "capture") output = captureEvidence(context, output);
 		const completed = (await roleProgress(context)).currentRevision;
+		if (["code-fix", "visual-fix"].includes(step.id))
+			output = recordReviewFix(context, output, completed);
 		if (completed && step.id === "visual-review" && step.qaContract) {
 			output = {
 				...(output as Record<string, unknown>),

@@ -340,6 +340,7 @@ export function validateFactoryResult(
 			return z
 				.object({
 					summary: text,
+					questions: z.array(text).optional(),
 					dispositions: z.array(
 						z.object({
 							id: text,

@@ -192,6 +192,7 @@ export interface ExecutionContext {
 	stepKey?: string;
 	capacity?: CapacityOptions;
 	chat?: boolean;
+	chatMessages?: ChatMessage[];
 	progress?: RoleProgress;
 	run: FactoryRun;
 	step: WorkflowStep;
@@ -830,6 +831,7 @@ export class WorkflowRuntime {
 				stepKey: key,
 				capacity: this.capacityOptions(run, key, count),
 				chat: step.chat ?? chat,
+				chatMessages: structuredClone(this.chatMessages(run.id)),
 				input,
 				outputs,
 				signal,
@@ -1117,6 +1119,8 @@ export class WorkflowRuntime {
 				Array.isArray(readPath(output, "questions")) &&
 				(readPath(output, "questions") as unknown[]).length
 			) {
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
 				if (!steps.some((item) => item.id === "ci-fix"))
 					throw new Error("CI assistance has no configured fixer");
 				if (state.phase !== "answered")
@@ -1131,8 +1135,36 @@ export class WorkflowRuntime {
 				continue;
 			}
 			if (
+				["review-gate", "visual-gate"].includes(step.tool ?? "") &&
+				readPath(output, "reviewBlocked") === true
+			) {
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
+				const fixer = this.nextStep(steps, step, output);
+				if (
+					!steps.some(
+						(item) =>
+							item.id === fixer && ["agent", "script"].includes(item.type),
+					)
+				)
+					throw new Error(
+						"Review assistance has no configured fixer recovery path",
+					);
+				if (state.phase !== "answered")
+					await this.waitForAnswers(
+						run,
+						readPath(output, "questions") as string[],
+						signal,
+						state,
+					);
+				checkpoint.current = fixer;
+				checkpoint.active = undefined;
+				continue;
+			}
+			if (
 				step.askQuestions ||
-				(step.id === "ci-fix" && Array.isArray(readPath(output, "questions")))
+				(["ci-fix", "code-fix", "visual-fix"].includes(step.id) &&
+					Array.isArray(readPath(output, "questions")))
 			) {
 				const questions = readPath(output, "questions");
 				if (
@@ -1141,6 +1173,8 @@ export class WorkflowRuntime {
 				)
 					throw new Error("Clarifier must return a questions array");
 				if (questions.length) {
+					if (parallel)
+						throw new Error("Human checkpoints belong outside fanout branches");
 					if (state.phase !== "answered")
 						await this.waitForAnswers(run, questions, signal, state);
 					checkpoint.active = undefined;

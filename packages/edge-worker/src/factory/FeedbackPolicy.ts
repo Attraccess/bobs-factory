@@ -38,11 +38,13 @@ function instruction(context: ExecutionContext, path: string) {
 		const value = run.humanDecisions?.[position];
 		return value && { text: value.feedback, at: value.at };
 	}
-	const messages = (
-		context.input as
-			| { chatMessages?: { text: string; at: string }[] }
-			| undefined
-	)?.chatMessages;
+	const messages =
+		context.chatMessages ??
+		(
+			context.input as
+				| { chatMessages?: { text: string; at: string }[] }
+				| undefined
+		)?.chatMessages;
 	const value = messages?.[position];
 	return value && { text: value.text, at: value.at };
 }
@@ -86,10 +88,13 @@ export function feedbackInstructionFingerprint(
 		.update(
 			JSON.stringify({
 				input: context.run.input,
-				answers: context.run.answers,
-				humanDecisions: context.run.humanDecisions,
-				chatMessages: (context.input as { chatMessages?: unknown } | undefined)
-					?.chatMessages,
+				answers: context.run.answers ?? [],
+				humanDecisions: context.run.humanDecisions ?? [],
+				chatMessages:
+					context.chatMessages ??
+					(context.input as { chatMessages?: unknown } | undefined)
+						?.chatMessages ??
+					[],
 			}),
 		)
 		.digest("hex");
@@ -104,8 +109,10 @@ export function factoryFeedbackContext(context: ExecutionContext) {
 			answers: context.run.answers ?? [],
 			humanDecisions: context.run.humanDecisions ?? [],
 			chatMessages:
+				context.chatMessages ??
 				(context.input as { chatMessages?: unknown } | undefined)
-					?.chatMessages ?? [],
+					?.chatMessages ??
+				[],
 		},
 	};
 }
