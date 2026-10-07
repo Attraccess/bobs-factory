@@ -350,14 +350,11 @@ export class CodexEventMapper {
 	}
 
 	/**
-	 * Build and emit the terminal result message (and init, if a turn never
-	 * started). Returns the full message list for the runner's `complete` event.
+	 * Build and emit the terminal result message. Only thread-started emits init:
+	 * failing before thread creation or resume cannot establish a conversation.
+	 * Returns the full message list for the runner's `complete` event.
 	 */
 	finalize(opts: { caughtError?: unknown; wasStopped: boolean }): SDKMessage[] {
-		if (!this.hasInitMessage) {
-			this.emitSystemInitMessage(this.ctx.getSessionId());
-		}
-
 		if (opts.caughtError && !opts.wasStopped) {
 			this.errorMessages.push(normalizeError(opts.caughtError));
 		}
