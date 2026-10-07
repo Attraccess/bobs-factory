@@ -174,7 +174,10 @@ it.each([
 	).toBe(false);
 });
 
-it("retains a nested review association for parent guides, called QA, and restored approval steps", async () => {
+it.each([
+	false,
+	true,
+])("retains a nested review association for guides, called QA, and restored approval steps (fanout=%s)", async (fanout) => {
 	const tools = new FactoryTools({
 		postComment: vi.fn(),
 		command: async (_context, exe, args) =>
@@ -214,6 +217,16 @@ it("retains a nested review association for parent guides, called QA, and restor
 				risks: [],
 				reviewInstructions: ["Check input"],
 			};
+			context.progress = await roleProgress(context);
+			validateGuideCoverage(context, guide);
+			expect(() =>
+				validateGuideCoverage(context, {
+					...guide,
+					requirements: [
+						{ ...guide.requirements[0], requirementId: "unrelated" },
+					],
+				}),
+			).toThrow("every active frozen inventory");
 			return attachRequirementCoverage(context, guide);
 		},
 		tool: async (context) => {
@@ -251,8 +264,39 @@ it("retains a nested review association for parent guides, called QA, and restor
 		name: "Parent",
 		steps: [
 			{ id: "child", name: "Review", type: "workflow", workflow: child.id },
-			{ id: "guide", name: "Guide", type: "agent", prompt: "Build guide" },
-			{ id: "qa-call", name: "QA", type: "workflow", workflow: qa.id },
+			...(fanout
+				? [
+						{
+							id: "post-review",
+							name: "Post-review fanout",
+							type: "fanout",
+							groups: [
+								[
+									{
+										id: "guide",
+										name: "Guide",
+										type: "agent",
+										prompt: "Build guide",
+									},
+									{
+										id: "qa-call",
+										name: "QA",
+										type: "workflow",
+										workflow: qa.id,
+									},
+								],
+							],
+						},
+					]
+				: [
+						{
+							id: "guide",
+							name: "Guide",
+							type: "agent",
+							prompt: "Build guide",
+						},
+						{ id: "qa-call", name: "QA", type: "workflow", workflow: qa.id },
+					]),
 			{
 				id: "human-review",
 				name: "Approve",
@@ -280,8 +324,12 @@ it("retains a nested review association for parent guides, called QA, and restor
 	);
 	expect(fixture.run.outputs["review-gate"]).toBeUndefined();
 	expect(
-		(fixture.run.outputs.guide as { requirementCoverage: unknown })
-			.requirementCoverage,
+		(
+			(fanout
+				? (fixture.run.outputs["post-review"] as Record<string, unknown>[])[0]!
+						.guide
+				: fixture.run.outputs.guide) as { requirementCoverage: unknown }
+		).requirementCoverage,
 	).toBeDefined();
 	expect(fixture.run.checkpoint?.reviewKey).toBe("child/specialist-review");
 	const restored = new WorkflowRuntime(fixture.state, {
@@ -306,6 +354,90 @@ it("retains a nested review association for parent guides, called QA, and restor
 	context.stepKey = "guide";
 	run.reviewRounds!.push({ ...run.reviewRounds!.at(-1)!, round: 2 });
 	expect(() => aggregateForContext(context)).toThrow("no complete aggregate");
+});
+
+it.each([
+	"missing",
+	"branch-owned",
+])("restores post-review fanout associations without replaying completed review (%s)", async (association) => {
+	const fixture = setup({
+		tool: async () => {
+			throw new Error("Interrupted branch");
+		},
+	});
+	const child = structuredClone(fixture.workflow);
+	child.allowedTriggers = ["workflow"];
+	const definitions = validateWorkflows([
+		...defaultWorkflows,
+		child,
+		{
+			id: "parent",
+			name: "Parent",
+			steps: [
+				{ id: "child", name: "Review", type: "workflow", workflow: child.id },
+				{
+					id: "post-review",
+					name: "Fanout",
+					type: "fanout",
+					groups: [
+						[
+							{
+								id: "check",
+								name: "Check",
+								type: "tool",
+								tool: "fixture-check",
+							},
+						],
+					],
+				},
+			],
+		},
+	]);
+	fixture.runtime.updateWorkflows(definitions);
+	fixture.run.workflow = definitions.at(-1)!;
+	fixture.run.workflowDefinitions = definitions;
+	await fixture.runtime.launch(fixture.run);
+	expect(fixture.run.status).toBe("failed");
+	expect(fixture.run.error).toContain("Interrupted branch");
+	const branch = fixture.run.checkpoint!.active!.children![0]!;
+	let expectedKey = "child/specialist-review";
+	if (association === "missing") {
+		// Model a branch persisted before association inheritance was implemented.
+		delete branch.reviewKey;
+	} else {
+		// A branch may have completed its own review before interruption.
+		const ownBaseline = baseline();
+		expectedKey = ownBaseline.key = "post-review/0/own-review";
+		ownBaseline.reviewers[0]!.key = `${expectedKey}/0/business`;
+		fixture.run.reviewRounds!.push(ownBaseline);
+		fixture.run.history.push({
+			step: "post-review/0/own-aggregate",
+			output: aggregateReview(ownBaseline, [
+				{ business: receipt(ownBaseline) },
+			]),
+			at: new Date().toISOString(),
+		});
+		branch.reviewKey = expectedKey;
+	}
+	fixture.runtime.save(fixture.run);
+	const historyLength = fixture.run.history.length;
+	const resumed = new WorkflowRuntime(fixture.state, {
+		agent: async () => {
+			throw new Error("Completed reviewers must not replay");
+		},
+		script: async () => ({}),
+		tool: async (context) => {
+			expect(context.reviewKey).toBe(expectedKey);
+			expect(aggregateForContext(context)?.baseline.key).toBe(expectedKey);
+			return { summary: "Review association preserved" };
+		},
+	});
+	resumed.retry(fixture.run.id);
+	await vi.waitFor(
+		() => expect(resumed.get(fixture.run.id).status).toBe("completed"),
+		{ timeout: 3000 },
+	);
+	expect(resumed.get(fixture.run.id).history).toHaveLength(historyLength + 2);
 });
 
 it("uses a renamed aggregate for unchanged-revision readiness after a fix", async () => {

@@ -99,7 +99,7 @@ export interface AgentCheckpoint {
 	};
 }
 export interface GraphCheckpoint {
-	// Inherited by called workflows and returned to their caller, persisted on restart.
+	// Inherited by called workflows and fanout branches; calls return it to their caller.
 	reviewKey?: string;
 	current: string;
 	visits: Record<string, number>;
@@ -974,6 +974,9 @@ export class WorkflowRuntime {
 						...this.newCheckpoint(group),
 						outputs: step.review ? {} : structuredClone(outputs),
 					}));
+					// Also fill older resumed branches, preserving reviews established within them.
+					for (const child of state.children)
+						child.reviewKey ??= checkpoint.reviewKey;
 					this.save(run);
 					const branchController = new AbortController();
 					const cancelBranches = () => branchController.abort(signal.reason);

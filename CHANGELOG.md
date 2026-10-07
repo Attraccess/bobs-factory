@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Configurable specialist review with a versioned requirement inventory, complete acceptance coverage and revision-bound reviewer evidence. Recipes exposes each reviewer independently; QA and the human guide retain accepted skips, observations and disagreements. Nested workflows preserve review safeguards in their callers, renamed gates retain QA coverage, and settled findings require fresh evidence even after intervening omissions. ([Taskbot #73](https://taskbot.apps.janjaap.de/p/bobs-factory/t/73), [#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Configurable specialist review with a versioned requirement inventory, complete acceptance coverage and revision-bound reviewer evidence. Recipes exposes each reviewer independently; QA and the human guide retain accepted skips, observations and disagreements. Nested workflows and subsequent fanout branches preserve review safeguards in their callers and guides, renamed gates retain QA coverage, and settled findings require fresh evidence even after intervening omissions. ([Taskbot #73](https://taskbot.apps.janjaap.de/p/bobs-factory/t/73), [#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 ### Added
 
