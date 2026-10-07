@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Record the user-approved simulated-agent QA scope for refinement recommendations, retaining real-agent and ticket-delivery limitations. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 - Rebrand maintained product contracts for Bob’s Factory and prepare independent binary installation and explicit Cyrus migration ([Taskbot #38](https://taskbot.apps.janjaap.de/p/bobs-factory/t/38), [#34](https://github.com/Attraccess/bobs-factory/pull/34)). Binary rollout remains pending publication. Cursor stays user-prepared; archives exclude its proprietary SDK and native files. Preserve native sessions and Git worktrees through verified migration backups; retain waiting review gates and queue order, and reject malformed coordinator state before cutover. Reconcile owned MCP permissions, configuration and saved/frozen workflow tool references during migration while preserving completed step outputs and completed/rejected agent checkpoint payloads for resumed steps; reload file-owned environment values while preserving process overrides.
 
 
