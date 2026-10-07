@@ -6,6 +6,7 @@ import {
 } from "../src/prompts/browserUsePromptAddendum.js";
 import { FAILURE_MODE_PROMPT_ADDENDUM } from "../src/prompts/failureModePromptAddendum.js";
 import { GITHUB_CLI_MEDIA_PROMPT_ADDENDUM } from "../src/prompts/githubCliMediaPromptAddendum.js";
+import { HUMAN_COMMUNICATION_PROMPT_ADDENDUM } from "../src/prompts/humanCommunicationPromptAddendum.js";
 import {
 	type IChatToolResolver,
 	type IMcpConfigProvider,
@@ -97,13 +98,13 @@ describe("RunnerConfigBuilder prompt addenda", () => {
 
 	it("always adds headless and GitHub media guidance to chat prompts without advertising installed browsers", () => {
 		expect(buildChatPrompt(makeBuilder())).toBe(
-			`Base prompt.\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
+			`Base prompt.\n\n${HUMAN_COMMUNICATION_PROMPT_ADDENDUM}\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
 		);
 	});
 
 	it("always adds headless and GitHub media guidance to issue and Factory role prompts without advertising installed browsers", () => {
 		expect(buildIssuePrompt(makeBuilder())).toBe(
-			`Base prompt.\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
+			`Base prompt.\n\n${HUMAN_COMMUNICATION_PROMPT_ADDENDUM}\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
 		);
 	});
 
@@ -112,7 +113,7 @@ describe("RunnerConfigBuilder prompt addenda", () => {
 
 		for (const build of [buildChatPrompt, buildIssuePrompt]) {
 			expect(build(makeBuilder())).toBe(
-				`Base prompt.\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
+				`Base prompt.\n\n${HUMAN_COMMUNICATION_PROMPT_ADDENDUM}\n\n${FAILURE_MODE_PROMPT_ADDENDUM}\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}\n\n${GITHUB_CLI_MEDIA_PROMPT_ADDENDUM}`,
 			);
 		}
 	});

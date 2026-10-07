@@ -61,11 +61,17 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve explicit feedback-provider choices and same-step recovery when integrating current main with Bob’s Factory naming. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
 - Reconcile refinement recommendations and restart-safe question drafts with the renamed product; update the mocked F1 fixture to use an isolated Bob’s Factory home. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Attribute unlabeled assistant activity to Bob’s Factory and explain how to recover from a missing or invalid repository directory before launching Git. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Reconcile the fork with current instance-capacity, mocked F1, browser and workflow-recovery fixes while retaining migrated names and completed results; restore the pre-commit schema check with the renamed package filter. Block migration with capacity-directory overrides until custom/shared policy and queues are explicitly reconciled into the instance pool. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+- Make Bob’s questions, progress messages and review summaries easier to follow: lead with the decision or outcome, explain choices in everyday words, and keep internal test IDs in technical details. Saved review-fix workflows now receive the same question guidance as clarification. ([#39](https://github.com/Attraccess/bobs-factory/pull/39))
+
+- Resume older paused runs with the exact PR comments needing assessment, instead of asking operators to restore missing internal feedback context. ([#38](https://github.com/Attraccess/bobs-factory/pull/38))
+- Honor explicit decisions to ignore or resume PR comment providers across edits and restarts, correct missed assessments within the existing step, and pause CI or code/visual review fixes that need assistance before exhausting review attempts. Unresolved findings remain blocking, and changed code still receives fresh review. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Preserve pending QA question drafts across restarts when questions and recommendations are unchanged; changed assistance still requires reviewing the new batch. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Recover stalled QA and handoff runs from their saved evidence, retry malformed QA and one silent Codex turn, and request assistance when CI repeats the same unresolved failure. Known defects proceed to correction before access waits. ([#36](https://github.com/Attraccess/bobs-factory/pull/36))

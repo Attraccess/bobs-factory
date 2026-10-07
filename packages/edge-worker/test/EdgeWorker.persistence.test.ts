@@ -9,6 +9,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 
 interface PersistenceAccess {
+	runnerSlots: { ready(): Promise<void> };
 	savePersistedState(
 		requireSuccess?: boolean,
 		update?: () => () => void,
@@ -35,6 +36,8 @@ it.each([
 		repositories: [],
 	});
 	const access = worker as unknown as PersistenceAccess;
+	// Constructor initialization writes capacity state; finish it before test-home cleanup.
+	await access.runnerSlots.ready();
 	let revision = "initial";
 	vi.spyOn(worker, "serializeMappings").mockImplementation(() => ({
 		pendingTriggerMessages: { session: revision },
@@ -102,6 +105,7 @@ it.each([
 		repositories: [],
 	});
 	const access = worker as unknown as PersistenceAccess;
+	await access.runnerSlots.ready();
 	let releaseFirst!: () => void;
 	let firstStarted!: () => void;
 	let releaseSecond!: () => void;

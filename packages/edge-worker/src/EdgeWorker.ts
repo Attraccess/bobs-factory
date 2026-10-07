@@ -177,6 +177,7 @@ import {
 	parseAgentOutput,
 	toolArguments,
 } from "./factory/FactoryTools.js";
+import { factoryFeedbackContext } from "./factory/FeedbackPolicy.js";
 import {
 	validateGuideCoverage,
 	validateGuideGeneration,
@@ -194,7 +195,11 @@ import {
 } from "./factory/LaunchAdmission.js";
 import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
-import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
+import {
+	assessFeedback,
+	type MergeReadiness,
+	recordFeedbackAssessment,
+} from "./factory/MergeReadiness.js";
 import {
 	confirmedMerge,
 	pendingMergeConfirmation,
@@ -210,6 +215,11 @@ import {
 	questionNotification,
 } from "./factory/Questions.js";
 import { finalizeGuideFiles } from "./factory/ReviewFiles.js";
+import {
+	factoryReviewFixContext,
+	recordReviewFix,
+	validateReviewFix,
+} from "./factory/ReviewRecovery.js";
 import {
 	buildTitleContext,
 	RunTitleGenerator,
@@ -7480,7 +7490,9 @@ ${taskSection}`;
 				}
 			: undefined;
 
-		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${step.askQuestions ? questionInstructions(run.id) : ""}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		// Review fixers and QA roles can request assistance without askQuestions;
+		// saved recipes must receive the same question guidance as new ones.
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${questionInstructions(run.id)}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
 			repository,
@@ -7566,11 +7578,18 @@ ${taskSection}`;
 				context.log(JSON.stringify(message), "agent");
 		};
 		context.progress = await roleProgress(context);
+		this.refreshFactoryFeedbackContext(context);
 		const factoryContext = prepareFactoryContext({
 			...(context.input && typeof context.input === "object"
 				? context.input
 				: { input: context.input }),
 			progress: context.progress,
+			...(step.id === "ci-fix"
+				? { feedback: factoryFeedbackContext(context) }
+				: {}),
+			...(["code-fix", "visual-fix"].includes(step.id)
+				? { reviewFix: factoryReviewFixContext(context) }
+				: {}),
 			...(captureCorrection ? { captureCorrection } : {}),
 			...(outputCorrection ? { outputCorrection } : {}),
 		});
@@ -7686,9 +7705,39 @@ ${taskSection}`;
 				validateGuideGeneration(output);
 				validateGuideCoverage(context, output);
 			}
+			if (step.id === "ci-fix") {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				output = recordFeedbackAssessment(context, output);
+			}
+			if (["code-fix", "visual-fix"].includes(step.id)) {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				validateReviewFix(context, output);
+			}
 			return output;
 		} catch (error) {
 			throw outputValidationError(value, error);
+		}
+	}
+
+	private refreshFactoryFeedbackContext(context: ExecutionContext): void {
+		if (!["ci-fix", "code-fix", "visual-fix"].includes(context.step.id)) return;
+		if (this.factoryRuntime) {
+			context.chatMessages = this.factoryRuntime.chatMessages(context.run.id);
+			context.input = {
+				...(context.input as Record<string, unknown>),
+				chatMessages: context.chatMessages,
+			};
+		}
+		if (context.step.id === "ci-fix") {
+			const receipt = (context.run.outputs["merge-readiness"] ??
+				context.run.outputs.ci) as MergeReadiness | undefined;
+			// Runs paused before feedback recovery was installed retain legacy
+			// receipts. Derive the exact pending versions before exposing context
+			// or validating a recovered result, without inventing assessments.
+			if (receipt && receipt.unassessedComments === undefined)
+				assessFeedback(context, receipt);
 		}
 	}
 
@@ -7700,9 +7749,9 @@ ${taskSection}`;
 		let output = this.validateFactoryAgentOutput(context, value);
 		if (step.id === "guide") output = await finalizeGuideFiles(context, output);
 		if (step.id === "capture") output = captureEvidence(context, output);
-		if (step.id === "ci-fix")
-			output = recordFeedbackAssessment(context, output);
 		const completed = (await roleProgress(context)).currentRevision;
+		if (["code-fix", "visual-fix"].includes(step.id))
+			output = recordReviewFix(context, output, completed);
 		if (completed && step.id === "visual-review" && step.qaContract) {
 			output = {
 				...(output as Record<string, unknown>),

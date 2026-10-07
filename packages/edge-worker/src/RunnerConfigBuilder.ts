@@ -28,6 +28,7 @@ import { appendBrowserUseAddendum } from "./prompts/browserUsePromptAddendum.js"
 import { appendCloudRuntimeAddendum } from "./prompts/cloudRuntimePromptAddendum.js";
 import { appendFailureModeAddendum } from "./prompts/failureModePromptAddendum.js";
 import { appendGitHubCliMediaAddendum } from "./prompts/githubCliMediaPromptAddendum.js";
+import { appendHumanCommunicationAddendum } from "./prompts/humanCommunicationPromptAddendum.js";
 
 /**
  * Subset of McpConfigService consumed by RunnerConfigBuilder.
@@ -322,7 +323,9 @@ export class RunnerConfigBuilder {
 			appendSystemPrompt: appendCloudRuntimeAddendum(
 				appendGitHubCliMediaAddendum(
 					appendBrowserUseAddendum(
-						appendFailureModeAddendum(input.systemPrompt),
+						appendFailureModeAddendum(
+							appendHumanCommunicationAddendum(input.systemPrompt),
+						),
 					),
 				),
 			),
@@ -488,7 +491,9 @@ export class RunnerConfigBuilder {
 			appendSystemPrompt: appendCloudRuntimeAddendum(
 				appendGitHubCliMediaAddendum(
 					appendBrowserUseAddendum(
-						appendFailureModeAddendum(input.systemPrompt),
+						appendFailureModeAddendum(
+							appendHumanCommunicationAddendum(input.systemPrompt),
+						),
 					),
 				),
 			),

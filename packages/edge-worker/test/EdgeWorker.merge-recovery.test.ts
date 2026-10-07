@@ -14,7 +14,7 @@ afterEach(() => {
 		rmSync(directory, { recursive: true, force: true });
 });
 
-function fixture() {
+async function fixture() {
 	const home = mkdtempSync(join(tmpdir(), "merge-recovery-"));
 	directories.push(home);
 	const worker = new EdgeWorker({
@@ -31,6 +31,7 @@ function fixture() {
 			},
 		],
 	});
+	await (worker as any).runnerSlots.ready();
 	const runtime: WorkflowRuntime = (worker as any).getFactoryRuntime();
 	const workflow = defaultWorkflows.find((item) => item.id === "factory")!;
 	const run = runtime.create({
@@ -78,7 +79,7 @@ it.each([
 	["OPEN", "approved", "failed"],
 	["CLOSED", "approved", "failed"],
 ])("recovers the saved merge checkpoint only for the approved merged revision (%s/%s)", async (state, headRefOid, status) => {
-	const { runtime, run, home } = fixture();
+	const { runtime, run, home } = await fixture();
 	const history = structuredClone(run.history);
 	const command = vi
 		.spyOn(tools, "executeCommand")
@@ -122,7 +123,7 @@ it.each([
 });
 
 it("retains an already saved merge receipt without duplicating it", async () => {
-	const { runtime, run } = fixture();
+	const { runtime, run } = await fixture();
 	const output = {
 		merged: true,
 		url: "https://github.com/test/repo/pull/1",
@@ -147,7 +148,7 @@ it.each([
 	"result",
 ] as const)("rejects receipt-dependent unfinished work from the %s phase", async (phase) => {
 	for (const path of ["merged", "headSha", "url"]) {
-		const { runtime, run } = fixture();
+		const { runtime, run } = await fixture();
 		const receipt = {
 			merged: true,
 			url: "https://github.com/test/repo/pull/1",
@@ -196,7 +197,7 @@ it.each([
 });
 
 it("allows a receipt-dependent terminal route", async () => {
-	const { runtime, run } = fixture();
+	const { runtime, run } = await fixture();
 	const pipeline = run.workflowDefinitions!.find(
 		(item) => item.id === "factory-pipeline",
 	)!;
@@ -223,7 +224,7 @@ it.each([
 	"unfinished-agent",
 	"more-work",
 ])("does not bypass missing-worktree protection for %s", async (scenario) => {
-	const { runtime, run } = fixture();
+	const { runtime, run } = await fixture();
 	if (scenario === "no-approval") run.humanDecisions = [];
 	if (scenario === "unfinished-agent") {
 		run.step = "pipeline/guide";
