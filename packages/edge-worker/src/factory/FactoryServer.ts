@@ -208,7 +208,7 @@ export class FactoryServer {
 			serviceTierRunners,
 		}));
 		this.app.put("/api/capacity", async (request) => {
-			if (!hooks.capacity) throw new Error("Machine capacity unavailable");
+			if (!hooks.capacity) throw new Error("Instance capacity unavailable");
 			const { limit } = z
 				.object({ limit: z.number().int().positive() })
 				.parse(request.body);

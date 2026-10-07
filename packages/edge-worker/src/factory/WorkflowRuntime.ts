@@ -729,10 +729,10 @@ export class WorkflowRuntime {
 						run,
 						key,
 						request.phase === "queued"
-							? "Waiting for machine capacity."
+							? "Waiting for instance capacity."
 							: request.phase === "stopping"
 								? "Stopping execution; capacity remains reserved until it settles."
-								: "Machine capacity admitted execution.",
+								: "Instance capacity admitted execution.",
 					);
 				if (request)
 					run.capacityLeaves[key] = { phase: request.phase, request };

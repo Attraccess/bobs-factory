@@ -10,6 +10,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Run F1 agents as deterministic mocks by default, including Factory roles, chat sessions, and background titles; require an explicit live-mode opt-in for provider usage.
+
 - Integrate machine capacity with ticket lifecycle tracking, MCP OAuth recovery and batched session persistence; isolate browser capacity policy from server-only ticket modules and retain transactional chat-save barriers and stdio execution provenance. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
 - Integrate the latest review-comment controller with PWA update snapshots, retaining item comments, additional feedback, revision checks and pending-request locks; migrate snapshots from the earlier single-text feedback UI. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
