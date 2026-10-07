@@ -33,11 +33,26 @@ provenance and gate outputs. The final pool had zero active and queued requests.
 The worker shut down cleanly and both ports were freed. The successful drive had
 no error logs or unhandled exceptions.
 
+A supplemental fresh drive of the final changes based on `0d8e866f`, using
+`/tmp/bobs-recovery-six-drive.ts`, passed all six scenarios. Evidence is retained
+at `/tmp/bobs-recovery-f1-UaAIiV`. It repeated the four cases above and added:
+
+- Stale CI at handoff routed through the configured fixer and a fresh code review.
+- An unchanged failing CI job, alongside a pending human reviewer approval,
+  waited for assistance. An API answer resumed the existing fixer and completed
+  once the fixture check succeeded. Human approval did not trigger agent review.
+
+The first supplemental attempt exposed the pending-human-review classification
+bug; it was fixed before the successful drive. Both supplemental runs used only
+mocked agents and provider receipts, with zero inference costs.
+
 ## Other verification
 
 - 213 targeted tests passed for Factory gates/restart, runner output correction,
   bounded inactivity recovery, merge readiness, instance capacity and the API.
 - `pnpm -r test:run`: 2,607 passed tests across 208 files.
+- After the supplemental fix, all 1,340 EdgeWorker tests passed (one skipped),
+  including required-review versus missing-human-approval regression cases.
 - `pnpm typecheck`, `pnpm build`, `pnpm biome ci` and `git diff --check` passed.
   Biome retained 29 existing warnings.
 - Handoff tests cover current provider conflicts and stale saved CI revisions,

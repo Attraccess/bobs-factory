@@ -369,11 +369,13 @@ it.each([
 });
 
 it.each([
-	[undefined, true, "comments"],
-	[true, true, "comments"],
-	[false, false, "comments"],
-	[false, true, "revision"],
-])("does not skip review of new feedback or changed revisions (%s, %s, %s)", async (flag, required, kind) => {
+	[undefined, true, "comments", undefined],
+	[true, true, "comments", undefined],
+	[false, false, "comments", undefined],
+	[false, true, "revision", "fix"],
+	[false, true, "reviews", "fix"],
+	[false, false, "reviews", "human"],
+])("requires review for substantive fixes rather than pending human approval (%s, %s, %s, %s)", async (flag, required, kind, action) => {
 	const ctx = {
 		run: {
 			step: "pipeline/after-ci-fix",
@@ -382,7 +384,7 @@ it.each([
 			},
 			outputs: {
 				"draft-pr": { url },
-				ci: { baseSha: "base", blockers: [{ kind }] },
+				ci: { baseSha: "base", blockers: [{ kind, action }] },
 				"ci-fix": { reviewRequired: flag },
 				"review-gate": { approved: true },
 			},
@@ -422,6 +424,7 @@ it.each([
 				ci: {
 					headSha: "head",
 					baseSha: "base",
+					blockers: [{ kind: "reviews", action: "human" }],
 					checks: [
 						{
 							name: "CodeQL",

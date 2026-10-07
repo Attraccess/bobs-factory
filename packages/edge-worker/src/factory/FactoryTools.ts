@@ -668,11 +668,13 @@ export class FactoryTools {
 				);
 				const previousBase = readPath(run.outputs, "ci.baseSha");
 				const feedback = readPath(run.outputs, "ci.blockers") as
-					| { kind: string }[]
+					| { kind: string; action?: string }[]
 					| undefined;
 				const substantiveFeedback =
-					feedback?.some((item) =>
-						["threads", "reviews", "revision"].includes(item.kind),
+					feedback?.some(
+						(item) =>
+							["threads", "reviews", "revision"].includes(item.kind) &&
+							(item.action === undefined || item.action === "fix"),
 					) ||
 					(feedback?.some((item) => item.kind === "comments") &&
 						readPath(run.outputs, "ci-fix.reviewRequired") !== false);
