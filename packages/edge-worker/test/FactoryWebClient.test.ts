@@ -361,6 +361,13 @@ it("settles failures only through explicit follow-up provenance, independently o
 	);
 });
 
+it("keeps capacity queues active without rendering human attention", async () => {
+	const { active, attention } = await import("../src/factory/web/client.js");
+	expect(active("capacity-waiting")).toBe(true);
+	expect(active("stopping")).toBe(true);
+	expect(attention({ status: "capacity-waiting" })).toBeUndefined();
+});
+
 it("classifies QA before screenshot artifacts, including previews, and renders zero-image receipts and observations", () => {
 	const qa = qaExecution("blocked");
 	qa.observations = [

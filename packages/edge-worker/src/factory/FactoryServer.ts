@@ -1,10 +1,11 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
+import type { MachineCapacity } from "../MachineCapacity.js";
 import { activityMarkers, activityPage } from "./ActivityPage.js";
 import { reasoningLevels, serviceTierRunners } from "./AgentSettings.js";
 import {
@@ -27,10 +28,12 @@ import {
 } from "./ReviewFiles.js";
 import type { ChatState } from "./SessionChat.js";
 import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
+import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	capacity?: MachineCapacity;
 	chat?(id: string): ChatState;
-	message?(id: string, text: string): void;
+	message?(id: string, text: string, messageId?: string): void | Promise<void>;
 	defaultRunner?(): string;
 	subscribe?(listener: (id: string) => void): () => void;
 	repositories(): { id: string; name: string }[];
@@ -64,7 +67,8 @@ export class FactoryServer {
 		hooks: ServerHooks,
 		access: FactoryAccess = factoryAccess(
 			Number(process.env.CYRUS_FACTORY_PORT ?? 3457),
-			process.env.CYRUS_FACTORY_ORIGIN,
+			process.env.CYRUS_FACTORY_ORIGIN ??
+				process.env.CYRUS_FACTORY_PUBLIC_ORIGIN,
 			Number(process.env.CYRUS_FACTORY_SESSION_HOURS ?? 12),
 		),
 	) {
@@ -108,12 +112,16 @@ export class FactoryServer {
 				}
 			}, 500);
 		};
+		const unsubscribeCapacity = hooks.capacity?.subscribe(() =>
+			broadcast({ config: true }),
+		);
 		const unsubscribeRuntime = runtime.subscribe(broadcast);
 		const unsubscribeSessions = hooks.subscribe?.((id) => broadcast({ id }));
 		this.app.addHook("preClose", async () => {
 			unsubscribeAuth();
 			this.auth.close();
 			unsubscribeRuntime();
+			unsubscribeCapacity?.();
 			unsubscribeSessions?.();
 			if (timer) clearTimeout(timer);
 			for (const stream of this.streams) stream.end();
@@ -361,7 +369,8 @@ export class FactoryServer {
 				this.streams.delete(stream);
 			});
 		});
-		this.app.get("/api/config", () => ({
+		this.app.get("/api/config", async () => ({
+			capacity: await hooks.capacity?.snapshot(),
 			configRevision: configRevision(),
 			repositories: hooks.repositories(),
 			workflows: runtime.listWorkflows().map((workflow) => ({
@@ -374,6 +383,14 @@ export class FactoryServer {
 			reasoningLevels,
 			serviceTierRunners,
 		}));
+		this.app.put("/api/capacity", async (request) => {
+			if (!hooks.capacity) throw new Error("Instance capacity unavailable");
+			const { limit } = z
+				.object({ limit: z.number().int().positive() })
+				.parse(request.body);
+			await hooks.capacity.setLimit(limit);
+			return { capacity: await hooks.capacity.snapshot() };
+		});
 		this.app.put("/api/title-settings", (request) => {
 			// Check after body parsing, in the same synchronous turn as the write.
 			checkConfigRevision(request);
@@ -411,6 +428,7 @@ export class FactoryServer {
 					id,
 					title,
 					status,
+					capacityLeaves,
 					createdAt,
 					updatedAt,
 					repositoryId,
@@ -424,7 +442,8 @@ export class FactoryServer {
 				}) => ({
 					id,
 					title,
-					status,
+					status: capacityRunStatus({ status, capacityLeaves } as FactoryRun),
+					capacityLeaves,
 					createdAt,
 					updatedAt,
 					repositoryId,
@@ -480,6 +499,7 @@ export class FactoryServer {
 						questions: [],
 						outputs: {},
 					}),
+					status: run ? capacityRunStatus(run) : session!.status,
 					chat: hooks.chat?.(request.params.id) ?? {
 						enabled: false,
 						available: false,
@@ -666,7 +686,7 @@ export class FactoryServer {
 		);
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/messages",
-			(request, reply) => {
+			async (request, reply) => {
 				const id = request.params.id;
 				if (
 					!runtime.runs.has(id) &&
@@ -681,11 +701,13 @@ export class FactoryServer {
 					throw new Error(
 						state?.reason ?? "Chat is disabled for this workflow",
 					);
-				hooks.message(id, text);
+				const messageId = randomUUID();
+				await hooks.message(id, text, messageId);
 				const message = runtime.recordChatMessage(
 					id,
 					text,
 					state.step ?? "simple",
+					messageId,
 				);
 				return reply.code(202).send({ message, mode: state.mode });
 			},

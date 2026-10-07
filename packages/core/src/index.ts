@@ -296,3 +296,8 @@ export type {
 // EdgeWorker and other high-level code should use these generic names via issue-tracker exports
 
 export type { RunTitleJob } from "./CyrusAgentSession.js";
+export {
+	executionEnvironment,
+	executionScope,
+	spawnExecution,
+} from "./ExecutionScope.js";

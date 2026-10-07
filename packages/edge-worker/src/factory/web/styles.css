@@ -1202,6 +1202,73 @@ kbd {
 	flex-shrink: 0;
 	align-self: flex-start;
 }
+.review-document .run-header > div {
+	min-width: 0;
+	width: 100%;
+}
+.review-context {
+	margin-top: 14px;
+	font-size: 13px;
+}
+.review-context-row {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 6px 16px;
+}
+.review-context-row > a,
+.review-branch {
+	min-width: 0;
+	max-width: 100%;
+	min-height: 44px;
+	align-content: center;
+	overflow-wrap: anywhere;
+}
+.review-branch a {
+	display: inline-block;
+	min-height: 44px;
+	align-content: center;
+}
+.review-context-row .button {
+	min-height: 44px;
+}
+.checkout-menu {
+	width: max-content;
+	min-width: 0;
+	max-width: calc(100vw - 32px);
+	max-height: var(--radix-dropdown-menu-content-available-height);
+	overflow: auto;
+	color: var(--text);
+}
+.checkout-option {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	min-height: 44px;
+	overflow-wrap: anywhere;
+}
+.checkout-option code {
+	min-width: 0;
+	font-size: 12px;
+	font-weight: 500;
+	white-space: pre-wrap;
+}
+.checkout-icon {
+	flex-shrink: 0;
+}
+.checkout-fallback {
+	margin-top: 12px;
+	padding: 14px;
+	border: 1px solid var(--line);
+	border-radius: 14px;
+	background: var(--quiet);
+}
+.checkout-fallback textarea {
+	width: 100%;
+	margin: 8px 0;
+	font-family: monospace;
+}
 .artifacts-section,
 .steps-section {
 	margin-top: 32px;
@@ -1507,9 +1574,12 @@ kbd {
 	padding-left: 12px;
 	color: var(--muted);
 }
-.recipes {
+.recipes,
+.recipe-settings {
 	display: grid;
 	gap: 18px;
+}
+.recipes {
 	margin-top: 24px;
 }
 .recipe {
@@ -4136,4 +4206,15 @@ kbd {
 }
 .auth-controls {
 	padding: 0.5rem 1rem;
+}
+
+.queued-message {
+	display: block;
+	width: fit-content;
+	margin-top: 0.5rem;
+	padding: 0.25rem 0.5rem;
+	border: 1px solid currentColor;
+	border-radius: 0.5rem;
+	font-size: 0.8rem;
+	font-weight: 600;
 }

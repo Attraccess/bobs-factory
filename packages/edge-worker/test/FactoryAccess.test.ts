@@ -13,7 +13,7 @@ const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
 	for (const close of cleanups.splice(0)) await close();
 });
-function fixture() {
+function fixture(useEnvironment = false) {
 	const home = mkdtempSync(join(tmpdir(), "factory-access-test-"));
 	const runtime = new WorkflowRuntime(home, {
 		agent: async () => ({}),
@@ -26,7 +26,7 @@ function fixture() {
 	const server = new FactoryServer(
 		runtime,
 		{ repositories, sessions: () => [], entries, start, stop: vi.fn() },
-		{ origins: [origin, "http://localhost"] },
+		useEnvironment ? undefined : { origins: [origin, "http://localhost"] },
 	);
 	cleanups.push(async () => {
 		await server.stop();
@@ -283,4 +283,43 @@ it("redirects the IP dashboard entrypoint to localhost while protecting both dat
 			(await server.app.inject({ url: "/api/runs", headers: { host } }))
 				.statusCode,
 		).toBe(401);
+});
+
+// The existing public-tunnel setting must remain usable after adding authentication.
+it.each([
+	false,
+	true,
+])("protects the configured public origin with explicit-setting precedence (%s)", async (explicit) => {
+	vi.stubEnv(
+		"CYRUS_FACTORY_PUBLIC_ORIGIN",
+		explicit ? "https://old.example.test" : origin,
+	);
+	vi.stubEnv("CYRUS_FACTORY_ORIGIN", explicit ? origin : undefined);
+	vi.stubEnv("CYRUS_FACTORY_SESSION_HOURS", "12");
+	try {
+		const f = fixture(true);
+		expect(
+			(await f.server.app.inject({ url: "/api/runs", headers: { host } }))
+				.statusCode,
+		).toBe(401);
+		const cookie = (await f.enroll()).split(";")[0]!;
+		expect(
+			(
+				await f.server.app.inject({
+					url: "/api/runs",
+					headers: { host, cookie },
+				})
+			).statusCode,
+		).toBe(200);
+		expect(
+			(
+				await f.server.app.inject({
+					url: "/api/runs",
+					headers: { host: "old.example.test", cookie },
+				})
+			).statusCode,
+		).toBe(403);
+	} finally {
+		vi.unstubAllEnvs();
+	}
 });

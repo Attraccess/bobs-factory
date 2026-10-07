@@ -136,6 +136,15 @@ describe("SessionSemaphore", () => {
 });
 
 describe("capRunnerStarts", () => {
+	it("does not launch when stopped before start is called", async () => {
+		const semaphore = new SessionSemaphore(1);
+		const pending = fakeRunner(false);
+		const wrapped = capRunnerStarts(pending.runner, semaphore);
+		wrapped.stop();
+		await expect(wrapped.start("stopped task")).rejects.toThrow("cancelled");
+		expect(pending.started).not.toHaveBeenCalled();
+		expect(semaphore.active).toBe(0);
+	});
 	it("does not launch a terminated factory runner after its queued slot opens", async () => {
 		const semaphore = new SessionSemaphore(1);
 		await semaphore.acquire();
@@ -268,4 +277,35 @@ describe("capRunnerStarts", () => {
 		wrapped.addStreamMessage?.("follow-up");
 		expect(addStreamMessage).toHaveBeenCalledWith("follow-up");
 	});
+});
+
+it("stop cancels queued acquisition without an external signal", async () => {
+	const slots = new SessionSemaphore(1);
+	await slots.acquire();
+	const fake = fakeRunner(false);
+	const runner = capRunnerStarts(fake.runner, slots);
+	const work = runner.start("queued");
+	runner.stop();
+	await expect(work).rejects.toThrow(/cancelled/);
+	slots.release();
+	expect(fake.started).not.toHaveBeenCalled();
+	expect(slots.waiting).toBe(0);
+});
+it("bounds background bypass while primary traffic remains queued", async () => {
+	const slots = new SessionSemaphore(1);
+	await slots.acquire();
+	const order: string[] = [];
+	const background = slots.acquire(undefined, true).then(() => {
+		order.push("background");
+		slots.release();
+	});
+	const primary = Array.from({ length: 12 }, (_, index) =>
+		slots.acquire().then(() => {
+			order.push(String(index));
+			slots.release();
+		}),
+	);
+	slots.release();
+	await Promise.all([background, ...primary]);
+	expect(order.indexOf("background")).toBe(8);
 });

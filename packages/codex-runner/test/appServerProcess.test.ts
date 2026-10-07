@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { executionScope } from "cyrus-core";
 import { describe, expect, it, vi } from "vitest";
 import type {
 	IAppServerClient,
@@ -243,3 +244,24 @@ function handlerSpy() {
 	};
 	return { handler, notifications };
 }
+
+it("fences managed executions by lease and closes only the completing execution's server", async () => {
+	const { clients, factory } = recordingFactory();
+	const manager = new AppServerProcessManager(factory);
+	const first = await executionScope.run({ token: "first" }, () =>
+		manager.acquire(configWithEnv()),
+	);
+	const second = await executionScope.run({ token: "second" }, () =>
+		manager.acquire(configWithEnv()),
+	);
+	const thread = handlerSpy();
+	second.registerThread("second-thread", thread.handler);
+	expect(clients).toHaveLength(2);
+	await first.release();
+	expect(clients[0]!.closeCalls).toBe(1);
+	expect(clients[1]!.closeCalls).toBe(0);
+	clients[1]!.push("turn/completed", { threadId: "second-thread" });
+	expect(thread.notifications).toHaveLength(1);
+	await second.release();
+	expect(clients[1]!.closeCalls).toBe(1);
+});

@@ -9,7 +9,10 @@ import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 
 interface PersistenceAccess {
-	savePersistedState(): Promise<void>;
+	savePersistedState(
+		requireSuccess?: boolean,
+		update?: () => () => void,
+	): Promise<void>;
 	persistenceManager: PersistenceManager;
 }
 
@@ -18,6 +21,73 @@ afterEach(async () => {
 	vi.restoreAllMocks();
 	for (const home of homes.splice(0))
 		await rm(home, { recursive: true, force: true });
+});
+
+it.each([
+	false,
+	true,
+])("keeps transactional saves between lifecycle batches (failure: %s)", async (failTransaction) => {
+	const home = await mkdtemp(join(tmpdir(), "edge-persistence-transaction-"));
+	homes.push(home);
+	const worker = new EdgeWorker({
+		platform: "cli",
+		cyrusHome: home,
+		repositories: [],
+	});
+	const access = worker as unknown as PersistenceAccess;
+	let revision = "initial";
+	vi.spyOn(worker, "serializeMappings").mockImplementation(() => ({
+		pendingTriggerMessages: { session: revision },
+	}));
+	let release!: () => void;
+	let started!: () => void;
+	const entered = new Promise<void>((resolve) => {
+		started = resolve;
+	});
+	const blocked = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const revisions: string[] = [];
+	vi.spyOn(access.persistenceManager, "saveEdgeWorkerState").mockImplementation(
+		async (state) => {
+			revisions.push(state.pendingTriggerMessages!.session!);
+			if (revisions.length === 1) {
+				started();
+				await blocked;
+			}
+			if (failTransaction && revision === "transaction")
+				throw new Error("Disk full");
+		},
+	);
+	const first = access.savePersistedState();
+	await entered;
+	const before = access.savePersistedState();
+	const transaction = access.savePersistedState(true, () => {
+		const previous = revision;
+		revision = "transaction";
+		return () => {
+			revision = previous;
+		};
+	});
+	// Observe the rejection before releasing the queue to avoid an unhandled rejection.
+	const outcome = transaction.then(
+		() => "saved",
+		() => "rejected",
+	);
+	const after = access.savePersistedState();
+	expect(after).not.toBe(before);
+	const burst = Array.from({ length: 20 }, () => access.savePersistedState());
+	release();
+	await Promise.all([first, before, after, ...burst]);
+	expect(await outcome).toBe(failTransaction ? "rejected" : "saved");
+	expect(revisions).toEqual([
+		"initial",
+		"initial",
+		"transaction",
+		failTransaction ? "initial" : "transaction",
+	]);
+	await access.savePersistedState();
+	expect(revisions.at(-1)).toBe(failTransaction ? "initial" : "transaction");
 });
 
 it.each([

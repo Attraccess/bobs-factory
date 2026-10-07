@@ -4,9 +4,17 @@ This changelog documents internal development changes, refactors, tooling update
 
 ## [Unreleased]
 
+### Added
+
+- Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))
+
 ### Changed
 
-- Restore CI coverage for authenticated Factory review drafts and the complete passkey-aware routing prompt; format the authentication CSS for the repository-wide Biome gate. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
+- Restore CI coverage for authenticated Factory review drafts and the complete passkey-aware routing prompt; integrate capacity/recovery updates while preserving passkey gates and the public-origin compatibility setting; format the authentication CSS for the repository-wide Biome gate. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
+
+- Run F1 agents as deterministic mocks by default, including Factory roles, chat sessions, and background titles; require an explicit live-mode opt-in for provider usage.
+
+- Integrate machine capacity with ticket lifecycle tracking, MCP OAuth recovery and batched session persistence; isolate browser capacity policy from server-only ticket modules and retain transactional chat-save barriers and stdio execution provenance. ([#20](https://github.com/Attraccess/bobs-factory/pull/20))
 
 - Integrate the latest review-comment controller with PWA update snapshots, retaining item comments, additional feedback, revision checks and pending-request locks; migrate snapshots from the earlier single-text feedback UI. ([#12](https://github.com/Attraccess/bobs-factory/pull/12))
 

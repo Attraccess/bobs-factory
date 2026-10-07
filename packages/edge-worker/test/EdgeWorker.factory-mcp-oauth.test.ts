@@ -1,7 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentRunnerConfig, RunnerType } from "cyrus-core";
+import {
+	type AgentRunnerConfig,
+	executionScope,
+	type RunnerType,
+} from "cyrus-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
@@ -52,6 +56,14 @@ function fixture(runner: RunnerType, acceptedRunner?: RunnerType) {
 		buildAgentRunnerConfig(): Promise<{
 			runnerType: RunnerType;
 			config: AgentRunnerConfig;
+		}>;
+		factoryMcpConfig(run: FactoryRun): Promise<{
+			callTool(
+				server: string,
+				tool: string,
+				args: Record<string, unknown>,
+				signal: AbortSignal,
+			): Promise<unknown>;
 		}>;
 		factoryTicketAdapter(
 			run: FactoryRun,
@@ -148,4 +160,29 @@ it("checks configured tool restrictions before native OAuth calls", async () => 
 	);
 	expect(nativeCall).not.toHaveBeenCalled();
 	expect(directCall).not.toHaveBeenCalled();
+});
+
+it("keeps intensive stdio tool descendants attached to their execution lease", async () => {
+	const { edge, run, config } = fixture("codex");
+	config.mcpConfig = {
+		taskbot: { command: "fixture-tool", env: { CONFIGURED: "retained" } },
+	};
+	directCall.mockResolvedValue({ ok: true });
+	await executionScope.run({ token: "capacity-test-lease" }, async () => {
+		const { callTool } = await edge.factoryMcpConfig(run);
+		await callTool("taskbot", "get_ticket", {}, new AbortController().signal);
+	});
+	expect(directCall).toHaveBeenCalledWith(
+		expect.objectContaining({
+			env: {
+				CONFIGURED: "retained",
+				CYRUS_EXECUTION_LEASE: "capacity-test-lease",
+			},
+		}),
+		"get_ticket",
+		{},
+		expect.any(AbortSignal),
+		run.workspace,
+	);
+	expect(nativeCall).not.toHaveBeenCalled();
 });

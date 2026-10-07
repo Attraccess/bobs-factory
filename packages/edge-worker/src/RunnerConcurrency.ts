@@ -1,5 +1,5 @@
 /**
- * Global concurrency cap for agent runner sessions.
+ * Instance concurrency cap for agent runner sessions.
  *
  * Every runner created by the EdgeWorker resolves `start()` /
  * `startStreaming()` only when its session finishes, so holding a semaphore
@@ -11,6 +11,12 @@
  */
 
 import type { IAgentRunner } from "cyrus-core";
+import type {
+	CapacityLease,
+	CapacityOptions,
+	CapacityRequest,
+	ExecutionCapacity,
+} from "./MachineCapacity.js";
 
 /**
  * Counting semaphore with FIFO waiters and a live-adjustable limit.
@@ -19,7 +25,25 @@ import type { IAgentRunner } from "cyrus-core";
  * immediately. Lowering the limit never interrupts running sessions; it
  * simply stops admitting new ones until enough slots free up.
  */
-export class SessionSemaphore {
+export class SessionSemaphore implements ExecutionCapacity {
+	private bypass = 0;
+	async acquireLease(
+		signal?: AbortSignal,
+		options: CapacityOptions = {},
+	): Promise<CapacityLease> {
+		await this.acquire(signal, options.background);
+		let released = false;
+		return {
+			token: "memory",
+			run: (work) => work(),
+			release: async () => {
+				if (!released) {
+					released = true;
+					this.release();
+				}
+			},
+		};
+	}
 	private activeCount = 0;
 	private waiters: Array<{ resolve: () => void; background: boolean }> = [];
 
@@ -100,7 +124,19 @@ export class SessionSemaphore {
 		while (this.waiters.length > 0 && this.activeCount < this.limit) {
 			this.activeCount++;
 			const primary = this.waiters.findIndex((waiter) => !waiter.background);
-			const [next] = this.waiters.splice(primary < 0 ? 0 : primary, 1);
+			const background = this.waiters.findIndex((waiter) => waiter.background);
+			const index =
+				background >= 0 && this.bypass >= 8
+					? background
+					: primary < 0
+						? 0
+						: primary;
+			const [next] = this.waiters.splice(index, 1);
+			this.bypass = next?.background
+				? 0
+				: background >= 0
+					? this.bypass + 1
+					: 0;
 			next?.resolve();
 		}
 	}
@@ -117,34 +153,87 @@ export class SessionSemaphore {
  * runner is never modified, every other property forwards through unchanged,
  * and the original methods stay observable (e.g. as test spies).
  */
+const capacityStates = new WeakMap<IAgentRunner, CapacityRequest>();
+const capacityExecutions = new WeakMap<IAgentRunner, Promise<unknown>>();
+export async function waitForRunnerCapacity(
+	runner: IAgentRunner,
+): Promise<void> {
+	await capacityExecutions.get(runner);
+}
+export function runnerCapacityState(
+	runner?: IAgentRunner,
+): CapacityRequest | undefined {
+	return runner ? capacityStates.get(runner) : undefined;
+}
 export function capRunnerStarts(
 	runner: IAgentRunner,
-	semaphore: SessionSemaphore,
+	semaphore: ExecutionCapacity,
 	signal?: AbortSignal,
+	options: CapacityOptions = {},
 ): IAgentRunner {
+	let controller: AbortController | undefined;
+	let pending = false;
+	let admitted = false;
+	let stopped = false;
+	let proxy: IAgentRunner;
+	const track = <T>(work: Promise<T>): Promise<T> => {
+		capacityExecutions.set(proxy, work);
+		return work;
+	};
 	const gate = async <T>(run: () => Promise<T>): Promise<T> => {
-		await semaphore.acquire(signal);
+		if (stopped) throw new Error("Session start cancelled");
+		if (pending) throw new Error("Runner execution already pending");
+		controller = new AbortController();
+		const abort = () => {
+			controller!.abort(signal?.reason);
+			if (admitted) runner.stop();
+		};
+		signal?.addEventListener("abort", abort, { once: true });
+		if (signal?.aborted) abort();
+		pending = true;
+		let lease: CapacityLease | undefined;
 		try {
-			signal?.throwIfAborted();
-			return await run();
+			lease = await semaphore.acquireLease(controller.signal, {
+				...options,
+				onChange: (request) => {
+					if (request) capacityStates.set(proxy, request);
+					else capacityStates.delete(proxy);
+					options.onChange?.(request);
+				},
+			});
+			controller.signal.throwIfAborted();
+			admitted = true;
+			return await lease.run(run);
 		} finally {
-			semaphore.release();
+			try {
+				if (lease) await lease.release();
+			} finally {
+				admitted = false;
+				pending = false;
+				signal?.removeEventListener("abort", abort);
+			}
 		}
 	};
 
-	return new Proxy(runner, {
+	proxy = new Proxy(runner, {
 		get(target, property, receiver) {
-			if (property === "start") {
-				return (prompt: string) => gate(() => target.start(prompt));
-			}
+			if (property === "start")
+				return (prompt: string) => track(gate(() => target.start(prompt)));
+			if (property === "stop")
+				return () => {
+					stopped = true;
+					controller?.abort(new Error("Session start cancelled"));
+					if (admitted) target.stop();
+				};
+			if (property === "isRunning") return () => pending || target.isRunning();
 			if (
 				property === "startStreaming" &&
 				typeof target.startStreaming === "function"
-			) {
+			)
 				return (initialPrompt?: string) =>
-					gate(() => target.startStreaming!(initialPrompt));
-			}
+					track(gate(() => target.startStreaming!(initialPrompt)));
 			return Reflect.get(target, property, receiver);
 		},
 	});
+	return proxy;
 }

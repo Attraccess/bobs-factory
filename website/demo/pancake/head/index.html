@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Pancake Palace — Menu</title>
+		<link rel="stylesheet" href="src/styles.css" />
+		<script src="src/theme.js"></script>
+	</head>
+	<body>
+		<header class="top">
+			<a class="brand" href="/">🥞 Pancake Palace</a>
+			<nav>
+				<a href="#menu" aria-current="page">Menu</a>
+				<a href="#orders">Orders</a>
+				<button class="theme" type="button" data-theme-toggle aria-label="Switch to dark mode">🌙</button>
+				<a class="cart" href="#cart">Cart · <b data-cart-count>2</b></a>
+			</nav>
+		</header>
+		<main>
+			<section class="hero">
+				<p class="eyebrow">Fresh off the griddle</p>
+				<h1>Stacks for every<br />kind of morning.</h1>
+				<p class="lede">Fluffy, golden and made to order. Pick a stack, add toppings, and we'll have it on your table in 7 minutes flat.</p>
+			</section>
+			<section id="menu" class="grid" data-menu></section>
+		</main>
+		<script type="module" src="src/menu.js"></script>
+	</body>
+</html>

@@ -14,6 +14,11 @@ import type {
 	WorkflowTrigger,
 	WorkflowTriggerOrigin,
 } from "cyrus-core";
+import type {
+	CapacityOptions,
+	CapacityRequest,
+	ExecutionCapacity,
+} from "../MachineCapacity.js";
 import { activityMarkers } from "./ActivityPage.js";
 import {
 	type AgentSettings,
@@ -28,6 +33,7 @@ import {
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
+	isComputeIntensive,
 	readPath,
 	requireTrigger,
 	validateWorkflows,
@@ -59,6 +65,8 @@ export interface WorkflowCall {
 	workflowId: string;
 }
 export interface AgentCheckpoint {
+	/** Persisted per-role budget for resuming a silent provider turn. */
+	idleRetries?: number;
 	runner: NonNullable<WorkflowStep["runner"]>;
 	sessionId: string;
 	result?: {
@@ -140,6 +148,18 @@ export interface FactoryRun {
 	workspaceId?: string;
 	step?: string;
 	checkpoint?: GraphCheckpoint;
+	capacityLeaves?: Record<
+		string,
+		{
+			phase:
+				| "queued"
+				| "executing"
+				| "stopping"
+				| "waiting-ci"
+				| "waiting-human";
+			request?: CapacityRequest;
+		}
+	>;
 	simplePrompt?: string;
 	simpleExecution?: {
 		userPrompt: string;
@@ -170,6 +190,7 @@ export interface ChatMessage {
 }
 export interface ExecutionContext {
 	stepKey?: string;
+	capacity?: CapacityOptions;
 	chat?: boolean;
 	progress?: RoleProgress;
 	run: FactoryRun;
@@ -183,6 +204,7 @@ export interface ExecutionContext {
 	checkpointAgent?: (agent: AgentCheckpoint) => void;
 }
 export interface RuntimeHooks {
+	capacity?: ExecutionCapacity;
 	track?(
 		run: FactoryRun,
 		milestone: import("./TicketTracking.js").TicketMilestone,
@@ -294,9 +316,14 @@ export class WorkflowRuntime {
 		}
 		return messages!;
 	}
-	recordChatMessage(id: string, text: string, step: string): ChatMessage {
+	recordChatMessage(
+		id: string,
+		text: string,
+		step: string,
+		messageId: string = randomUUID(),
+	): ChatMessage {
 		const message = {
-			id: randomUUID(),
+			id: messageId,
 			text,
 			step,
 			at: new Date().toISOString(),
@@ -580,7 +607,7 @@ export class WorkflowRuntime {
 		if (this.controllers.has(run.id))
 			throw new Error("Run is already executing");
 		const controller = new AbortController();
-		if (run.ticketReference && run.status === "waiting") run.status = "running";
+		if (run.status === "waiting") run.status = "running";
 		this.controllers.set(run.id, controller);
 		const execution = this.execute(run, controller, task);
 		this.executions.set(run.id, execution);
@@ -691,6 +718,31 @@ export class WorkflowRuntime {
 				}
 		}
 	}
+	capacityOptions(run: FactoryRun, key: string, visit = 1): CapacityOptions {
+		return {
+			identity: `${this.directory}:run:${run.id}:${key}:${visit}`,
+			recoverable: true,
+			preserveOnShutdown: () => run.status !== "stopped",
+			onChange: (request) => {
+				run.capacityLeaves ??= {};
+				const previous = run.capacityLeaves[key]?.phase;
+				if (request && request.phase !== previous)
+					this.log(
+						run,
+						key,
+						request.phase === "queued"
+							? "Waiting for instance capacity."
+							: request.phase === "stopping"
+								? "Stopping execution; capacity remains reserved until it settles."
+								: "Instance capacity admitted execution.",
+					);
+				if (request)
+					run.capacityLeaves[key] = { phase: request.phase, request };
+				else delete run.capacityLeaves[key];
+				this.save(run);
+			},
+		};
+	}
 	private async track(
 		run: FactoryRun,
 		milestone: import("./TicketTracking.js").TicketMilestone,
@@ -776,6 +828,7 @@ export class WorkflowRuntime {
 				run,
 				step,
 				stepKey: key,
+				capacity: this.capacityOptions(run, key, count),
 				chat: step.chat ?? chat,
 				input,
 				outputs,
@@ -805,20 +858,34 @@ export class WorkflowRuntime {
 						outputs: structuredClone(outputs),
 					}));
 					this.save(run);
-					output = await Promise.all(
+					const branchController = new AbortController();
+					const cancelBranches = () => branchController.abort(signal.reason);
+					signal.addEventListener("abort", cancelBranches, { once: true });
+					if (signal.aborted) cancelBranches();
+					let failure: unknown;
+					const branchResults = await Promise.allSettled(
 						(step.groups ?? []).map((group, index) =>
 							this.graph(
 								run,
 								group,
 								state.children![index]!.outputs!,
-								signal,
+								branchController.signal,
 								`${key}/${index}/`,
 								state.children![index]!,
 								workflowId,
 								chat,
 								true,
-							),
+							).catch((error) => {
+								failure ??= error;
+								branchController.abort(error);
+								throw error;
+							}),
 						),
+					);
+					signal.removeEventListener("abort", cancelBranches);
+					if (failure) throw failure;
+					output = branchResults.map((result) =>
+						result.status === "fulfilled" ? result.value : undefined,
 					);
 				} else if (step.type === "workflow") {
 					const definition = run.workflowDefinitions?.find(
@@ -866,7 +933,42 @@ export class WorkflowRuntime {
 					);
 					output = { workflow: definition.id, completed: true };
 				} else {
-					output = await this.hooks[step.type](context);
+					run.capacityLeaves ??= {};
+					run.capacityLeaves[key] = {
+						phase:
+							step.tool === "ci" ||
+							step.tool === "merge-readiness" ||
+							step.tool === "handoff"
+								? "waiting-ci"
+								: step.tool === "human-review"
+									? "waiting-human"
+									: "executing",
+					};
+					this.save(run);
+					try {
+						if (
+							step.type !== "agent" &&
+							isComputeIntensive(step) &&
+							this.hooks.capacity
+						) {
+							const lease = await this.hooks.capacity.acquireLease(signal, {
+								...context.capacity,
+								remote: step.tool?.startsWith("mcp__"),
+							});
+							try {
+								signal.throwIfAborted();
+								output = await lease.run(() =>
+									this.hooks[step.type as "script" | "tool"](context),
+								);
+							} finally {
+								await lease.release();
+							}
+						} else output = await this.hooks[step.type](context);
+					} finally {
+						if (!this.shuttingDown || run.status === "stopped")
+							delete run.capacityLeaves[key];
+						this.save(run);
+					}
 				}
 				signal.throwIfAborted();
 				outputs[step.id] = output;
@@ -878,6 +980,24 @@ export class WorkflowRuntime {
 				});
 				state.phase = "result";
 				this.save(run);
+			}
+			// Restored waits must use current gate logic, retaining all role evidence.
+			if (
+				step.tool === "visual-gate" &&
+				state.phase === "waiting" &&
+				step.qaContract
+			) {
+				output = outputs[step.id] = await this.hooks.tool(context);
+				state.phase = "result";
+				this.save(run);
+			}
+			if (
+				step.tool === "visual-gate" &&
+				Array.isArray(readPath(output, "findings")) &&
+				(readPath(output, "findings") as unknown[]).length
+			) {
+				run.status = "running";
+				run.questions = [];
 			}
 			if (
 				step.tool === "draft-pr" ||
@@ -936,7 +1056,12 @@ export class WorkflowRuntime {
 			if (
 				step.tool === "visual-gate" &&
 				(readPath(output, "captureBlocked") === true ||
-					readPath(output, "qaBlocked") === true)
+					readPath(output, "qaBlocked") === true ||
+					readPath(output, "qaRetry") === true) &&
+				!(
+					Array.isArray(readPath(output, "findings")) &&
+					(readPath(output, "findings") as unknown[]).length
+				)
 			) {
 				// Existing runs keep their frozen graph. Recover inside that graph rather
 				// than replacing its recipe or rerunning implementation/code fixes.
@@ -957,6 +1082,18 @@ export class WorkflowRuntime {
 					throw new Error(
 						"QA or visual evidence is incomplete and this recipe has no capture → visual-review → visual-gate recovery path. Configure that path for a new run; missing evidence cannot be approved.",
 					);
+				if (readPath(output, "qaRetry") === true) {
+					checkpoint.current = capture.id;
+					checkpoint.active = undefined;
+					run.questions = [];
+					run.status = "running";
+					this.log(
+						run,
+						key,
+						`Retrying invalid QA evidence: ${JSON.stringify(readPath(output, "evidenceIssues"))}`,
+					);
+					continue;
+				}
 				const questions = readPath(output, "questions");
 				if (
 					!Array.isArray(questions) ||
@@ -975,7 +1112,28 @@ export class WorkflowRuntime {
 				);
 				continue;
 			}
-			if (step.askQuestions) {
+			if (
+				step.tool === "review-after-fix" &&
+				Array.isArray(readPath(output, "questions")) &&
+				(readPath(output, "questions") as unknown[]).length
+			) {
+				if (!steps.some((item) => item.id === "ci-fix"))
+					throw new Error("CI assistance has no configured fixer");
+				if (state.phase !== "answered")
+					await this.waitForAnswers(
+						run,
+						readPath(output, "questions") as string[],
+						signal,
+						state,
+					);
+				checkpoint.current = "ci-fix";
+				checkpoint.active = undefined;
+				continue;
+			}
+			if (
+				step.askQuestions ||
+				(step.id === "ci-fix" && Array.isArray(readPath(output, "questions")))
+			) {
 				const questions = readPath(output, "questions");
 				if (
 					!Array.isArray(questions) ||
@@ -1430,4 +1588,14 @@ export class WorkflowRuntime {
 		writeFileSync(temporary, JSON.stringify(data, null, 2));
 		renameSync(temporary, path);
 	}
+}
+
+/** Durable run status remains compatible; API derives queueing from all active leaves. */
+export function capacityRunStatus(run: FactoryRun): string {
+	const leaves = Object.values(run.capacityLeaves ?? {});
+	return run.status === "running" &&
+		leaves.length &&
+		leaves.every((leaf) => leaf.phase === "queued")
+		? "capacity-waiting"
+		: run.status;
 }

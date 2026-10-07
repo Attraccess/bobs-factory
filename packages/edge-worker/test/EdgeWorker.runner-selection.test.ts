@@ -20,6 +20,25 @@ import { SharedApplicationServer } from "../src/SharedApplicationServer.js";
 import type { EdgeWorkerConfig, RepositoryConfig } from "../src/types.js";
 import { TEST_CYRUS_HOME } from "./test-dirs.js";
 
+// Routing tests use an in-memory gate; real storage/process coordination is
+// exercised by MachineCapacity.test.ts, outside these filesystem mocks.
+vi.mock("../src/MachineCapacity.js", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../src/MachineCapacity.js")>();
+	const { SessionSemaphore } = await import("../src/RunnerConcurrency.js");
+	return {
+		...actual,
+		MachineCapacity: class extends SessionSemaphore {
+			constructor(limit = 4) {
+				super(limit);
+			}
+			async ready() {}
+			async reconcileQueue() {}
+			async shutdown() {}
+		},
+	};
+});
+
 // Mock fs/promises
 vi.mock("fs/promises", () => ({
 	readFile: vi.fn(),

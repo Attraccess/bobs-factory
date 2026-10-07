@@ -550,16 +550,23 @@ export const EdgeConfigSchema = z.object({
 
 	/**
 	 * Maximum number of agent runner sessions allowed to execute concurrently
-	 * across all repositories and platforms. Additional session starts wait in
+	 * across this instance's repositories and platforms. Additional starts wait in
 	 * FIFO order for a free slot and begin automatically as running sessions
-	 * finish. Omit for unlimited (the historical behavior).
+	 * finish. Defaults to four slots, shared with intensive workflow steps.
 	 *
 	 * Use this on hosts where an unbounded burst of webhook-driven sessions
 	 * can exhaust memory or CPU. Hot-reloads with the config file: raising the
 	 * limit admits queued sessions immediately; lowering it applies as
 	 * running sessions finish.
 	 */
-	maxConcurrentSessions: z.number().int().positive().optional(),
+	maxConcurrentSessions: z
+		.number()
+		.int()
+		.positive()
+		.optional()
+		.describe(
+			"Instance capacity for scheduled agents and intensive workflow steps. Defaults to four; explicit limits seed or must agree with this instance's saved policy.",
+		),
 
 	/**
 	 * Whether Cyrus follows along with all subsequent replies in a Slack thread

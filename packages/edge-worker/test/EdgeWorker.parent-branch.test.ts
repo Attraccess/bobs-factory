@@ -16,6 +16,25 @@ import { SharedApplicationServer } from "../src/SharedApplicationServer.js";
 import type { EdgeWorkerConfig, RepositoryConfig } from "../src/types.js";
 import { TEST_CYRUS_HOME } from "./test-dirs.js";
 
+// Routing tests use an in-memory gate; real storage/process coordination is
+// exercised by MachineCapacity.test.ts, outside these filesystem mocks.
+vi.mock("../src/MachineCapacity.js", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../src/MachineCapacity.js")>();
+	const { SessionSemaphore } = await import("../src/RunnerConcurrency.js");
+	return {
+		...actual,
+		MachineCapacity: class extends SessionSemaphore {
+			constructor(limit = 4) {
+				super(limit);
+			}
+			async ready() {}
+			async reconcileQueue() {}
+			async shutdown() {}
+		},
+	};
+});
+
 // Mock fs/promises
 vi.mock("fs/promises", () => ({
 	readFile: vi.fn(),
@@ -262,7 +281,9 @@ Base Branch: {{base_branch}}`;
 		expect(capturedClaudeRunnerConfig).toBeDefined();
 
 		// Check that startStreaming was called with a prompt containing the correct base branch
-		expect(mockClaudeRunner.startStreaming).toHaveBeenCalled();
+		await vi.waitFor(() =>
+			expect(mockClaudeRunner.startStreaming).toHaveBeenCalled(),
+		);
 		const promptArg = mockClaudeRunner.startStreaming.mock.calls[0][0];
 		expect(promptArg).toContain("Base Branch: main"); // Should contain the repository's base branch
 	});
@@ -315,7 +336,9 @@ Base Branch: {{base_branch}}`;
 		expect(capturedClaudeRunnerConfig).toBeDefined();
 
 		// Check that startStreaming was called with a prompt containing the parent branch
-		expect(mockClaudeRunner.startStreaming).toHaveBeenCalled();
+		await vi.waitFor(() =>
+			expect(mockClaudeRunner.startStreaming).toHaveBeenCalled(),
+		);
 		const promptArg = mockClaudeRunner.startStreaming.mock.calls[0][0];
 		expect(promptArg).toContain("Base Branch: parent-feature-branch"); // Should contain the parent's branch
 	});
@@ -369,7 +392,9 @@ Base Branch: {{base_branch}}`;
 		expect(capturedClaudeRunnerConfig).toBeDefined();
 
 		// Check that startStreaming was called with a prompt containing the generated parent branch name
-		expect(mockClaudeRunner.startStreaming).toHaveBeenCalled();
+		await vi.waitFor(() =>
+			expect(mockClaudeRunner.startStreaming).toHaveBeenCalled(),
+		);
 		const promptArg = mockClaudeRunner.startStreaming.mock.calls[0][0];
 		expect(promptArg).toContain("Base Branch: TEST-456-parent-issue-title"); // Should use generated branch name
 	});
@@ -427,7 +452,9 @@ Base Branch: {{base_branch}}`;
 		expect(capturedClaudeRunnerConfig).toBeDefined();
 
 		// Check that startStreaming was called with a prompt containing the immediate parent branch
-		expect(mockClaudeRunner.startStreaming).toHaveBeenCalled();
+		await vi.waitFor(() =>
+			expect(mockClaudeRunner.startStreaming).toHaveBeenCalled(),
+		);
 		const promptArg = mockClaudeRunner.startStreaming.mock.calls[0][0];
 		expect(promptArg).toContain("Base Branch: parent-branch-456"); // Should use immediate parent
 		expect(promptArg).not.toContain("grandparent-branch-789"); // Should not contain grandparent
