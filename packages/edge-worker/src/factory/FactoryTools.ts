@@ -672,7 +672,7 @@ export class FactoryTools {
 					| undefined;
 				const substantiveFeedback =
 					feedback?.some((item) =>
-						["threads", "reviews"].includes(item.kind),
+						["threads", "reviews", "revision"].includes(item.kind),
 					) ||
 					(feedback?.some((item) => item.kind === "comments") &&
 						readPath(run.outputs, "ci-fix.reviewRequired") !== false);

@@ -369,10 +369,11 @@ it.each([
 });
 
 it.each([
-	[undefined, true],
-	[true, true],
-	[false, false],
-])("does not skip review of new feedback without an informational-only assessment (%s)", async (flag, required) => {
+	[undefined, true, "comments"],
+	[true, true, "comments"],
+	[false, false, "comments"],
+	[false, true, "revision"],
+])("does not skip review of new feedback or changed revisions (%s, %s, %s)", async (flag, required, kind) => {
 	const ctx = {
 		run: {
 			step: "pipeline/after-ci-fix",
@@ -381,7 +382,7 @@ it.each([
 			},
 			outputs: {
 				"draft-pr": { url },
-				ci: { baseSha: "base", blockers: [{ kind: "comments" }] },
+				ci: { baseSha: "base", blockers: [{ kind }] },
 				"ci-fix": { reviewRequired: flag },
 				"review-gate": { approved: true },
 			},
