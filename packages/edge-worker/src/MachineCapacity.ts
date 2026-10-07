@@ -10,7 +10,6 @@ import {
 	unlink,
 	writeFile,
 } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
@@ -164,9 +163,8 @@ export class MachineCapacity implements ExecutionCapacity {
 	private refreshing?: Promise<CapacitySnapshot>;
 	private transactions: Promise<void> = Promise.resolve();
 	constructor(
-		private configuredLimit?: number,
-		directory = process.env.CYRUS_CAPACITY_DIRECTORY ??
-			join(homedir(), ".cyrus", "machine-capacity"),
+		private configuredLimit: number | undefined,
+		directory: string,
 	) {
 		this.directory = resolvePath(directory);
 		this.initialized = this.initialize();
@@ -187,7 +185,7 @@ export class MachineCapacity implements ExecutionCapacity {
 	}
 	private policyConflict(limit: number): string | undefined {
 		return this.configuredLimit !== undefined && this.configuredLimit !== limit
-			? `Configured maxConcurrentSessions=${this.configuredLimit} conflicts with shared limit ${limit}. Save the machine limit in Factory settings or deliberately change the configuration.`
+			? `Configured maxConcurrentSessions=${this.configuredLimit} conflicts with shared limit ${limit}. Save the instance limit in Factory settings or deliberately change the configuration.`
 			: undefined;
 	}
 	async ready(): Promise<void> {
@@ -246,7 +244,7 @@ export class MachineCapacity implements ExecutionCapacity {
 			}
 			if (Date.now() > deadline)
 				throw new Error(
-					"Machine capacity coordinator lock unavailable; no workload was started",
+					"Instance capacity coordinator lock unavailable; no workload was started",
 				);
 			await delay(25);
 		}
@@ -267,7 +265,7 @@ export class MachineCapacity implements ExecutionCapacity {
 			} catch (error) {
 				if ((error as NodeJS.ErrnoException).code !== "ENOENT")
 					throw new Error(
-						"Machine capacity state is corrupt or unavailable; restore the coordinator before starting work",
+						"Instance capacity state is corrupt or unavailable; restore the coordinator before starting work",
 						{ cause: error },
 					);
 				state = {

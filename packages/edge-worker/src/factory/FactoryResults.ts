@@ -324,6 +324,11 @@ function parseFactoryResult(
 				: CaptureSchema.parse(output);
 		case "guide":
 			return GuideSchema.parse(output);
+		case "ci-fix":
+			return z
+				.object({ questions: z.array(text).optional() })
+				.passthrough()
+				.parse(output);
 		case "code-fix":
 		case "visual-fix":
 			return z

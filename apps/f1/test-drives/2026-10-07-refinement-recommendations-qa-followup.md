@@ -83,3 +83,20 @@ retained after reviewer reassessment, obtain explicit provider-credit authorizat
 and schedule those cases as capacity-managed workflow steps. Do not infer a pass
 from these canned outputs. No live Taskbot delivery or status reconciliation was
 tested; the original backlog snapshot versus in_progress receipts limitation remains.
+
+## Merge compatibility check
+
+Re-ran the same mocked fixture while merging base
+`1b30cfb0de2959f1cba16a5263525ddd32318052` into PR head
+`71cf988d787841a8ddb24a97327837cc9e6a997d` (uncommitted merge tree).
+Dashboard build: `c865e5b75642dfeee4f49da5`. Both explicit answer paths passed
+with one mocked continuation and one receipt each. Inspected the fresh headless
+screenshot: both recommendations, reasons, custom controls and Send answers
+remain readable. Root build/typecheck and Biome passed (29 existing warnings).
+All 211 tests in eight focused suites passed, including recommendation validation,
+question batching, workflow recovery, server/PWA handling and merge readiness.
+The test-file conflicts retained both recommendation and workflow-recovery tests.
+
+Receipts and screenshot are in the original evidence directory's `ci-merge/`
+subdirectory. This compatibility check uses canned outputs; all prior native
+coverage and ticket synchronization limitations above remain recorded.

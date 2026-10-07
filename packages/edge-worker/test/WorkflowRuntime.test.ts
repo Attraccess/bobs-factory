@@ -2291,3 +2291,152 @@ it("assigns new identities to repeated question batches and labels ticket sugges
 	expect(run.answers).toHaveLength(1);
 	runtime.stop(run.id);
 });
+
+it("recovers saved QA waits into the fixer while retaining completed roles and human merge approval", async () => {
+	const called: string[] = [];
+	const { home, runtime } = create({
+		agent: async (ctx) => {
+			called.push(ctx.step.id);
+			return {};
+		},
+		tool: async () => ({
+			approved: false,
+			qaBlocked: true,
+			questions: ["access"],
+			findings: [{ id: "defect", rating: 3, status: "open" }],
+		}),
+	});
+	const definition = workflow([
+		agent("capture", { next: "visual-review" }),
+		agent("visual-review", { next: "visual-gate" }),
+		{
+			id: "visual-gate",
+			name: "Gate",
+			type: "tool",
+			tool: "visual-gate",
+			qaContract: "qa-v1",
+			branches: [
+				{ when: { path: "approved", equals: false }, next: "visual-fix" },
+			],
+			next: "end",
+		},
+		agent("visual-fix", { next: "end" }),
+	]);
+	const run = start(runtime, definition);
+	run.status = "waiting";
+	run.questions = ["Invalid QA reference"];
+	run.checkpoint = {
+		current: "visual-gate",
+		visits: { capture: 1, "visual-review": 1, "visual-gate": 1 },
+		active: { phase: "waiting" },
+	};
+	run.outputs["visual-gate"] = {
+		approved: false,
+		qaBlocked: true,
+		questions: run.questions,
+	};
+	const originalHistory = structuredClone(run.history);
+	runtime.save(run);
+	await runtime.shutdown();
+	const restored = new WorkflowRuntime(home, {
+		agent: async (ctx) => {
+			called.push(ctx.step.id);
+			return {};
+		},
+		tool: async () => ({
+			approved: false,
+			findings: [{ id: "defect", rating: 3, status: "open" }],
+		}),
+		script: async () => ({}),
+	});
+	restored.resumeAll();
+	await vi.waitFor(() => expect(restored.get(run.id).status).toBe("completed"));
+	expect(called).toEqual(["visual-fix"]);
+	expect(restored.get(run.id).questions).toEqual([]);
+	expect(restored.get(run.id).history.slice(0, originalHistory.length)).toEqual(
+		originalHistory,
+	);
+	expect(restored.get(run.id).humanDecisions ?? []).toEqual([]);
+	await restored.shutdown();
+});
+
+it("retries invalid QA receipts without human input, retaining bounded visits", async () => {
+	let gates = 0;
+	const calls: string[] = [];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			return {};
+		},
+		tool: async () =>
+			++gates === 1
+				? {
+						approved: false,
+						qaRetry: true,
+						evidenceIssues: ["unknown requirement reference"],
+					}
+				: { approved: true },
+	});
+	const run = start(
+		runtime,
+		workflow([
+			agent("capture", { next: "visual-review" }),
+			agent("visual-review", { next: "visual-gate" }),
+			{
+				id: "visual-gate",
+				name: "Gate",
+				type: "tool",
+				tool: "visual-gate",
+				next: "end",
+			},
+		]),
+	);
+	await runtime.launch(run);
+	expect(run.status).toBe("completed");
+	expect(calls).toEqual([
+		"capture",
+		"visual-review",
+		"capture",
+		"visual-review",
+	]);
+	expect(run.answers).toEqual([]);
+	await runtime.shutdown();
+});
+
+it("waits for CI assistance and retries the existing fixer after an answer without replaying implementation", async () => {
+	const calls: string[] = [];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			return {};
+		},
+		tool: async (ctx) =>
+			ctx.run.answers.length
+				? { reviewRequired: false }
+				: {
+						reviewRequired: false,
+						questions: ["Restore the build infrastructure"],
+					},
+	});
+	const run = start(
+		runtime,
+		workflow([
+			agent("ci-fix", { next: "after-ci-fix" }),
+			{
+				id: "after-ci-fix",
+				name: "After fix",
+				type: "tool",
+				tool: "review-after-fix",
+				next: "end",
+			},
+		]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(calls).toEqual(["ci-fix"]);
+	runtime.answer(run.id, "Build infrastructure restored");
+	await execution;
+	expect(calls).toEqual(["ci-fix", "ci-fix"]);
+	expect(run.status).toBe("completed");
+	await runtime.shutdown();
+});
