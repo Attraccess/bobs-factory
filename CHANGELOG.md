@@ -55,6 +55,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve pending QA question drafts across restarts when questions and recommendations are unchanged; changed assistance still requires reviewing the new batch. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
+
 - Recover stalled QA and handoff runs from their saved evidence, retry malformed QA and one silent Codex turn, and request assistance when CI repeats the same unresolved failure. Known defects proceed to correction before access waits. ([#36](https://github.com/Attraccess/bobs-factory/pull/36))
 
 - Allow an explicitly configured public Factory UI origin while retaining host, origin, and request-header checks.

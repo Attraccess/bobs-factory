@@ -995,7 +995,8 @@ export class WorkflowRuntime {
 				step.qaContract
 			) {
 				output = outputs[step.id] = await this.hooks.tool(context);
-				state.phase = "result";
+				// Keep the restored wait until its questions and suggestions are compared
+				// below. Gate revalidation alone does not create a new question batch.
 				this.save(run);
 			}
 			if (
@@ -1213,7 +1214,10 @@ export class WorkflowRuntime {
 		state: NonNullable<GraphCheckpoint["active"]>,
 		recommendations?: QuestionRecommendation[],
 	): Promise<void> {
-		const restored = state.phase === "waiting";
+		const restored =
+			state.phase === "waiting" &&
+			isDeepStrictEqual(run.questions, questions) &&
+			isDeepStrictEqual(run.questionRecommendations, recommendations);
 		state.phase = "waiting";
 		run.questions = questions;
 		run.questionRecommendations = recommendations;
