@@ -20,6 +20,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Integrate Codex startup checkpoint recovery and shared question guidance with execution profiles; retain established conversations and independent execution settings. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
 - Integrate feedback recovery with execution profiles while preserving constructor cleanup synchronization and both changelog histories. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
 - Merge current workflow recovery, refinement recommendations and instance capacity into execution profiles; retain dedicated Settings pages and both answer/execution update drafts. Wait for coordinator initialization before removing persistence-test homes and give mocked multi-package release scenarios a bounded 30-second budget. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
