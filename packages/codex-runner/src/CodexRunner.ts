@@ -6,6 +6,7 @@ import type {
 	SDKMessage,
 } from "bobs-factory-core";
 import { AppServerCodexBackend } from "./backend/AppServerCodexBackend.js";
+import { waitWithAbort } from "./backend/abort.js";
 import type {
 	CodexBackend,
 	CodexUserInput,
@@ -53,6 +54,7 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 	private sessionInfo: CodexSessionInfo | null = null;
 	private backend: CodexBackend | null = null;
 	private wasStopped = false;
+	private cancellation: AbortController | null = null;
 	private cleanupPromise: Promise<void> | null = null;
 	/** Set once the turn reaches a terminal state; gates {@link isStreaming}. */
 	private turnFinished = false;
@@ -126,6 +128,7 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 	stop(): void {
 		if (this.sessionInfo?.isRunning) {
 			this.wasStopped = true;
+			this.cancellation?.abort(new Error("Codex session stopped"));
 		}
 		void this.cleanupRuntimeState();
 	}
@@ -157,6 +160,8 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 			isRunning: true,
 		};
 		this.wasStopped = false;
+		const cancellation = new AbortController();
+		this.cancellation = cancellation;
 		this.turnFinished = false;
 		this.pendingFollowups = [];
 		this.mapper.reset();
@@ -170,7 +175,10 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 
 		let caughtError: unknown;
 		try {
-			const resolved = await new CodexConfigBuilder(this.config).build();
+			const resolved = await waitWithAbort(
+				new CodexConfigBuilder(this.config).build(cancellation.signal),
+				cancellation.signal,
+			);
 			if (this.wasStopped) return this.sessionInfo;
 			this.skillStager.stage();
 

@@ -1,4 +1,14 @@
 import { EventEmitter } from "node:events";
+import {
+	chmodSync,
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import type { CodexBackend, CodexUserInput } from "../src/backend/types.js";
 import { CodexRunner } from "../src/CodexRunner.js";
@@ -152,14 +162,84 @@ describe("CodexRunner startup cancellation", () => {
 		try {
 			const started = runner.start("hold");
 			runner.stop();
-			finishBuild();
 			await started;
+			finishBuild();
 			expect(open).not.toHaveBeenCalled();
 			expect(runTurn).not.toHaveBeenCalled();
 			expect(runner.isRunning()).toBe(false);
 			expect(complete).toHaveBeenCalledTimes(1);
 		} finally {
 			build.mockRestore();
+		}
+	});
+});
+
+describe("Codex configuration cancellation", () => {
+	it("terminates the scripted login-status probe on cancellation", async () => {
+		const root = mkdtempSync(join(tmpdir(), "codex-cancel-probe-"));
+		const launcher = join(root, "codex");
+		const pidFile = join(root, "pid");
+		writeFileSync(
+			launcher,
+			`#!/bin/sh\necho $$ > "${pidFile}"\nexec /bin/sleep 30\n`,
+		);
+		chmodSync(launcher, 0o755);
+		vi.stubEnv("OPENAI_API_KEY", "fixture-key");
+		const cancellation = new AbortController();
+		const fetchModel = vi.fn();
+		vi.stubGlobal("fetch", fetchModel);
+		try {
+			const build = new CodexConfigBuilder({
+				model: "fixture-model",
+				fallbackModel: "fallback",
+				codexPath: launcher,
+			}).build(cancellation.signal);
+			const outcome = build.catch(() => "cancelled");
+			await vi.waitFor(() => expect(existsSync(pidFile)).toBe(true));
+			const pid = Number(readFileSync(pidFile, "utf8"));
+			cancellation.abort(new Error("stopped"));
+			expect(await outcome).toBe("cancelled");
+			await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow());
+			expect(fetchModel).not.toHaveBeenCalled();
+		} finally {
+			cancellation.abort();
+			vi.unstubAllGlobals();
+			vi.unstubAllEnvs();
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("aborts a simulated model-availability request without applying a fallback", async () => {
+		vi.stubEnv("OPENAI_API_KEY", "fixture-key");
+		const cancellation = new AbortController();
+		const fetchModel = vi.fn(
+			(_url: string, options: { signal: AbortSignal }) =>
+				new Promise((_resolve, reject) => {
+					options.signal.addEventListener(
+						"abort",
+						() => reject(options.signal.reason),
+						{ once: true },
+					);
+				}),
+		);
+		vi.stubGlobal("fetch", fetchModel);
+		const config = {
+			model: "fixture-model",
+			fallbackModel: "fallback",
+			codexPath: "/bin/false",
+		};
+		try {
+			const outcome = new CodexConfigBuilder(config)
+				.build(cancellation.signal)
+				.catch(() => "cancelled");
+			await vi.waitFor(() => expect(fetchModel).toHaveBeenCalledTimes(1));
+			cancellation.abort(new Error("stopped"));
+			expect(await outcome).toBe("cancelled");
+			expect(config.model).toBe("fixture-model");
+		} finally {
+			cancellation.abort();
+			vi.unstubAllGlobals();
+			vi.unstubAllEnvs();
 		}
 	});
 });
