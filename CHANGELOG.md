@@ -58,6 +58,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Reject malformed caption timestamps, reversed intervals and out-of-order cues before accepting recorded audio evidence. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Make Bob’s questions, progress messages and review summaries easier to follow: lead with the decision or outcome, explain choices in everyday words, and keep internal test IDs in technical details. Saved review-fix workflows now receive the same question guidance as clarification. ([#39](https://github.com/Attraccess/bobs-factory/pull/39))
 
 - Resume older paused runs with the exact PR comments needing assessment, instead of asking operators to restore missing internal feedback context. ([#38](https://github.com/Attraccess/bobs-factory/pull/38))
 - Honor explicit decisions to ignore or resume PR comment providers across edits and restarts, correct missed assessments within the existing step, and pause CI or code/visual review fixes that need assistance before exhausting review attempts. Unresolved findings remain blocking, and changed code still receives fresh review. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
