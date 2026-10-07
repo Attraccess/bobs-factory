@@ -2,7 +2,7 @@
  * Issue Tracker Abstraction Layer
  *
  * This module provides a platform-agnostic interface for issue tracking operations.
- * It decouples the Cyrus codebase from Linear-specific implementations, enabling
+ * It decouples the Bob’s Factory codebase from Linear-specific implementations, enabling
  * support for multiple issue tracking platforms (Linear, GitHub, Jira, etc.).
  *
  * @module issue-tracker
@@ -88,8 +88,8 @@ export {
 // CLI adapters for F1 testing framework
 export * from "./adapters/index.js";
 
-// Linear adapters have been moved to cyrus-linear-event-transport package
-// Import them directly from that package instead of from cyrus-core
+// Linear adapters have been moved to bobs-factory-linear-event-transport package
+// Import them directly from that package instead of from bobs-factory-core
 
 // ============================================================================
 // MODULE METADATA

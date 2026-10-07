@@ -10,7 +10,7 @@ import {
 	type MockInstance,
 	vi,
 } from "vitest";
-import { createCyrusToolsServer } from "../../../src/tools/cyrus-tools/index.js";
+import { createCyrusToolsServer } from "../../../src/tools/bobs-factory-tools/index.js";
 
 const sessionId = "16f7f988-4a3b-46d1-8434-d5de6e42791f";
 const timestamp = "2026-09-10T15:00:00.000Z";

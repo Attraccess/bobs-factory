@@ -12,7 +12,7 @@ import type {
 	Issue,
 	RepositoryConfig,
 	WebhookAgentSession,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 /**
  * Output structure from buildPrompt - contains everything needed to start a Claude session
@@ -64,7 +64,7 @@ export type PromptType =
  */
 export interface PromptAssemblyInput {
 	// ===== Session Context =====
-	/** The Cyrus agent session */
+	/** The Bob’s Factory agent session */
 	session: CyrusAgentSession;
 
 	/** Full issue details */

@@ -1,24 +1,24 @@
 import { LinearClient } from "@linear/sdk";
-import { ClaudeRunner } from "cyrus-claude-runner";
-import { LinearEventTransport } from "cyrus-linear-event-transport";
-import { createCyrusToolsServer } from "cyrus-mcp-tools";
+import { ClaudeRunner } from "bobs-factory-claude-runner";
+import { LinearEventTransport } from "bobs-factory-linear-event-transport";
+import { createCyrusToolsServer } from "bobs-factory-mcp-tools";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager.js";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { SharedApplicationServer } from "../src/SharedApplicationServer.js";
 import type { EdgeWorkerConfig, RepositoryConfig } from "../src/types.js";
-import { TEST_CYRUS_HOME } from "./test-dirs.js";
+import { TEST_BOBS_FACTORY_HOME } from "./test-dirs.js";
 
 // Mock all dependencies
 vi.mock("fs/promises");
-vi.mock("cyrus-claude-runner");
-vi.mock("cyrus-mcp-tools");
-vi.mock("cyrus-codex-runner");
-vi.mock("cyrus-linear-event-transport");
+vi.mock("bobs-factory-claude-runner");
+vi.mock("bobs-factory-mcp-tools");
+vi.mock("bobs-factory-codex-runner");
+vi.mock("bobs-factory-linear-event-transport");
 vi.mock("@linear/sdk");
 vi.mock("../src/SharedApplicationServer.js");
 vi.mock("../src/AgentSessionManager.js");
-vi.mock("cyrus-core", async (importOriginal) => {
+vi.mock("bobs-factory-core", async (importOriginal) => {
 	const actual = (await importOriginal()) as any;
 	return {
 		...actual,
@@ -155,7 +155,7 @@ describe("EdgeWorker - Feedback Delivery", () => {
 
 		mockConfig = {
 			proxyUrl: "http://localhost:3000",
-			cyrusHome: TEST_CYRUS_HOME,
+			factoryHome: TEST_BOBS_FACTORY_HOME,
 			repositories: [mockRepository],
 			linearWorkspaces: {
 				"test-workspace": { linearToken: "test-token" },
@@ -433,7 +433,7 @@ describe("EdgeWorker - Feedback Delivery", () => {
 		});
 	});
 
-	describe("Integration with cyrus-tools server", () => {
+	describe("Integration with bobs-factory-tools server", () => {
 		it("should properly configure feedback delivery callback in MCP config", () => {
 			// Arrange
 			const parentSessionId = "parent-session-123";
@@ -446,7 +446,7 @@ describe("EdgeWorker - Feedback Delivery", () => {
 			);
 
 			// Assert
-			expect(_mcpConfig).toHaveProperty("cyrus-tools");
+			expect(_mcpConfig).toHaveProperty("bobs-factory-tools");
 
 			// Verify createCyrusToolsServer was called with correct options
 			expect(createCyrusToolsServer).toHaveBeenCalledWith(
@@ -463,9 +463,9 @@ describe("EdgeWorker - Feedback Delivery", () => {
 			expect(mockOnSessionCreated).toBeDefined();
 		});
 
-		it("should include CYRUS_API_KEY as Authorization header for cyrus-tools MCP config", () => {
-			const previousApiKey = process.env.CYRUS_API_KEY;
-			process.env.CYRUS_API_KEY = "test-cyrus-api-key";
+		it("should include BOBS_FACTORY_API_KEY as Authorization header for bobs-factory-tools MCP config", () => {
+			const previousApiKey = process.env.BOBS_FACTORY_API_KEY;
+			process.env.BOBS_FACTORY_API_KEY = "test-cyrus-api-key";
 
 			try {
 				const mcpConfig = (edgeWorker as any).mcpConfigService.buildMcpConfig(
@@ -473,7 +473,7 @@ describe("EdgeWorker - Feedback Delivery", () => {
 					mockRepository.linearWorkspaceId,
 					"parent-session-123",
 				);
-				const cyrusToolsConfig = mcpConfig["cyrus-tools"] as {
+				const cyrusToolsConfig = mcpConfig["bobs-factory-tools"] as {
 					headers?: Record<string, string>;
 				};
 
@@ -482,16 +482,16 @@ describe("EdgeWorker - Feedback Delivery", () => {
 				);
 			} finally {
 				if (previousApiKey === undefined) {
-					delete process.env.CYRUS_API_KEY;
+					delete process.env.BOBS_FACTORY_API_KEY;
 				} else {
-					process.env.CYRUS_API_KEY = previousApiKey;
+					process.env.BOBS_FACTORY_API_KEY = previousApiKey;
 				}
 			}
 		});
 
-		it("should validate cyrus-tools MCP Authorization header against CYRUS_API_KEY", () => {
-			const previousApiKey = process.env.CYRUS_API_KEY;
-			process.env.CYRUS_API_KEY = "test-cyrus-api-key";
+		it("should validate bobs-factory-tools MCP Authorization header against BOBS_FACTORY_API_KEY", () => {
+			const previousApiKey = process.env.BOBS_FACTORY_API_KEY;
+			process.env.BOBS_FACTORY_API_KEY = "test-cyrus-api-key";
 
 			try {
 				expect(
@@ -509,9 +509,9 @@ describe("EdgeWorker - Feedback Delivery", () => {
 				).toBe(false);
 			} finally {
 				if (previousApiKey === undefined) {
-					delete process.env.CYRUS_API_KEY;
+					delete process.env.BOBS_FACTORY_API_KEY;
 				} else {
-					process.env.CYRUS_API_KEY = previousApiKey;
+					process.env.BOBS_FACTORY_API_KEY = previousApiKey;
 				}
 			}
 		});

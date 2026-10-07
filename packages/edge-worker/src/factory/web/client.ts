@@ -406,7 +406,7 @@ export function workflowOf(run: any, config: any) {
 		? run.workflow
 		: (config?.workflows?.find((item: any) => item.id === run.workflow) ?? {
 				id: "simple",
-				name: "Simple / Cyrus",
+				name: "Simple / Bob’s Factory",
 			});
 }
 export function settleReason(

@@ -83,20 +83,20 @@ or constructing native runners in a custom fixture.
 
 2. Start F1 server:
    ```bash
-   F1_AGENT_MODE=mock CYRUS_PORT=3600 CYRUS_REPO_PATH=/tmp/f1-test-drive-<timestamp> bun run server.ts &
+   F1_AGENT_MODE=mock BOBS_FACTORY_PORT=3600 BOBS_FACTORY_REPO_PATH=/tmp/f1-test-drive-<timestamp> bun run server.ts &
    ```
 
 3. Verify server health:
    ```bash
-   CYRUS_PORT=3600 ./f1 ping
-   CYRUS_PORT=3600 ./f1 status
+   BOBS_FACTORY_PORT=3600 ./f1 ping
+   BOBS_FACTORY_PORT=3600 ./f1 status
    ```
 
 ### Phase 2: Issue-Tracker Verification
 
 1. Create test issue:
    ```bash
-   CYRUS_PORT=3600 ./f1 create-issue \
+   BOBS_FACTORY_PORT=3600 ./f1 create-issue \
      --title "<issue title>" \
      --description "<issue description>"
    ```
@@ -107,12 +107,12 @@ or constructing native runners in a custom fixture.
 
 1. Start agent session:
    ```bash
-   CYRUS_PORT=3600 ./f1 start-session --issue-id <issue-id>
+   BOBS_FACTORY_PORT=3600 ./f1 start-session --issue-id <issue-id>
    ```
 
 2. Monitor activities:
    ```bash
-   CYRUS_PORT=3600 ./f1 view-session --session-id <session-id>
+   BOBS_FACTORY_PORT=3600 ./f1 view-session --session-id <session-id>
    ```
 
 3. Verify:
@@ -126,7 +126,7 @@ Use when validating Slack → ChatSessionHandler → mocked runner orchestration
 
 1. Dispatch a synthetic chat event:
    ```bash
-   CYRUS_PORT=3600 ./f1 start-chat-session \
+   BOBS_FACTORY_PORT=3600 ./f1 start-chat-session \
      --channel C_TEST_CHAN \
      --user U_TEST_USER \
      --text "hello"
@@ -134,9 +134,9 @@ Use when validating Slack → ChatSessionHandler → mocked runner orchestration
    The response contains a `threadKey` of the form `<channel>:<ts>`. Reuse the same `--thread-ts` to address the same chat thread on subsequent dispatches.
 
 2. Verify shared auto-memory wiring:
-   - The chat workspace exists at `<cyrusHome>/slack-workspaces/<sanitized-threadKey>/`.
-   - The shared auto-memory directory exists (or is lazily creatable) at `<cyrusHome>/slack-memory/`.
-   - When inspecting mock runner configuration, `settingsAutoMemoryDirectory` points to `<cyrusHome>/slack-memory`. Native `claude_query_options` telemetry needs transcript replay or an explicitly authorized live drive.
+   - The chat workspace exists at `<factoryHome>/slack-workspaces/<sanitized-threadKey>/`.
+   - The shared auto-memory directory exists (or is lazily creatable) at `<factoryHome>/slack-memory/`.
+   - When inspecting mock runner configuration, `settingsAutoMemoryDirectory` points to `<factoryHome>/slack-memory`. Native `claude_query_options` telemetry needs transcript replay or an explicitly authorized live drive.
 
 3. Verify per-thread workspace isolation alongside shared memory:
    - Dispatch a second event in a different channel/thread.
@@ -152,14 +152,14 @@ Use when validating Slack → ChatSessionHandler → mocked runner orchestration
 
 2. Validate pagination behavior:
    ```bash
-   CYRUS_PORT=3600 ./f1 view-session --session-id <session-id> --limit 10 --offset 0
+   BOBS_FACTORY_PORT=3600 ./f1 view-session --session-id <session-id> --limit 10 --offset 0
    ```
 
 ### Phase 5: Cleanup
 
 1. Stop active session:
    ```bash
-   CYRUS_PORT=3600 ./f1 stop-session --session-id <session-id>
+   BOBS_FACTORY_PORT=3600 ./f1 stop-session --session-id <session-id>
    ```
 
 2. Stop background server process.

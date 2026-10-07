@@ -1,10 +1,10 @@
 {
-	"name": "cyrus-cursor-runner",
+	"name": "bobs-factory-cursor-runner",
 	"version": "0.2.73",
-	"description": "Cursor Agent CLI process wrapper for Cyrus",
+	"description": "Cursor Agent CLI process wrapper for Bob’s Factory",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/cyrusagents/cyrus.git",
+		"url": "git+https://github.com/Attraccess/bobs-factory.git",
 		"directory": "packages/cursor-runner"
 	},
 	"type": "module",
@@ -14,23 +14,23 @@
 		"dist"
 	],
 	"scripts": {
-		"build": "tsgo && node -e \"require('node:fs').copyFileSync('src/permission-check.mjs', 'dist/permission-check.mjs')\"",
+		"build": "tsgo && node -e \"for(const f of ['permission-check.mjs','sdk-host.mjs']) require('node:fs').copyFileSync('src/'+f, 'dist/'+f)\"",
 		"dev": "tsgo --watch",
 		"test": "node ../../node_modules/.pnpm/node_modules/vitest/vitest.mjs",
 		"test:run": "node ../../node_modules/.pnpm/node_modules/vitest/vitest.mjs run --passWithNoTests",
 		"typecheck": "tsgo --noEmit"
 	},
 	"dependencies": {
+		"@connectrpc/connect-node": "^1.7.0",
 		"@cursor/sdk": "^1.0.19",
-		"cyrus-core": "workspace:*",
-		"cyrus-simple-agent-runner": "workspace:*"
+		"bobs-factory-core": "workspace:*",
+		"bobs-factory-simple-agent-runner": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",
 		"@typescript/native-preview": "7.0.0-dev.20260707.2",
 		"vitest": "^4.1.11"
 	},
-	"publishConfig": {
-		"access": "public"
-	}
+	"private": true,
+	"license": "Apache-2.0"
 }

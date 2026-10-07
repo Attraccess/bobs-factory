@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "vitest";
 import {
-	CYRUS_TEAM_ID_HEADER,
+	BOBS_FACTORY_TEAM_ID_HEADER,
 	HttpSessionStore,
 } from "../src/HttpSessionStore.js";
 import { runSessionStoreConformance } from "./sessionStoreConformance.js";
@@ -45,7 +45,7 @@ class FakeSessionServer {
 		// Mirror the real server's requirement: the team id header must be
 		// present on every request. Missing header ⇒ 401.
 		const teamId = request.headers
-			.get(CYRUS_TEAM_ID_HEADER.toLowerCase())
+			.get(BOBS_FACTORY_TEAM_ID_HEADER.toLowerCase())
 			?.trim();
 		if (!teamId) {
 			return new Response("missing team id", { status: 401 });
@@ -211,7 +211,7 @@ describe("HttpSessionStore - transport", () => {
 			fetch: (async (_input: unknown, init?: RequestInit) => {
 				const headers = new Headers(init?.headers);
 				observedTeamId =
-					headers.get(CYRUS_TEAM_ID_HEADER.toLowerCase()) ?? undefined;
+					headers.get(BOBS_FACTORY_TEAM_ID_HEADER.toLowerCase()) ?? undefined;
 				return new Response(JSON.stringify({ entries: null }), {
 					status: 200,
 					headers: { "Content-Type": "application/json" },

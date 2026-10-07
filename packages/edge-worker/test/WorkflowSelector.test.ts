@@ -7,7 +7,7 @@ it.each([
 	"[WORKFLOW=factory]",
 	"Bob's task [workflow=factory]",
 	"[workflow=factory] again [workflow=factory]",
-])("reads Cyrus bracket grammar in %s", (comment) => {
+])("reads Bob’s Factory bracket grammar in %s", (comment) => {
 	expect(resolveWorkflowSelector({ comment })).toEqual({
 		workflowId: "factory",
 		selection: { source: "comment-selector", selector: "[workflow=factory]" },

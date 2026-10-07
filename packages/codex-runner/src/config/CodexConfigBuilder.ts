@@ -26,8 +26,10 @@ function getDefaultReasoningEffortForModel(
 export class CodexConfigBuilder {
 	constructor(private readonly config: CodexRunnerConfig) {}
 
-	async build(): Promise<ResolvedCodexConfig> {
-		await this.resolveModelWithFallback();
+	async build(signal?: AbortSignal): Promise<ResolvedCodexConfig> {
+		signal?.throwIfAborted();
+		await this.resolveModelWithFallback(signal);
+		signal?.throwIfAborted();
 
 		const codexHome = this.resolveCodexHome();
 		const reasoningEffort =
@@ -163,7 +165,7 @@ export class CodexConfigBuilder {
 	 * fallback model before starting. Skipped when there is no API key (Codex
 	 * native auth handles access) or when the user has a ChatGPT subscription.
 	 */
-	private async resolveModelWithFallback(): Promise<void> {
+	private async resolveModelWithFallback(signal?: AbortSignal): Promise<void> {
 		const model = this.config.model;
 		const fallback = this.config.fallbackModel;
 		if (!model || !fallback || fallback === model) return;
@@ -171,7 +173,8 @@ export class CodexConfigBuilder {
 		const apiKey = process.env.OPENAI_API_KEY;
 		if (!apiKey) return;
 
-		if (await this.hasCodexSubscription()) return;
+		if (await this.hasCodexSubscription(signal)) return;
+		signal?.throwIfAborted();
 
 		const baseUrl = (
 			process.env.OPENAI_BASE_URL ||
@@ -185,7 +188,9 @@ export class CodexConfigBuilder {
 				{
 					method: "GET",
 					headers: { Authorization: `Bearer ${apiKey}` },
-					signal: AbortSignal.timeout(10_000),
+					signal: signal
+						? AbortSignal.any([signal, AbortSignal.timeout(10_000)])
+						: AbortSignal.timeout(10_000),
 				},
 			);
 			if (response.status === 404) {
@@ -195,12 +200,13 @@ export class CodexConfigBuilder {
 				this.config.model = fallback;
 			}
 		} catch {
+			signal?.throwIfAborted();
 			// Network error or timeout — proceed with the original model and let
 			// the backend surface any downstream failure.
 		}
 	}
 
-	private async hasCodexSubscription(): Promise<boolean> {
+	private async hasCodexSubscription(signal?: AbortSignal): Promise<boolean> {
 		const codexBin = this.config.codexPath || "codex";
 		try {
 			const { execFile } = await import("node:child_process");
@@ -209,7 +215,7 @@ export class CodexConfigBuilder {
 			const { stdout, stderr } = await execFileAsync(
 				codexBin,
 				["login", "status"],
-				{ timeout: 5_000 },
+				{ timeout: 5_000, ...(signal ? { signal } : {}) },
 			);
 			const result = /logged in using chatgpt/i.test(stdout + stderr);
 			console.log(
@@ -217,6 +223,7 @@ export class CodexConfigBuilder {
 			);
 			return result;
 		} catch (error) {
+			signal?.throwIfAborted();
 			console.warn(
 				`[CodexRunner] hasCodexSubscription error (returning false): ${error instanceof Error ? error.message : String(error)}`,
 			);

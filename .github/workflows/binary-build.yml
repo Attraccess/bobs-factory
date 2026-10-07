@@ -1,0 +1,72 @@
+name: Verify Bob’s Factory binary candidate
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full immutable reviewed candidate commit
+        required: true
+        type: string
+      version:
+        description: Exact committed CLI version
+        required: true
+        type: string
+      dry_run:
+        description: Build and verify only; this workflow never publishes
+        default: true
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: bobs-factory-binary-${{ inputs.candidate_sha }}
+  cancel-in-progress: false
+jobs:
+  binary:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - name: Validate immutable candidate and version
+        env:
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          node --input-type=module -e 'import p from "./apps/cli/package.json" with {type:"json"}; if(p.version !== process.env.REQUESTED_VERSION) process.exit(1)'
+          corepack enable
+          corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter 'bobs-factory...' build
+      - run: bun run scripts/build-binary.ts --target '${{ matrix.target }}' --output artifacts
+      - name: Native runtime and isolated installer smoke
+        env:
+          VERSION: ${{ inputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          ./scripts/install-binary.sh "artifacts/bobs-factory-$VERSION-$TARGET.tar.gz" "artifacts/bobs-factory-$VERSION-$TARGET.manifest.json" "$RUNNER_TEMP/factory-prefix"
+          ./scripts/smoke-binary.sh "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" | tee artifacts/runtime-smoke.txt
+      - uses: actions/upload-artifact@v6
+        with:
+          name: bobs-factory-${{ matrix.target }}-${{ inputs.candidate_sha }}
+          path: artifacts/

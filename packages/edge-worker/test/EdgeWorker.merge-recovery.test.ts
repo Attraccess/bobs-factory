@@ -19,7 +19,7 @@ async function fixture() {
 	directories.push(home);
 	const worker = new EdgeWorker({
 		platform: "cli",
-		cyrusHome: home,
+		factoryHome: home,
 		repositories: [
 			{
 				id: "repo",

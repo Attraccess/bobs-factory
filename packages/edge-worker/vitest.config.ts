@@ -25,36 +25,39 @@ export default defineConfig({
 		alias: {
 			"@": path.resolve(__dirname, "./src"),
 			"@test": path.resolve(__dirname, "./test"),
-			"cyrus-claude-runner": path.resolve(
+			"bobs-factory-claude-runner": path.resolve(
 				__dirname,
 				"../claude-runner/src/index.ts",
 			),
-			"cyrus-codex-runner": path.resolve(
+			"bobs-factory-codex-runner": path.resolve(
 				__dirname,
 				"../codex-runner/src/index.ts",
 			),
-			"cyrus-cursor-runner": path.resolve(
+			"bobs-factory-cursor-runner": path.resolve(
 				__dirname,
 				"../cursor-runner/src/index.ts",
 			),
-			"cyrus-gemini-runner": path.resolve(
+			"bobs-factory-gemini-runner": path.resolve(
 				__dirname,
 				"../gemini-runner/src/index.ts",
 			),
-			"cyrus-simple-agent-runner": path.resolve(
+			"bobs-factory-simple-agent-runner": path.resolve(
 				__dirname,
 				"../simple-agent-runner/src/index.ts",
 			),
-			"cyrus-config-updater": path.resolve(
+			"bobs-factory-config-updater": path.resolve(
 				__dirname,
 				"../config-updater/src/index.ts",
 			),
-			"cyrus-linear-event-transport": path.resolve(
+			"bobs-factory-linear-event-transport": path.resolve(
 				__dirname,
 				"../linear-event-transport/src/index.ts",
 			),
-			"cyrus-mcp-tools": path.resolve(__dirname, "../mcp-tools/src/index.ts"),
-			"cyrus-cloudflare-tunnel-client": path.resolve(
+			"bobs-factory-mcp-tools": path.resolve(
+				__dirname,
+				"../mcp-tools/src/index.ts",
+			),
+			"bobs-factory-cloudflare-tunnel-client": path.resolve(
 				__dirname,
 				"../cloudflare-tunnel-client/src/index.ts",
 			),

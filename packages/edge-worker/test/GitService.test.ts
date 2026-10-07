@@ -89,42 +89,45 @@ describe("GitService", () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		delete process.env.CYRUS_WORKTREES_DIR;
+		delete process.env.BOBS_FACTORY_WORKTREES_DIR;
 		delete process.env.SECRET_TOKEN;
 		vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 		vi.spyOn(process.stderr, "write").mockImplementation(() => true);
 		mockSuccessfulSpawn();
-		gitService = new GitService({ cyrusHome: "/home/user/.cyrus" }, mockLogger);
+		gitService = new GitService(
+			{ factoryHome: "/home/user/.bobs-factory" },
+			mockLogger,
+		);
 	});
 
 	afterEach(() => {
-		delete process.env.CYRUS_WORKTREES_DIR;
+		delete process.env.BOBS_FACTORY_WORKTREES_DIR;
 		delete process.env.SECRET_TOKEN;
 		vi.restoreAllMocks();
 	});
 
 	describe("constructor", () => {
-		it("defaults to cyrusHome/worktrees when workspaceBaseDir is omitted", async () => {
+		it("defaults to factoryHome/worktrees when workspaceBaseDir is omitted", async () => {
 			const fallbackGitService = new GitService(
-				{ cyrusHome: "/tmp/custom-cyrus-home" },
+				{ factoryHome: "/tmp/custom-home" },
 				mockLogger,
 			);
 
 			mockExistsSync.mockImplementation(
-				(path) => String(path) === "/tmp/custom-cyrus-home/worktrees/DEF-123",
+				(path) => String(path) === "/tmp/custom-home/worktrees/DEF-123",
 			);
 
 			await fallbackGitService.deleteWorktree("DEF-123");
 
 			expect(mockLogger.info).toHaveBeenCalledWith(
-				expect.stringContaining("/tmp/custom-cyrus-home/worktrees/DEF-123"),
+				expect.stringContaining("/tmp/custom-home/worktrees/DEF-123"),
 			);
 		});
 
-		it("prefers CYRUS_WORKTREES_DIR over cyrusHome defaults", async () => {
-			process.env.CYRUS_WORKTREES_DIR = "/tmp/env-worktrees";
+		it("prefers BOBS_FACTORY_WORKTREES_DIR over factoryHome defaults", async () => {
+			process.env.BOBS_FACTORY_WORKTREES_DIR = "/tmp/env-worktrees";
 			const fallbackGitService = new GitService(
-				{ cyrusHome: "/tmp/custom-cyrus-home" },
+				{ factoryHome: "/tmp/custom-home" },
 				mockLogger,
 			);
 
@@ -139,13 +142,13 @@ describe("GitService", () => {
 			);
 		});
 
-		it("dynamically reflects CYRUS_WORKTREES_DIR changes at runtime", async () => {
+		it("dynamically reflects BOBS_FACTORY_WORKTREES_DIR changes at runtime", async () => {
 			const dynamicGitService = new GitService(
-				{ cyrusHome: "/tmp/cyrus" },
+				{ factoryHome: "/tmp/cyrus" },
 				mockLogger,
 			);
 
-			// First call uses default cyrusHome (no env var set)
+			// First call uses default factoryHome (no env var set)
 			mockExistsSync.mockReturnValue(true);
 			mockReaddirSync.mockReturnValue([]);
 			await dynamicGitService.deleteWorktree("ISSUE-1");
@@ -156,7 +159,7 @@ describe("GitService", () => {
 			mockLogger.info.mockClear();
 
 			// Update env var at runtime — same GitService instance picks it up
-			process.env.CYRUS_WORKTREES_DIR = "/new/runtime/path";
+			process.env.BOBS_FACTORY_WORKTREES_DIR = "/new/runtime/path";
 			await dynamicGitService.deleteWorktree("ISSUE-2");
 			expect(mockLogger.info).toHaveBeenCalledWith(
 				expect.stringContaining("/new/runtime/path/ISSUE-2"),
@@ -172,7 +175,7 @@ describe("GitService", () => {
 					"HEAD abc123def456",
 					"branch refs/heads/main",
 					"",
-					"worktree /home/user/.cyrus/worktrees/ENG-97",
+					"worktree /home/user/.bobs-factory/worktrees/ENG-97",
 					"HEAD 789abc012def",
 					"branch refs/heads/cyrustester/eng-97-fix-shader",
 					"",
@@ -184,7 +187,7 @@ describe("GitService", () => {
 				"/home/user/repo",
 			);
 
-			expect(result).toBe("/home/user/.cyrus/worktrees/ENG-97");
+			expect(result).toBe("/home/user/.bobs-factory/worktrees/ENG-97");
 		});
 
 		it("returns null when the branch is not found", () => {
@@ -223,7 +226,7 @@ describe("GitService", () => {
 					"HEAD abc123def456",
 					"bare",
 					"",
-					"worktree /home/user/.cyrus/worktrees/ENG-97",
+					"worktree /home/user/.bobs-factory/worktrees/ENG-97",
 					"HEAD 789abc012def",
 					"branch refs/heads/my-feature",
 					"",
@@ -235,7 +238,7 @@ describe("GitService", () => {
 				"/home/user/repo",
 			);
 
-			expect(result).toBe("/home/user/.cyrus/worktrees/ENG-97");
+			expect(result).toBe("/home/user/.bobs-factory/worktrees/ENG-97");
 		});
 
 		it("returns null when git command fails", () => {
@@ -380,7 +383,7 @@ describe("GitService", () => {
 		id: "repo-1",
 		name: "test-repo",
 		repositoryPath: "/home/user/repo",
-		workspaceBaseDir: "/home/user/.cyrus/worktrees",
+		workspaceBaseDir: "/home/user/.bobs-factory/worktrees",
 		baseBranch: "main",
 		...overrides,
 	});
@@ -404,7 +407,7 @@ describe("GitService", () => {
 					}
 					// Second call: branch-based check via findWorktreeByBranch
 					return [
-						"worktree /home/user/.cyrus/worktrees/LINEAR-SESSION",
+						"worktree /home/user/.bobs-factory/worktrees/LINEAR-SESSION",
 						"HEAD 789abc012def",
 						"branch refs/heads/cyrustester/eng-97-fix-shader",
 						"",
@@ -423,7 +426,9 @@ describe("GitService", () => {
 
 			const result = await gitService.createGitWorktree(issue, [repository]);
 
-			expect(result.path).toBe("/home/user/.cyrus/worktrees/LINEAR-SESSION");
+			expect(result.path).toBe(
+				"/home/user/.bobs-factory/worktrees/LINEAR-SESSION",
+			);
 			expect(result.isGitWorktree).toBe(true);
 			expect(mockLogger.info).toHaveBeenCalledWith(
 				expect.stringContaining("already checked out in worktree"),
@@ -456,14 +461,16 @@ describe("GitService", () => {
 				}
 				if (cmdStr.includes("git worktree add")) {
 					throw new Error(
-						"fatal: 'cyrustester/eng-97-fix-shader' is already used by worktree at '/home/user/.cyrus/worktrees/LINEAR-SESSION'",
+						"fatal: 'cyrustester/eng-97-fix-shader' is already used by worktree at '/home/user/.bobs-factory/worktrees/LINEAR-SESSION'",
 					);
 				}
 				return Buffer.from("");
 			});
 
 			mockExistsSync.mockImplementation((path: any) => {
-				if (String(path) === "/home/user/.cyrus/worktrees/LINEAR-SESSION") {
+				if (
+					String(path) === "/home/user/.bobs-factory/worktrees/LINEAR-SESSION"
+				) {
 					return true;
 				}
 				return false;
@@ -471,7 +478,9 @@ describe("GitService", () => {
 
 			const result = await gitService.createGitWorktree(issue, [repository]);
 
-			expect(result.path).toBe("/home/user/.cyrus/worktrees/LINEAR-SESSION");
+			expect(result.path).toBe(
+				"/home/user/.bobs-factory/worktrees/LINEAR-SESSION",
+			);
 			expect(result.isGitWorktree).toBe(true);
 			expect(mockLogger.info).toHaveBeenCalledWith(
 				expect.stringContaining("Reusing existing worktree"),
@@ -508,7 +517,7 @@ describe("GitService", () => {
 
 			const result = await gitService.createGitWorktree(issue, [repository]);
 
-			expect(result.path).toBe("/home/user/.cyrus/worktrees/ENG-97");
+			expect(result.path).toBe("/home/user/.bobs-factory/worktrees/ENG-97");
 			expect(result.isGitWorktree).toBe(false);
 		});
 	});
@@ -539,27 +548,31 @@ describe("GitService", () => {
 				if (cmdStr.includes("git worktree add")) {
 					return Buffer.from("");
 				}
-				if (cmdStr.includes("cyrus-setup.sh")) {
+				if (cmdStr.includes("bobs-factory-setup.sh")) {
 					return Buffer.from("");
 				}
 				return Buffer.from("");
 			});
 		};
 
-		it("runs setup from the worktree when the persistent checkout lacks cyrus-setup.sh", async () => {
+		it("runs setup from the worktree when the persistent checkout lacks bobs-factory-setup.sh", async () => {
 			const issue = makeIssue();
 			const repository = makeRepository();
 			setupSuccessfulWorktreeCreate();
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/repo/cyrus-setup.sh") return false;
-				if (p === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh")
+				if (p === "/home/user/repo/bobs-factory-setup.sh") return false;
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh"
+				)
 					return true;
 				return false;
 			});
 			mockStatSync.mockImplementation((path: any) => {
 				if (
-					String(path) === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh"
+					String(path) ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh"
 				) {
 					return { mode: 0o755, isFile: () => false } as any;
 				}
@@ -570,9 +583,9 @@ describe("GitService", () => {
 
 			expect(result.isGitWorktree).toBe(true);
 			expect(mockExecSync).toHaveBeenCalledWith(
-				'bash "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh"',
+				'bash "/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh"',
 				expect.objectContaining({
-					cwd: "/home/user/.cyrus/worktrees/ENG-97",
+					cwd: "/home/user/.bobs-factory/worktrees/ENG-97",
 					stdio: "inherit",
 					env: expect.objectContaining({
 						LINEAR_ISSUE_ID: "issue-1",
@@ -584,25 +597,29 @@ describe("GitService", () => {
 			expect(
 				mockExecSync.mock.calls.some(
 					([command]) =>
-						String(command) === 'bash "/home/user/repo/cyrus-setup.sh"',
+						String(command) === 'bash "/home/user/repo/bobs-factory-setup.sh"',
 				),
 			).toBe(false);
 		});
 
-		it("runs the worktree setup version when the persistent checkout also has cyrus-setup.sh", async () => {
+		it("runs the worktree setup version when the persistent checkout also has bobs-factory-setup.sh", async () => {
 			const issue = makeIssue();
 			const repository = makeRepository();
 			setupSuccessfulWorktreeCreate();
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/repo/cyrus-setup.sh") return true;
-				if (p === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh")
+				if (p === "/home/user/repo/bobs-factory-setup.sh") return true;
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh"
+				)
 					return true;
 				return false;
 			});
 			mockStatSync.mockImplementation((path: any) => {
 				if (
-					String(path) === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh"
+					String(path) ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh"
 				) {
 					return { mode: 0o755, isFile: () => false } as any;
 				}
@@ -613,32 +630,35 @@ describe("GitService", () => {
 
 			const setupCommands = mockExecSync.mock.calls
 				.map(([command]) => String(command))
-				.filter((command) => command.includes("cyrus-setup.sh"));
+				.filter((command) => command.includes("bobs-factory-setup.sh"));
 			expect(setupCommands).toEqual([
-				'bash "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh"',
+				'bash "/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh"',
 			]);
 		});
 
-		it("skips repo setup without failing worktree creation when the worktree lacks cyrus-setup.sh", async () => {
+		it("skips repo setup without failing worktree creation when the worktree lacks bobs-factory-setup.sh", async () => {
 			const issue = makeIssue();
 			const repository = makeRepository();
 			setupSuccessfulWorktreeCreate();
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/repo/cyrus-setup.sh") return true;
-				if (p === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh")
+				if (p === "/home/user/repo/bobs-factory-setup.sh") return true;
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh"
+				)
 					return false;
 				return false;
 			});
 
 			const result = await gitService.createGitWorktree(issue, [repository]);
 
-			expect(result.path).toBe("/home/user/.cyrus/worktrees/ENG-97");
+			expect(result.path).toBe("/home/user/.bobs-factory/worktrees/ENG-97");
 			expect(result.isGitWorktree).toBe(true);
 			expect(
 				mockSpawn.mock.calls.some(([command, args]) =>
 					[command, ...(Array.isArray(args) ? args : [])].some((part) =>
-						String(part).includes("cyrus-setup.sh"),
+						String(part).includes("bobs-factory-setup.sh"),
 					),
 				),
 			).toBe(false);
@@ -651,7 +671,8 @@ describe("GitService", () => {
 			setupSuccessfulWorktreeCreate();
 			mockExistsSync.mockImplementation(
 				(path: any) =>
-					String(path) === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh",
+					String(path) ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh",
 			);
 			mockStatSync.mockReturnValue({ mode: 0o755, isFile: () => false } as any);
 			mockSuccessfulSpawn("ready\n");
@@ -664,13 +685,13 @@ describe("GitService", () => {
 			expect(events[0]).toEqual({
 				status: "started",
 				issueIdentifier: "ENG-97",
-				scriptName: "cyrus-setup.sh",
+				scriptName: "bobs-factory-setup.sh",
 				repositoryName: "test-repo",
 			});
 			expect(events[1]).toMatchObject({
 				status: "succeeded",
 				issueIdentifier: "ENG-97",
-				scriptName: "cyrus-setup.sh",
+				scriptName: "bobs-factory-setup.sh",
 				repositoryName: "test-repo",
 			});
 			expect(events[1].durationMs).toEqual(expect.any(Number));
@@ -685,7 +706,8 @@ describe("GitService", () => {
 			setupSuccessfulWorktreeCreate();
 			mockExistsSync.mockImplementation(
 				(path: any) =>
-					String(path) === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh",
+					String(path) ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh",
 			);
 			mockStatSync.mockReturnValue({ mode: 0o755, isFile: () => false } as any);
 			mockFailedSpawn({
@@ -704,7 +726,7 @@ describe("GitService", () => {
 				"failed",
 			]);
 			expect(events[1]).toMatchObject({
-				scriptName: "cyrus-setup.sh",
+				scriptName: "bobs-factory-setup.sh",
 				exitCode: 42,
 				errorMessage: "Script exited with code 42",
 				stdoutTail: "installing deps",
@@ -719,7 +741,8 @@ describe("GitService", () => {
 			setupSuccessfulWorktreeCreate();
 			mockExistsSync.mockImplementation(
 				(path: any) =>
-					String(path) === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh",
+					String(path) ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh",
 			);
 			mockStatSync.mockReturnValue({ mode: 0o644, isFile: () => false } as any);
 			mockSuccessfulSpawn("setup complete\n");
@@ -731,7 +754,7 @@ describe("GitService", () => {
 			expect(result.isGitWorktree).toBe(true);
 			expect(mockSpawn).toHaveBeenCalledWith(
 				"bash",
-				["/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh"],
+				["/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh"],
 				expect.anything(),
 			);
 			expect(events.map((event) => event.status)).toEqual([
@@ -740,7 +763,7 @@ describe("GitService", () => {
 			]);
 			expect(events[1]).toMatchObject({
 				issueIdentifier: "ENG-97",
-				scriptName: "cyrus-setup.sh",
+				scriptName: "bobs-factory-setup.sh",
 				repositoryName: "test-repo",
 			});
 			expect(events[1].durationMs).toEqual(expect.any(Number));
@@ -753,7 +776,8 @@ describe("GitService", () => {
 			setupSuccessfulWorktreeCreate();
 			mockExistsSync.mockImplementation(
 				(path: any) =>
-					String(path) === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh",
+					String(path) ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh",
 			);
 			mockStatSync.mockReturnValue({ mode: 0o755, isFile: () => false } as any);
 			const longStdout = Array.from(
@@ -779,12 +803,13 @@ describe("GitService", () => {
 			setupSuccessfulWorktreeCreate();
 			mockExistsSync.mockImplementation(
 				(path: any) =>
-					String(path) === "/home/user/.cyrus/worktrees/ENG-97/cyrus-setup.sh",
+					String(path) ===
+					"/home/user/.bobs-factory/worktrees/ENG-97/bobs-factory-setup.sh",
 			);
 			mockStatSync.mockReturnValue({ mode: 0o755, isFile: () => false } as any);
 			mockFailedSpawn({
 				stdout:
-					"SECRET_TOKEN=super-secret-value\npath=/home/user/.cyrus/worktrees/ENG-97/config\nalias=/private/home/user/.cyrus/worktrees/ENG-97/config\n",
+					"SECRET_TOKEN=super-secret-value\npath=/home/user/.bobs-factory/worktrees/ENG-97/config\nalias=/private/home/user/.bobs-factory/worktrees/ENG-97/config\n",
 				stderr: "Bearer abcdefghijklmnopqrstuvwxyz123456\n",
 			});
 
@@ -817,7 +842,7 @@ describe("GitService", () => {
 				}
 				if (cmdStr === "git worktree list --porcelain") {
 					// Git still lists the stale worktree entry
-					return `worktree /home/user/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /home/user/.cyrus/worktrees/ENG-97\nHEAD def456\nbranch refs/heads/cyrustester/eng-97-fix-shader\n`;
+					return `worktree /home/user/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /home/user/.bobs-factory/worktrees/ENG-97\nHEAD def456\nbranch refs/heads/cyrustester/eng-97-fix-shader\n`;
 				}
 				if (cmdStr === "git worktree prune") {
 					return Buffer.from("");
@@ -844,7 +869,8 @@ describe("GitService", () => {
 			// The workspace path exists but does NOT have a valid .git file (stale)
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/ENG-97/.git") return false;
+				if (p === "/home/user/.bobs-factory/worktrees/ENG-97/.git")
+					return false;
 				return true;
 			});
 
@@ -873,7 +899,7 @@ describe("GitService", () => {
 				}
 				if (cmdStr === "git worktree list --porcelain") {
 					// Only a sub-path worktree exists, not the exact path
-					return `worktree /home/user/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /home/user/.cyrus/worktrees/CYSV-56/cyrus\nHEAD def456\nbranch refs/heads/feat\n`;
+					return `worktree /home/user/repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /home/user/.bobs-factory/worktrees/CYSV-56/cyrus\nHEAD def456\nbranch refs/heads/feat\n`;
 				}
 				if (
 					cmdStr.includes(
@@ -919,9 +945,10 @@ describe("GitService", () => {
 		it("removes single-repo worktree and deletes directory", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
 				// .git file exists (it's a worktree)
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return true;
 				// main repo exists
 				if (p === "/home/user/repos/my-repo") return true;
 				return false;
@@ -929,7 +956,7 @@ describe("GitService", () => {
 
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return { isFile: () => true } as any;
 				}
 				return { isFile: () => false } as any;
@@ -937,7 +964,7 @@ describe("GitService", () => {
 
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return "gitdir: /home/user/repos/my-repo/.git/worktrees/DEF-123";
 				}
 				return "";
@@ -949,7 +976,7 @@ describe("GitService", () => {
 
 			// Should run git worktree remove with cwd set to the main repo
 			expect(mockExecSync).toHaveBeenCalledWith(
-				'git worktree remove --force "/home/user/.cyrus/worktrees/DEF-123"',
+				'git worktree remove --force "/home/user/.bobs-factory/worktrees/DEF-123"',
 				expect.objectContaining({
 					stdio: "pipe",
 					cwd: "/home/user/repos/my-repo",
@@ -958,7 +985,7 @@ describe("GitService", () => {
 
 			// Should delete the directory
 			expect(mockRmSync).toHaveBeenCalledWith(
-				"/home/user/.cyrus/worktrees/DEF-123",
+				"/home/user/.bobs-factory/worktrees/DEF-123",
 				{ recursive: true, force: true },
 			);
 		});
@@ -966,13 +993,14 @@ describe("GitService", () => {
 		it("removes multi-repo worktrees and deletes directory", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
 				// The root is NOT a worktree
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return false;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return false;
 				// Subdirectory worktrees have .git files
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git")
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git")
 					return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git")
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git")
 					return true;
 				// main repos exist
 				if (p === "/home/user/repos/repo-a") return true;
@@ -983,8 +1011,8 @@ describe("GitService", () => {
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git" ||
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git"
+					p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git" ||
+					p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git"
 				) {
 					return { isFile: () => true } as any;
 				}
@@ -993,10 +1021,10 @@ describe("GitService", () => {
 
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git") {
 					return "gitdir: /home/user/repos/repo-a/.git/worktrees/DEF-123";
 				}
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git") {
 					return "gitdir: /home/user/repos/repo-b/.git/worktrees/DEF-123";
 				}
 				return "";
@@ -1013,14 +1041,14 @@ describe("GitService", () => {
 
 			// Should run git worktree remove for both subdirectories with correct cwd
 			expect(mockExecSync).toHaveBeenCalledWith(
-				'git worktree remove --force "/home/user/.cyrus/worktrees/DEF-123/repo-a"',
+				'git worktree remove --force "/home/user/.bobs-factory/worktrees/DEF-123/repo-a"',
 				expect.objectContaining({
 					stdio: "pipe",
 					cwd: "/home/user/repos/repo-a",
 				}),
 			);
 			expect(mockExecSync).toHaveBeenCalledWith(
-				'git worktree remove --force "/home/user/.cyrus/worktrees/DEF-123/repo-b"',
+				'git worktree remove --force "/home/user/.bobs-factory/worktrees/DEF-123/repo-b"',
 				expect.objectContaining({
 					stdio: "pipe",
 					cwd: "/home/user/repos/repo-b",
@@ -1029,7 +1057,7 @@ describe("GitService", () => {
 
 			// Should delete the directory
 			expect(mockRmSync).toHaveBeenCalledWith(
-				"/home/user/.cyrus/worktrees/DEF-123",
+				"/home/user/.bobs-factory/worktrees/DEF-123",
 				{ recursive: true, force: true },
 			);
 		});
@@ -1037,15 +1065,16 @@ describe("GitService", () => {
 		it("handles git worktree remove failure gracefully", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return true;
 				if (p === "/home/user/repos/my-repo") return true;
 				return false;
 			});
 
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return { isFile: () => true } as any;
 				}
 				return { isFile: () => false } as any;
@@ -1053,7 +1082,7 @@ describe("GitService", () => {
 
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return "gitdir: /home/user/repos/my-repo/.git/worktrees/DEF-123";
 				}
 				return "";
@@ -1067,7 +1096,7 @@ describe("GitService", () => {
 
 			// Should still attempt to delete the directory despite git failure
 			expect(mockRmSync).toHaveBeenCalledWith(
-				"/home/user/.cyrus/worktrees/DEF-123",
+				"/home/user/.bobs-factory/worktrees/DEF-123",
 				{ recursive: true, force: true },
 			);
 			expect(mockLogger.warn).toHaveBeenCalledWith(
@@ -1078,7 +1107,7 @@ describe("GitService", () => {
 		it("handles non-worktree directories (no .git file)", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
 				// No .git file anywhere
 				return false;
 			});
@@ -1092,7 +1121,7 @@ describe("GitService", () => {
 
 			// Should still delete the directory
 			expect(mockRmSync).toHaveBeenCalledWith(
-				"/home/user/.cyrus/worktrees/DEF-123",
+				"/home/user/.bobs-factory/worktrees/DEF-123",
 				{ recursive: true, force: true },
 			);
 		});
@@ -1103,51 +1132,59 @@ describe("GitService", () => {
 			id,
 			name,
 			repositoryPath: repoPath,
-			workspaceBaseDir: "/home/user/.cyrus/worktrees",
+			workspaceBaseDir: "/home/user/.bobs-factory/worktrees",
 		});
 
 		const setupSingleRepoFs = () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return true;
 				if (p === "/home/user/repos/repo-a") return true;
 				return false;
 			});
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return { isFile: () => true } as any;
 				}
 				return { isFile: () => false } as any;
 			});
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return "gitdir: /home/user/repos/repo-a/.git/worktrees/DEF-123";
 				}
 				return "";
 			});
 		};
 
-		it("runs cyrus-teardown.sh before worktree removal when present", async () => {
+		it("runs bobs-factory-teardown.sh before worktree removal when present", async () => {
 			setupSingleRepoFs();
 			// Add the teardown script to filesystem mock
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return true;
 				if (p === "/home/user/repos/repo-a") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh")
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"
+				)
 					return true;
 				return false;
 			});
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return { isFile: () => true } as any;
 				}
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh") {
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"
+				) {
 					return { mode: 0o755, isFile: () => false } as any;
 				}
 				return { isFile: () => false } as any;
@@ -1161,9 +1198,9 @@ describe("GitService", () => {
 
 			// Should run teardown with cwd set to workspace root (single-repo)
 			expect(mockExecSync).toHaveBeenCalledWith(
-				'bash "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh"',
+				'bash "/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"',
 				expect.objectContaining({
-					cwd: "/home/user/.cyrus/worktrees/DEF-123",
+					cwd: "/home/user/.bobs-factory/worktrees/DEF-123",
 					stdio: "inherit",
 					env: expect.objectContaining({
 						LINEAR_ISSUE_IDENTIFIER: "DEF-123",
@@ -1175,7 +1212,7 @@ describe("GitService", () => {
 			const teardownOrder = mockExecSync.mock.invocationCallOrder.find(
 				(_, index) =>
 					String(mockExecSync.mock.calls[index]?.[0]).includes(
-						"cyrus-teardown.sh",
+						"bobs-factory-teardown.sh",
 					),
 			);
 			const removeOrder = mockExecSync.mock.invocationCallOrder.find(
@@ -1191,7 +1228,7 @@ describe("GitService", () => {
 			expect(mockRmSync).toHaveBeenCalled();
 		});
 
-		it("does not run teardown when cyrus-teardown.sh is absent, still deletes worktree", async () => {
+		it("does not run teardown when bobs-factory-teardown.sh is absent, still deletes worktree", async () => {
 			setupSingleRepoFs();
 			mockExecSync.mockReturnValue(Buffer.from(""));
 
@@ -1200,33 +1237,42 @@ describe("GitService", () => {
 			});
 
 			const calls = mockExecSync.mock.calls.map((c) => String(c[0]));
-			expect(calls.some((c) => c.includes("cyrus-teardown"))).toBe(false);
+			expect(calls.some((c) => c.includes("bobs-factory-teardown"))).toBe(
+				false,
+			);
 			expect(mockRmSync).toHaveBeenCalled();
 		});
 
 		it("continues with worktree deletion when teardown fails", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return true;
 				if (p === "/home/user/repos/repo-a") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh")
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"
+				)
 					return true;
 				return false;
 			});
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return { isFile: () => true } as any;
 				}
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh") {
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"
+				) {
 					return { mode: 0o755, isFile: () => false } as any;
 				}
 				return { isFile: () => false } as any;
 			});
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return "gitdir: /home/user/repos/repo-a/.git/worktrees/DEF-123";
 				}
 				return "";
@@ -1234,7 +1280,7 @@ describe("GitService", () => {
 
 			mockExecSync.mockImplementation((cmd: any) => {
 				const cmdStr = String(cmd);
-				if (cmdStr.includes("cyrus-teardown.sh")) {
+				if (cmdStr.includes("bobs-factory-teardown.sh")) {
 					throw new Error("script blew up");
 				}
 				return Buffer.from("");
@@ -1253,26 +1299,33 @@ describe("GitService", () => {
 		it("warns and skips when teardown script is not executable", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return true;
 				if (p === "/home/user/repos/repo-a") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh")
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"
+				)
 					return true;
 				return false;
 			});
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return { isFile: () => true } as any;
 				}
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh") {
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"
+				) {
 					return { mode: 0o644, isFile: () => false } as any;
 				}
 				return { isFile: () => false } as any;
 			});
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return "gitdir: /home/user/repos/repo-a/.git/worktrees/DEF-123";
 				}
 				return "";
@@ -1284,7 +1337,9 @@ describe("GitService", () => {
 			});
 
 			const execCmds = mockExecSync.mock.calls.map((c) => String(c[0]));
-			expect(execCmds.some((c) => c.includes("cyrus-teardown.sh"))).toBe(false);
+			expect(execCmds.some((c) => c.includes("bobs-factory-teardown.sh"))).toBe(
+				false,
+			);
 			expect(mockLogger.warn).toHaveBeenCalledWith(
 				expect.stringContaining("not executable"),
 			);
@@ -1304,20 +1359,23 @@ describe("GitService", () => {
 		it("multi-repo: runs both repos' teardowns with correct cwds", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return false;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git")
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return false;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git")
 					return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git")
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git")
 					return true;
 				if (p === "/home/user/repos/repo-a") return true;
 				if (p === "/home/user/repos/repo-b") return true;
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/cyrus-teardown.sh"
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/repo-a/bobs-factory-teardown.sh"
 				)
 					return true;
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/cyrus-teardown.sh"
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/repo-b/bobs-factory-teardown.sh"
 				)
 					return true;
 				return false;
@@ -1325,22 +1383,22 @@ describe("GitService", () => {
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git" ||
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git"
+					p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git" ||
+					p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git"
 				) {
 					return { isFile: () => true } as any;
 				}
-				if (p.endsWith("cyrus-teardown.sh")) {
+				if (p.endsWith("bobs-factory-teardown.sh")) {
 					return { mode: 0o755, isFile: () => false } as any;
 				}
 				return { isFile: () => false } as any;
 			});
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git") {
 					return "gitdir: /home/user/repos/repo-a/.git/worktrees/DEF-123";
 				}
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git") {
 					return "gitdir: /home/user/repos/repo-b/.git/worktrees/DEF-123";
 				}
 				return "";
@@ -1359,15 +1417,15 @@ describe("GitService", () => {
 			});
 
 			expect(mockExecSync).toHaveBeenCalledWith(
-				'bash "/home/user/.cyrus/worktrees/DEF-123/repo-a/cyrus-teardown.sh"',
+				'bash "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/bobs-factory-teardown.sh"',
 				expect.objectContaining({
-					cwd: "/home/user/.cyrus/worktrees/DEF-123/repo-a",
+					cwd: "/home/user/.bobs-factory/worktrees/DEF-123/repo-a",
 				}),
 			);
 			expect(mockExecSync).toHaveBeenCalledWith(
-				'bash "/home/user/.cyrus/worktrees/DEF-123/repo-b/cyrus-teardown.sh"',
+				'bash "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/bobs-factory-teardown.sh"',
 				expect.objectContaining({
-					cwd: "/home/user/.cyrus/worktrees/DEF-123/repo-b",
+					cwd: "/home/user/.bobs-factory/worktrees/DEF-123/repo-b",
 				}),
 			);
 		});
@@ -1375,17 +1433,19 @@ describe("GitService", () => {
 		it("multi-repo: only one repo has a teardown, the other is silently skipped", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return false;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git")
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return false;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git")
 					return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git")
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git")
 					return true;
 				if (p === "/home/user/repos/repo-a") return true;
 				if (p === "/home/user/repos/repo-b") return true;
 				// Only repo-a has a teardown script
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/cyrus-teardown.sh"
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/repo-a/bobs-factory-teardown.sh"
 				)
 					return true;
 				return false;
@@ -1393,13 +1453,14 @@ describe("GitService", () => {
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git" ||
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git"
+					p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git" ||
+					p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git"
 				) {
 					return { isFile: () => true } as any;
 				}
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/cyrus-teardown.sh"
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/repo-a/bobs-factory-teardown.sh"
 				) {
 					return { mode: 0o755, isFile: () => false } as any;
 				}
@@ -1407,10 +1468,10 @@ describe("GitService", () => {
 			});
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git") {
 					return "gitdir: /home/user/repos/repo-a/.git/worktrees/DEF-123";
 				}
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git") {
 					return "gitdir: /home/user/repos/repo-b/.git/worktrees/DEF-123";
 				}
 				return "";
@@ -1430,30 +1491,33 @@ describe("GitService", () => {
 
 			const teardownCalls = mockExecSync.mock.calls
 				.map(([command]) => String(command))
-				.filter((c) => c.includes("cyrus-teardown.sh"));
+				.filter((c) => c.includes("bobs-factory-teardown.sh"));
 			expect(teardownCalls).toHaveLength(1);
 			expect(teardownCalls[0]).toContain(
-				"/home/user/.cyrus/worktrees/DEF-123/repo-a/",
+				"/home/user/.bobs-factory/worktrees/DEF-123/repo-a/",
 			);
 		});
 
 		it("multi-repo: one teardown failing does not skip the other or block rmSync", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return false;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git")
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return false;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git")
 					return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git")
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git")
 					return true;
 				if (p === "/home/user/repos/repo-a") return true;
 				if (p === "/home/user/repos/repo-b") return true;
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/cyrus-teardown.sh"
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/repo-a/bobs-factory-teardown.sh"
 				)
 					return true;
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/cyrus-teardown.sh"
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/repo-b/bobs-factory-teardown.sh"
 				)
 					return true;
 				return false;
@@ -1461,22 +1525,22 @@ describe("GitService", () => {
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
 				if (
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git" ||
-					p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git"
+					p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git" ||
+					p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git"
 				) {
 					return { isFile: () => true } as any;
 				}
-				if (p.endsWith("cyrus-teardown.sh")) {
+				if (p.endsWith("bobs-factory-teardown.sh")) {
 					return { mode: 0o755, isFile: () => false } as any;
 				}
 				return { isFile: () => false } as any;
 			});
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-a/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-a/.git") {
 					return "gitdir: /home/user/repos/repo-a/.git/worktrees/DEF-123";
 				}
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/repo-b/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/.git") {
 					return "gitdir: /home/user/repos/repo-b/.git/worktrees/DEF-123";
 				}
 				return "";
@@ -1488,7 +1552,7 @@ describe("GitService", () => {
 
 			mockExecSync.mockImplementation((cmd: any) => {
 				const cmdStr = String(cmd);
-				if (cmdStr.includes("repo-a/cyrus-teardown.sh")) {
+				if (cmdStr.includes("repo-a/bobs-factory-teardown.sh")) {
 					throw new Error("script blew up");
 				}
 				return Buffer.from("");
@@ -1503,14 +1567,14 @@ describe("GitService", () => {
 
 			// repo-b's teardown was still attempted
 			expect(mockExecSync).toHaveBeenCalledWith(
-				'bash "/home/user/.cyrus/worktrees/DEF-123/repo-b/cyrus-teardown.sh"',
+				'bash "/home/user/.bobs-factory/worktrees/DEF-123/repo-b/bobs-factory-teardown.sh"',
 				expect.objectContaining({
-					cwd: "/home/user/.cyrus/worktrees/DEF-123/repo-b",
+					cwd: "/home/user/.bobs-factory/worktrees/DEF-123/repo-b",
 				}),
 			);
 			// rmSync still ran
 			expect(mockRmSync).toHaveBeenCalledWith(
-				"/home/user/.cyrus/worktrees/DEF-123",
+				"/home/user/.bobs-factory/worktrees/DEF-123",
 				{ recursive: true, force: true },
 			);
 		});
@@ -1520,10 +1584,14 @@ describe("GitService", () => {
 			// Add a teardown that WOULD run if discovered — none should be picked up
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return true;
 				if (p === "/home/user/repos/repo-a") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh")
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"
+				)
 					return true;
 				return false;
 			});
@@ -1533,40 +1601,47 @@ describe("GitService", () => {
 
 			const teardownCalls = mockExecSync.mock.calls
 				.map((c) => String(c[0]))
-				.filter((c) => c.includes("cyrus-teardown"));
+				.filter((c) => c.includes("bobs-factory-teardown"));
 			expect(teardownCalls).toHaveLength(0);
 		});
 
 		it("logs timeout message with '2 minutes' when teardown is SIGTERM'd", async () => {
 			mockExistsSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123") return true;
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git")
+					return true;
 				if (p === "/home/user/repos/repo-a") return true;
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh")
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"
+				)
 					return true;
 				return false;
 			});
 			mockStatSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return { isFile: () => true } as any;
 				}
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/cyrus-teardown.sh") {
+				if (
+					p ===
+					"/home/user/.bobs-factory/worktrees/DEF-123/bobs-factory-teardown.sh"
+				) {
 					return { mode: 0o755, isFile: () => false } as any;
 				}
 				return { isFile: () => false } as any;
 			});
 			mockReadFileSync.mockImplementation((path: any) => {
 				const p = String(path);
-				if (p === "/home/user/.cyrus/worktrees/DEF-123/.git") {
+				if (p === "/home/user/.bobs-factory/worktrees/DEF-123/.git") {
 					return "gitdir: /home/user/repos/repo-a/.git/worktrees/DEF-123";
 				}
 				return "";
 			});
 			mockExecSync.mockImplementation((cmd: any) => {
 				const cmdStr = String(cmd);
-				if (cmdStr.includes("cyrus-teardown.sh")) {
+				if (cmdStr.includes("bobs-factory-teardown.sh")) {
 					const error = new Error("Script execution timed out") as Error & {
 						signal?: string;
 					};
@@ -1591,14 +1666,14 @@ describe("GitService", () => {
 			const issue = makeIssue();
 
 			const result = await gitService.createGitWorktree(issue, [], {
-				workspaceBaseDir: "/home/user/.cyrus/worktrees",
+				workspaceBaseDir: "/home/user/.bobs-factory/worktrees",
 			});
 
-			expect(result.path).toBe("/home/user/.cyrus/worktrees/ENG-97");
+			expect(result.path).toBe("/home/user/.bobs-factory/worktrees/ENG-97");
 			expect(result.isGitWorktree).toBe(false);
 			expect(result.repoPaths).toBeUndefined();
 			expect(mockMkdirSync).toHaveBeenCalledWith(
-				"/home/user/.cyrus/worktrees/ENG-97",
+				"/home/user/.bobs-factory/worktrees/ENG-97",
 				{ recursive: true },
 			);
 		});
@@ -1618,11 +1693,11 @@ describe("GitService", () => {
 			mockExistsSync.mockReturnValue(true);
 
 			const result = await gitService.createGitWorktree(issue, [], {
-				workspaceBaseDir: "/home/user/.cyrus/worktrees",
+				workspaceBaseDir: "/home/user/.bobs-factory/worktrees",
 				globalSetupScript: "/home/user/setup.sh",
 			});
 
-			expect(result.path).toBe("/home/user/.cyrus/worktrees/ENG-97");
+			expect(result.path).toBe("/home/user/.bobs-factory/worktrees/ENG-97");
 			expect(result.isGitWorktree).toBe(false);
 		});
 	});
@@ -1668,14 +1743,14 @@ describe("GitService", () => {
 
 			const result = await gitService.createGitWorktree(issue, [repo1, repo2]);
 
-			expect(result.path).toBe("/home/user/.cyrus/worktrees/ENG-97");
+			expect(result.path).toBe("/home/user/.bobs-factory/worktrees/ENG-97");
 			expect(result.isGitWorktree).toBe(true);
 			expect(result.repoPaths).toBeDefined();
 			expect(result.repoPaths!["repo-1"]).toBe(
-				"/home/user/.cyrus/worktrees/ENG-97/cyrus",
+				"/home/user/.bobs-factory/worktrees/ENG-97/cyrus",
 			);
 			expect(result.repoPaths!["repo-2"]).toBe(
-				"/home/user/.cyrus/worktrees/ENG-97/cyrus-hosted",
+				"/home/user/.bobs-factory/worktrees/ENG-97/cyrus-hosted",
 			);
 		});
 
@@ -1685,7 +1760,7 @@ describe("GitService", () => {
 				id: "repo-1",
 				name: "cyrus",
 				repositoryPath: "/home/user/cyrus",
-				workspaceBaseDir: "/home/user/.cyrus/worktrees",
+				workspaceBaseDir: "/home/user/.bobs-factory/worktrees",
 			});
 			const repo2 = makeRepository({
 				id: "repo-2",
@@ -1720,7 +1795,7 @@ describe("GitService", () => {
 			const result = await gitService.createGitWorktree(issue, [repo1, repo2]);
 
 			// Parent path uses first repo's workspaceBaseDir
-			expect(result.path).toBe("/home/user/.cyrus/worktrees/ENG-97");
+			expect(result.path).toBe("/home/user/.bobs-factory/worktrees/ENG-97");
 		});
 
 		it("falls back to plain directory for individual repo failures in N-repo mode", async () => {
@@ -1768,11 +1843,11 @@ describe("GitService", () => {
 			expect(result.repoPaths).toBeDefined();
 			// First repo should have succeeded
 			expect(result.repoPaths!["repo-1"]).toBe(
-				"/home/user/.cyrus/worktrees/ENG-97/cyrus",
+				"/home/user/.bobs-factory/worktrees/ENG-97/cyrus",
 			);
 			// Second repo falls back to plain directory
 			expect(result.repoPaths!["repo-2"]).toBe(
-				"/home/user/.cyrus/worktrees/ENG-97/cyrus-hosted",
+				"/home/user/.bobs-factory/worktrees/ENG-97/cyrus-hosted",
 			);
 		});
 	});

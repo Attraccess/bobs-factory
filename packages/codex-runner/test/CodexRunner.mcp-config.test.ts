@@ -16,9 +16,9 @@ describe("CodexRunner MCP config mapping", () => {
 						Authorization: "Bearer linear-token",
 					},
 				},
-				"cyrus-tools": {
+				"bobs-factory-tools": {
 					type: "http",
-					url: "http://127.0.0.1:4444/mcp/cyrus-tools",
+					url: "http://127.0.0.1:4444/mcp/bobs-factory-tools",
 					headers: {
 						Authorization: "Bearer cyrus-api-key",
 						"x-cyrus-mcp-context-id": "repo-1:session-1",
@@ -30,7 +30,7 @@ describe("CodexRunner MCP config mapping", () => {
 		expect(mcpServers.linear.http_headers).toEqual({
 			Authorization: "Bearer linear-token",
 		});
-		expect(mcpServers["cyrus-tools"].http_headers).toEqual({
+		expect(mcpServers["bobs-factory-tools"].http_headers).toEqual({
 			Authorization: "Bearer cyrus-api-key",
 			"x-cyrus-mcp-context-id": "repo-1:session-1",
 		});
@@ -63,7 +63,7 @@ describe("CodexRunner MCP config mapping", () => {
 		expect(mcpServers.linear.bearer_token_env_var).toBe("LINEAR_API_TOKEN");
 	});
 
-	it("translates per-tool Cyrus MCP allowedTools to Codex enabled_tools", () => {
+	it("translates per-tool Bob’s Factory MCP allowedTools to Codex enabled_tools", () => {
 		const mcpServers = buildCodexMcpServersConfig({
 			workingDirectory: process.cwd(),
 			allowedTools: [
@@ -71,16 +71,16 @@ describe("CodexRunner MCP config mapping", () => {
 				"mcp__linear__list_issues",
 				"mcp__linear__create_issue",
 				"mcp__linear__list_issues",
-				"mcp__cyrus-tools__linear_agent_session_create_on_comment",
+				"mcp__bobs-factory-tools__linear_agent_session_create_on_comment",
 			],
 			mcpConfig: {
 				linear: {
 					type: "http",
 					url: "https://mcp.linear.app/mcp",
 				},
-				"cyrus-tools": {
+				"bobs-factory-tools": {
 					type: "http",
-					url: "http://127.0.0.1:4444/mcp/cyrus-tools",
+					url: "http://127.0.0.1:4444/mcp/bobs-factory-tools",
 				},
 			},
 		});
@@ -91,16 +91,16 @@ describe("CodexRunner MCP config mapping", () => {
 		]);
 		expect(mcpServers.linear.default_tools_approval_mode).toBe("approve");
 		expect(mcpServers.linear.tools).toBeUndefined();
-		expect(mcpServers["cyrus-tools"].enabled_tools).toEqual([
+		expect(mcpServers["bobs-factory-tools"].enabled_tools).toEqual([
 			"linear_agent_session_create_on_comment",
 		]);
-		expect(mcpServers["cyrus-tools"].default_tools_approval_mode).toBe(
+		expect(mcpServers["bobs-factory-tools"].default_tools_approval_mode).toBe(
 			"approve",
 		);
-		expect(mcpServers["cyrus-tools"].tools).toBeUndefined();
+		expect(mcpServers["bobs-factory-tools"].tools).toBeUndefined();
 	});
 
-	it("leaves Codex MCP servers unrestricted for server-wide Cyrus MCP allowedTools", () => {
+	it("leaves Codex MCP servers unrestricted for server-wide Bob’s Factory MCP allowedTools", () => {
 		const mcpServers = buildCodexMcpServersConfig({
 			workingDirectory: process.cwd(),
 			allowedTools: ["mcp__linear", "mcp__linear__list_issues"],
@@ -117,7 +117,7 @@ describe("CodexRunner MCP config mapping", () => {
 		expect(mcpServers.linear.default_tools_approval_mode).toBe("approve");
 	});
 
-	it("matches underscore Cyrus MCP server names to hyphenated Codex MCP server names", () => {
+	it("matches underscore Bob’s Factory MCP server names to hyphenated Codex MCP server names", () => {
 		const mcpServers = buildCodexMcpServersConfig({
 			workingDirectory: process.cwd(),
 			allowedTools: [
@@ -142,7 +142,7 @@ describe("CodexRunner MCP config mapping", () => {
 		expect(mcpServers["slack-fixed"].tools).toBeUndefined();
 	});
 
-	it("keeps Codex-native MCP tool filters ahead of Cyrus allowedTools translation", () => {
+	it("keeps Codex-native MCP tool filters ahead of Bob’s Factory allowedTools translation", () => {
 		const mcpServers = buildCodexMcpServersConfig({
 			workingDirectory: process.cwd(),
 			allowedTools: [

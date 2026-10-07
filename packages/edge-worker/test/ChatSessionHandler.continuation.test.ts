@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentSessionStatus, PersistenceManager } from "cyrus-core";
+import { AgentSessionStatus, PersistenceManager } from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { ChatSessionHandler } from "../src/ChatSessionHandler.js";
 import { EdgeWorker } from "../src/EdgeWorker.js";
@@ -70,7 +70,7 @@ async function fixture(
 			notifyBusy,
 		},
 		{
-			cyrusHome: home,
+			factoryHome: home,
 			chatRepositoryProvider: {
 				getDefaultRepository: () => undefined,
 				getDefaultLinearWorkspaceId: () => undefined,

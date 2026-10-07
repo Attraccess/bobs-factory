@@ -1,8 +1,8 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RepositoryConfig } from "cyrus-core";
-import { GitHubTokenStore } from "cyrus-core";
+import type { RepositoryConfig } from "bobs-factory-core";
+import { GitHubTokenStore } from "bobs-factory-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 
@@ -18,7 +18,7 @@ import { EdgeWorker } from "../src/EdgeWorker.js";
  * EdgeWorker constructor.
  */
 describe("EdgeWorker.resolveGitHubToken precedence (CYHOST-913)", () => {
-	let cyrusHome: string;
+	let factoryHome: string;
 	let store: GitHubTokenStore;
 	let savedGitHubTokenEnv: string | undefined;
 
@@ -54,14 +54,14 @@ describe("EdgeWorker.resolveGitHubToken precedence (CYHOST-913)", () => {
 	}
 
 	beforeEach(() => {
-		cyrusHome = mkdtempSync(join(tmpdir(), "cyrus-token-resolution-"));
-		store = new GitHubTokenStore(cyrusHome);
+		factoryHome = mkdtempSync(join(tmpdir(), "cyrus-token-resolution-"));
+		store = new GitHubTokenStore(factoryHome);
 		savedGitHubTokenEnv = process.env.GITHUB_TOKEN;
 		delete process.env.GITHUB_TOKEN;
 	});
 
 	afterEach(() => {
-		rmSync(cyrusHome, { recursive: true, force: true });
+		rmSync(factoryHome, { recursive: true, force: true });
 		if (savedGitHubTokenEnv === undefined) {
 			delete process.env.GITHUB_TOKEN;
 		} else {

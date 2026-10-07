@@ -1,6 +1,6 @@
 import type { SDKResultMessage } from "@anthropic-ai/claude-agent-sdk";
-import { ClaudeMessageFormatter } from "cyrus-claude-runner";
-import type { AgentPendingWork } from "cyrus-core";
+import { ClaudeMessageFormatter } from "bobs-factory-claude-runner";
+import type { AgentPendingWork } from "bobs-factory-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager";
 import type { IActivitySink } from "../src/sinks/IActivitySink";

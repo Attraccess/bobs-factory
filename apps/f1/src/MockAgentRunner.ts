@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { join, sep } from "node:path";
-import { ClaudeMessageFormatter } from "cyrus-claude-runner";
+import { ClaudeMessageFormatter } from "bobs-factory-claude-runner";
 import type {
 	AgentMessage,
 	AgentRunnerConfig,
 	AgentSessionInfo,
 	EdgeWorkerConfig,
 	IAgentRunner,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 export type F1AgentMode = "mock" | "live";
 
@@ -30,7 +30,7 @@ export function f1AgentHandlers(
 					// Title jobs have their own workspace and require JSON, independent of
 					// the session/role response fixture.
 					const titleDirectory =
-						join(config.cyrusHome, "factory", "title-jobs") + sep;
+						join(config.factoryHome, "factory", "title-jobs") + sep;
 					const reply = config.workingDirectory?.startsWith(titleDirectory)
 						? JSON.stringify({ title: "F1 mock run" })
 						: response;

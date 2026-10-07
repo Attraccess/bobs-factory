@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { type EdgeConfig, getDefaultWorktreesDir } from "cyrus-core";
+import { type EdgeConfig, getDefaultWorktreesDir } from "bobs-factory-core";
 import {
 	type ApiResponse,
 	type CyrusConfigPayload,
@@ -8,15 +8,15 @@ import {
 } from "../types.js";
 
 /**
- * Handle Cyrus configuration update
- * Updates the ~/.cyrus/config.json file with the provided configuration
+ * Handle Bob’s Factory configuration update
+ * Updates the ~/.bobs-factory/config.json file with the provided configuration
  *
  * @param rawPayload - Unvalidated payload from the request
- * @param cyrusHome - Path to the Cyrus home directory
+ * @param factoryHome - Path to the Bob’s Factory home directory
  */
 export async function handleCyrusConfig(
 	rawPayload: unknown,
-	cyrusHome: string,
+	factoryHome: string,
 ): Promise<ApiResponse> {
 	try {
 		// Validate payload with Zod schema
@@ -36,9 +36,9 @@ export async function handleCyrusConfig(
 		}
 
 		const payload: CyrusConfigPayload = parseResult.data;
-		const configPath = join(cyrusHome, "config.json");
+		const configPath = join(factoryHome, "config.json");
 
-		// Ensure the .cyrus directory exists
+		// Ensure the .bobs-factory directory exists
 		const configDir = dirname(configPath);
 		if (!existsSync(configDir)) {
 			mkdirSync(configDir, { recursive: true });
@@ -52,9 +52,9 @@ export async function handleCyrusConfig(
 			(repo: CyrusConfigPayload["repositories"][number]) => {
 				return {
 					...repo,
-					// Set workspaceBaseDir (use provided or default to cyrusHome/worktrees)
+					// Set workspaceBaseDir (use provided or default to factoryHome/worktrees)
 					workspaceBaseDir:
-						repo.workspaceBaseDir || getDefaultWorktreesDir(cyrusHome),
+						repo.workspaceBaseDir || getDefaultWorktreesDir(factoryHome),
 					// Set isActive (defaults to true)
 					isActive: repo.isActive !== false,
 					// Ensure teamKeys is always an array
@@ -88,7 +88,7 @@ export async function handleCyrusConfig(
 		if (backupConfig && existsSync(configPath)) {
 			try {
 				const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-				const backupPath = join(cyrusHome, `config.backup-${timestamp}.json`);
+				const backupPath = join(factoryHome, `config.backup-${timestamp}.json`);
 				const existingConfig = readFileSync(configPath, "utf-8");
 				writeFileSync(backupPath, existingConfig, "utf-8");
 			} catch (backupError) {
@@ -105,7 +105,7 @@ export async function handleCyrusConfig(
 
 			return {
 				success: true,
-				message: "Cyrus configuration updated successfully",
+				message: "Bob’s Factory configuration updated successfully",
 				data: {
 					configPath,
 					repositoriesCount: repositories.length,
@@ -129,10 +129,10 @@ export async function handleCyrusConfig(
 }
 
 /**
- * Read current Cyrus configuration
+ * Read current Bob’s Factory configuration
  */
-export function readCyrusConfig(cyrusHome: string): any {
-	const configPath = join(cyrusHome, "config.json");
+export function readCyrusConfig(factoryHome: string): any {
+	const configPath = join(factoryHome, "config.json");
 
 	if (!existsSync(configPath)) {
 		return { repositories: [] };
