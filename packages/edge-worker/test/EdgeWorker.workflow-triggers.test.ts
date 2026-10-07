@@ -62,6 +62,7 @@ function setup() {
 		getPlatformType: () => "cli",
 	});
 	cleanups.push(async () => {
+		await edge.runnerSlots.ready();
 		await runtime.shutdown();
 		edge.ticketTracking?.stop();
 		await edge.stateSaveQueue;

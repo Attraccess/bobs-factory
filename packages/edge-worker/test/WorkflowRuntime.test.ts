@@ -2481,6 +2481,108 @@ it("retries invalid QA receipts without human input, retaining bounded visits", 
 	await runtime.shutdown();
 });
 
+it.each([
+	"ci-fix",
+	"code-fix",
+	"visual-fix",
+])("waits for structured assistance from %s despite frozen askQuestions=false", async (fixer) => {
+	const calls: string[] = [];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			return {
+				questions: ctx.run.answers.length ? [] : ["Restore external access"],
+			};
+		},
+	});
+	const run = start(
+		runtime,
+		workflow([agent(fixer, { askQuestions: false, next: "end" })]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(calls).toEqual([fixer]);
+	runtime.answer(run.id, "External access restored");
+	await execution;
+	expect(calls).toEqual([fixer, fixer]);
+	expect(run.status).toBe("completed");
+	await runtime.shutdown();
+});
+
+it.each([
+	"review-gate",
+	"visual-gate",
+])("%s assistance resumes its configured fixer without replaying review or approving findings", async (gate) => {
+	const calls: string[] = [];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			return {};
+		},
+		tool: async () => ({
+			approved: false,
+			reviewBlocked: true,
+			findings: [{ id: "blocked" }],
+			questions: ["Restore deployment access"],
+		}),
+	});
+	const run = start(
+		runtime,
+		workflow([
+			agent("review"),
+			{
+				id: "gate",
+				name: "Gate",
+				type: "tool",
+				tool: gate,
+				next: "end",
+				branches: [
+					{ when: { path: "approved", equals: false }, next: "custom-fixer" },
+				],
+			},
+			agent("custom-fixer", { next: "end" }),
+		]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(calls).toEqual(["review"]);
+	expect(run.outputs.gate).toMatchObject({ approved: false });
+	runtime.answer(run.id, "Deployment restored");
+	await execution;
+	expect(calls).toEqual(["review", "custom-fixer"]);
+	expect(run.status).toBe("completed");
+	await runtime.shutdown();
+});
+
+it.each([
+	"ci-fix",
+	"code-fix",
+	"visual-fix",
+])("does not create an unsafe parallel assistance checkpoint from %s", async (fixer) => {
+	const question = vi.fn();
+	const { runtime } = create({
+		question,
+		agent: async () => ({ questions: ["Restore access"] }),
+	});
+	const run = start(
+		runtime,
+		workflow([
+			{
+				id: "parallel",
+				name: "Parallel",
+				type: "fanout",
+				groups: [[agent(fixer, { askQuestions: false, next: "end" })]],
+				next: "end",
+			},
+		]),
+	);
+	await runtime.launch(run);
+	expect(run.status).toBe("failed");
+	expect(run.error).toBe("Human checkpoints belong outside fanout branches");
+	expect(question).not.toHaveBeenCalled();
+	await runtime.shutdown();
+});
+
 it("waits for CI assistance and retries the existing fixer after an answer without replaying implementation", async () => {
 	const calls: string[] = [];
 	const { runtime } = create({

@@ -12,8 +12,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { captureEvidence } from "../src/factory/FactoryTools.js";
 import { roleProgress } from "../src/factory/Incremental.js";
+import {
+	assessFeedback,
+	inspectMergeReadiness,
+} from "../src/factory/MergeReadiness.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 import { SessionSemaphore } from "../src/RunnerConcurrency.js";
+import { providerReceipt } from "./fixtures/merge-readiness.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -143,6 +148,165 @@ async function fixture() {
 		getInput: () => input,
 	};
 }
+
+it.each([
+	"code-fix",
+	"visual-fix",
+])("retains structured assistance and runtime findings for %s with restricted recipe inputs", async (fixer) => {
+	const f = await fixture();
+	const finding = {
+		id: "external-access",
+		rating: 3,
+		status: "open",
+		summary: "Missing deployment access",
+		evidence: "Required validation could not execute",
+	};
+	f.ctx.run.input = "Validate the feature";
+	f.ctx.run.answers = [];
+	f.ctx.run.step = `pipeline/${fixer}`;
+	f.ctx.step = { ...f.ctx.step, id: fixer, inputs: ["draft-pr"] };
+	f.ctx.input = { "draft-pr": { url: "fixture" } };
+	f.ctx.resumeAgent = undefined;
+	f.ctx.run.outputs[fixer === "visual-fix" ? "visual-gate" : "review-gate"] = {
+		approved: false,
+		findings: [finding],
+	};
+	f.ctx.run.roleRevisions![
+		`pipeline/${fixer === "visual-fix" ? "visual-review" : "code-review"}`
+	] = (await roleProgress(f.ctx)).currentRevision!;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify({
+				summary: "Blocked",
+				dispositions: [],
+				questions: ["Provide the protected deployment"],
+				questionRecommendations: [
+					{
+						questionIndex: 0,
+						answer: "Supply the protected deployment",
+						reason: "Required validation remains blocked",
+					},
+				],
+			}),
+		},
+	];
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(f.getInput().outputs).toBeUndefined();
+	expect(f.getInput().reviewFix).toEqual({ findings: [finding], answers: [] });
+	expect(output).toMatchObject({
+		questions: ["Provide the protected deployment"],
+		questionRecommendations: [
+			{
+				questionIndex: 0,
+				answer: "Supply the protected deployment",
+				reason: "Required validation remains blocked",
+			},
+		],
+		reviewAssessment: { unchangedCode: true },
+	});
+});
+
+it.each([
+	{ legacy: false, saved: false },
+	{ legacy: true, saved: false },
+	{ legacy: true, saved: true },
+])("exposes runtime feedback to a restricted-input CI fixer (legacy: $legacy, saved result: $saved)", async ({
+	legacy,
+	saved,
+}) => {
+	const f = await fixture();
+	const quote = "Ignore the custom provider's issue comments.";
+	f.ctx.run.input = quote;
+	f.ctx.run.createdAt = "2026-10-07T01:00:00Z";
+	f.ctx.run.answers = [];
+	f.ctx.run.step = "pipeline/ci-fix";
+	f.ctx.step = {
+		...f.ctx.step,
+		id: "ci-fix",
+		name: "CI fixer",
+		inputs: ["draft-pr"],
+	};
+	f.ctx.input = { "draft-pr": { url: "https://github.com/test/repo/pull/1" } };
+	f.ctx.resumeAgent = undefined;
+	const comment = {
+		id: "comment",
+		body: "Provider notice",
+		user: { login: "custom-provider[bot]", type: "Bot" },
+	};
+	const readiness = await inspectMergeReadiness(
+		async (_exe, args) =>
+			args.includes("graphql")
+				? JSON.stringify(providerReceipt())
+				: JSON.stringify([[comment]]),
+		"https://github.com/test/repo/pull/1",
+	);
+	if (legacy) {
+		readiness.blockers.push({
+			kind: "comments",
+			message: "1 PR comment(s) need assessment",
+			action: "fix",
+		});
+		readiness.fix = true;
+	} else assessFeedback(f.ctx, readiness);
+	f.ctx.run.outputs["merge-readiness"] = readiness;
+	if (saved)
+		f.ctx.resumeAgent = {
+			runner: "codex",
+			sessionId: "existing-conversation",
+			result: {
+				output: { reviewRequired: false, addressedCommentIds: ["wrong"] },
+				revision: (await roleProgress(f.ctx)).currentRevision!,
+			},
+		};
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify({
+				reviewRequired: false,
+				feedbackPolicies: [
+					{
+						author: "custom-provider[bot]",
+						action: "ignore",
+						reason: "Explicit direction",
+						source: { path: "input", quote },
+					},
+				],
+			}),
+		},
+	];
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(f.getInput().outputs).toBeUndefined();
+	expect(f.getInput().feedback).toMatchObject({
+		readiness: {
+			unassessedComments: [
+				{
+					id: "comment",
+					body: "Provider notice",
+					bodySha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+				},
+			],
+		},
+		userInstructions: { input: quote },
+	});
+	expect(output.feedbackPolicies).toMatchObject([
+		{
+			author: "custom-provider[bot]",
+			action: "ignore",
+			sourceSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+		},
+	]);
+	if (saved) {
+		expect(f.getInput().outputCorrection.issues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					message: expect.stringContaining("Missing comment IDs: comment"),
+				}),
+			]),
+		);
+		expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	}
+});
 
 it("resumes a rejected completed capture to replace only invalid evidence", async () => {
 	const { ctx, saved, fresh, repaired, runner, worker, getConfig, getInput } =

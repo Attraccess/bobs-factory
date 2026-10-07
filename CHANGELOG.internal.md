@@ -6,6 +6,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
+- Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
+- Preserve refinement recommendation metadata when review fixers request assistance, retaining both recovery and question-restart contracts during main integration. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Integrate refinement recommendations with the latest workflow recovery changes, retaining recommendation validation and bounded retry regression coverage. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Update the complete routing-prompt expectation for refinement recommendations so CI validates the current capability guidance. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
@@ -17,6 +19,8 @@ This changelog documents internal development changes, refactors, tooling update
 - Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))
 
 ### Changed
+
+- Integrate feedback recovery with execution profiles while preserving constructor cleanup synchronization and both changelog histories. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
 - Merge current workflow recovery, refinement recommendations and instance capacity into execution profiles; retain dedicated Settings pages and both answer/execution update drafts. Wait for coordinator initialization before removing persistence-test homes and give mocked multi-package release scenarios a bounded 30-second budget. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
