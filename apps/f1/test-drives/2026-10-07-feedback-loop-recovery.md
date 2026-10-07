@@ -1,7 +1,8 @@
 # Factory feedback loop recovery
 
 Date: 2026-10-07. Tested the working tree based on `1b30cfb0` on
-`fix/factory-feedback-loops`. Driver: `/tmp/factory-feedback-drive.ts`.
+`fix/factory-feedback-loops`, committed as `712b81ef` without runtime changes.
+Driver: `/tmp/factory-feedback-drive.ts`.
 Successful evidence: `/tmp/factory-feedback-f1-G9rvZk`, including five full run
 JSON files, `contexts.json`, and `receipts.json`. Output:
 `/tmp/factory-feedback-drive-final.log`.
