@@ -16,6 +16,8 @@ import { legacyScreenshotSteps } from "../src/factory/legacyScreenshotSteps.js";
 import { validateWorkflows, type Workflow } from "../src/factory/Workflow.js";
 import {
 	type ExecutionContext,
+	type FactoryRun,
+	type GraphCheckpoint,
 	type RuntimeHooks,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
@@ -50,6 +52,37 @@ const agent = (id: string, extra = {}) => ({
 	prompt: "Do the task",
 	...extra,
 });
+function failedCodexStartup(
+	run: FactoryRun,
+	key: string,
+	frame: GraphCheckpoint,
+) {
+	const startup = {
+		type: "result",
+		is_error: true,
+		session_id: "synthetic-startup-id",
+		errors: ["initialize timed out after 60000ms"],
+	};
+	const missing = {
+		...startup,
+		errors: [
+			"thread/resume failed: no rollout found for thread id synthetic-startup-id",
+		],
+	};
+	run.status = "failed";
+	run.step = key;
+	run.error = `Agent step failed: ${JSON.stringify(missing)}`;
+	frame.active = {
+		phase: "executing",
+		agent: { runner: "codex", sessionId: startup.session_id },
+	};
+	run.events.push({
+		at: run.createdAt,
+		step: key,
+		source: "agent",
+		message: JSON.stringify(startup),
+	});
+}
 function start(runtime: WorkflowRuntime, definition: Workflow) {
 	return runtime.create({
 		triggerOrigin: {
@@ -1366,6 +1399,181 @@ it("grants a bounded persisted retry budget only to the exhausted nested step", 
 		restored.history.filter((x) => x.step === "pipeline/review"),
 	).toHaveLength(6);
 	expect(restored.iterationLimit).toBeUndefined();
+});
+
+it.each([
+	"workflow",
+	"fanout",
+])("repairs a saved Codex startup ID in a %s leaf without replaying completed work", async (type) => {
+	const calls: ExecutionContext[] = [];
+	const hooks = {
+		agent: async (ctx: ExecutionContext) => {
+			calls.push(ctx);
+			expect(ctx.resumeAgent).toBeUndefined();
+			expect(ctx.run.checkpoint?.active?.children?.[0]?.visits.capture).toBe(4);
+			ctx.checkpointAgent?.({ runner: "codex", sessionId: "confirmed-thread" });
+			return { summary: "Fresh role completed" };
+		},
+		script: async () => ({}),
+		tool: async () => ({}),
+	};
+	const { runtime, home } = create(hooks);
+	const child = {
+		...workflow([agent("capture", { next: "end" })]),
+		id: "child",
+	};
+	runtime.updateWorkflows([...defaultWorkflows, child]);
+	const parent = workflow(
+		[
+			agent("implemented"),
+			{
+				id: "pipeline",
+				name: "Pipeline",
+				type,
+				...(type === "workflow"
+					? { workflow: "child" }
+					: { groups: [[agent("capture", { next: "end" })]] }),
+			},
+		],
+		[child],
+	);
+	const run = start(runtime, parent);
+	const leaf: GraphCheckpoint = { current: "capture", visits: { capture: 4 } };
+	run.checkpoint = {
+		current: "pipeline",
+		visits: { implemented: 1, pipeline: 1 },
+		active: { phase: "executing", children: [leaf] },
+	};
+	const key = type === "workflow" ? "pipeline/capture" : "pipeline/0/capture";
+	failedCodexStartup(run, key, leaf);
+	run.outputs.implemented = { summary: "Keep the implementation" };
+	run.outputs.evidence = { screenshots: ["accepted.png"] };
+	if (type === "fanout") leaf.outputs = structuredClone(run.outputs);
+	run.history.push({
+		step: "implemented",
+		output: run.outputs.implemented,
+		at: run.createdAt,
+	});
+	run.answers.push({
+		questions: ["Which fixture?"],
+		answer: "Saved fixture",
+		at: run.createdAt,
+	});
+	const retained = structuredClone({
+		outputs: run.outputs,
+		history: run.history,
+		answers: run.answers,
+	});
+	runtime.save(run);
+	const restarted = new WorkflowRuntime(home, hooks);
+	const restored = restarted.retry(run.id);
+	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	expect(calls.map((ctx) => ctx.stepKey)).toEqual([key]);
+	expect(restored.history.slice(0, retained.history.length)).toEqual(
+		retained.history,
+	);
+	expect(restored.outputs).toMatchObject(retained.outputs);
+	expect(restored.answers).toEqual(retained.answers);
+	expect(
+		restored.events.some((event) =>
+			event.message.includes("Removed invalid Codex startup checkpoint"),
+		),
+	).toBe(true);
+	expect(new WorkflowRuntime(home, hooks).get(run.id).status).toBe("completed");
+});
+
+it.each([
+	"missing startup receipt",
+	"different role",
+	"completed visit",
+	"different thread",
+	"ordinary timeout",
+	"assistant activity",
+	"tool result",
+	"successful turn",
+	"failed turn",
+	"unknown activity",
+	"saved output",
+	"saved correction",
+	"other provider",
+	"truncated activity",
+])("keeps Codex checkpoints when recovery is unsafe: %s", async (condition) => {
+	let resumed: ExecutionContext["resumeAgent"];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			resumed = structuredClone(ctx.resumeAgent);
+			return {};
+		},
+	});
+	const run = start(runtime, workflow([agent("capture")]));
+	run.checkpoint = { current: "capture", visits: { capture: 1 } };
+	failedCodexStartup(run, "capture", run.checkpoint);
+	const saved = run.checkpoint.active!.agent!;
+	if (condition === "missing startup receipt") run.events = [];
+	if (condition === "different role") run.events[0]!.step = "other/capture";
+	if (condition === "completed visit")
+		run.history.push({
+			step: "capture",
+			output: {},
+			at: new Date(Date.parse(run.createdAt) + 1).toISOString(),
+		});
+	if (condition === "different thread") saved.sessionId = "real-thread";
+	if (condition === "ordinary timeout")
+		run.error = "initialize timed out after 60000ms";
+	if (condition === "other provider") saved.runner = "claude";
+	if (["failed turn", "unknown activity"].includes(condition))
+		run.events.push({
+			at: run.createdAt,
+			step: "capture",
+			source: "agent",
+			message: JSON.stringify({
+				type: condition === "failed turn" ? "result" : "unexpected",
+				session_id: saved.sessionId,
+				is_error: true,
+				errors: ["fixture turn failed after thread creation"],
+			}),
+		});
+	if (condition === "truncated activity")
+		run.events.push({
+			at: run.createdAt,
+			step: "capture",
+			source: "agent",
+			message: "...truncated tool activity",
+		});
+	if (
+		["assistant activity", "tool result", "successful turn"].includes(condition)
+	)
+		run.events.push({
+			at: run.createdAt,
+			step: "capture",
+			source: "agent",
+			message: JSON.stringify({
+				type:
+					condition === "successful turn"
+						? "result"
+						: condition === "tool result"
+							? "user"
+							: "assistant",
+				session_id: saved.sessionId,
+				is_error: false,
+			}),
+		});
+	if (condition === "saved output")
+		saved.result = {
+			output: { summary: "Keep" },
+			revision: { headSha: "head", dirty: false, historyLength: 0, at: "" },
+		};
+	if (condition === "saved correction")
+		saved.rejected = { output: { summary: "Keep" }, issues: [], attempts: 1 };
+	const prior = structuredClone(saved);
+	runtime.retry(run.id);
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(resumed).toEqual(prior);
+	expect(
+		run.events.some((event) =>
+			event.message.includes("Removed invalid Codex startup checkpoint"),
+		),
+	).toBe(false);
 });
 
 it("upgrades only stock CI routing, retaining customized models and routes", () => {
