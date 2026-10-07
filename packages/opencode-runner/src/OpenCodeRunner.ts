@@ -1,4 +1,4 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import { cwd } from "node:process";
@@ -10,6 +10,7 @@ import type {
 	SDKResultMessage,
 	SDKUserMessage,
 } from "cyrus-core";
+import { spawnExecution as spawn } from "cyrus-core";
 import {
 	buildOpenCodeConfig,
 	buildOpenCodeRuntimeEnv,

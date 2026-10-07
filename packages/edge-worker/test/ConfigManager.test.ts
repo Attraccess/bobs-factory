@@ -155,3 +155,26 @@ describe("ConfigManager", () => {
 		);
 	});
 });
+
+it("clears an explicitly removed machine limit instead of retaining the previous value", async () => {
+	const home = await mkdtemp(join(tmpdir(), "capacity-config-removal-"));
+	const path = join(home, "config.json");
+	const manager = new ConfigManager(
+		{ repositories: [repo], maxConcurrentSessions: 2 },
+		logger,
+		path,
+		new Map([[repo.id, repo]]),
+	);
+	const changed = vi.fn();
+	manager.on("configChanged", changed);
+	try {
+		await writeFile(path, JSON.stringify({ repositories: [repo] }));
+		await (manager as any).handleConfigChange();
+		expect(changed).toHaveBeenCalledOnce();
+		expect(
+			changed.mock.lastCall![0].newConfig.maxConcurrentSessions,
+		).toBeUndefined();
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
+});

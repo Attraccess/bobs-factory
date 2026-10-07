@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { passiveTools } from "../CapacityPolicy";
 import { useAction, useConfig } from "./client";
 import { ExecutionEditor, ExecutionSelectors } from "./execution";
 import { DraftNotice } from "./pwa-ui";
@@ -449,6 +450,137 @@ function ownRoles(
 				: [],
 	);
 }
+function MachineCapacitySettings({ config }: { config: any }) {
+	const capacity = config.capacity;
+	const action = useAction();
+	const draftKey = "recipe/machine-capacity";
+	const [draft, setDraft, stale] = useRestorableState<
+		{ limit: string } | undefined
+	>(draftKey, undefined, revisionOf(capacity?.limit));
+	const limit = draft?.limit ?? String(capacity?.limit ?? 4);
+	if (!capacity) return null;
+	return (
+		<section className="recipe" aria-labelledby="machine-capacity">
+			<h2 id="machine-capacity">Machine capacity</h2>
+			<DraftNotice conflict={stale} draftKey={draftKey} />
+			<p>
+				One shared pool for agents and intensive workflow steps. Default:{" "}
+				{capacity.defaultLimit} slots.
+			</p>
+			<p role="status">
+				Shared limit: {capacity.limit} {capacity.limit === 1 ? "slot" : "slots"}
+				. {capacity.active} executing · {capacity.stopping} stopping ·{" "}
+				{capacity.queued} waiting for capacity
+			</p>
+			{capacity.error && <p role="alert">{capacity.error}</p>}
+			{capacity.conflict && <p role="alert">{capacity.conflict}</p>}
+			<form
+				onSubmit={async (event) => {
+					event.preventDefault();
+					if (stale || action.isPending) return;
+					try {
+						await action.mutateAsync({
+							path: "/api/capacity",
+							method: "PUT",
+							body: { limit: Number(limit) },
+						});
+						setDraft(undefined);
+						forgetDraft(draftKey);
+					} catch {}
+				}}
+			>
+				<label>
+					Shared slot limit{" "}
+					<input
+						type="number"
+						min="1"
+						step="1"
+						required
+						disabled={action.isPending}
+						value={limit}
+						onChange={(event) => {
+							setDraft({ limit: event.target.value });
+						}}
+					/>
+				</label>
+				<Button
+					type="submit"
+					requiresConnection
+					disabled={draft === undefined || stale || action.isPending}
+				>
+					Save machine limit
+				</Button>
+				{action.error && <p role="alert">{action.error.message}</p>}
+			</form>
+		</section>
+	);
+}
+function CapacityClassification({
+	disabled,
+	steps,
+	onSave,
+	path = "",
+}: {
+	disabled: boolean;
+	steps: any[];
+	onSave: (path: string, value: boolean | undefined) => Promise<unknown>;
+	path?: string;
+}) {
+	return (
+		<div className="capacity-classification">
+			{steps.map((step: any, index: number) => {
+				const key = `${path}${index}`;
+				const heavy = step.type === "script" || step.tool === "exec";
+				return (
+					<div key={key}>
+						{["script", "tool"].includes(step.type) && (
+							<label>
+								{step.name} capacity{" "}
+								<select
+									aria-label={`${step.name} capacity`}
+									disabled={disabled}
+									value={
+										step.computeIntensive === undefined
+											? "default"
+											: String(step.computeIntensive)
+									}
+									onChange={(event) => {
+										void onSave(
+											key,
+											event.target.value === "default"
+												? undefined
+												: event.target.value === "true",
+										);
+									}}
+								>
+									<option value="default">
+										Default ({heavy ? "one slot" : "lightweight"})
+									</option>
+									<option
+										value="true"
+										disabled={passiveTools.includes(step.tool ?? "")}
+									>
+										Intensive (one slot)
+									</option>
+									<option value="false">Lightweight (no slot)</option>
+								</select>
+							</label>
+						)}
+						{(step.groups ?? []).map((group: any[], branch: number) => (
+							<CapacityClassification
+								disabled={disabled}
+								key={branch}
+								steps={group}
+								path={`${key}/groups/${branch}/`}
+								onSave={onSave}
+							/>
+						))}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
 function RunTitleSettings({ config }: { config: any }) {
 	const draftKey = "recipe/title-settings";
 	const [draft, setDraft, stale] = useRestorableState<
@@ -552,7 +684,10 @@ export function Recipes() {
 				runs; existing runs retain their definitions.
 			</p>
 			<ExecutionEditor config={config} />
-			<RunTitleSettings config={config} />
+			<div className="recipe-settings">
+				<MachineCapacitySettings config={config} />
+				<RunTitleSettings config={config} />
+			</div>
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (
 					<article className="recipe" key={workflow.id}>
@@ -744,6 +879,19 @@ export function Recipes() {
 								</div>
 							</section>
 						</div>
+						<CapacityClassification
+							disabled={action.isPending}
+							steps={workflow.steps}
+							onSave={async (path, computeIntensive) => {
+								const definitions = structuredClone(config.workflows);
+								let node: any = definitions.find(
+									(item: any) => item.id === workflow.id,
+								).steps;
+								for (const part of path.split("/")) node = node[part];
+								node.computeIntensive = computeIntensive;
+								await save(definitions);
+							}}
+						/>
 						<details data-restore={`recipe-${workflow.id}`}>
 							<summary>Edit as JSON</summary>
 							<RecipeEditor

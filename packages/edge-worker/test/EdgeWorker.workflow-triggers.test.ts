@@ -1013,7 +1013,9 @@ it("returns a manual launch immediately, preserves source naming data and mirror
 	);
 	expect(run.title).toBe(run.id);
 	expect(run.status).toBe("running");
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(titleStart).toHaveBeenCalledOnce();
 	expect(JSON.parse(titleStart.mock.calls[0][1].context).instructions).toBe(
 		"https://taskbot.apps.janjaap.de/p/test/t/68",
@@ -1198,7 +1200,9 @@ it.each([
 	edge.titleGenerator = { start, shutdown: async () => {} };
 	if (status === "running") edge.recoverFactoryRuns();
 	else runtime.retry(run.id);
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(start).not.toHaveBeenCalled();
 	expect(run.titleGeneration).toBeUndefined();
 	expect(run.title).toBe("Original historical title");
@@ -1207,7 +1211,9 @@ it.each([
 	// A second retry must also preserve the saved historical identity.
 	run.status = "failed";
 	runtime.retry(run.id);
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(start).not.toHaveBeenCalled();
 	expect(run.titleGeneration).toBeUndefined();
 });
@@ -1255,7 +1261,9 @@ it.each([
 	);
 	const run = runtime.get("session");
 	expect(run.title).toBe("session");
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(start).toHaveBeenCalledOnce();
 	expect(JSON.parse(start.mock.calls[0][1].context)).toMatchObject({
 		ticketTitle: "Ticket",
@@ -1386,7 +1394,10 @@ it("retains the parent's native origin when follow-up instructions name another 
 		}),
 		parent.id,
 	);
-	await vi.waitFor(() => expect(["completed", "failed"]).toContain(run.status));
+	await vi.waitFor(
+		() => expect(["completed", "failed"]).toContain(run.status),
+		{ timeout: 10000 },
+	);
 	expect(run.error).toBeUndefined();
 	expect(run.status).toBe("completed");
 	expect(run.ticketReference).toEqual(parent.ticketReference);

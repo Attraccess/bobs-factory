@@ -1,4 +1,13 @@
-import { execSync, spawn } from "node:child_process";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { spawnExecution as spawn } from "cyrus-core";
+import type { CapacityOptions, ExecutionCapacity } from "./MachineCapacity.js";
+export const setupExecutionScope = new AsyncLocalStorage<{
+	signal: AbortSignal;
+	service?: ExecutionCapacity;
+	capacity?: CapacityOptions;
+}>();
+
+import { execFile, execSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -9,6 +18,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve as pathResolve } from "node:path";
+import { promisify } from "node:util";
 
 import type {
 	BaseBranchResolution,
@@ -17,7 +27,12 @@ import type {
 	RepositoryConfig,
 	Workspace,
 } from "cyrus-core";
-import { createLogger, getDefaultWorktreesDir, type ILogger } from "cyrus-core";
+import {
+	createLogger,
+	executionEnvironment,
+	getDefaultWorktreesDir,
+	type ILogger,
+} from "cyrus-core";
 import { WorktreeIncludeService } from "./WorktreeIncludeService.js";
 
 export interface CreateGitWorktreeOptions {
@@ -37,6 +52,7 @@ export interface CreateGitWorktreeOptions {
 }
 
 export interface GitServiceOptions {
+	capacity?: () => ExecutionCapacity;
 	cyrusHome?: string;
 	/** Complete process environment for a single accepted execution context. */
 	childEnvironment?: Record<string, string>;
@@ -219,7 +235,10 @@ export class GitService {
 	private cyrusHome: string;
 	private childEnvironment?: Record<string, string>;
 
-	constructor(options?: GitServiceOptions, logger?: ILogger) {
+	constructor(
+		private options?: GitServiceOptions,
+		logger?: ILogger,
+	) {
 		this.logger = logger ?? createLogger({ component: "GitService" });
 		this.worktreeIncludeService = new WorktreeIncludeService(this.logger);
 		this.cyrusHome = options?.cyrusHome ?? join(homedir(), ".cyrus");
@@ -231,7 +250,11 @@ export class GitService {
 	/** A scoped service avoids account/env switches on the shared service instance. */
 	withEnvironment(environment: Record<string, string>): GitService {
 		return new GitService(
-			{ cyrusHome: this.cyrusHome, childEnvironment: environment },
+			{
+				...this.options,
+				cyrusHome: this.cyrusHome,
+				childEnvironment: environment,
+			},
 			this.logger,
 		);
 	}
@@ -853,12 +876,35 @@ export class GitService {
 			this.logger.debug("Fetching latest changes from remote...");
 			let hasRemote = true;
 			try {
-				execSync("git fetch origin", {
-					env: this.childEnvironment,
-					cwd: repository.repositoryPath,
-					stdio: "pipe",
-				});
+				if (this.executionCapacity()) {
+					const scope = setupExecutionScope.getStore();
+					const lease = await this.executionCapacity()!.acquireLease(
+						scope?.signal,
+						scope?.capacity,
+					);
+					try {
+						await lease.run(() =>
+							promisify(execFile)("git", ["fetch", "origin"], {
+								cwd: repository.repositoryPath,
+								env: {
+									...(this.childEnvironment ?? process.env),
+									...executionEnvironment(),
+								},
+								signal: scope?.signal,
+							}),
+						);
+					} finally {
+						await lease.release();
+					}
+				} else {
+					execSync("git fetch origin", {
+						cwd: repository.repositoryPath,
+						env: this.childEnvironment,
+						stdio: "pipe",
+					});
+				}
 			} catch (e) {
+				setupExecutionScope.getStore()?.signal.throwIfAborted();
 				if (this.childEnvironment)
 					throw new Error(
 						"Selected execution account could not fetch the repository. Restore authentication or connectivity before retrying.",
@@ -1370,7 +1416,25 @@ export class GitService {
 	 * Run a hook script (setup or teardown) with proper error handling and logging.
 	 * Failure is non-blocking — errors are logged and execution continues.
 	 */
+	private executionCapacity(): ExecutionCapacity | undefined {
+		return (
+			setupExecutionScope.getStore()?.service ?? this.options?.capacity?.()
+		);
+	}
 	private async runHookScript(opts: HookScriptOptions): Promise<void> {
+		const service = this.executionCapacity();
+		if (!service) return this.runHookScriptUnlocked(opts);
+		const scope = setupExecutionScope.getStore();
+		const lease = await service.acquireLease(scope?.signal, scope?.capacity);
+		try {
+			scope?.signal.throwIfAborted();
+			await lease.run(() => this.runHookScriptUnlocked(opts));
+			scope?.signal.throwIfAborted();
+		} finally {
+			await lease.release();
+		}
+	}
+	private async runHookScriptUnlocked(opts: HookScriptOptions): Promise<void> {
 		const {
 			scriptPath,
 			hook,
@@ -1454,7 +1518,13 @@ export class GitService {
 		}
 
 		try {
-			if (!shouldPostRepoSetupActivity && !this.childEnvironment) {
+			// Standalone callers retain the inherited-stdio contract. EdgeWorker
+			// always supplies capacity and uses asynchronous cancellable execution.
+			if (
+				!this.executionCapacity() &&
+				!shouldPostRepoSetupActivity &&
+				!this.childEnvironment
+			) {
 				this.runHookScriptInherited({
 					scriptPath,
 					expandedPath,
@@ -1462,11 +1532,9 @@ export class GitService {
 					env,
 					timeoutMs,
 				});
-
 				this.logger.info(`✅ ${labelTitle} script completed successfully`);
 				return;
 			}
-
 			let command: string;
 			let args: string[];
 			let shell = false;
@@ -1491,6 +1559,7 @@ export class GitService {
 			await new Promise<void>((resolve, reject) => {
 				const child = spawn(command, args, {
 					cwd,
+					detached: process.platform !== "win32",
 					env: {
 						...(this.childEnvironment ?? process.env),
 						...env,
@@ -1498,9 +1567,25 @@ export class GitService {
 					shell,
 				});
 				let timedOut = false;
+				const signal = setupExecutionScope.getStore()?.signal;
+				let killTimer: ReturnType<typeof setTimeout> | undefined;
+				const kill = (how: NodeJS.Signals) => {
+					try {
+						if (child.pid && process.platform !== "win32")
+							process.kill(-child.pid, how);
+						else child.kill(how);
+					} catch {}
+				};
+				const terminate = () => {
+					kill("SIGTERM");
+					killTimer ??= setTimeout(() => kill("SIGKILL"), 2000);
+					killTimer.unref();
+				};
+				signal?.addEventListener("abort", terminate, { once: true });
+				if (signal?.aborted) terminate();
 				const timeout = setTimeout(() => {
 					timedOut = true;
-					child.kill("SIGTERM");
+					terminate();
 				}, timeoutMs);
 
 				child.stdout?.on("data", (chunk: Buffer) => {
@@ -1517,6 +1602,10 @@ export class GitService {
 					reject(error);
 				});
 				child.on("close", (code, signal) => {
+					setupExecutionScope
+						.getStore()
+						?.signal.removeEventListener("abort", terminate);
+					if (killTimer) clearTimeout(killTimer);
 					clearTimeout(timeout);
 					if (code === 0) {
 						resolve();
@@ -1600,6 +1689,10 @@ export class GitService {
 		}
 	}
 
+	/**
+	 * Find and run a global setup script (path resolved from EdgeConfig).
+	 * Kept as a thin wrapper to preserve the existing call sites.
+	 */
 	private runHookScriptInherited(opts: {
 		scriptPath: string;
 		expandedPath: string;
@@ -1631,10 +1724,6 @@ export class GitService {
 		});
 	}
 
-	/**
-	 * Find and run a global setup script (path resolved from EdgeConfig).
-	 * Kept as a thin wrapper to preserve the existing call sites.
-	 */
 	private async runSetupScript(
 		scriptPath: string,
 		scriptType: "global" | "repository",

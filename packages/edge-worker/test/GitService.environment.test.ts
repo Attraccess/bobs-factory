@@ -103,3 +103,63 @@ it("rejects failed selected fetches without silently creating an unauthenticated
 		false,
 	);
 });
+
+it("retains capacity admission and selected credentials through fetch and setup in a scoped service", async () => {
+	const { MachineCapacity } = await import("../src/MachineCapacity.js");
+	const { root, env, repo, repository, issue, git } = fixture();
+	const capacity = new MachineCapacity(1, join(root, "capacity"));
+	const blocker = await capacity.acquireLease();
+	const fetchProbe = join(root, "fetch.json");
+	const upload = join(root, "upload.sh");
+	writeFileSync(
+		upload,
+		`#!/bin/sh\nnode -e 'require("node:fs").appendFileSync(${JSON.stringify(fetchProbe)},JSON.stringify({author:process.env.GIT_AUTHOR_NAME,ambient:process.env.GIT_SERVICE_HOST_CANARY??null,lease:process.env.CYRUS_EXECUTION_LEASE})+"\\n")'\nexec git-upload-pack "$@"\n`,
+		{ mode: 0o755 },
+	);
+	git(["config", "remote.origin.uploadpack", upload]);
+	writeFileSync(
+		join(repo, "cyrus-setup.sh"),
+		`#!/bin/sh\nnode -e 'require("node:fs").writeFileSync("probe.json",JSON.stringify({author:process.env.GIT_AUTHOR_NAME,ambient:process.env.GIT_SERVICE_HOST_CANARY??null,lease:process.env.CYRUS_EXECUTION_LEASE}))'\n`,
+		{ mode: 0o755 },
+	);
+	git(["add", "cyrus-setup.sh"]);
+	git(["commit", "-qm", "capacity probe"]);
+	vi.stubEnv("GIT_SERVICE_HOST_CANARY", "host-secret");
+	const service = new GitService(
+		{ cyrusHome: root, capacity: () => capacity },
+		logger,
+	).withEnvironment(env);
+	const pending = service.createGitWorktree(issue, [repository]);
+	try {
+		await vi.waitFor(async () =>
+			expect((await capacity.snapshot()).queued).toBe(1),
+		);
+		expect(existsSync(fetchProbe)).toBe(false);
+		expect(
+			existsSync(join(repository.workspaceBaseDir, issue.identifier)),
+		).toBe(false);
+	} finally {
+		await blocker.release();
+	}
+	const workspace = await pending;
+	const fetches = readFileSync(fetchProbe, "utf8")
+		.trim()
+		.split("\n")
+		.map((line) => JSON.parse(line));
+	for (const probe of fetches)
+		expect(probe).toMatchObject({ author: "Selected author", ambient: null });
+	const probes = [
+		fetches.find((probe) => probe.lease),
+		JSON.parse(readFileSync(join(workspace.path, "probe.json"), "utf8")),
+	];
+	for (const probe of probes) {
+		expect(probe).toEqual({
+			author: "Selected author",
+			ambient: null,
+			lease: expect.any(String),
+		});
+		expect(probe.lease.length).toBeGreaterThan(0);
+	}
+	expect((await capacity.snapshot()).active).toBe(0);
+	expect(process.env.GIT_SERVICE_HOST_CANARY).toBe("host-secret");
+});

@@ -217,11 +217,21 @@ export function RunConversation({ run, step }: { run: any; step?: string }) {
 				...query.data,
 				entries: query.data?.entries ?? [],
 				events: query.data?.events ?? [],
-			}).filter((item) => !step || item.step === step),
+			})
+				.filter((item) => !step || item.step === step)
+				.map((item) => ({
+					...item,
+					queued:
+						item.type === "user" &&
+						run.chat?.queuedMessageIds?.some(
+							(id: string) => item.key === `chat/${id}`,
+						),
+				})),
 		[
 			step,
 			query.data,
 			chatMessages,
+			run.chat?.queuedMessageIds,
 			answers,
 			workflow,
 			workflowDefinitions,
@@ -261,7 +271,7 @@ function ChatComposer({ run }: { run: any }) {
 	const [text, setText, staleChat] = useRestorableState(
 		`chat/${run.id}`,
 		"",
-		revisionOf([run.chat?.mode, run.chat?.step]),
+		revisionOf([run.chat?.step]),
 	);
 	const [notice, setNotice] = useState("");
 	const action = useAction();
@@ -269,17 +279,20 @@ function ChatComposer({ run }: { run: any }) {
 	const send = async () => {
 		if (!text.trim() || !run.chat.available || action.isPending || staleChat)
 			return;
+		const submittedText = text;
 		setNotice("");
 		try {
 			const sent = await action.mutateAsync({
 				path: `/api/runs/${encodeURIComponent(run.id)}/messages`,
 				body: { text },
 			});
-			setText("");
+			setText((current) => (current === submittedText ? "" : current));
 			setNotice(
-				sent.mode === "continue"
-					? "Request to resume the conversation sent."
-					: "Message sent to the agent.",
+				sent.mode === "queue"
+					? "Message queued. Bob will process it later."
+					: sent.mode === "continue"
+						? "Request to resume the conversation sent."
+						: "Message sent to the agent.",
 			);
 			void cache.invalidateQueries({ queryKey: ["transcript", run.id] });
 		} catch {
@@ -315,9 +328,11 @@ function ChatComposer({ run }: { run: any }) {
 			<div className="chat-composer-actions">
 				<small>
 					{run.chat.available
-						? run.chat.mode === "continue"
-							? "Continue the same conversation and worktree."
-							: "Send instructions to the current agent. ⌘ / Ctrl + Enter to send."
+						? run.chat.mode === "queue"
+							? run.chat.reason
+							: run.chat.mode === "continue"
+								? "Continue the same conversation and worktree."
+								: "Send instructions to the current agent. ⌘ / Ctrl + Enter to send."
 						: run.chat.reason}
 				</small>
 				<Button
@@ -543,6 +558,11 @@ export function Conversation({
 												minute: "2-digit",
 											})}
 										</small>
+										{item.queued && (
+											<span className="queued-message" role="status">
+												Queued · will be processed later
+											</span>
+										)}
 										<Markdown>{item.body}</Markdown>
 										{item.raw && (
 											<LazyDetails

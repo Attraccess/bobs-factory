@@ -24,6 +24,7 @@ import {
 import type { AgentPendingWork, AskUserQuestionInput } from "cyrus-core";
 import {
 	createLogger,
+	executionEnvironment,
 	type IAgentRunner,
 	type ILogger,
 	LogLevel,
@@ -651,13 +652,16 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 			logSandboxRequirementFailures(sandboxRequirements, this.logger);
 
 			const isDebugLogging = this.logger.getLevel() === LogLevel.DEBUG;
+			const model = this.config.model || "opus";
+			const fallbackModel = this.config.fallbackModel || "sonnet";
 
 			const queryOptions: Parameters<typeof query>[0] = {
 				prompt: promptForQuery,
 				options: {
-					model: this.config.model || "opus",
+					model,
 					...(this.config.effort && { effort: this.config.effort }),
-					fallbackModel: this.config.fallbackModel || "sonnet",
+					// The SDK rejects an identical fallback, including one restored by defaults.
+					fallbackModel: fallbackModel === model ? undefined : fallbackModel,
 					abortController: this.abortController,
 					// Use Claude Code preset by default to maintain backward compatibility
 					// This can be overridden if systemPrompt is explicitly provided
@@ -685,6 +689,7 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 						// See: CYPACK-1108.
 						...(this.config.childEnvironment ? {} : this.repositoryEnv),
 						...this.config.additionalEnv,
+						...executionEnvironment(),
 						// When logging at DEBUG level, enable the SDK's own debug output so
 						// --debug-to-stderr and DEBUG=1 propagate to the Claude subprocess.
 						// Explicitly set or unset to override any leaked value from process.env.

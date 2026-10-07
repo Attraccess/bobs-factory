@@ -297,4 +297,9 @@ export type {
 
 export type { RunTitleJob } from "./CyrusAgentSession.js";
 export type { JsonObject } from "./config-schemas.js";
+export {
+	executionEnvironment,
+	executionScope,
+	spawnExecution,
+} from "./ExecutionScope.js";
 export { ProjectArtifactLease } from "./ProjectArtifactLease.js";

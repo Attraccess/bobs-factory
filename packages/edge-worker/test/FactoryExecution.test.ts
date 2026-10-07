@@ -98,12 +98,16 @@ it("freezes profile definitions across deletion and restart, passing only a priv
 		allowedTriggers: ["manual"],
 		steps: [{ id: "probe", name: "Probe", type: "script", script: "unused" }],
 	});
+	const { MachineCapacity } = await import("../src/MachineCapacity.js");
+	const capacity = new MachineCapacity(1, join(home, "capacity"));
 	const hooks = {
+		capacity,
 		agent: async () => ({}),
 		tool: async () => ({}),
 		execution: (run: any) =>
 			resolver.resolve(run.executionSnapshot, run.id, home, "claude"),
 		script: async (context: any) => ({
+			leased: (await capacity.snapshot()).active === 1,
 			stdout: await executeCommand(context, process.execPath, [
 				"-e",
 				"process.stdout.write(process.env.ANTHROPIC_API_KEY.slice(0,8));setTimeout(()=>process.stdout.write(process.env.ANTHROPIC_API_KEY.slice(8)+'|'+process.env.GIT_AUTHOR_NAME+'|'+String(process.env.GH_TOKEN)),20)",
@@ -136,7 +140,9 @@ it("freezes profile definitions across deletion and restart, passing only a priv
 	);
 	await runtime.launch(run);
 	expect(run.status).toBe("completed");
+	expect((await capacity.snapshot()).active).toBe(0);
 	expect(run.outputs.probe).toEqual({
+		leased: true,
 		stdout: "[REDACTED]|Bob author|undefined",
 	});
 	expect(

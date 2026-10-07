@@ -93,7 +93,7 @@ their UI and receive their own update notice. Installation and frontend updates
 do not stop, restart, approve or replace backend runs.
 
 An explicit update saves a bounded, tab-local snapshot of unsent launch/chat/
-answer/feedback/recipe edits (including global title-agent settings), selected
+answer/feedback/recipe edits (including machine capacity and global title-agent settings), selected
 route, open panels, inspector selection
 and stable conversation reading anchors. It contains no query cache, transcript,
 artifact or screenshot. The snapshot expires after 30 minutes, is limited to
@@ -103,7 +103,7 @@ guarantee preservation. Denied/full session storage postpones the update with
 edits still on screen. Copy unusually large drafts before retrying.
 
 Restored drafts are never sent automatically. If questions, review gates or
-recipe or title-agent settings changed, review the warning and current state before explicitly
+recipe, machine-capacity or title-agent settings changed, review the warning and current state before explicitly
 acknowledging the draft. Recovered copies remain available when a former gate is
 no longer open. Reading restoration fetches the relevant bounded history page;
 if its anchor is no longer retained, the app explains that limitation.
@@ -176,7 +176,11 @@ appear as your chat bubbles and remain available after restart. Failed submissio
 retain the draft. Use ⌘ / Ctrl + Enter to send; Enter adds a newline.
 
 Slack and Zulip sessions listed in the dashboard use the same composer and
-feedback controls. Completed chats continue through their platform handler,
+feedback controls. Send remains available while capacity is full or a continuation
+is being prepared. Accepted messages show **Queued · will be processed later**
+until their turn is admitted. Additional dashboard messages are saved on the server, batched
+in submission order after the current turn, and restored after restart. Stop
+cancels those pending messages. Completed chats continue through their platform handler,
 preserving the native conversation, workspace and title across restart. If a
 chat needs a new workflow instead, its follow-up uses the default repository
 available when the chat was created.
@@ -586,8 +590,8 @@ Keep the `simple`, `factory` and `takeover` defaults and add another entry to th
       "name": "Check in parallel",
       "type": "fanout",
       "groups": [
-        [{"id":"types","name":"Types","type":"script","script":"pnpm typecheck"}],
-        [{"id":"tests","name":"Tests","type":"tool","tool":"exec","args":["pnpm","test:run"]}]
+        [{"id":"types","name":"Types","type":"script","script":"pnpm typecheck","computeIntensive":true}],
+        [{"id":"tests","name":"Tests","type":"tool","tool":"exec","computeIntensive":true,"args":["pnpm","test:run"]}]
       ]
     },
     {
@@ -740,6 +744,78 @@ guarantee of flawless software.
 - File dependency and image hashes support screenshot reuse; unknown global
   effects require fresh evidence. Brief recap updates never waive fresh approval.
 
+### Machine capacity
+
+Factory and integration/chat sessions use one shared machine pool. The default is
+four slots, including installations that previously omitted `maxConcurrentSessions`.
+Existing numeric settings seed a new pool. Joining workers without a setting adopt
+the persisted policy; an explicit conflicting setting is reported in Recipes.
+Change **Machine capacity** in Recipes to update the durable shared limit. Increasing
+it admits queued work; decreasing it lets existing execution drain. A deliberate
+configuration edit updates the policy, and removing the numeric setting restores
+four. Unrelated config reloads and stale startup settings do not reset it.
+
+The coordinator lives at `~/.cyrus/machine-capacity`, independently of each worker's
+`--home`, repository or worktree. Set `CYRUS_CAPACITY_DIRECTORY` to an accessible
+shared directory for multiple service accounts, or an isolated directory for tests.
+All participating workers must use the coordinator. This release requires POSIX
+process inspection (`ps`) for reconciliation; unsupported or inaccessible process
+inspection fails closed. Existing older worker versions must be upgraded to join.
+
+Agents always use one slot. Script steps and `tool: exec` are intensive by default;
+`computeIntensive: false` exempts lightweight commands. Other tools, including custom
+MCP calls, are lightweight unless marked `computeIntensive: true`. Recipes exposes
+this control for nested fanout branches, and JSON editing preserves it. Classification
+on agent/orchestration steps is rejected. Passive CI, handoff, merge and human-review waits
+cannot be classified intensive. Setup/teardown scripts also pass through admission.
+Normal tool calls within an admitted agent share its slot.
+At startup, saved recipes with the formerly allowed intensive handoff flag are
+normalized to passive polling, including custom recipes and fanout branches.
+Accepted run definitions remain unchanged; their handoff polling consumes no slot.
+
+Parent graphs hold no slot while waiting for fanout or nested steps. Human answer
+and review checkpoints and passive CI polling also hold none. Run details show each
+active leaf, including **Waiting for capacity**, separately from human questions.
+Queued work remains active and stoppable. Ordinary integration/chat sessions report
+capacity queueing before the provider has started. Cancelled queue entries never
+start, and running/stopping execution remains counted until cleanup has settled.
+
+Primary work is FIFO across processes. The oldest background title request is admitted
+after at most eight primary admissions while it is eligible. Queue identities and
+ordering survive restart; graceful shutdown parks recoverable work without recording
+user termination. Startup reconciles surviving local descendants before admission.
+Completed graph receipts and saved conversations retain their existing recovery
+behavior. Queued GitHub/GitLab and Slack/Zulip turns save their prompt, runner,
+model and reply routing before admission, then rejoin their original queue position
+after restart. Recovery builds configuration for the saved provider, including its
+sandbox settings, and GitHub work retains per-PR serialization. Stop remains
+available while recovery loads configuration and before execution starts.
+Replies use current platform credentials; webhook credentials are
+excluded from saved session records. Integration workspace preparation shares the
+worker pool even when the CLI supplies a custom workspace handler; stop or
+unassignment cancels pending preparation before it can run. Managed Codex
+executions use separate app-server processes per lease, so completing one execution
+cannot terminate another. Scripts and tools can retry after a crash: external effects still require
+idempotency or reconciliation, and execution is not exactly once.
+
+Warm session prewarming and idle streams are disabled for managed workers. After a
+completed turn, follow-ups resume the saved native conversation through a fresh gate.
+Claude's native AskUserQuestion callback is disabled because it cannot prove all
+parallel execution is suspended; questions belong in the final response (Factory
+persists its normal human checkpoint). Claude Task/Agent delegation is denied,
+OpenCode task permissions are denied, and Codex uses the documented
+[`features.multi_agent = false`](https://developers.openai.com/codex/config-reference/)
+control. Other harnesses receive the same delegation restriction in their prompt;
+that instruction is not a hard enforcement guarantee. Scheduled workflow children
+receive their own slots. The cap bounds scheduled executions, not every subprocess,
+thread, inference request or arbitrary external program.
+
+Cursor's in-process SDK and intensive MCP tools cannot prove that all execution
+has stopped after an owner crash or an interrupted external call. Their unverified leases remain counted and block
+new admission with a visible error; they are not reclaimed by heartbeat expiry.
+Reconcile the external execution before repairing its coordinator record. Never delete
+coordinator state while participating execution may still be running. Corrupt state,
+failed storage writes and unknown process state prevent ungated execution.
 ### Guided human review
 
 The shared reader opens **Overview → one page per chapter → Changed files → Decide**.
