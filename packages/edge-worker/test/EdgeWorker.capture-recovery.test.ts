@@ -109,7 +109,7 @@ async function fixture() {
 	const runner = {
 		start: vi.fn(async () => {
 			input = JSON.parse(
-				readFileSync(config.mcpConfig["factory-context"].args[1], "utf8"),
+				readFileSync(config.mcpConfig["factory-context"].args.at(-1)!, "utf8"),
 			);
 			config.onMessage({
 				type: "system",
@@ -123,7 +123,7 @@ async function fixture() {
 	const worker = Object.assign(Object.create(EdgeWorker.prototype), {
 		agentSessionManager: { getSession: () => ({}), addAgentRunner: vi.fn() },
 		repositories: new Map([["repo", { repositoryPath: workspace }]]),
-		cyrusHome: workspace,
+		factoryHome: workspace,
 		runnerSlots: new SessionSemaphore(1),
 		buildAgentRunnerConfig: vi.fn(async () => ({
 			runnerType: "codex",

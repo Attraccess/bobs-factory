@@ -1,12 +1,11 @@
 // Run with F1_AGENT_MODE=mock bun apps/f1/test-drives/assets/qa-question-restart.mjs
-// after building cyrus-edge-worker. No provider runner or background agent is used.
+// after building bobs-factory-edge-worker. No provider runner or background agent is used.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultWorkflows } from "../../../../packages/edge-worker/dist/factory/defaultWorkflows.js";
-import { FactoryServer } from "../../../../packages/edge-worker/dist/factory/FactoryServer.js";
 import {
 	captureEvidence,
 	FactoryTools,
@@ -19,6 +18,7 @@ import {
 } from "../../../../packages/edge-worker/dist/factory/TicketTracking.js";
 import { validateWorkflows } from "../../../../packages/edge-worker/dist/factory/Workflow.js";
 import { WorkflowRuntime } from "../../../../packages/edge-worker/dist/factory/WorkflowRuntime.js";
+import { FactoryServer } from "../../../../packages/edge-worker/test/fixtures/authenticated-factory.ts";
 import {
 	qaExecution,
 	qaScope,

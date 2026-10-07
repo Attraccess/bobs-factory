@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import {
 	mkdtempSync,
 	readFileSync,
@@ -10,7 +10,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, expect, it, vi } from "vitest";
-import { MachineCapacity } from "../src/MachineCapacity.js";
+import {
+	assertLegacyCapacityDrained,
+	MachineCapacity,
+} from "../src/MachineCapacity.js";
 
 const roots: string[] = [];
 const children: ChildProcess[] = [];
@@ -24,6 +27,45 @@ const root = () => {
 	roots.push(directory);
 	return directory;
 };
+it("blocks a live legacy coordinator without mutating it or creating a second pool", async () => {
+	const directory = root();
+	const state = JSON.stringify({
+		version: 1,
+		limit: 4,
+		sequence: 1,
+		bypass: 0,
+		requests: [
+			{
+				id: "old-request",
+				token: "legacy-test-token",
+				identity: "legacy-test",
+				sequence: 1,
+				owner: {
+					pid: process.pid,
+					start: execFileSync(
+						"ps",
+						["-p", String(process.pid), "-o", "lstart="],
+						{ encoding: "utf8" },
+					).trim(),
+					incarnation: "test",
+				},
+				queuedAt: new Date().toISOString(),
+				phase: "executing",
+				background: false,
+				parked: false,
+				recoverable: false,
+				remote: false,
+			},
+		],
+	});
+	writeFileSync(join(directory, "state.json"), state);
+	await expect(assertLegacyCapacityDrained(directory)).rejects.toThrow(
+		/Drain and stop/,
+	);
+	expect(readFileSync(join(directory, "state.json"), "utf8")).toBe(state);
+	writeFileSync(join(directory, "state.json"), "invalid");
+	await expect(assertLegacyCapacityDrained(directory)).rejects.toThrow();
+});
 it("defaults to four, shares deliberate policy changes, and reports explicit join conflicts", async () => {
 	const directory = root();
 	const first = new MachineCapacity(undefined, directory);

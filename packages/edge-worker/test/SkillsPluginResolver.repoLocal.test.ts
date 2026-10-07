@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ILogger } from "cyrus-core";
+import type { ILogger } from "bobs-factory-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SkillsPluginResolver } from "../src/SkillsPluginResolver.js";
 
@@ -15,8 +15,8 @@ function createTestLogger(): ILogger {
 	} as unknown as ILogger;
 }
 
-async function writeManifest(cyrusHome: string): Promise<void> {
-	const manifestDir = join(cyrusHome, "user-skills-plugin", ".claude-plugin");
+async function writeManifest(factoryHome: string): Promise<void> {
+	const manifestDir = join(factoryHome, "user-skills-plugin", ".claude-plugin");
 	await mkdir(manifestDir, { recursive: true });
 	await writeFile(
 		join(manifestDir, "plugin.json"),
@@ -26,11 +26,11 @@ async function writeManifest(cyrusHome: string): Promise<void> {
 }
 
 async function writeUserSkill(
-	cyrusHome: string,
+	factoryHome: string,
 	name: string,
 	scope?: Record<string, string[]>,
 ): Promise<void> {
-	const skillDir = join(cyrusHome, "user-skills-plugin", "skills", name);
+	const skillDir = join(factoryHome, "user-skills-plugin", "skills", name);
 	await mkdir(skillDir, { recursive: true });
 	await writeFile(
 		join(skillDir, "SKILL.md"),

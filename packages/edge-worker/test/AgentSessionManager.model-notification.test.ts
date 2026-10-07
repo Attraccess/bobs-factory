@@ -1,4 +1,4 @@
-import type { SDKSystemMessage } from "cyrus-claude-runner";
+import type { SDKSystemMessage } from "bobs-factory-claude-runner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager";
 import type { IActivitySink } from "../src/sinks/IActivitySink";

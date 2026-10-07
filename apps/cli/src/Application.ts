@@ -5,10 +5,10 @@ import {
 	type ErrorReporter,
 	NoopErrorReporter,
 	type RepositoryConfig,
-} from "cyrus-core";
-import { GitService, SharedApplicationServer } from "cyrus-edge-worker";
-import dotenv from "dotenv";
+} from "bobs-factory-core";
+import { GitService, SharedApplicationServer } from "bobs-factory-edge-worker";
 import { DEFAULT_SERVER_PORT, parsePort } from "./config/constants.js";
+import { loadEnvFile } from "./envFile.js";
 import { ConfigService } from "./services/ConfigService.js";
 import { Logger } from "./services/Logger.js";
 import { WorkerService } from "./services/WorkerService.js";
@@ -32,7 +32,7 @@ export class Application {
 	private readonly envFilePath: string;
 
 	constructor(
-		public readonly cyrusHome: string,
+		public readonly factoryHome: string,
 		customEnvPath?: string,
 		version?: string,
 		errorReporter: ErrorReporter = new NoopErrorReporter(),
@@ -46,8 +46,8 @@ export class Application {
 		// Error reporter (Sentry or noop). Injected so tests can supply a fake.
 		this.errorReporter = errorReporter;
 
-		// Determine the env file path: use custom path if provided, otherwise default to ~/.cyrus/.env
-		this.envFilePath = customEnvPath || join(cyrusHome, ".env");
+		// Determine the env file path: use custom path if provided, otherwise default to ~/.bobs-factory/.env
+		this.envFilePath = customEnvPath || join(factoryHome, ".env");
 
 		// Ensure required directories exist
 		this.ensureRequiredDirectories();
@@ -59,12 +59,12 @@ export class Application {
 		this.setupEnvFileWatcher();
 
 		// Initialize services
-		this.config = new ConfigService(cyrusHome, this.logger);
-		this.git = new GitService({ cyrusHome }, this.logger);
+		this.config = new ConfigService(factoryHome, this.logger);
+		this.git = new GitService({ factoryHome }, this.logger);
 		this.worker = new WorkerService(
 			this.config,
 			this.git,
-			cyrusHome,
+			factoryHome,
 			this.logger,
 			this.version,
 		);
@@ -74,8 +74,8 @@ export class Application {
 	 * Load environment variables from the configured env file path
 	 */
 	private loadEnvFile(): void {
+		loadEnvFile(this.envFilePath);
 		if (existsSync(this.envFilePath)) {
-			dotenv.config({ path: this.envFilePath, override: true });
 			this.logger.info(
 				`🔧 Loaded environment variables from ${this.envFilePath}`,
 			);
@@ -108,16 +108,16 @@ export class Application {
 	}
 
 	/**
-	 * Ensure required Cyrus directories exist
-	 * Creates repos dir (CYRUS_REPOS_DIR or ~/.cyrus/repos),
-	 * worktrees dir (CYRUS_WORKTREES_DIR or ~/.cyrus/worktrees),
-	 * and ~/.cyrus/mcp-configs
+	 * Ensure required Bob’s Factory directories exist
+	 * Creates repos dir (BOBS_FACTORY_REPOS_DIR or ~/.bobs-factory/repos),
+	 * worktrees dir (BOBS_FACTORY_WORKTREES_DIR or ~/.bobs-factory/worktrees),
+	 * and ~/.bobs-factory/mcp-configs
 	 */
 	private ensureRequiredDirectories(): void {
 		const requiredDirs = [
-			getDefaultReposDir(this.cyrusHome),
-			getDefaultWorktreesDir(this.cyrusHome),
-			join(this.cyrusHome, "mcp-configs"),
+			getDefaultReposDir(this.factoryHome),
+			getDefaultWorktreesDir(this.factoryHome),
+			join(this.factoryHome, "mcp-configs"),
 		];
 
 		for (const dirPath of requiredDirs) {
@@ -154,7 +154,7 @@ export class Application {
 	 */
 	async createTempServer(): Promise<SharedApplicationServer> {
 		const serverPort = parsePort(
-			process.env.CYRUS_SERVER_PORT,
+			process.env.BOBS_FACTORY_SERVER_PORT,
 			DEFAULT_SERVER_PORT,
 		);
 		return new SharedApplicationServer(serverPort);
@@ -218,7 +218,7 @@ export class Application {
 							`📦 Starting edge worker with ${repositories.length} repository(ies)...`,
 						);
 
-						// Remove CYRUS_SETUP_PENDING flag from .env (only in setup waiting mode)
+						// Remove BOBS_FACTORY_SETUP_PENDING flag from .env (only in setup waiting mode)
 						if (this.isInSetupWaitingMode) {
 							await this.removeSetupPendingFlag();
 						}
@@ -238,11 +238,11 @@ export class Application {
 	}
 
 	/**
-	 * Remove CYRUS_SETUP_PENDING flag from .env file
+	 * Remove BOBS_FACTORY_SETUP_PENDING flag from .env file
 	 */
 	private async removeSetupPendingFlag(): Promise<void> {
 		const { readFile, writeFile } = await import("node:fs/promises");
-		const envPath = join(this.cyrusHome, ".env");
+		const envPath = join(this.factoryHome, ".env");
 
 		if (!existsSync(envPath)) {
 			return;
@@ -252,17 +252,17 @@ export class Application {
 			const envContent = await readFile(envPath, "utf-8");
 			const updatedContent = envContent
 				.split("\n")
-				.filter((line) => !line.startsWith("CYRUS_SETUP_PENDING="))
+				.filter((line) => !line.startsWith("BOBS_FACTORY_SETUP_PENDING="))
 				.join("\n");
 
 			await writeFile(envPath, updatedContent, "utf-8");
-			this.logger.info("✅ Removed CYRUS_SETUP_PENDING flag from .env");
+			this.logger.info("✅ Removed BOBS_FACTORY_SETUP_PENDING flag from .env");
 
 			// Reload environment variables
 			this.loadEnvFile();
 		} catch (error) {
 			this.logger.error(
-				`❌ Failed to remove CYRUS_SETUP_PENDING flag: ${error}`,
+				`❌ Failed to remove BOBS_FACTORY_SETUP_PENDING flag: ${error}`,
 			);
 		}
 	}

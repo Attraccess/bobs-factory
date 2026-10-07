@@ -13,7 +13,7 @@ import type {
 	CyrusAgentSessionEntry,
 	SerializedCyrusAgentSession,
 	SerializedCyrusAgentSessionEntry,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 /**
  * Serialization format for GlobalSessionRegistry state

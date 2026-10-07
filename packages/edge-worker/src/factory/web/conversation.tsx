@@ -552,7 +552,10 @@ export function Conversation({
 										className={`bubble ${item.type === "user" ? "user" : item.status === "error" ? "error" : item.type === "system" ? "system" : "assistant"}`}
 									>
 										<small>
-											{item.type === "user" ? "You" : (item.title ?? "Bob")} ·{" "}
+											{item.type === "user"
+												? "You"
+												: (item.title ?? "Bob’s Factory")}{" "}
+											·{" "}
 											{new Date(item.at).toLocaleTimeString(undefined, {
 												hour: "2-digit",
 												minute: "2-digit",

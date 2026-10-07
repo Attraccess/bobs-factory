@@ -2,7 +2,7 @@ import type {
 	SDKAssistantMessage,
 	SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { ClaudeMessageFormatter } from "cyrus-claude-runner";
+import { ClaudeMessageFormatter } from "bobs-factory-claude-runner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager";
 import type { IActivitySink } from "../src/sinks/IActivitySink";

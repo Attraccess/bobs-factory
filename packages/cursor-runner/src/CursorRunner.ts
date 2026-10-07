@@ -22,8 +22,6 @@ import type {
 	SDKThinkingMessage as CursorSDKThinkingMessage,
 	SDKToolUseMessage as CursorSDKToolUseMessage,
 	SDKUserMessageEvent as CursorSDKUserMessageEvent,
-	Run,
-	SDKAgent,
 } from "@cursor/sdk";
 // `@cursor/sdk` is loaded lazily inside `start()` rather than at module top
 // level. Its transitive deps (`@connectrpc/connect-node` -> `undici@7.x`,
@@ -39,13 +37,15 @@ import type {
 	SDKMessage,
 	SDKResultMessage,
 	SDKUserMessage,
-} from "cyrus-core";
+} from "bobs-factory-core";
+import { isPackagedExecutable, runtimeAssetPath } from "bobs-factory-core";
 import { CursorMessageFormatter } from "./formatter.js";
 import {
 	buildCyrusPermissionsConfig,
 	type CyrusPermissionsConfig,
 } from "./permissions.js";
 import { buildCursorSandboxJson, buildSandboxEnv } from "./sandbox.js";
+import { type CursorAgent, type CursorRun, loadCursorSdk } from "./sdk.js";
 import type {
 	CursorRunnerConfig,
 	CursorRunnerEvents,
@@ -192,7 +192,7 @@ function createResultUsage(
 		// Cursor's `turn-ended` delta exposes `cacheWriteTokens` as a single
 		// counter that maps onto Anthropic's `cache_creation_input_tokens`. The
 		// SDK does not split ephemeral 1h vs 5m — we report 0 for both buckets
-		// and put the full count in the parent field (which is what Cyrus
+		// and put the full count in the parent field (which is what Bob’s Factory
 		// formatters and Linear's cost display read first).
 		cache_creation_input_tokens: totals?.cacheWriteTokens ?? 0,
 		cache_read_input_tokens: totals?.cacheReadTokens ?? 0,
@@ -204,7 +204,7 @@ function createResultUsage(
 }
 
 /**
- * Convert the Cyrus inline MCP config (potentially containing in-process
+ * Convert the Bob’s Factory inline MCP config (potentially containing in-process
  * SDK servers) into the SDK's serializable McpServerConfig format. Skips
  * entries that aren't transportable.
  */
@@ -276,7 +276,7 @@ interface ToolProjection {
 
 /**
  * Project an SDK `tool_call` event into the Claude-shaped tool_use /
- * tool_result pair that the Cyrus formatter and timeline expect.
+ * tool_result pair that the Bob’s Factory formatter and timeline expect.
  *
  * MCP tool calls surface as the generic `name: "mcp"` in the SDK stream;
  * this inspects `args` to extract the actual `<server>:<tool>` and
@@ -406,8 +406,8 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	private sessionInfo: CursorSessionInfo | null = null;
 	private messages: SDKMessage[] = [];
 	private formatter: IMessageFormatter;
-	private agent: SDKAgent | null = null;
-	private currentRun: Run | null = null;
+	private agent: CursorAgent | null = null;
+	private currentRun: CursorRun | null = null;
 	private pendingResultMessage: SDKResultMessage | null = null;
 	private hasInitMessage = false;
 	private lastAssistantText: string | null = null;
@@ -473,7 +473,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			this.installPermissionsArtifacts(workspace);
 
 			// Test/CI fallback for environments where the SDK can't run.
-			if (process.env.CYRUS_CURSOR_MOCK === "1") {
+			if (process.env.BOBS_FACTORY_CURSOR_MOCK === "1") {
 				this.emitInitMessage();
 				this.pushAssistantText("Cursor mock session completed");
 				this.pendingResultMessage = this.createSuccessResultMessage(
@@ -492,7 +492,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 				apiKey,
 				...(normalizedModel ? { model: { id: normalizedModel } } : {}),
 				local: {
-					// `cwd` is passed as a string[] per Cyrus convention; the SDK
+					// `cwd` is passed as a string[] per Bob’s Factory convention; the SDK
 					// types accept `string | string[]`.
 					cwd: [workspace],
 					settingSources: ["project" as const],
@@ -507,8 +507,8 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 				...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
 			};
 
-			const { Agent } = await import("@cursor/sdk");
-			let agent: SDKAgent;
+			const { Agent } = await loadCursorSdk();
+			let agent: CursorAgent;
 			if (this.config.resumeSessionId) {
 				console.log(
 					`[CursorRunner] Resuming agent ${this.config.resumeSessionId}`,
@@ -743,7 +743,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	private handleThinkingEvent(_event: CursorSDKThinkingMessage): void {
-		// cyrus-core's SDKAssistantMessage content blocks don't yet include
+		// bobs-factory-core's SDKAssistantMessage content blocks don't yet include
 		// "thinking"; intentionally drop these to avoid invalid shapes.
 	}
 
@@ -782,15 +782,22 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			mcpServers: sdkMcpServers,
 		});
 		writeFileSync(
-			join(cursorDir, "cyrus-permissions.json"),
+			join(cursorDir, "bobs-factory-permissions.json"),
 			`${JSON.stringify(cfg, null, "\t")}\n`,
 			"utf8",
 		);
 
 		// 2. Permission helper script (copied from package's bundled .mjs)
-		const helperDst = join(cursorDir, "cyrus-permission-check.mjs");
+		const helperDst = join(cursorDir, "bobs-factory-permission-check.mjs");
 		const helperSrc = this.locatePermissionCheckSource();
-		copyFileSync(helperSrc, helperDst);
+		if (isPackagedExecutable) {
+			// Cursor executes hooks as programs. Keep this factory-owned helper independent of Node.
+			const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+			writeFileSync(
+				helperDst,
+				`#!/bin/sh\nexec ${quote(process.execPath)} internal cursor-permission ${quote(join(cursorDir, "bobs-factory-permissions.json"))}\n`,
+			);
+		} else copyFileSync(helperSrc, helperDst);
 		try {
 			chmodSync(helperDst, 0o755);
 		} catch {}
@@ -799,7 +806,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 		const hooksPath = join(cursorDir, "hooks.json");
 		const existed = existsSync(hooksPath);
 		const backupPath = existed
-			? `${hooksPath}.cyrus-backup-${Date.now()}-${process.pid}`
+			? `${hooksPath}.bobs-factory-backup-${Date.now()}-${process.pid}`
 			: null;
 		if (existed && backupPath) {
 			renameSync(hooksPath, backupPath);
@@ -808,16 +815,28 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			version: 1,
 			hooks: {
 				preToolUse: [
-					{ command: "./.cursor/cyrus-permission-check.mjs", failClosed: true },
+					{
+						command: "./.cursor/bobs-factory-permission-check.mjs",
+						failClosed: true,
+					},
 				],
 				beforeShellExecution: [
-					{ command: "./.cursor/cyrus-permission-check.mjs", failClosed: true },
+					{
+						command: "./.cursor/bobs-factory-permission-check.mjs",
+						failClosed: true,
+					},
 				],
 				beforeReadFile: [
-					{ command: "./.cursor/cyrus-permission-check.mjs", failClosed: true },
+					{
+						command: "./.cursor/bobs-factory-permission-check.mjs",
+						failClosed: true,
+					},
 				],
 				beforeMCPExecution: [
-					{ command: "./.cursor/cyrus-permission-check.mjs", failClosed: true },
+					{
+						command: "./.cursor/bobs-factory-permission-check.mjs",
+						failClosed: true,
+					},
 				],
 			},
 		};
@@ -830,14 +849,14 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 		this.permissionsArtifactsInstalled = true;
 
 		console.log(
-			`[CursorRunner] Installed Cyrus permission hooks at ${hooksPath} (allow=${cfg.allow.length}, deny=${cfg.deny.length}, backup=${backupPath ? "yes" : "no"})`,
+			`[CursorRunner] Installed Bob’s Factory permission hooks at ${hooksPath} (allow=${cfg.allow.length}, deny=${cfg.deny.length}, backup=${backupPath ? "yes" : "no"})`,
 		);
 
 		// 4. Sandbox policy file (only when sandbox is enabled). Cursor's
 		// `local.sandboxOptions.enabled: true` engages Apple Seatbelt /
 		// Linux Landlock; the policy below extends the default
 		// `workspace_readwrite` profile with allow/deny lists translated
-		// from the Cyrus / Claude SandboxSettings shape.
+		// from the Bob’s Factory / Claude SandboxSettings shape.
 		this.installSandboxArtifacts(workspace);
 	}
 
@@ -854,7 +873,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 		const sandboxPath = join(cursorDir, "sandbox.json");
 		const existed = existsSync(sandboxPath);
 		const backupPath = existed
-			? `${sandboxPath}.cyrus-backup-${Date.now()}-${process.pid}`
+			? `${sandboxPath}.bobs-factory-backup-${Date.now()}-${process.pid}`
 			: null;
 		if (existed && backupPath) {
 			renameSync(sandboxPath, backupPath);
@@ -917,16 +936,22 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	private locatePermissionCheckSource(): string {
 		const here = dirname(fileURLToPath(import.meta.url));
 		// When built, the .mjs sits next to the compiled JS in dist/.
-		const built = join(here, "permission-check.mjs");
+		const built = runtimeAssetPath(
+			"cursor-runner/permission-check.mjs",
+			join(here, "permission-check.mjs"),
+		);
 		if (existsSync(built)) return built;
 		// During tests against src/, fall back to the source file.
-		const fromSrc = join(here, "permission-check.mjs");
+		const fromSrc = runtimeAssetPath(
+			"cursor-runner/permission-check.mjs",
+			join(here, "permission-check.mjs"),
+		);
 		if (existsSync(fromSrc)) return fromSrc;
 		// Last-ditch: package root.
 		const pkgRoot = join(here, "..", "src", "permission-check.mjs");
 		if (existsSync(pkgRoot)) return pkgRoot;
 		throw new Error(
-			"[CursorRunner] could not locate cyrus permission-check.mjs helper",
+			"[CursorRunner] could not locate Bob’s Factory permission-check.mjs helper",
 		);
 	}
 
@@ -935,8 +960,8 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 		if (!this.permissionsArtifactsInstalled) return;
 		const workspace = resolve(this.config.workingDirectory || cwd());
 		const cursorDir = join(workspace, ".cursor");
-		const cfgPath = join(cursorDir, "cyrus-permissions.json");
-		const helperPath = join(cursorDir, "cyrus-permission-check.mjs");
+		const cfgPath = join(cursorDir, "bobs-factory-permissions.json");
+		const helperPath = join(cursorDir, "bobs-factory-permission-check.mjs");
 
 		try {
 			if (existsSync(cfgPath)) unlinkSync(cfgPath);
@@ -1088,7 +1113,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 
 	private setupLogging(sessionId: string): void {
 		try {
-			const logsDir = join(this.config.cyrusHome, "logs");
+			const logsDir = join(this.config.factoryHome, "logs");
 			mkdirSync(logsDir, { recursive: true });
 			const stream = createWriteStream(
 				join(logsDir, `cursor-${sessionId}.jsonl`),
@@ -1147,6 +1172,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			} catch {}
 			this.logStream = null;
 		}
+		this.agent?.close();
 		this.currentRun = null;
 		this.agent = null;
 		this.pendingResultMessage = null;

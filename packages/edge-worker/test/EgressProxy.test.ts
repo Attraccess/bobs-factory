@@ -11,12 +11,15 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import tls from "node:tls";
-import type { NetworkPolicy, SandboxConfig } from "cyrus-core";
-import { TRUSTED_DOMAINS } from "cyrus-core";
+import type { NetworkPolicy, SandboxConfig } from "bobs-factory-core";
+import { TRUSTED_DOMAINS } from "bobs-factory-core";
 import { afterEach, describe, expect, it } from "vitest";
 import { EgressProxy } from "../src/EgressProxy.js";
 
-const TEST_CYRUS_HOME = join(tmpdir(), `cyrus-egress-test-${Date.now()}`);
+const TEST_BOBS_FACTORY_HOME = join(
+	tmpdir(),
+	`cyrus-egress-test-${Date.now()}`,
+);
 
 function createConfig(overrides: Partial<SandboxConfig> = {}): SandboxConfig {
 	return {
@@ -40,8 +43,8 @@ describe("EgressProxy", () => {
 			await proxy.stop();
 		}
 		// Clean up test certs
-		if (existsSync(TEST_CYRUS_HOME)) {
-			rmSync(TEST_CYRUS_HOME, { recursive: true, force: true });
+		if (existsSync(TEST_BOBS_FACTORY_HOME)) {
+			rmSync(TEST_BOBS_FACTORY_HOME, { recursive: true, force: true });
 		}
 	});
 
@@ -49,7 +52,7 @@ describe("EgressProxy", () => {
 		it("generates CA certificate before listening on first start", async () => {
 			proxy = new EgressProxy(
 				createConfig({ httpProxyPort: httpPort, socksProxyPort: socksPort }),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 
 			await proxy.start();
@@ -63,14 +66,18 @@ describe("EgressProxy", () => {
 				httpProxyPort: httpPort,
 				socksProxyPort: socksPort,
 			});
-			proxy = new EgressProxy(config, TEST_CYRUS_HOME);
+			proxy = new EgressProxy(config, TEST_BOBS_FACTORY_HOME);
 			await proxy.start();
 			const original = readFileSync(proxy.getCACertPath(), "utf8");
-			const keyPath = join(TEST_CYRUS_HOME, "certs", "cyrus-egress-ca-key.pem");
+			const keyPath = join(
+				TEST_BOBS_FACTORY_HOME,
+				"certs",
+				"cyrus-egress-ca-key.pem",
+			);
 			const key = createPrivateKey(readFileSync(keyPath));
 			writeFileSync(keyPath, key.export({ type: "pkcs1", format: "pem" }));
 			await proxy.stop();
-			proxy = new EgressProxy(config, TEST_CYRUS_HOME);
+			proxy = new EgressProxy(config, TEST_BOBS_FACTORY_HOME);
 			await proxy.start();
 			expect(readFileSync(proxy.getCACertPath(), "utf8")).toBe(original);
 			expect(new X509Certificate(original).checkPrivateKey(key)).toBe(true);
@@ -87,10 +94,14 @@ describe("EgressProxy", () => {
 					},
 				},
 			});
-			proxy = new EgressProxy(config, TEST_CYRUS_HOME);
+			proxy = new EgressProxy(config, TEST_BOBS_FACTORY_HOME);
 			await proxy.start();
 			const ca = readFileSync(proxy.getCACertPath(), "utf8");
-			const keyPath = join(TEST_CYRUS_HOME, "certs", "cyrus-egress-ca-key.pem");
+			const keyPath = join(
+				TEST_BOBS_FACTORY_HOME,
+				"certs",
+				"cyrus-egress-ca-key.pem",
+			);
 			writeFileSync(
 				keyPath,
 				createPrivateKey(readFileSync(keyPath)).export({
@@ -99,7 +110,7 @@ describe("EgressProxy", () => {
 				}),
 			);
 			await proxy.stop();
-			proxy = new EgressProxy(config, TEST_CYRUS_HOME);
+			proxy = new EgressProxy(config, TEST_BOBS_FACTORY_HOME);
 			await proxy.start();
 			const connect = async (servername: string) =>
 				new Promise<X509Certificate>((resolve, reject) => {
@@ -139,7 +150,7 @@ describe("EgressProxy", () => {
 		it("returns actual bound ports after start", async () => {
 			proxy = new EgressProxy(
 				createConfig({ httpProxyPort: httpPort, socksProxyPort: socksPort }),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 
 			// Before start(), getters return the configured port (0 in tests).
@@ -158,7 +169,7 @@ describe("EgressProxy", () => {
 		it("starts and stops without error", async () => {
 			proxy = new EgressProxy(
 				createConfig({ httpProxyPort: httpPort, socksProxyPort: socksPort }),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 
 			await proxy.start();
@@ -168,7 +179,7 @@ describe("EgressProxy", () => {
 		it("is idempotent on start", async () => {
 			proxy = new EgressProxy(
 				createConfig({ httpProxyPort: httpPort, socksProxyPort: socksPort }),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 
 			await proxy.start();
@@ -181,7 +192,7 @@ describe("EgressProxy", () => {
 		it("allows all traffic when no policy is set", async () => {
 			proxy = new EgressProxy(
 				createConfig({ httpProxyPort: httpPort, socksProxyPort: socksPort }),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 
@@ -201,7 +212,7 @@ describe("EgressProxy", () => {
 					socksProxyPort: socksPort,
 					networkPolicy: policy,
 				}),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 
@@ -225,7 +236,7 @@ describe("EgressProxy", () => {
 					socksProxyPort: socksPort,
 					networkPolicy: policy,
 				}),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 
@@ -263,7 +274,7 @@ describe("EgressProxy", () => {
 					socksProxyPort: socksPort,
 					networkPolicy: policy,
 				}),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 
@@ -306,7 +317,7 @@ describe("EgressProxy", () => {
 					socksProxyPort: socksPort,
 					networkPolicy: policy,
 				}),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 
@@ -337,7 +348,7 @@ describe("EgressProxy", () => {
 						},
 					},
 				}),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 
@@ -375,7 +386,7 @@ describe("EgressProxy", () => {
 						preset: "trusted",
 					},
 				}),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 
@@ -406,7 +417,7 @@ describe("EgressProxy", () => {
 						},
 					},
 				}),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 
@@ -441,7 +452,7 @@ describe("EgressProxy", () => {
 		it("responds to SOCKS5 greeting", async () => {
 			proxy = new EgressProxy(
 				createConfig({ httpProxyPort: httpPort, socksProxyPort: socksPort }),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 
@@ -485,7 +496,7 @@ describe("EgressProxy", () => {
 					socksProxyPort: socksPort,
 					networkPolicy: policy,
 				}),
-				TEST_CYRUS_HOME,
+				TEST_BOBS_FACTORY_HOME,
 			);
 			await proxy.start();
 

@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { spawnExecution as spawn } from "cyrus-core";
+import { spawnExecution as spawn } from "bobs-factory-core";
 import { z } from "zod";
 import { feedbackInstructionFingerprint } from "./FeedbackPolicy.js";
 import { dependencyCovers, dependencyHashes } from "./Incremental.js";
@@ -93,9 +93,9 @@ export function reviewGuideMarkdown(value: unknown, headSha: string): string {
 					`### ${chapter.title}\n${chapter.summary}\n\n**Before:** ${chapter.before}\n\n**After:** ${chapter.after}\n\n${chapter.diagrams.map((diagram) => `**${diagram.title}:** ${diagram.steps.map((step) => step.label).join(" → ")}`).join("\n")}\n\n${list(chapter.reviewChecks)}\n\n<details><summary>Code and evidence</summary>\n\n${list(chapter.files.map((file) => `\`${file}\``))}\n\n${list(chapter.evidence)}\n\n</details>`,
 			)
 			.join("\n\n");
-		return `## ${guide.goal}\n${guide.summary}\n\n${guide.decision.status}: ${guide.decision.summary}\n\n${chapters}${coverage}\n\n## Know before approving\n${list(guide.risks)}\n\n<details><summary>Verification evidence</summary>\n\n${list(guide.checks)}\n\n</details>\n\n## Human decision\n${list(guide.reviewInstructions)}\n\nRevision: ${headSha}\nOpen the factory review guide for the step-by-step walkthrough, diagrams and screenshots.\n\n<!-- generated-by-cyrus -->`;
+		return `## ${guide.goal}\n${guide.summary}\n\n${guide.decision.status}: ${guide.decision.summary}\n\n${chapters}${coverage}\n\n## Know before approving\n${list(guide.risks)}\n\n<details><summary>Verification evidence</summary>\n\n${list(guide.checks)}\n\n</details>\n\n## Human decision\n${list(guide.reviewInstructions)}\n\nRevision: ${headSha}\nOpen the factory review guide for the step-by-step walkthrough, diagrams and screenshots.\n\n<!-- generated-by-bobs-factory -->`;
 	}
-	return `## Goal\n${guide.goal}\n\n${guide.summary}\n\n## Decision\n${guide.decision.status}: ${guide.decision.summary}\n\n## Before and after\n${guide.behavior.map((item) => `### ${item.scenario}\nBefore: ${item.before}\n\nAfter: ${item.after}`).join("\n\n")}\n\n## Requirements\n${guide.requirements.map((item) => `- **${item.criterion}** (${item.status}): ${item.evidence.join("; ")}`).join("\n")}\n\n${coverage}\n\n## Checks\n${list(guide.checks)}\n\n## Risks\n${list(guide.risks)}\n\n## Human review\n${list(guide.reviewInstructions)}\n\nRevision: ${headSha}\nScreenshots and complete decision/review history are available in the local factory dashboard.\n\n<!-- generated-by-cyrus -->`;
+	return `## Goal\n${guide.goal}\n\n${guide.summary}\n\n## Decision\n${guide.decision.status}: ${guide.decision.summary}\n\n## Before and after\n${guide.behavior.map((item) => `### ${item.scenario}\nBefore: ${item.before}\n\nAfter: ${item.after}`).join("\n\n")}\n\n## Requirements\n${guide.requirements.map((item) => `- **${item.criterion}** (${item.status}): ${item.evidence.join("; ")}`).join("\n")}\n\n${coverage}\n\n## Checks\n${list(guide.checks)}\n\n## Risks\n${list(guide.risks)}\n\n## Human review\n${list(guide.reviewInstructions)}\n\nRevision: ${headSha}\nScreenshots and complete decision/review history are available in the local factory dashboard.\n\n<!-- generated-by-bobs-factory -->`;
 }
 
 export function executeCommand(
@@ -647,7 +647,7 @@ export class FactoryTools {
 						"--title",
 						run.title,
 						"--body",
-						`Software factory run ${run.id}. Review and validation in progress.\n\n<!-- generated-by-cyrus -->`,
+						`Software factory run ${run.id}. Review and validation in progress.\n\n<!-- generated-by-bobs-factory -->`,
 					]);
 				}
 				return {

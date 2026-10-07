@@ -4,6 +4,9 @@ Date: 2026-10-07. Product revision: `41cbc463ead412e39e40a1172378548e9d6ca58f`.
 Dashboard build: `43bb8d9ef49f509a12e2082e`. Draft PR: [#31](https://github.com/Attraccess/bobs-factory/pull/31).
 This supplements the original report; it does not replace historical evidence.
 
+Current PR #34 scope is recorded in [Scope resolution](#scope-resolution-for-bobs-factory-pr-34).
+The earlier blocked native coverage below describes the scope before that decision.
+
 ## Finding and execution constraints
 
 `qa-native-f1-capacity` reports four blocked native-agent criteria. The current
@@ -100,3 +103,37 @@ The test-file conflicts retained both recommendation and workflow-recovery tests
 Receipts and screenshot are in the original evidence directory's `ci-merge/`
 subdirectory. This compatibility check uses canned outputs; all prior native
 coverage and ticket synchronization limitations above remain recorded.
+
+## Scope resolution for Bob’s Factory PR #34
+
+On 2026-10-07 at 14:04:12 UTC, the user answered the explicit choice between
+accepting deterministic coverage for these four checks and authorizing real-agent
+tests: “dont spend real tokens on this. either mock or skip.” The accepted scope
+uses the passing simulated-agent checks and excludes their real-agent portions.
+This supersedes the earlier unwaived native requirement for `qa-native-f1-capacity`
+in this report and the retained dispute in PR #34's QA scope. It does not turn
+simulated results into evidence of real model reasoning or provider compatibility.
+
+The product revision remains `f705718d228d512047239634d8679ad6b678aa1b`.
+The latest QA review inspected all 64 deterministic criteria and found passing
+executed evidence, including the four below. This documentation-only correction
+reuses those receipts; it does not rerun F1 or claim new test execution.
+
+| Criterion | Accepted simulated coverage | Excluded real-agent coverage |
+| --- | --- | --- |
+| generation-indexed-evidence | Indexed answers/reasons persist; legacy output and custom fields survive validation. | Generating suitable recommendations with a real model. |
+| default-explicit-resumption | Rendering/restoring defaults accepts nothing; explicit submission stores one Q&A and triggers one scripted continuation. | Native-provider continuation. |
+| suggestions-do-not-invent-or-authorize | Complete instructions forbid invented facts, credentials and access; simulated generation/restoration records no answer or authorization and leaves work waiting. | Real-model reasoning in planning-only and missing-account scenarios. |
+| ticket-explicit-answer-compatible | An explicit reply retains its exact text in the existing session and produces one mocked continuation and receipt. | Native-provider continuation and real remote delivery. |
+
+Current receipts are under
+`/Users/jappy/.cyrus/factory/evidence/manual-7f0c7c6e-cca1-4387-b7ee-7d81e06997ba/`:
+`qa-f705-question-validation.json`, `qa-f705-question-ui.json`, and
+`qa-f705-recommendations/qa83-mock-path.json`. The latest capture and review
+record the same product revision. The runtime's next QA scope/review must apply
+this user decision while retaining these coverage limits and prior dispositions.
+
+No real-agent test is authorized or claimed passed. Live Taskbot synchronization
+and the external hosted MCP catalog remain unverified. Prior Intel and Cursor
+test exclusions, the limited dependency-security exception, and publication
+licensing/platform limits remain unchanged. PR #34 remains draft.

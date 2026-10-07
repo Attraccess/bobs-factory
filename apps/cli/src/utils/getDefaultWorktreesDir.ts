@@ -1,1 +1,1 @@
-export { getDefaultWorktreesDir } from "cyrus-core";
+export { getDefaultWorktreesDir } from "bobs-factory-core";

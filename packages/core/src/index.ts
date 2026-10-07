@@ -258,8 +258,8 @@ export {
 	isUnassignMessage,
 	isUserPromptMessage,
 } from "./messages/index.js";
-// Linear adapters have been moved to cyrus-linear-event-transport package
-// Import them directly from that package instead of from cyrus-core
+// Linear adapters have been moved to bobs-factory-linear-event-transport package
+// Import them directly from that package instead of from bobs-factory-core
 export type {
 	SerializableEdgeWorkerState,
 	SerializedCyrusAgentSession,
@@ -297,7 +297,19 @@ export type {
 
 export type { RunTitleJob } from "./CyrusAgentSession.js";
 export {
+	type CapacityOwner,
+	CapacityOwnerSchema,
+	type CapacityRequest,
+	CapacityStateSchema,
+} from "./capacity-state.js";
+export {
 	executionEnvironment,
 	executionScope,
 	spawnExecution,
 } from "./ExecutionScope.js";
+export { preparedExecutable } from "./prepared-executable.js";
+export {
+	factoryVersion,
+	isPackagedExecutable,
+	runtimeAssetPath,
+} from "./runtime-assets.js";

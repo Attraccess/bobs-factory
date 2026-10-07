@@ -4,13 +4,22 @@ This changelog documents internal development changes, refactors, tooling update
 
 ## [Unreleased]
 
+### Changed
+
+- Prepare private workspace packages, embedded runtime assets, binary candidate verification and migration preservation checks for Taskbot #38. Retire upstream npm publication; retain historical tooling. Load user-prepared Cursor through a separate Node process with native ID, MCP, stream and cancellation regression checks; exclude its SDK/native sidecars from archives. Validate referenced MCP configuration before migration, preserve frozen workflow history while updating executable tool names, and share environment-file ownership between bootstrap and reload. Cover visual-review assistance batch recovery with regression tests and a simulated-agent F1 restart drive. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
 ### Fixed
+
+- Integrate specialist review with compact review history and the Bob’s Factory fork. Retain complete coverage in exported guides, question explanations, and batch-specific ticket notifications across restart. Keep snapshot fixtures compatible with binary arguments and authenticate restart-harness requests using isolated test sessions. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve specialist extraction regression coverage while integrating legacy feedback recovery and shared question guidance from main. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Correct Recipes focus-recovery QA to open the reviewer dialog through trusted pointer or keyboard interaction and compare focus with the exact opening button after Escape. Retain reproducible browser receipts for desktop and narrow layouts. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Integrate specialist review with refinement recommendations and wait for capacity initialization in persistence test fixtures before cleanup. Cover assistance-batch notification and restart deduplication through the durable outbox and mocked F1 tracking. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Initialize reflection support before bundled certificate imports; verify renamed passkey commands, protected runtime recovery and packaged macOS startup while integrating main. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Cover Codex cancellation during configuration, initialization, thread setup and delayed turn startup; close failed initialization and await shared cleanup. Retain cancellation handlers for late notifications and timed-out start requests until thread completion or process exit, without reviving stopped runners or interrupting other threads. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 - Correct the selected signed-out passkey update screenshot to 1280×900 and retain explicit viewport, build and protected-access receipts for QA reassessment. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))

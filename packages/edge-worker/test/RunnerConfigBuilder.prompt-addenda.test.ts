@@ -1,4 +1,4 @@
-import type { ILogger } from "cyrus-core";
+import type { ILogger } from "bobs-factory-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	BROWSER_USE_PROMPT_ADDENDUM,
@@ -48,7 +48,7 @@ function buildChatPrompt(builder: RunnerConfigBuilder): string | undefined {
 		workspaceName: "chat-thread",
 		systemPrompt: "Base prompt.",
 		sessionId: "chat-session",
-		cyrusHome: "/tmp/cyrus",
+		factoryHome: "/tmp/cyrus",
 		platformName: "slack",
 		logger: silentLogger,
 		onMessage: () => {},
@@ -70,7 +70,7 @@ function buildIssuePrompt(builder: RunnerConfigBuilder): string | undefined {
 		allowedDirectories: ["/tmp/worktree"],
 		disallowedTools: [],
 		labels: [],
-		cyrusHome: "/tmp/cyrus",
+		factoryHome: "/tmp/cyrus",
 		logger: silentLogger,
 		onMessage: () => {},
 		onError: () => {},
@@ -79,21 +79,21 @@ function buildIssuePrompt(builder: RunnerConfigBuilder): string | undefined {
 }
 
 describe("RunnerConfigBuilder prompt addenda", () => {
-	const originalBrowserUse = process.env.CYRUS_BROWSER_USE_ENABLED;
-	const originalCloudRuntime = process.env.CYRUS_CLOUD_RUNTIME;
+	const originalBrowserUse = process.env.BOBS_FACTORY_BROWSER_USE_ENABLED;
+	const originalCloudRuntime = process.env.BOBS_FACTORY_CLOUD_RUNTIME;
 
 	beforeEach(() => {
-		delete process.env.CYRUS_BROWSER_USE_ENABLED;
-		delete process.env.CYRUS_CLOUD_RUNTIME;
+		delete process.env.BOBS_FACTORY_BROWSER_USE_ENABLED;
+		delete process.env.BOBS_FACTORY_CLOUD_RUNTIME;
 	});
 
 	afterEach(() => {
 		if (originalBrowserUse === undefined)
-			delete process.env.CYRUS_BROWSER_USE_ENABLED;
-		else process.env.CYRUS_BROWSER_USE_ENABLED = originalBrowserUse;
+			delete process.env.BOBS_FACTORY_BROWSER_USE_ENABLED;
+		else process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = originalBrowserUse;
 		if (originalCloudRuntime === undefined)
-			delete process.env.CYRUS_CLOUD_RUNTIME;
-		else process.env.CYRUS_CLOUD_RUNTIME = originalCloudRuntime;
+			delete process.env.BOBS_FACTORY_CLOUD_RUNTIME;
+		else process.env.BOBS_FACTORY_CLOUD_RUNTIME = originalCloudRuntime;
 	});
 
 	it("always adds headless and GitHub media guidance to chat prompts without advertising installed browsers", () => {
@@ -109,7 +109,7 @@ describe("RunnerConfigBuilder prompt addenda", () => {
 	});
 
 	it("adds browser guidance separately when its environment flag is enabled", () => {
-		process.env.CYRUS_BROWSER_USE_ENABLED = "true";
+		process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = "true";
 
 		for (const build of [buildChatPrompt, buildIssuePrompt]) {
 			expect(build(makeBuilder())).toBe(

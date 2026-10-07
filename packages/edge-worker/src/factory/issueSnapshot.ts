@@ -1,4 +1,4 @@
-import type { IIssueTrackerService, Issue } from "cyrus-core";
+import type { IIssueTrackerService, Issue } from "bobs-factory-core";
 
 /** Snapshot every comment page so later roles don't depend on a live ticket read. */
 export async function issueSnapshot(

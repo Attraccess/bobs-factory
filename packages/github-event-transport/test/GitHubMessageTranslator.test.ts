@@ -1,4 +1,4 @@
-import type { GitHubSessionStartPlatformData } from "cyrus-core";
+import type { GitHubSessionStartPlatformData } from "bobs-factory-core";
 import { describe, expect, it } from "vitest";
 import { GitHubMessageTranslator } from "../src/GitHubMessageTranslator.js";
 import type {
