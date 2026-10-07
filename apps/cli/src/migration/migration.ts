@@ -14,7 +14,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { CapacityStateSchema } from "bobs-factory-core";
+import { CapacityStateSchema, resolvePath } from "bobs-factory-core";
 import { canonicalPath } from "./paths.js";
 import {
 	nativeSessions,
@@ -22,7 +22,12 @@ import {
 	PreservationPlanSchema,
 	verifyContinuations,
 } from "./preservation.js";
-import { transformEnvironment, transformState } from "./transform.js";
+import {
+	transformEnvironment,
+	transformMcpConfig,
+	transformState,
+	transformWorkflow,
+} from "./transform.js";
 import {
 	discoverWorktrees,
 	type GitRepair,
@@ -94,6 +99,53 @@ function inventory(home: string): Entry[] {
 }
 function readJson(path: string) {
 	return JSON.parse(readFileSync(path, "utf8"));
+}
+function migrationMcpFiles(source: string, entries: Entry[]): Set<string> {
+	const files = new Set(
+		entries
+			.filter(
+				(entry) =>
+					entry.type === "file" && /^mcp-configs\/.*\.json$/.test(entry.path),
+			)
+			.map((entry) => entry.path),
+	);
+	const configPath = join(source, "config.json");
+	if (!existsSync(configPath)) return files;
+	const config = readJson(configPath);
+	const references = [
+		config.linearMcpConfigs,
+		config.slackMcpConfigs,
+		config.githubMcpConfigs,
+		...(config.repositories ?? []).map(
+			(repo: { mcpConfigPath?: unknown }) => repo.mcpConfigPath,
+		),
+	]
+		.flat()
+		.filter((path) => path !== undefined);
+	for (const reference of references) {
+		if (
+			typeof reference !== "string" ||
+			(!isAbsolute(reference) && !reference.startsWith("~/"))
+		)
+			throw new Error("Relative MCP paths require explicit reconciliation");
+		const path = resolvePath(
+			transformState(reference, source, source, "path") as string,
+		);
+		const original = readJson(path);
+		const transformed = transformMcpConfig(original);
+		const name = relative(source, path);
+		if (
+			contained(source, canonicalPath(path)) &&
+			entries.some((entry) => entry.path === name && entry.type === "file")
+		) {
+			files.add(name);
+		} else if (JSON.stringify(original) !== JSON.stringify(transformed)) {
+			throw new Error(
+				"External or linked MCP references require explicit reconciliation",
+			);
+		}
+	}
+	return files;
 }
 function liveConsumers(source: string, destination: string): boolean {
 	// No process details are returned to the caller or emitted into the manifest.
@@ -191,6 +243,14 @@ export function inspectMigration(
 		? PreservationPlanSchema.parse(preservation)
 		: undefined;
 	const sessions: ReturnType<typeof nativeSessions> = [];
+	let mcpFiles = new Set<string>();
+	try {
+		mcpFiles = migrationMcpFiles(source, entries);
+	} catch {
+		blockers.push(
+			"Referenced MCP configuration requires explicit reconciliation before apply",
+		);
+	}
 	if (existsSync(destination))
 		conflicts.push(
 			"Destination already exists; merge choices require an explicit agent-guided resolution before apply",
@@ -199,6 +259,14 @@ export function inspectMigration(
 		if (entry.type !== "file") continue;
 		const path = join(source, entry.path);
 		try {
+			if (mcpFiles.has(entry.path)) transformMcpConfig(readJson(path));
+			if (entry.path === "factory/workflows.json") {
+				const stored = readJson(path);
+				for (const workflow of Array.isArray(stored)
+					? stored
+					: stored.workflows)
+					transformWorkflow(workflow);
+			}
 			if (entry.path === "cyrus-skills-plugin/.claude-plugin/plugin.json") {
 				const plugin = readJson(path);
 				if (plugin.name !== "cyrus-skills")
@@ -263,6 +331,7 @@ export function inspectMigration(
 				entry.path.endsWith(".json")
 			) {
 				const run = readJson(path);
+				transformState(run, source, destination);
 				sessions.push(...nativeSessions(run));
 				if (!run.id || !run.workflow || !Array.isArray(run.history))
 					blockers.push(`Unknown run format: ${entry.path}`);
@@ -482,6 +551,7 @@ export function applyMigration(
 
 	const stage = join(backup, "staged");
 	copyTree(join(backup, "source"), stage, manifest.entries);
+	const mcpFiles = migrationMcpFiles(manifest.source, manifest.entries);
 	for (const entry of manifest.entries) {
 		const path = join(stage, entry.path);
 		if (entry.type !== "file") continue;
@@ -493,6 +563,11 @@ export function applyMigration(
 					manifest.source,
 					manifest.destination,
 				),
+			);
+		else if (mcpFiles.has(entry.path))
+			writeFileSync(
+				path,
+				`${JSON.stringify(transformMcpConfig(readJson(path)), null, 2)}\n`,
 			);
 		else if (
 			entry.path === "config.json" ||
@@ -512,13 +587,17 @@ export function applyMigration(
 			);
 		} else if (entry.path === "factory/workflows.json") {
 			const stored = readJson(path);
-			for (const workflow of Array.isArray(stored)
-				? stored
-				: stored.workflows) {
+			const workflows = (Array.isArray(stored) ? stored : stored.workflows).map(
+				transformWorkflow,
+			);
+			for (const workflow of workflows) {
 				if (workflow.id === "simple" && workflow.name === "Simple / Cyrus")
 					workflow.name = "Simple / Bob’s Factory";
 			}
-			writeFileSync(path, `${JSON.stringify(stored, null, 2)}\n`);
+			writeFileSync(
+				path,
+				`${JSON.stringify(Array.isArray(stored) ? workflows : { ...stored, workflows }, null, 2)}\n`,
+			);
 		}
 		chmodSync(path, entry.mode);
 	}

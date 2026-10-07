@@ -1,8 +1,7 @@
-import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { resolvePath } from "bobs-factory-core";
-import dotenv from "dotenv";
+import { loadEnvFile } from "./envFile.js";
 
 function flag(argv: string[], name: string): string | undefined {
 	const index = argv.indexOf(name);
@@ -18,7 +17,6 @@ export function bootstrap(argv = process.argv.slice(2), env = process.env) {
 			join(homedir(), ".bobs-factory"),
 	);
 	const envFile = resolvePath(flag(argv, "--env-file") ?? join(home, ".env"));
-	if (existsSync(envFile))
-		dotenv.config({ path: envFile, override: false, quiet: true });
+	loadEnvFile(envFile, env);
 	return { home, envFile };
 }

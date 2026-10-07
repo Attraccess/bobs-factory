@@ -7,8 +7,8 @@ import {
 	type RepositoryConfig,
 } from "bobs-factory-core";
 import { GitService, SharedApplicationServer } from "bobs-factory-edge-worker";
-import dotenv from "dotenv";
 import { DEFAULT_SERVER_PORT, parsePort } from "./config/constants.js";
+import { loadEnvFile } from "./envFile.js";
 import { ConfigService } from "./services/ConfigService.js";
 import { Logger } from "./services/Logger.js";
 import { WorkerService } from "./services/WorkerService.js";
@@ -74,8 +74,8 @@ export class Application {
 	 * Load environment variables from the configured env file path
 	 */
 	private loadEnvFile(): void {
+		loadEnvFile(this.envFilePath);
 		if (existsSync(this.envFilePath)) {
-			dotenv.config({ path: this.envFilePath, override: false, quiet: true });
 			this.logger.info(
 				`🔧 Loaded environment variables from ${this.envFilePath}`,
 			);

@@ -6,7 +6,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
-- Prepare private workspace packages, embedded runtime assets, binary candidate verification and migration preservation checks for Taskbot #38. Retire upstream npm publication; retain historical tooling. Load user-prepared Cursor through a separate Node process with native ID, MCP, stream and cancellation regression checks; exclude its SDK/native sidecars from archives.
+- Prepare private workspace packages, embedded runtime assets, binary candidate verification and migration preservation checks for Taskbot #38. Retire upstream npm publication; retain historical tooling. Load user-prepared Cursor through a separate Node process with native ID, MCP, stream and cancellation regression checks; exclude its SDK/native sidecars from archives. Validate referenced MCP configuration before migration, preserve frozen workflow history while updating executable tool names, and share environment-file ownership between bootstrap and reload. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 
 ### Added

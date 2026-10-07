@@ -31,6 +31,81 @@ const toolFields = new Set([
 	"skillNames",
 	"plugins",
 ]);
+function transformTool(value: string): string {
+	return value.replace(/^mcp__cyrus-tools(?=__|$)/, "mcp__bobs-factory-tools");
+}
+
+function record(value: unknown): Record<string, unknown> {
+	if (!value || typeof value !== "object" || Array.isArray(value))
+		throw new Error("Unknown structured configuration format");
+	return value as Record<string, unknown>;
+}
+
+/** Change executable step references only, including nested fanout branches. */
+export function transformWorkflow(value: unknown): Record<string, unknown> {
+	const workflow = record(value);
+	const step = (value: unknown): Record<string, unknown> => {
+		const object = record(value);
+		return {
+			...object,
+			...(object.type === "tool" && typeof object.tool === "string"
+				? { tool: transformTool(object.tool) }
+				: {}),
+			...(object.type === "fanout" && Array.isArray(object.groups)
+				? {
+						groups: object.groups.map((group: unknown) => {
+							if (!Array.isArray(group))
+								throw new Error("Unknown fanout group");
+							return group.map(step);
+						}),
+					}
+				: {}),
+		};
+	};
+	if (!Array.isArray(workflow.steps)) throw new Error("Unknown workflow steps");
+	return { ...workflow, steps: workflow.steps.map(step) };
+}
+
+/** MCP URLs and server identities are operational; headers/env remain opaque. */
+export function transformMcpConfig(value: unknown): Record<string, unknown> {
+	const config = record(value);
+	const servers = record(config.mcpServers);
+	if (
+		Object.hasOwn(servers, "cyrus-tools") &&
+		Object.hasOwn(servers, "bobs-factory-tools")
+	)
+		throw new Error("Conflicting MCP server identities");
+	return {
+		...config,
+		mcpServers: Object.fromEntries(
+			Object.entries(servers).map(([name, value]) => {
+				const server = record(value);
+				if (
+					typeof server.command === "string" &&
+					/(?:^|\/)cyrus$/.test(server.command)
+				)
+					throw new Error(
+						"Legacy MCP command requires explicit reconciliation",
+					);
+				return [
+					name === "cyrus-tools" ? "bobs-factory-tools" : name,
+					{
+						...server,
+						...(typeof server.url === "string"
+							? {
+									url: server.url.replace(
+										/^(https?:\/\/[^/?#]+)\/mcp\/cyrus-tools(?=[?#]|$)/,
+										"$1/mcp/bobs-factory-tools",
+									),
+								}
+							: {}),
+					},
+				];
+			}),
+		),
+	};
+}
+
 /** Only operational fields change; prompts, transcripts and credential values remain byte strings. */
 export function transformState(
 	value: unknown,
@@ -38,6 +113,14 @@ export function transformState(
 	destination: string,
 	field = "",
 ): unknown {
+	if (["history", "messages", "agentSessionEntries"].includes(field))
+		return value;
+	if (field === "workflowDefinitions" && Array.isArray(value))
+		return value.map(transformWorkflow);
+	if (field === "workflow" && value && typeof value === "object")
+		return Array.isArray((value as Record<string, unknown>).steps)
+			? transformWorkflow(value)
+			: value;
 	if (typeof value === "string") {
 		if (pathFields.has(field)) {
 			const path =
@@ -57,9 +140,10 @@ export function transformState(
 			}
 		}
 		if (toolFields.has(field))
-			return value
-				.replace(/^mcp__cyrus-tools__/, "mcp__bobs-factory-tools__")
-				.replace(/^cyrus-skills:/, "bobs-factory-skills:");
+			return transformTool(value).replace(
+				/^cyrus-skills:/,
+				"bobs-factory-skills:",
+			);
 		if (field === "identity") {
 			// Coordinator identities begin with an owned path, followed by the leaf kind.
 			// Canonicalize that path so aliases and the nested factory directory relocate.
@@ -77,10 +161,8 @@ export function transformState(
 		);
 	if (!value || typeof value !== "object") return value;
 	const object = value as Record<string, unknown>;
-	if (
-		["history", "messages", "agentSessionEntries", "workflow"].includes(field)
-	)
-		return value;
+	if (field === "mcpServers")
+		return transformMcpConfig({ mcpServers: object }).mcpServers;
 	if (
 		Object.hasOwn(object, "cyrusHome") &&
 		Object.hasOwn(object, "factoryHome") &&

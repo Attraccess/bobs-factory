@@ -13,7 +13,7 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | Persistence | worker state, factory runs / chats / evidence | `<home>/state`, `<home>/factory` | Preserve versions, IDs, receipts, gates, accepted definitions |
 | Coordinator | MachineCapacity and execution scope | `~/.bobs-factory/machine-capacity` | Stop old consumers and descendants before transfer |
 | Repo hooks | GitService setup / teardown | `bobs-factory-setup.sh`, `bobs-factory-teardown.sh` | Rename only explicitly approved repository files |
-| Owned MCP references | registrations, allowlists, prompts | `bobs-factory-tools`, `mcp__bobs-factory-tools__*` | Transform operational tool references, never transcripts |
+| Owned MCP references | registrations, allowlists, prompts | `bobs-factory-tools`, `mcp__bobs-factory-tools__*` | Transform server-wide allow/deny entries, saved/frozen workflow tool steps (including fanout/nested definitions), server keys and owned HTTP routes; preserve prompts and transcripts |
 | Stock skills / plugin | deployer, runner configs, instructions | `bobs-factory-skills`, `bobs-factory-skills-plugin` | Preserve custom skills and prompts |
 | Certificates / sandbox | worker home, runner environment | `<home>/certs`, `BOBS_FACTORY_*` | Preserve keys, normalize path fields |
 | Prepared Cursor SDK | binary runner / external Node host | `BOBS_FACTORY_CURSOR_SDK_PATH`, `BOBS_FACTORY_CURSOR_NODE` | Keep SDK/native files external; preserve native IDs |
@@ -24,6 +24,12 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 External cyrus-hosted tool catalogs are absent from this repository. They cannot
 be updated here. This independent fork does not enroll with the upstream hosted
 control plane. Migration must flag hosted-only setup for explicit conversion.
+
+Migration validates persisted MCP JSON files and configured MCP references before
+apply. External or linked files needing owned-reference changes, ambiguous relative
+paths, legacy executable commands and conflicting old/new server keys require
+explicit reconciliation. Migration never rewrites external MCP files or opaque
+headers, environment values, tool arguments, completed receipts or review gates.
 
 The issued egress certificate keeps its existing `cyrus-egress-ca.pem` filename
 inside the new home. Migration preserves certificate/key bytes and system trust;

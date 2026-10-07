@@ -32,7 +32,8 @@ is separate from binaries, under `~/.bobs-factory`.
 
 `bobs-factory --help` lists commands. `--home` overrides `BOBS_FACTORY_HOME`, then
 `~/.bobs-factory` is the default. `--env-file` overrides `<home>/.env`. Process
-environment values take precedence. Home is resolved once before env loading;
+environment values take precedence. Values loaded from the file update on reload;
+removing a file-owned key removes its environment value. Home is resolved once before env loading;
 an env file cannot change its own selected home.
 
 For configured repositories/integrations use `bobs-factory start`. Local launch

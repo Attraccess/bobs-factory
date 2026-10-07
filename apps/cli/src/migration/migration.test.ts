@@ -176,6 +176,200 @@ it("changes only structured operational fields and refuses ambiguous env keys", 
 		transformEnvironment("CYRUS_HOME=a\nBOBS_FACTORY_HOME=a\n"),
 	).toThrow(/collision/);
 });
+it("migrates exact server-wide allow/deny permissions without matching other servers", () => {
+	expect(
+		transformState(
+			{
+				allowedTools: [
+					"mcp__cyrus-tools",
+					"mcp__cyrus-tools__get_child_issues",
+					"mcp__cyrus-tools-other",
+				],
+				disallowedTools: ["mcp__cyrus-tools", "mcp__cyrus-tools__delete"],
+			},
+			"/old",
+			"/new",
+		),
+	).toEqual({
+		allowedTools: [
+			"mcp__bobs-factory-tools",
+			"mcp__bobs-factory-tools__get_child_issues",
+			"mcp__cyrus-tools-other",
+		],
+		disallowedTools: [
+			"mcp__bobs-factory-tools",
+			"mcp__bobs-factory-tools__delete",
+		],
+	});
+});
+
+it("reconciles referenced MCP files while preserving credentials, custom servers and backups", () => {
+	const { source, destination, backup } = fixture();
+	mkdirSync(join(source, "mcp-configs"));
+	const original = {
+		mcpServers: {
+			"cyrus-tools": {
+				type: "http",
+				url: "http://localhost:3456/mcp/cyrus-tools?context=keep",
+				headers: { Authorization: "secret cyrus-tools" },
+			},
+			custom: {
+				command: "custom",
+				env: { CYRUS_TOKEN: "unchanged" },
+				args: ["cyrus-tools"],
+			},
+		},
+	};
+	writeFileSync(
+		join(source, "mcp-configs/linear.json"),
+		JSON.stringify(original),
+		{ mode: 0o600 },
+	);
+	const config = JSON.parse(readFileSync(join(source, "config.json"), "utf8"));
+	config.linearMcpConfigs = [join(source, "mcp-configs/linear.json")];
+	writeFileSync(join(source, "config.json"), JSON.stringify(config));
+	const manifest = inspectMigration(source, destination);
+	expect(manifest.blockers).toEqual([]);
+	applyMigration(manifest, backup);
+	expect(
+		JSON.parse(
+			readFileSync(join(destination, "mcp-configs/linear.json"), "utf8"),
+		),
+	).toEqual({
+		mcpServers: {
+			"bobs-factory-tools": {
+				...original.mcpServers["cyrus-tools"],
+				url: "http://localhost:3456/mcp/bobs-factory-tools?context=keep",
+			},
+			custom: original.mcpServers.custom,
+		},
+	});
+	expect(readFileSync(join(backup, "source/mcp-configs/linear.json"))).toEqual(
+		readFileSync(join(source, "mcp-configs/linear.json")),
+	);
+	expect(
+		statSync(join(destination, "mcp-configs/linear.json")).mode & 0o777,
+	).toBe(0o600);
+	expect(
+		JSON.parse(readFileSync(join(destination, "config.json"), "utf8"))
+			.linearMcpConfigs,
+	).toEqual([join(destination, "mcp-configs/linear.json")]);
+});
+
+it("blocks external MCP reconciliation and owned server collisions before backup", () => {
+	const { root, source, destination, backup } = fixture();
+	const external = join(root, "external.json");
+	writeFileSync(
+		external,
+		JSON.stringify({
+			mcpServers: {
+				"cyrus-tools": { url: "http://localhost/mcp/cyrus-tools" },
+			},
+		}),
+	);
+	const config = JSON.parse(readFileSync(join(source, "config.json"), "utf8"));
+	config.githubMcpConfigs = [external];
+	writeFileSync(join(source, "config.json"), JSON.stringify(config));
+	expect(() =>
+		applyMigration(inspectMigration(source, destination), backup),
+	).toThrow(/MCP configuration/);
+	expect(existsSync(backup)).toBe(false);
+	delete config.githubMcpConfigs;
+	writeFileSync(join(source, "config.json"), JSON.stringify(config));
+	mkdirSync(join(source, "mcp-configs"));
+	writeFileSync(
+		join(source, "mcp-configs/collision.json"),
+		JSON.stringify({
+			mcpServers: { "cyrus-tools": {}, "bobs-factory-tools": {} },
+		}),
+	);
+	expect(() =>
+		applyMigration(inspectMigration(source, destination), backup),
+	).toThrow(/Invalid or conflicting structured state/);
+	expect(existsSync(backup)).toBe(false);
+});
+
+it("migrates saved and frozen workflow tool steps, including nested definitions, while preserving gates and history", () => {
+	const { source, destination, backup } = fixture();
+	mkdirSync(join(source, "factory/runs"), { recursive: true });
+	const workflow = {
+		id: "custom",
+		name: "Custom Cyrus",
+		steps: [
+			{
+				id: "call",
+				type: "tool",
+				tool: "mcp__cyrus-tools__get_child_issues",
+				arguments: { prompt: "mcp__cyrus-tools__get_child_issues" },
+			},
+			{
+				id: "parallel",
+				type: "fanout",
+				groups: [
+					[
+						{
+							id: "nested",
+							type: "tool",
+							tool: "mcp__cyrus-tools__get_child_issues",
+						},
+					],
+				],
+			},
+			{
+				id: "ask",
+				type: "agent",
+				prompt: "Use mcp__cyrus-tools__get_child_issues",
+			},
+		],
+	};
+	const run = {
+		id: "run",
+		workflow,
+		workflowDefinitions: [workflow],
+		history: [{ workflow, allowedTools: ["mcp__cyrus-tools"], path: source }],
+		checkpoint: { status: "waiting", step: "ask" },
+		humanDecisions: [],
+		outputs: { receipt: { tool: "mcp__cyrus-tools__get_child_issues" } },
+	};
+	writeFileSync(
+		join(source, "factory/workflows.json"),
+		JSON.stringify({ workflows: [workflow], defaultWorkflow: "custom" }),
+	);
+	writeFileSync(join(source, "factory/runs/run.json"), JSON.stringify(run));
+	applyMigration(inspectMigration(source, destination), backup);
+	const expected = {
+		...workflow,
+		steps: [
+			{
+				...workflow.steps[0],
+				tool: "mcp__bobs-factory-tools__get_child_issues",
+			},
+			{
+				...workflow.steps[1],
+				groups: [
+					[
+						{
+							id: "nested",
+							type: "tool",
+							tool: "mcp__bobs-factory-tools__get_child_issues",
+						},
+					],
+				],
+			},
+			workflow.steps[2],
+		],
+	};
+	expect(
+		JSON.parse(
+			readFileSync(join(destination, "factory/workflows.json"), "utf8"),
+		),
+	).toEqual({ workflows: [expected], defaultWorkflow: "custom" });
+	expect(
+		JSON.parse(
+			readFileSync(join(destination, "factory/runs/run.json"), "utf8"),
+		),
+	).toEqual({ ...run, workflow: expected, workflowDefinitions: [expected] });
+});
 it("relocates owned environment paths while keeping secret values and comments", () => {
 	expect(
 		transformEnvironment(
