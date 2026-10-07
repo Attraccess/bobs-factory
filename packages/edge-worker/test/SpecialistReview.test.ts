@@ -17,6 +17,10 @@ import {
 import { roleProgress } from "../src/factory/Incremental.js";
 import { qaDigest, qaRequirementIssues } from "../src/factory/Qa.js";
 import {
+	factoryReviewFixContext,
+	recordReviewFix,
+} from "../src/factory/ReviewRecovery.js";
+import {
 	type AggregateReview,
 	aggregateForContext,
 	aggregateReview,
@@ -829,6 +833,94 @@ function setup(hooks: Partial<RuntimeHooks> = {}) {
 	});
 	return { runtime, run, home, state, git, workflow };
 }
+it("pauses unchanged specialist rejections and resumes the fixer after assistance", async () => {
+	let fixes = 0;
+	const fixture = setup({
+		agent: async (ctx) => {
+			if (ctx.step.id === "code-fix") {
+				fixes++;
+				expect(factoryReviewFixContext(ctx).findings.map((f) => f.id)).toEqual([
+					"security-review:external",
+				]);
+				return recordReviewFix(
+					ctx,
+					{
+						summary: "Protected deployment needs access",
+						dispositions: [
+							{
+								id: "security-review:external",
+								status: "rejected",
+								reason: "External access is required",
+							},
+						],
+					},
+					(await roleProgress(ctx)).currentRevision,
+				);
+			}
+			if (ctx.step.reviewContract === "inventory-v1") return inventory();
+			if (ctx.step.reviewContract === "coverage-v1") return review();
+			return {
+				summary: "Reviewed",
+				findings:
+					ctx.step.id === "security-review"
+						? [
+								{
+									id: "external",
+									rating: 3,
+									summary: "Protected validation is blocked",
+									evidence: "Protected deployment requires access",
+									status: ctx.run.answers.length ? "resolved" : "open",
+									...(ctx.run.answers.length
+										? { reason: "Access restored and validation completed" }
+										: {}),
+								},
+							]
+						: [],
+			};
+		},
+	});
+	const definition = structuredClone(fixture.workflow);
+	definition.steps.find((s) => s.id === "review-gate")!.branches = [
+		{ when: { path: "approved", equals: false }, next: "code-fix" },
+	];
+	definition.steps.find((s) => s.id === "review-gate")!.next = "end";
+	definition.steps.push(
+		StepSchema.parse({
+			id: "code-fix",
+			name: "Fix",
+			type: "agent",
+			prompt: "Fix findings",
+			next: "extract-requirements",
+		}),
+	);
+	fixture.run.workflow = validateWorkflows([
+		...defaultWorkflows,
+		definition,
+	]).at(-1)!;
+	const launched = fixture.runtime.launch(fixture.run);
+	try {
+		await vi.waitFor(
+			() => expect(fixture.run.status, fixture.run.error).toBe("waiting"),
+			{ timeout: 10000 },
+		);
+		expect(fixes).toBe(1);
+		expect(fixture.run.outputs["code-fix"]).toMatchObject({
+			reviewAssessment: { unchangedCode: true },
+		});
+		expect(fixture.run.outputs["review-gate"]).toMatchObject({
+			approved: false,
+			reviewBlocked: true,
+		});
+		fixture.runtime.answer(fixture.run.id, "Deployment access restored");
+		await launched;
+	} finally {
+		fixture.runtime.stop(fixture.run.id);
+		await launched;
+	}
+	expect(fixture.run.status, fixture.run.error).toBe("completed");
+	expect(fixes).toBe(2);
+	expect(fixture.run.outputs["review-gate"]).toMatchObject({ approved: true });
+});
 it("shares immutable revision/context across six branches and preserves each branch progress identity", async () => {
 	const contexts: ExecutionContext[] = [];
 	const fixture = setup({

@@ -56,9 +56,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve assistance recovery for specialist review when integrating feedback-loop safeguards: unchanged rejected fixes pause after reassessment and resume with explicit human direction. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 - Retain generated recommendations on requirement-extraction questions while enforcing specialist inventory validation and explicit human submission. Notify the originating ticket when restored questions or recommendations change, without duplicating unchanged waits. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve resolved specialist disagreements, their rationale and supporting evidence in exported review guide Markdown. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Honor explicit decisions to ignore or resume PR comment providers across edits and restarts, correct missed assessments within the existing step, and pause CI or code/visual review fixes that need assistance before exhausting review attempts. Unresolved findings remain blocking, and changed code still receives fresh review. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Preserve pending QA question drafts across restarts when questions and recommendations are unchanged; changed assistance still requires reviewing the new batch. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Recover stalled QA and handoff runs from their saved evidence, retry malformed QA and one silent Codex turn, and request assistance when CI repeats the same unresolved failure. Known defects proceed to correction before access waits. ([#36](https://github.com/Attraccess/bobs-factory/pull/36))

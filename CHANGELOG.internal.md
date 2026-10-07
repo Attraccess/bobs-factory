@@ -8,6 +8,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 - Integrate specialist review with refinement recommendations and wait for capacity initialization in persistence test fixtures before cleanup. Cover assistance-batch notification and restart deduplication through the durable outbox and mocked F1 tracking. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
+- Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
+- Preserve refinement recommendation metadata when review fixers request assistance, retaining both recovery and question-restart contracts during main integration. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Integrate refinement recommendations with the latest workflow recovery changes, retaining recommendation validation and bounded retry regression coverage. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Update the complete routing-prompt expectation for refinement recommendations so CI validates the current capability guidance. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
