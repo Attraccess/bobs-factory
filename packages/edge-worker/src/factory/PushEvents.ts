@@ -18,13 +18,16 @@ export const digest = (value: unknown) =>
 	createHash("sha256").update(JSON.stringify(value)).digest("base64url");
 export function runPushEvent(run: FactoryRun): PushEvent | undefined {
 	const destination = `/#/runs/${encodeURIComponent(run.id)}`;
-	if (run.status === "waiting" && run.reviewGate?.status === "pending")
+	// Ticket preparation temporarily marks restored waits as running. Unanswered
+	// questions and pending gates remain authoritative until answer/decide clears them.
+	const unresolved = run.status === "waiting" || run.status === "running";
+	if (unresolved && run.reviewGate?.status === "pending")
 		return {
 			category: "review",
 			identity: digest([run.reviewGate.id, run.reviewGate.headSha]),
 			destination: `${destination}/review`,
 		};
-	if (run.status === "waiting" && run.questions.length)
+	if (unresolved && run.questions.length)
 		return {
 			category: "question",
 			identity: digest([

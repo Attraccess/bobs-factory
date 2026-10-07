@@ -20,7 +20,11 @@ import {
 	publicAddress,
 	SubscriptionSchema,
 } from "../src/factory/PushTransport.js";
-import type { FactoryRun } from "../src/factory/WorkflowRuntime.js";
+import { validateWorkflows } from "../src/factory/Workflow.js";
+import {
+	type FactoryRun,
+	WorkflowRuntime,
+} from "../src/factory/WorkflowRuntime.js";
 
 const homes: string[] = [];
 const home = () => {
@@ -148,6 +152,104 @@ it("rechecks disable/generation and does not replay claimed or queued events acr
 	await tick();
 	expect(sender).toHaveBeenCalledTimes(2);
 	expect(statSync(join(path, "factory/push.json")).mode & 0o777).toBe(0o600);
+	await push.stop();
+});
+it.each([
+	"question",
+	"review",
+] as const)("retains unresolved %s through ticket-backed restart preparation, then sends new attention", async (category) => {
+	vi.useFakeTimers();
+	const path = home();
+	const sender = vi.fn(async () => {});
+	const hooks = {
+		prepare: async () => {},
+		agent: async () => ({ questions: ["Choose an option"] }),
+		script: async () => ({}),
+		tool: async () => ({ headSha: "revision", url: "https://example.com/pr" }),
+	};
+	let runtime = new WorkflowRuntime(path, hooks);
+	let push = new FactoryPush(path, sender, Date.now, subject);
+	const source = { sessions: () => [], subscribe: () => () => {} };
+	push.attach(runtime, source);
+	push.register({ label: "one", subscription: subscription("one") });
+	const workflow = validateWorkflows([
+		...runtime.listWorkflows(),
+		{
+			id: "fixture",
+			name: "Fixture",
+			steps: [
+				category === "question"
+					? {
+							id: "attention",
+							name: "Question",
+							type: "agent",
+							prompt: "Ask",
+							askQuestions: true,
+							maxVisits: 3,
+						}
+					: {
+							id: "attention",
+							name: "Review",
+							type: "tool",
+							tool: "human-review",
+							maxVisits: 3,
+							branches: [
+								{
+									when: { path: "decision", equals: "reject" },
+									next: "attention",
+								},
+							],
+						},
+			],
+		},
+	]).at(-1)!;
+	let run = runtime.create({
+		workflow,
+		triggerOrigin: {
+			type: "manual",
+			workflowId: workflow.id,
+			at: new Date().toISOString(),
+		},
+		repositoryId: "fixture",
+		workspace: path,
+		input: "Fixture",
+		ticketReference: {
+			provider: "taskbot",
+			instance: "https://example.com",
+			project: "fixture",
+			id: 1,
+			url: "https://example.com/t/1",
+		},
+	});
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	await tick();
+	expect(sender).toHaveBeenCalledTimes(1);
+	const original = runPushEvent(run);
+	await runtime.shutdown();
+	await push.stop();
+	runtime = new WorkflowRuntime(path, hooks);
+	push = new FactoryPush(path, sender, Date.now, subject);
+	push.attach(runtime, source);
+	run = runtime.get(run.id);
+	runtime.resumeAll();
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(runPushEvent(run)).toEqual(original);
+	await tick();
+	expect(sender).toHaveBeenCalledTimes(1);
+	if (category === "question") runtime.answer(run.id, "Ask again");
+	else
+		runtime.decide(run.id, {
+			reviewId: run.reviewGate!.id,
+			headSha: run.reviewGate!.headSha,
+			decision: "reject",
+			feedback: "Revise",
+		});
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	await tick();
+	expect(sender).toHaveBeenCalledTimes(2);
+	expect(JSON.parse(sender.mock.calls[1]![1]).category).toBe(category);
+	await runtime.shutdown();
 	await push.stop();
 });
 it("claims before dispatch, isolates corrupt storage and never exposes private records", async () => {

@@ -927,7 +927,9 @@ export class EdgeWorker extends EventEmitter {
 					id: session.id,
 					status: session.status,
 					stopped: session.metadata?.intentionalStop,
-					recovering: this.stopping || !!session.metadata?.pendingExecution,
+					// Saved execution input survives normal completion. Active recovery
+					// has no eligible status; only shutdown suppresses terminal alerts.
+					recovering: this.stopping,
 				})),
 			subscribe: (notify) => {
 				this.agentSessionManager.on("sessionChanged", notify);
