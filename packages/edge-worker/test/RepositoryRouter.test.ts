@@ -2,7 +2,7 @@ import { AgentActivitySignal } from "@linear/sdk";
 import type {
 	LinearAgentSessionCreatedWebhook,
 	RepositoryConfig,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	RepositoryRouter,
@@ -517,7 +517,7 @@ describe("RepositoryRouter", () => {
 			it("should route to repository when tag matches GitHub URL", async () => {
 				// Given: Repositories with different GitHub URLs
 				const cyrusRepo = env
-					.repository("repo-1", "Cyrus")
+					.repository("repo-1", "Bob’s Factory")
 					.inWorkspace("default-workspace")
 					.withGithubUrl("https://github.com/ceedaragents/cyrus")
 					.build();

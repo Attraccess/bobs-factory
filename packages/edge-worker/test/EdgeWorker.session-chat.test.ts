@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentSessionStatus } from "cyrus-core";
+import { AgentSessionStatus } from "bobs-factory-core";
 import { expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager.js";
 import { ChatSessionHandler } from "../src/ChatSessionHandler.js";
@@ -46,7 +46,7 @@ function fixture() {
 	});
 	return { worker, session, run, runtime };
 }
-it("does not steer a stopped Cyrus runner while its process is still closing", () => {
+it("does not steer a stopped Bob’s Factory runner while its process is still closing", () => {
 	const { worker, session, run } = fixture();
 	worker.sendFactoryChat(session.id, "Live instruction");
 	expect(session.agentRunner.addStreamMessage).toHaveBeenCalledExactlyOnceWith(
@@ -88,7 +88,7 @@ it.each([
 				notifyBusy: async () => {},
 			},
 			{
-				cyrusHome: home,
+				factoryHome: home,
 				chatRepositoryProvider: {
 					getDefaultRepository: () => ({ id: "repo" }) as any,
 					getDefaultLinearWorkspaceId: () => undefined,
@@ -216,7 +216,7 @@ it.each([
 		rmSync(home, { recursive: true, force: true });
 	}
 });
-it("continues a legacy Cyrus session once, then permits live steering in that same continuation", async () => {
+it("continues a legacy Bob’s Factory session once, then permits live steering in that same continuation", async () => {
 	const { worker, session, runtime } = fixture();
 	runtime.runs.clear();
 	session.status = AgentSessionStatus.Complete;

@@ -15,20 +15,20 @@ const mockReadFileSync = vi.mocked(readFileSync);
 const mockWriteFileSync = vi.mocked(writeFileSync);
 
 describe("handleCyrusConfig", () => {
-	const cyrusHome = "/test/cyrus-home";
+	const factoryHome = "/test/home";
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		delete process.env.CYRUS_WORKTREES_DIR;
+		delete process.env.BOBS_FACTORY_WORKTREES_DIR;
 		mockExistsSync.mockReturnValue(false);
 		mockReadFileSync.mockReturnValue("");
 	});
 
 	afterEach(() => {
-		delete process.env.CYRUS_WORKTREES_DIR;
+		delete process.env.BOBS_FACTORY_WORKTREES_DIR;
 	});
 
-	it("defaults repository workspaceBaseDir to cyrusHome/worktrees", async () => {
+	it("defaults repository workspaceBaseDir to factoryHome/worktrees", async () => {
 		const result = await handleCyrusConfig(
 			{
 				repositories: [
@@ -40,22 +40,22 @@ describe("handleCyrusConfig", () => {
 					},
 				],
 			},
-			cyrusHome,
+			factoryHome,
 		);
 
 		expect(result.success).toBe(true);
-		expect(mockMkdirSync).toHaveBeenCalledWith(cyrusHome, { recursive: true });
+		expect(mockMkdirSync).toHaveBeenCalledWith(factoryHome, {
+			recursive: true,
+		});
 		expect(mockWriteFileSync).toHaveBeenCalledWith(
-			"/test/cyrus-home/config.json",
-			expect.stringContaining(
-				'"workspaceBaseDir": "/test/cyrus-home/worktrees"',
-			),
+			"/test/home/config.json",
+			expect.stringContaining('"workspaceBaseDir": "/test/home/worktrees"'),
 			"utf-8",
 		);
 	});
 
-	it("uses CYRUS_WORKTREES_DIR when set", async () => {
-		process.env.CYRUS_WORKTREES_DIR = "/tmp/custom-worktrees";
+	it("uses BOBS_FACTORY_WORKTREES_DIR when set", async () => {
+		process.env.BOBS_FACTORY_WORKTREES_DIR = "/tmp/custom-worktrees";
 
 		const result = await handleCyrusConfig(
 			{
@@ -68,12 +68,12 @@ describe("handleCyrusConfig", () => {
 					},
 				],
 			},
-			cyrusHome,
+			factoryHome,
 		);
 
 		expect(result.success).toBe(true);
 		expect(mockWriteFileSync).toHaveBeenCalledWith(
-			"/test/cyrus-home/config.json",
+			"/test/home/config.json",
 			expect.stringContaining('"workspaceBaseDir": "/tmp/custom-worktrees"'),
 			"utf-8",
 		);

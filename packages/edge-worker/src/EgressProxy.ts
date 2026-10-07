@@ -25,8 +25,8 @@ import {
 	X509Certificate,
 	X509CertificateGenerator,
 } from "@peculiar/x509";
-import type { NetworkPolicy, SandboxConfig } from "cyrus-core";
-import { createLogger, type ILogger, TRUSTED_DOMAINS } from "cyrus-core";
+import type { NetworkPolicy, SandboxConfig } from "bobs-factory-core";
+import { createLogger, type ILogger, TRUSTED_DOMAINS } from "bobs-factory-core";
 
 const signingAlgorithm = { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" };
 const keyAlgorithm = {
@@ -102,7 +102,7 @@ export class EgressProxy {
 
 	private isRunning = false;
 
-	constructor(config: SandboxConfig, cyrusHome: string, logger?: ILogger) {
+	constructor(config: SandboxConfig, factoryHome: string, logger?: ILogger) {
 		this.httpProxyPort = config.httpProxyPort ?? 9080;
 		this.socksProxyPort = config.socksProxyPort ?? 9081;
 		this.networkPolicy = config.networkPolicy;
@@ -110,7 +110,7 @@ export class EgressProxy {
 		this.logger = logger ?? createLogger({ component: "EgressProxy" });
 
 		// Generate CA cert and store path
-		this.certsDir = join(cyrusHome, "certs");
+		this.certsDir = join(factoryHome, "certs");
 		this.caCertPath = join(this.certsDir, "cyrus-egress-ca.pem");
 
 		// Parse policy into fast-lookup structures
@@ -317,7 +317,7 @@ export class EgressProxy {
 		this.caCert = await X509CertificateGenerator.createSelfSigned(
 			{
 				serialNumber: "01",
-				name: "CN=Cyrus Egress Proxy CA, O=Cyrus",
+				name: "CN=Bob's Factory Egress Proxy CA, O=Bob's Factory",
 				notBefore,
 				notAfter,
 				signingAlgorithm,

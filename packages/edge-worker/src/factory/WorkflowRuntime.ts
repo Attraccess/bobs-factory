@@ -13,7 +13,7 @@ import type {
 	RunTitleJob,
 	WorkflowTrigger,
 	WorkflowTriggerOrigin,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import type {
 	CapacityOptions,
 	CapacityRequest,
@@ -32,6 +32,7 @@ import {
 } from "./defaultWorkflows.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
 import {
+	isExplanationRequest,
 	normalizeQuestionResult,
 	type QuestionRecommendation,
 	questionNotification,
@@ -100,6 +101,23 @@ export interface GraphCheckpoint {
 	additionalVisits?: Record<string, number>;
 	active?: {
 		phase: "executing" | "result" | "waiting" | "answered";
+		questionDisplay?: {
+			source?: {
+				questions: string[];
+				recommendations?: QuestionRecommendation[];
+			};
+			questions: string[];
+			recommendations?: QuestionRecommendation[];
+		};
+		questionExplanation?: {
+			source?: {
+				questions: string[];
+				recommendations?: QuestionRecommendation[];
+			};
+			text: string;
+			questions: string[];
+			agent?: AgentCheckpoint;
+		};
 		agent?: AgentCheckpoint;
 		children?: GraphCheckpoint[];
 		call?: WorkflowCall;
@@ -177,13 +195,14 @@ export interface FactoryRun {
 	};
 	launchRequest?: import("./LaunchFields.js").ResolvedLaunchRequest;
 	setupComplete?: boolean;
-	sessionSnapshot?: import("cyrus-core").SerializedCyrusAgentSession;
+	sessionSnapshot?: import("bobs-factory-core").SerializedCyrusAgentSession;
 	reviewGate?: ReviewGate;
 	humanDecisions?: HumanDecision[];
 	roleRevisions?: Record<string, RoleRevision>;
 	outputs: Record<string, unknown>;
 	history: { step: string; output: unknown; at: string; call?: WorkflowCall }[];
 	answers: { questions: string[]; answer: string; at: string }[];
+	questionRequests?: { questions: string[]; text: string; at: string }[];
 	questions: string[];
 	questionRecommendations?: QuestionRecommendation[];
 	questionBatchId?: string;
@@ -361,7 +380,9 @@ export class WorkflowRuntime {
 			run.status !== "completed" ||
 			this.isExecuting(id)
 		)
-			throw new Error("Only a finished Cyrus session can continue here");
+			throw new Error(
+				"Only a finished Bob’s Factory session can continue here",
+			);
 		if (run.simpleExecution) {
 			if (!run.simpleExecution.agent)
 				throw new Error("Session conversation unavailable");
@@ -1007,9 +1028,12 @@ export class WorkflowRuntime {
 			}
 			if (
 				step.tool === "visual-gate" &&
+				readPath(output, "reviewBlocked") !== true &&
 				Array.isArray(readPath(output, "findings")) &&
 				(readPath(output, "findings") as unknown[]).length
 			) {
+				// Review assistance retains its saved questions for waitForAnswers to
+				// compare after restart. Findings without a wait proceed to correction.
 				run.status = "running";
 				run.questions = [];
 			}
@@ -1124,6 +1148,7 @@ export class WorkflowRuntime {
 						normalizeQuestionResult(output).questionRecommendations as
 							| QuestionRecommendation[]
 							| undefined,
+						context,
 					);
 				checkpoint.current = capture.id;
 				checkpoint.active = undefined;
@@ -1149,6 +1174,8 @@ export class WorkflowRuntime {
 						readPath(output, "questions") as string[],
 						signal,
 						state,
+						undefined,
+						context,
 					);
 				checkpoint.current = "ci-fix";
 				checkpoint.active = undefined;
@@ -1176,6 +1203,10 @@ export class WorkflowRuntime {
 						readPath(output, "questions") as string[],
 						signal,
 						state,
+						normalizeQuestionResult(output).questionRecommendations as
+							| QuestionRecommendation[]
+							| undefined,
+						context,
 					);
 				checkpoint.current = fixer;
 				checkpoint.active = undefined;
@@ -1204,6 +1235,7 @@ export class WorkflowRuntime {
 							normalizeQuestionResult(output).questionRecommendations as
 								| QuestionRecommendation[]
 								| undefined,
+							context,
 						);
 					checkpoint.active = undefined;
 					this.save(run);
@@ -1250,8 +1282,32 @@ export class WorkflowRuntime {
 		questions: string[],
 		signal: AbortSignal,
 		state: NonNullable<GraphCheckpoint["active"]>,
-		recommendations?: QuestionRecommendation[],
+		recommendations: QuestionRecommendation[] | undefined,
+		context: ExecutionContext,
 	): Promise<void> {
+		const source = structuredClone({
+			questions,
+			...(recommendations === undefined ? {} : { recommendations }),
+		});
+		// A rephrasing belongs to the decision it explained. Revalidated gates
+		// may change while waiting; legacy displays without provenance cannot
+		// establish that the decision is still the same.
+		if (
+			state.questionDisplay &&
+			!isDeepStrictEqual(state.questionDisplay.source, source)
+		) {
+			state.questionDisplay = undefined;
+			state.questionExplanation = undefined;
+		}
+		if (
+			state.questionExplanation &&
+			!isDeepStrictEqual(state.questionExplanation.source, source)
+		)
+			state.questionExplanation = undefined;
+		questions = state.questionDisplay?.questions ?? questions;
+		recommendations = state.questionDisplay
+			? state.questionDisplay.recommendations
+			: recommendations;
 		const restored =
 			state.phase === "waiting" &&
 			isDeepStrictEqual(run.questions, questions) &&
@@ -1261,29 +1317,93 @@ export class WorkflowRuntime {
 		run.questionRecommendations = recommendations;
 		if (!restored || !run.questionBatchId) run.questionBatchId = randomUUID();
 		run.status = "waiting";
-		const waiting = new Promise<void>((resolve, reject) =>
-			this.pendingAnswers.set(run.id, { resolve, reject }),
-		);
-		// A ticket post may still be pending when termination rejects this promise.
-		void waiting.catch(() => {});
-		const abort = () =>
-			this.pendingAnswers.get(run.id)?.reject(new Error("Run terminated"));
-		signal.addEventListener("abort", abort, { once: true });
-		this.log(run, run.step ?? "clarify", questions.join("\n"));
-		try {
-			if (run.ticketReference && this.hooks.track)
-				await this.track(run, {
-					key: `questions:${run.step}:${run.answers.length}`,
-					body: `Factory needs assistance:\n\n${questionNotification(questions, run.questionRecommendations)}`,
-				});
-			if (!restored) await this.hooks.question?.(run);
+		let notify = !restored;
+		while (true) {
 			signal.throwIfAborted();
-			await waiting;
-		} finally {
-			signal.removeEventListener("abort", abort);
-			this.pendingAnswers.delete(run.id);
+			if (state.questionExplanation) {
+				// This is a separate explanation turn, never an answered checkpoint or
+				// another execution of the blocked fixer/capture/implementation role.
+				const request = state.questionExplanation;
+				run.status = "running";
+				this.save(run);
+				const explained = normalizeQuestionResult(
+					await this.hooks.agent({
+						...context,
+						step: {
+							id: "question-explanation",
+							name: "Explain the pending decision",
+							type: "agent",
+							branches: [],
+							maxVisits: 1,
+							askQuestions: true,
+							runner: context.step.runner,
+							model: context.step.model,
+							reasoningEffort: context.step.reasoningEffort,
+							modelVariant: context.step.modelVariant,
+							serviceTier: context.step.serviceTier,
+							prompt:
+								"Explain the pending questions using only the supplied context. The user has not answered or authorized any work. Do not implement, run checks, spend credits on tests, publish, change files or clear blockers. Use only factory-context tools. Return a questions array with one clearer question for each original question, preserving the same decisions, constraints and authorization requirements. Optional questionRecommendations must preserve the existing choices. Return no other role results.",
+						},
+						chat: false,
+						stepKey: `${context.stepKey}/question-explanation`,
+						input: {
+							questions: request.questions,
+							request: request.text,
+							recommendations,
+							blocker: context.outputs?.[context.step.id],
+							answers: structuredClone(run.answers),
+						},
+						resumeAgent: request.agent,
+						checkpointAgent: (agent) => {
+							request.agent = agent;
+							this.save(run);
+						},
+					}),
+				);
+				signal.throwIfAborted();
+				const clarified = explained.questions as string[];
+				if (clarified.length !== questions.length)
+					throw new Error(
+						"An explanation must preserve every pending decision",
+					);
+				questions = clarified;
+				recommendations = explained.questionRecommendations as
+					| QuestionRecommendation[]
+					| undefined;
+				notify = true;
+				state.questionDisplay = { source, questions, recommendations };
+				state.questionExplanation = undefined;
+				run.questions = questions;
+				run.questionRecommendations = recommendations;
+				run.questionBatchId = randomUUID();
+				this.save(run);
+			}
+			run.status = "waiting";
+			const waiting = new Promise<void>((resolve, reject) =>
+				this.pendingAnswers.set(run.id, { resolve, reject }),
+			);
+			void waiting.catch(() => {});
+			const abort = () =>
+				this.pendingAnswers.get(run.id)?.reject(new Error("Run terminated"));
+			signal.addEventListener("abort", abort, { once: true });
+			this.log(run, run.step ?? "clarify", questions.join("\n"));
+			try {
+				if (run.ticketReference && this.hooks.track)
+					await this.track(run, {
+						key: `questions:${run.step}:${run.answers.length}${state.questionDisplay ? `:explanation:${run.questionBatchId}` : ""}`,
+						body: `Factory needs assistance:\n\n${questionNotification(questions, run.questionRecommendations)}`,
+					});
+				if (notify) await this.hooks.question?.(run);
+				signal.throwIfAborted();
+				await waiting;
+			} finally {
+				signal.removeEventListener("abort", abort);
+				this.pendingAnswers.delete(run.id);
+			}
+			if (!state.questionExplanation) return;
 		}
 	}
+
 	private async waitForHuman(
 		run: FactoryRun,
 		result: { headSha: string; url: string },
@@ -1357,7 +1477,7 @@ export class WorkflowRuntime {
 		);
 		pending.resolve();
 	}
-	answer(id: string, answer: string): void {
+	answer(id: string, answer: string, kind?: "answer" | "explanation"): void {
 		const run = this.get(id);
 		const pending = this.pendingAnswers.get(id);
 		if (
@@ -1367,6 +1487,53 @@ export class WorkflowRuntime {
 		)
 			throw new Error("Run is not waiting for an answer");
 		if (!answer.trim()) throw new Error("Enter an answer");
+		if (
+			kind === "explanation" ||
+			(kind === undefined && isExplanationRequest(answer, run.questions))
+		) {
+			const locate = (frame?: GraphCheckpoint): GraphCheckpoint["active"] => {
+				if (
+					frame?.active?.phase === "waiting" &&
+					!frame.active.children?.length
+				)
+					return frame.active;
+				for (const child of frame?.active?.children ?? []) {
+					const found = locate(child);
+					if (found) return found;
+				}
+				return undefined;
+			};
+			const state = locate(run.checkpoint);
+			if (!state) throw new Error("Pending question checkpoint unavailable");
+			run.questionRequests ??= [];
+			run.questionRequests.push({
+				questions: [...run.questions],
+				text: answer,
+				at: new Date().toISOString(),
+			});
+			run.status = "running";
+			state.questionExplanation = {
+				source: structuredClone(
+					state.questionDisplay?.source ?? {
+						questions: run.questions,
+						...(run.questionRecommendations === undefined
+							? {}
+							: {
+									recommendations: run.questionRecommendations,
+								}),
+					},
+				),
+				text: answer,
+				questions: [...run.questions],
+			};
+			this.log(
+				run,
+				run.step ?? "clarify",
+				`Human explanation request: ${answer}`,
+			);
+			pending.resolve();
+			return;
+		}
 		run.answers.push({
 			questions: [...run.questions],
 			answer,

@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIIssueTrackerService } from "cyrus-core";
+import { CLIIssueTrackerService } from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager.js";
 import { EdgeWorker } from "../src/EdgeWorker.js";
@@ -31,7 +31,7 @@ function setup() {
 	};
 	const worker = new EdgeWorker({
 		platform: "cli",
-		cyrusHome: home,
+		factoryHome: home,
 		repositories: [repository],
 		handlers: { createWorkspace },
 	});
@@ -202,7 +202,7 @@ it("selects Takeover once and retains that snapshot if permissions change during
 				w.id === "takeover" ? { ...w, allowedTriggers: [] } : w,
 			),
 		);
-		return { path: join(edge.cyrusHome, "workspace"), isGitWorktree: false };
+		return { path: join(edge.factoryHome, "workspace"), isGitWorktree: false };
 	});
 	const event = webhook("This thread is for an agent session");
 	edge.captureTicketOrigin(event, true);

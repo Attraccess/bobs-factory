@@ -1,26 +1,26 @@
 import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
-import { ClaudeRunner } from "cyrus-claude-runner";
-import { LinearEventTransport } from "cyrus-linear-event-transport";
-import { createCyrusToolsServer } from "cyrus-mcp-tools";
+import { ClaudeRunner } from "bobs-factory-claude-runner";
+import { LinearEventTransport } from "bobs-factory-linear-event-transport";
+import { createCyrusToolsServer } from "bobs-factory-mcp-tools";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager.js";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { SharedApplicationServer } from "../src/SharedApplicationServer.js";
 import type { EdgeWorkerConfig, RepositoryConfig } from "../src/types.js";
-import { TEST_CYRUS_HOME } from "./test-dirs.js";
+import { TEST_BOBS_FACTORY_HOME } from "./test-dirs.js";
 
 // Mock all dependencies
 vi.mock("fs/promises");
-vi.mock("cyrus-claude-runner");
-vi.mock("cyrus-mcp-tools");
-vi.mock("cyrus-codex-runner");
-vi.mock("cyrus-linear-event-transport");
+vi.mock("bobs-factory-claude-runner");
+vi.mock("bobs-factory-mcp-tools");
+vi.mock("bobs-factory-codex-runner");
+vi.mock("bobs-factory-linear-event-transport");
 vi.mock("@linear/sdk");
 vi.mock("../src/SharedApplicationServer.js");
 vi.mock("../src/AgentSessionManager.js");
-vi.mock("cyrus-core", async (importOriginal) => {
+vi.mock("bobs-factory-core", async (importOriginal) => {
 	const actual = (await importOriginal()) as any;
 	return {
 		...actual,
@@ -64,7 +64,7 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 	};
 
 	beforeEach(() => {
-		rmSync(join(TEST_CYRUS_HOME, "factory", "ticket-deliveries.json"), {
+		rmSync(join(TEST_BOBS_FACTORY_HOME, "factory", "ticket-deliveries.json"), {
 			force: true,
 		});
 		vi.clearAllMocks();
@@ -148,7 +148,7 @@ describe("EdgeWorker - Missing Session/Repository Recovery (CYPACK-852)", () => 
 
 		mockConfig = {
 			proxyUrl: "http://localhost:3000",
-			cyrusHome: TEST_CYRUS_HOME,
+			factoryHome: TEST_BOBS_FACTORY_HOME,
 			repositories: [mockRepository],
 			linearWorkspaces: {
 				"test-workspace": { linearToken: "test-token" },

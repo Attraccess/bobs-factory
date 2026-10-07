@@ -3,15 +3,15 @@ import type {
 	HookCallbackMatcher,
 	HookEvent,
 	PostToolUseHookInput,
-} from "cyrus-claude-runner";
-import type { ILogger } from "cyrus-core";
+} from "bobs-factory-claude-runner";
+import type { ILogger } from "bobs-factory-core";
 
 /**
- * The hidden HTML marker that identifies a PR/MR description as Cyrus-authored.
+ * The hidden HTML marker that identifies a PR/MR description as Bob’s Factory-authored.
  * Its presence is what tells our GitHub/GitLab webhook handlers that a
- * "Changes requested" or comment event should be forwarded back to Cyrus.
+ * "Changes requested" or comment event should be forwarded back to Bob’s Factory.
  */
-export const CYRUS_PR_MARKER = "<!-- generated-by-cyrus -->";
+export const BOBS_FACTORY_PR_MARKER = "<!-- generated-by-bobs-factory -->";
 
 /**
  * Provider-specific knowledge about how to detect PR/MR mutating commands and
@@ -37,14 +37,14 @@ export interface PrMarkerProvider {
  */
 export function appendMarker(body: string | null | undefined): string {
 	const current = body ?? "";
-	if (current.includes(CYRUS_PR_MARKER)) {
+	if (current.includes(BOBS_FACTORY_PR_MARKER)) {
 		return current;
 	}
 	const trimmed = current.replace(/\s+$/, "");
 	if (trimmed.length === 0) {
-		return CYRUS_PR_MARKER;
+		return BOBS_FACTORY_PR_MARKER;
 	}
-	return `${trimmed}\n\n${CYRUS_PR_MARKER}`;
+	return `${trimmed}\n\n${BOBS_FACTORY_PR_MARKER}`;
 }
 
 /**
@@ -105,7 +105,7 @@ export class GitHubPrMarkerProvider implements PrMarkerProvider {
 			return;
 		}
 		log.info(
-			`[PrMarkerHook] Appended Cyrus marker to GitHub PR #${payload.number}`,
+			`[PrMarkerHook] Appended Bob’s Factory marker to GitHub PR #${payload.number}`,
 		);
 	}
 }
@@ -159,14 +159,14 @@ export class GitLabMrMarkerProvider implements PrMarkerProvider {
 			return;
 		}
 		log.info(
-			`[PrMarkerHook] Appended Cyrus marker to GitLab MR !${payload.iid}`,
+			`[PrMarkerHook] Appended Bob’s Factory marker to GitLab MR !${payload.iid}`,
 		);
 	}
 }
 
 /**
- * Build the PostToolUse hook that ensures Cyrus's identifying marker is
- * present on every PR/MR Cyrus creates or updates.
+ * Build the PostToolUse hook that ensures Bob’s Factory's identifying marker is
+ * present on every PR/MR Bob’s Factory creates or updates.
  *
  * Wired alongside the screenshot/stop hooks in RunnerConfigBuilder. Designed
  * around the strategy pattern: `providers` is injectable so tests can stub

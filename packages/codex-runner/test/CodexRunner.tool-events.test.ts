@@ -1,4 +1,4 @@
-import type { SDKAssistantMessage, SDKUserMessage } from "cyrus-core";
+import type { SDKAssistantMessage, SDKUserMessage } from "bobs-factory-core";
 import { describe, expect, it } from "vitest";
 import type { NormalizedCodexEvent } from "../src/backend/types.js";
 import {

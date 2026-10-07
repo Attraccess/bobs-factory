@@ -294,11 +294,11 @@ it.each([
 	true,
 ])("protects the configured public origin with explicit-setting precedence (%s)", async (explicit) => {
 	vi.stubEnv(
-		"CYRUS_FACTORY_PUBLIC_ORIGIN",
+		"BOBS_FACTORY_FACTORY_PUBLIC_ORIGIN",
 		explicit ? "https://old.example.test" : origin,
 	);
-	vi.stubEnv("CYRUS_FACTORY_ORIGIN", explicit ? origin : undefined);
-	vi.stubEnv("CYRUS_FACTORY_SESSION_HOURS", "12");
+	vi.stubEnv("BOBS_FACTORY_FACTORY_ORIGIN", explicit ? origin : undefined);
+	vi.stubEnv("BOBS_FACTORY_FACTORY_SESSION_HOURS", "12");
 	try {
 		const f = fixture(true);
 		expect(

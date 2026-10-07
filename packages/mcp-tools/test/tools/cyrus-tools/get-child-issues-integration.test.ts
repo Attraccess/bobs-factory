@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createCyrusToolsServer } from "../../../src/tools/cyrus-tools/index.js";
+import { createCyrusToolsServer } from "../../../src/tools/bobs-factory-tools/index.js";
 
 describe("linear_get_child_issues tool integration", () => {
 	it("should create cyrus tools server with expected structure", () => {

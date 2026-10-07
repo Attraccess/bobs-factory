@@ -11,9 +11,10 @@ import {
 	type IssueMinimal,
 	type RepositoryConfig,
 	requireLinearWorkspaceId,
+	runtimeAssetPath,
 	type WebhookAgentSession,
 	type WebhookComment,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { workflowTriggerInstructions } from "./factory/Workflow.js";
 import type { GitService } from "./GitService.js";
 
@@ -105,7 +106,10 @@ export class PromptBuilder {
 		if (!anyRepoHasLabelPrompts && hasHardcodedOrchestratorLabel) {
 			try {
 				const __filename = fileURLToPath(import.meta.url);
-				const __dirname = dirname(__filename);
+				const __dirname = runtimeAssetPath(
+					"edge-worker/dist",
+					dirname(__filename),
+				);
 				const promptPath = join(__dirname, "..", "prompts", "orchestrator.md");
 				const promptContent = await readFile(promptPath, "utf-8");
 				this.logger.debug(
@@ -208,7 +212,10 @@ export class PromptBuilder {
 		if (hasGraphiteLabel && hasOrchestratorLabel) {
 			try {
 				const __filename = fileURLToPath(import.meta.url);
-				const __dirname = dirname(__filename);
+				const __dirname = runtimeAssetPath(
+					"edge-worker/dist",
+					dirname(__filename),
+				);
 				const promptPath = join(
 					__dirname,
 					"..",
@@ -267,7 +274,10 @@ export class PromptBuilder {
 			if (matchesLabel) {
 				try {
 					const __filename = fileURLToPath(import.meta.url);
-					const __dirname = dirname(__filename);
+					const __dirname = runtimeAssetPath(
+						"edge-worker/dist",
+						dirname(__filename),
+					);
 					const promptPath = join(
 						__dirname,
 						"..",
@@ -331,7 +341,10 @@ export class PromptBuilder {
 		try {
 			// Load the label-based prompt template
 			const __filename = fileURLToPath(import.meta.url);
-			const __dirname = dirname(__filename);
+			const __dirname = runtimeAssetPath(
+				"edge-worker/dist",
+				dirname(__filename),
+			);
 			const templatePath = resolve(__dirname, "../label-prompt-template.md");
 
 			this.logger.debug(`Loading label prompt template from: ${templatePath}`);
@@ -773,7 +786,10 @@ Focus on addressing the specific request in the mention. You can use the Linear 
 			// If no custom template, use the standard issue assigned user prompt template
 			if (!templatePath) {
 				const __filename = fileURLToPath(import.meta.url);
-				const __dirname = dirname(__filename);
+				const __dirname = runtimeAssetPath(
+					"edge-worker/dist",
+					dirname(__filename),
+				);
 				templatePath = resolve(
 					__dirname,
 					"../prompts/standard-issue-assigned-user-prompt.md",
@@ -1245,7 +1261,7 @@ ${reply.body}
 				{
 					headers: {
 						Accept: "application/vnd.github.v3+json",
-						"User-Agent": "Cyrus-Agent",
+						"User-Agent": "Bobs-Factory-Agent",
 					},
 				},
 			);
@@ -1284,7 +1300,7 @@ ${reply.body}
 	 */
 	async loadSharedInstructions(): Promise<string> {
 		const __filename = fileURLToPath(import.meta.url);
-		const __dirname = dirname(__filename);
+		const __dirname = runtimeAssetPath("edge-worker/dist", dirname(__filename));
 		const instructionsPath = join(
 			__dirname,
 			"..",

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import type { EdgeWorkerConfig } from "../src/types.js";
-import { TEST_CYRUS_HOME } from "./test-dirs.js";
+import { TEST_BOBS_FACTORY_HOME } from "./test-dirs.js";
 
 // Mock fs/promises
 vi.mock("fs/promises", () => ({
@@ -13,8 +13,8 @@ vi.mock("fs/promises", () => ({
 }));
 
 // Mock other dependencies
-vi.mock("cyrus-claude-runner");
-vi.mock("cyrus-codex-runner");
+vi.mock("bobs-factory-claude-runner");
+vi.mock("bobs-factory-codex-runner");
 vi.mock("@linear/sdk", async (importOriginal) => {
 	const actual = await importOriginal<typeof import("@linear/sdk")>();
 	return {
@@ -35,8 +35,8 @@ vi.mock("@linear/sdk", async (importOriginal) => {
 });
 vi.mock("../src/SharedApplicationServer.js");
 vi.mock("../src/AgentSessionManager.js");
-vi.mock("cyrus-core", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("cyrus-core")>();
+vi.mock("bobs-factory-core", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("bobs-factory-core")>();
 	return {
 		...actual,
 		PersistenceManager: vi.fn().mockImplementation(function () {
@@ -65,7 +65,7 @@ describe("EdgeWorker - Version Tag Extraction", () => {
 		mockConfig = {
 			proxyUrl: "http://localhost:3000",
 			webhookPort: 3456,
-			cyrusHome: TEST_CYRUS_HOME,
+			factoryHome: TEST_BOBS_FACTORY_HOME,
 			repositories: [
 				{
 					id: "test-repo",
@@ -144,11 +144,11 @@ Repository: {{repository_name}}`;
 		vi.mocked(readFile).mockResolvedValue(templateWithVersion);
 
 		// Set log level to DEBUG so version logging (a debug message) is visible
-		const originalLogLevel = process.env.CYRUS_LOG_LEVEL;
-		process.env.CYRUS_LOG_LEVEL = "DEBUG";
+		const originalLogLevel = process.env.BOBS_FACTORY_LOG_LEVEL;
+		process.env.BOBS_FACTORY_LOG_LEVEL = "DEBUG";
 		// Recreate EdgeWorker with DEBUG log level
 		edgeWorker = new EdgeWorker(mockConfig);
-		process.env.CYRUS_LOG_LEVEL = originalLogLevel;
+		process.env.BOBS_FACTORY_LOG_LEVEL = originalLogLevel;
 
 		// Spy on console.log to check for version logging
 		const logSpy = vi.spyOn(console, "log");

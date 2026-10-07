@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FailureModesHttpClient } from "../../../src/tools/cyrus-tools/log-failure-mode.js";
-import { registerLogFailureModeTool } from "../../../src/tools/cyrus-tools/log-failure-mode.js";
+import type { FailureModesHttpClient } from "../../../src/tools/bobs-factory-tools/log-failure-mode.js";
+import { registerLogFailureModeTool } from "../../../src/tools/bobs-factory-tools/log-failure-mode.js";
 
 function getHandler(server: McpServer, name: string) {
 	const tools = (
@@ -117,13 +117,13 @@ describe("log_failure_mode tool", () => {
 				runnerSessionId: "claude-9f87",
 				runnerType: "claude" as const,
 				sourceIssueIdentifier: "ENG-76",
-				workspacePath: "/home/payton/.cyrus/worktrees/ENG-76",
+				workspacePath: "/home/payton/.bobs-factory/worktrees/ENG-76",
 				sessionSource: "linear",
 			}),
 		);
 		const handler = getHandler(server, "log_failure_mode");
 		await handler({
-			cwd: "/home/payton/.cyrus/worktrees/ENG-76",
+			cwd: "/home/payton/.bobs-factory/worktrees/ENG-76",
 			category: "nvidia-smi-not-available",
 			recap: "Asked for nvidia-smi; not installed.",
 			user_quote_snippet: "you should be able to run that",
@@ -135,7 +135,9 @@ describe("log_failure_mode tool", () => {
 		expect(callArg.runnerSessionId).toBe("claude-9f87");
 		expect(callArg.runnerType).toBe("claude");
 		expect(callArg.sourceIssueIdentifier).toBe("ENG-76");
-		expect(callArg.workspacePath).toBe("/home/payton/.cyrus/worktrees/ENG-76");
+		expect(callArg.workspacePath).toBe(
+			"/home/payton/.bobs-factory/worktrees/ENG-76",
+		);
 	});
 
 	it("substitutes '<not captured>' when the snippet fields are omitted", async () => {

@@ -170,7 +170,7 @@ mkdir "$prefix/test-home" "$prefix/cache" "$prefix/tmp" \
 isolated_env=(env -i "PATH=$PATH" "HOME=$prefix/test-home" \
   "TMPDIR=$prefix/tmp" "TMP=$prefix/tmp" "TEMP=$prefix/tmp" \
   "XDG_CONFIG_HOME=$prefix/test-home/.config" "XDG_CACHE_HOME=$prefix/test-home/.cache" \
-  "XDG_DATA_HOME=$prefix/test-home/.local" "CYRUS_SENTRY_DISABLED=1" \
+  "XDG_DATA_HOME=$prefix/test-home/.local" "BOBS_FACTORY_SENTRY_DISABLED=1" \
   "NPM_CONFIG_USERCONFIG=$prefix/test-home/npm-user.npmrc" \
   "NPM_CONFIG_GLOBALCONFIG=$prefix/test-home/npm-global.npmrc" \
   "NPM_CONFIG_CACHE=$prefix/cache" "NPM_CONFIG_REGISTRY=https://registry.npmjs.org")
@@ -196,7 +196,7 @@ uses empty npm config files and a clean child environment for installation and
 CLI checks, and preserves the caller's installation, home, auth and configuration.
 All ${packages.length} coordinated packages are installed together. npm downloads
 external dependencies; no Cyrus prerelease needs to exist on the registry.
-Use the resulting prefix/bin/cyrus with a separate --cyrus-home for testing.
+Use the resulting prefix/bin/cyrus with a separate --home for testing.
 This artifact is not an npm publication, stable release, or provider acceptance proof.
 `,
 	);

@@ -1,5 +1,5 @@
 // Run with F1_AGENT_MODE=mock bun apps/f1/test-drives/assets/qa-question-restart.mjs
-// after building cyrus-edge-worker. No provider runner or background agent is used.
+// after building bobs-factory-edge-worker. No provider runner or background agent is used.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";

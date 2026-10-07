@@ -1,10 +1,10 @@
 import type { LinearClient } from "@linear/sdk";
-import type { McpServerConfig } from "cyrus-claude-runner";
-import type { IIssueTrackerService, RepositoryConfig } from "cyrus-core";
+import type { McpServerConfig } from "bobs-factory-claude-runner";
+import type { IIssueTrackerService, RepositoryConfig } from "bobs-factory-core";
 import {
 	type CyrusToolsOptions,
 	createCyrusToolsServer,
-} from "cyrus-mcp-tools";
+} from "bobs-factory-mcp-tools";
 
 type CyrusToolsMcpContextEntry = {
 	contextId: string;
@@ -25,7 +25,7 @@ export interface McpConfigServiceDeps {
 	getIssueTracker: (
 		workspaceId: string,
 	) => (IIssueTrackerService & { getClient?: () => LinearClient }) | undefined;
-	/** Get the HTTP URL where the cyrus-tools MCP endpoint is registered */
+	/** Get the HTTP URL where the bobs-factory-tools MCP endpoint is registered */
 	getCyrusToolsMcpUrl: () => string;
 	/** Factory that creates CyrusToolsOptions with session callbacks */
 	createCyrusToolsOptions: (parentSessionId?: string) => CyrusToolsOptions;
@@ -35,9 +35,9 @@ export interface McpConfigServiceDeps {
  * Single source of truth for MCP server configuration assembly.
  *
  * Handles:
- * - Building inline MCP server configs (Linear, cyrus-tools, Slack)
+ * - Building inline MCP server configs (Linear, bobs-factory-tools, Slack)
  * - Merging file-based MCP config paths from repositories
- * - Cyrus-tools MCP context lifecycle management
+ * - Bob’s Factory-tools MCP context lifecycle management
  *
  * Both EdgeWorker (issue sessions) and ChatSessionHandler (chat sessions)
  * consume this service instead of duplicating MCP config logic.
@@ -51,8 +51,8 @@ export class McpConfigService {
 	}
 
 	/**
-	 * Build MCP configuration with automatic Linear server injection and cyrus-tools over Fastify MCP.
-	 * Workspace-level servers (Linear, cyrus-tools, Slack) are configured once using workspace-level token.
+	 * Build MCP configuration with automatic Linear server injection and bobs-factory-tools over Fastify MCP.
+	 * Workspace-level servers (Linear, bobs-factory-tools, Slack) are configured once using workspace-level token.
 	 *
 	 * Whether the agent can actually CALL into any of these servers is gated
 	 * by the per-platform allowed-tools array (`teams.{linear,slack,github}_allowed_tools`),
@@ -62,7 +62,7 @@ export class McpConfigService {
 	 *
 	 * @param repoId - Repository ID for MCP context scoping
 	 * @param linearWorkspaceId - Linear workspace ID (from webhook.organizationId or repo config)
-	 * @param parentSessionId - Parent session ID for cyrus-tools context
+	 * @param parentSessionId - Parent session ID for bobs-factory-tools context
 	 */
 	buildMcpConfig(
 		repoId: string,
@@ -75,7 +75,7 @@ export class McpConfigService {
 		const linearToken = this.deps.getLinearTokenForWorkspace(linearWorkspaceId);
 		const issueTracker = this.deps.getIssueTracker(linearWorkspaceId);
 		if (!linearToken || !issueTracker?.getClient) {
-			// CLI platform mode — no Linear client available, return config without cyrus-tools
+			// CLI platform mode — no Linear client available, return config without bobs-factory-tools
 			const mcpConfig: Record<string, McpServerConfig> = {
 				"cyrus-docs": {
 					type: "http",
@@ -112,7 +112,7 @@ export class McpConfigService {
 					Authorization: `Bearer ${linearToken}`,
 				},
 			},
-			"cyrus-tools": {
+			"bobs-factory-tools": {
 				type: "http",
 				url: this.deps.getCyrusToolsMcpUrl(),
 				headers: {
@@ -179,7 +179,7 @@ export class McpConfigService {
 	}
 
 	/**
-	 * Look up a stored cyrus-tools MCP context by its ID.
+	 * Look up a stored bobs-factory-tools MCP context by its ID.
 	 * Used by the MCP endpoint handler to retrieve prebuilt servers.
 	 */
 	getContext(contextId: string): CyrusToolsMcpContextEntry | undefined {
@@ -204,10 +204,10 @@ export class McpConfigService {
 	}
 
 	/**
-	 * Get the authorization header value for cyrus-tools MCP requests.
+	 * Get the authorization header value for bobs-factory-tools MCP requests.
 	 */
 	getAuthorizationHeaderValue(): string | undefined {
-		const apiKey = process.env.CYRUS_API_KEY?.trim();
+		const apiKey = process.env.BOBS_FACTORY_API_KEY?.trim();
 		if (!apiKey) {
 			return undefined;
 		}

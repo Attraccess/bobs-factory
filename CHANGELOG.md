@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Record the user-approved simulated-agent QA scope for refinement recommendations, retaining real-agent and ticket-delivery limitations. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+- Rebrand maintained product contracts for Bob’s Factory and prepare independent binary installation and explicit Cyrus migration ([Taskbot #38](https://taskbot.apps.janjaap.de/p/bobs-factory/t/38), [#34](https://github.com/Attraccess/bobs-factory/pull/34)). Binary rollout remains pending publication. Cursor stays user-prepared; archives exclude its proprietary SDK and native files. Preserve native sessions and Git worktrees through verified migration backups; retain waiting review gates and queue order, and reject malformed coordinator state before cutover. Reconcile owned MCP permissions, configuration and saved/frozen workflow tool references during migration while preserving completed step outputs and completed/rejected agent checkpoint payloads for resumed steps; reload file-owned environment values while preserving process overrides.
+
+
 ### Added
 
 - Capture authentic feature demonstrations for Factory review guides and the inspector, with lazy playback, transcripts, validated revision evidence and safe seeking. Changed QA scenarios require fresh recordings, and expired recordings from every capture round are cleaned up across restarts. Keep optional recording failures visible and preserve screenshots and explicit human approval. ([Taskbot #31](https://taskbot.apps.janjaap.de/p/bobs-factory/t/31), [#33](https://github.com/Attraccess/bobs-factory/pull/33))
@@ -58,6 +64,30 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Reject malformed caption timestamps, reversed intervals and out-of-order cues before accepting recorded audio evidence. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Recover PR/worktree revision mismatches through the configured CI fixer; preserve both revisions and wait for assistance when synchronization makes no progress, keeping old CI from approving newer work. ([#43](https://github.com/Attraccess/bobs-factory/pull/43))
+
+- Reconcile compact Factory review history with the binary fork, retaining original evidence, explicit answers and explanation revision records across restart. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Align migration guidance with mandatory passkey access, HTTPS origin configuration, enrollment and local authentication recovery. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Invalidate rephrased questions and saved answers when the pending decision changes, and keep explanation revision records separate from blocked work. Preserve unchanged rephrasings across restart. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Keep explanation requests separate from accepted answers, preserve the pending decision across restart, and rephrase it without resuming blocked work. Align self-hosting instructions and binary CI smoke with passkey-protected dashboard access. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Reconcile current passkey protection, Codex startup recovery and dependency cleanup with the binary CLI and renamed settings. Preserve cancellation and saved-review recovery. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Cancel Codex startup when a run is stopped, releasing its child and capacity slot so shutdown and restart can finish. Interrupt late turn starts even after their request times out, while preserving other runs sharing the same process. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Preserve explicit feedback-provider choices and same-step recovery when integrating current main with Bob’s Factory naming. Keep saved answers usable after restart when visual-review assistance questions are unchanged; changed questions still require draft review. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Reconcile refinement recommendations and restart-safe question drafts with the renamed product; update the mocked F1 fixture to use an isolated Bob’s Factory home. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Attribute unlabeled assistant activity to Bob’s Factory and explain how to recover from a missing or invalid repository directory before launching Git. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Reconcile the fork with current instance-capacity, mocked F1, browser and workflow-recovery fixes while retaining migrated names and completed results; restore the pre-commit schema check with the renamed package filter. Block migration with capacity-directory overrides until custom/shared policy and queues are explicitly reconciled into the instance pool. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Reduce repeated history reading in Factory runs while preserving review disputes, decisions and access to original evidence. ([#42](https://github.com/Attraccess/bobs-factory/pull/42))
+
 - Make passkey sign-in the default, fold operator setup away for existing installations, and move key management and sign-out into Settings. Let signed-out Factory users update a cached app after deployment so passkey login can continue, including from Settings and after signing out there. Honor the configured session lifetime when launching Factory, with explicit CLI settings taking precedence and invalid values rejected. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Retry Codex startup failures without saving nonexistent conversations, and recover older invalid capture checkpoints while preserving completed work, evidence and review allowances. ([#40](https://github.com/Attraccess/bobs-factory/pull/40))
@@ -72,7 +102,7 @@ All notable changes to this project will be documented in this file.
 
 - Allow an explicitly configured public Factory UI origin while retaining host, origin, and request-header checks.
 
-- Scope capacity limits and queues to each Cyrus instance's home, so temporary F1 instances can run tests while the parent QA step occupies its own slot. Recipes now labels the setting Instance capacity.
+- Scope capacity limits and queues to each Bob’s Factory instance’s home, so temporary F1 instances can run tests while the parent QA step occupies its own slot. Recipes now labels the setting Instance capacity.
 
 - Prefer headless browser automation for agent QA and screenshots, using isolated `agent-browser` sessions when available; visible browser windows and attaching to a user's browser require an explicit request.
 

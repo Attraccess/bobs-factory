@@ -1,4 +1,4 @@
-import { EdgeConfigPayloadSchema } from "cyrus-core";
+import { EdgeConfigPayloadSchema } from "bobs-factory-core";
 import { z } from "zod";
 
 /**
@@ -22,7 +22,7 @@ export interface DeleteRepositoryPayload {
 }
 
 /**
- * Cyrus config update payload schema
+ * Bob’s Factory config update payload schema
  * Extends EdgeConfigPayloadSchema with operation flags for the update process.
  * Uses EdgeConfigPayloadSchema (not EdgeConfigSchema) because incoming payloads
  * may omit workspaceBaseDir - the handler applies a default value.
@@ -35,7 +35,7 @@ export const CyrusConfigPayloadSchema = EdgeConfigPayloadSchema.extend({
 export type CyrusConfigPayload = z.infer<typeof CyrusConfigPayloadSchema>;
 
 /**
- * Cyrus environment variables payload (for Claude token)
+ * Bob’s Factory environment variables payload (for Claude token)
  */
 export interface CyrusEnvPayload {
 	variables?: Record<string, string>;

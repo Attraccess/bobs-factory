@@ -18,6 +18,8 @@ export interface MergeBlocker {
 }
 export interface MergeReadiness {
 	headSha: string;
+	/** Local revision that a synchronization attempt must publish to this PR. */
+	worktreeHeadSha?: string;
 	baseSha: string;
 	url: string;
 	state: string;
@@ -367,7 +369,7 @@ export function assessFeedback(
 			const policy = policies.get(comment.user?.login?.toLowerCase() ?? "");
 			if (
 				!comment.body?.trim() ||
-				/<!-- generated-by-cyrus -->/.test(comment.body) ||
+				/<!-- generated-by-(?:cyrus|bobs-factory) -->/.test(comment.body) ||
 				(policy?.action !== "assess" && informationalComment(comment))
 			)
 				return false;

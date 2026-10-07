@@ -24,7 +24,7 @@ delegated browser/QA agents.
  * `agent-browser` CLI (Playwright-backed) and a local Chromium for taking
  * screenshots and driving browser flows headlessly.
  *
- * Only injected when the environment variable `CYRUS_BROWSER_USE_ENABLED` is
+ * Only injected when the environment variable `BOBS_FACTORY_BROWSER_USE_ENABLED` is
  * set to a truthy value. cyrus-hosted sets this on cloud-runtime droplets
  * (where chromium + agent-browser are pre-installed) and leaves it unset for
  * self-host runtimes (where the binaries may not be available).
@@ -56,7 +56,7 @@ frontend changes, capture screenshots for the user, and drive browser flows.
 
 /**
  * Always append the headless preference. Only advertise pre-installed browser
- * tooling when `CYRUS_BROWSER_USE_ENABLED` is truthy.
+ * tooling when `BOBS_FACTORY_BROWSER_USE_ENABLED` is truthy.
  */
 export function appendBrowserUseAddendum(
 	existing: string | undefined | null,
@@ -70,7 +70,7 @@ export function appendBrowserUseAddendum(
 }
 
 function isBrowserUseEnabled(): boolean {
-	const raw = process.env.CYRUS_BROWSER_USE_ENABLED;
+	const raw = process.env.BOBS_FACTORY_BROWSER_USE_ENABLED;
 	if (!raw) return false;
 	const normalized = raw.trim().toLowerCase();
 	return normalized === "1" || normalized === "true" || normalized === "yes";

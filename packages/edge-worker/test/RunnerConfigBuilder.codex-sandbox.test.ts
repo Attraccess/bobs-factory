@@ -5,7 +5,7 @@ import type {
 	ILogger,
 	RepositoryConfig,
 	RunnerType,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { describe, expect, it } from "vitest";
 import {
 	type IChatToolResolver,
@@ -71,7 +71,7 @@ function buildCodexConfig(
 		allowedDirectories: ["/ws/root", "/repos/repo-a"],
 		additionalWritableDirectories,
 		disallowedTools: [],
-		cyrusHome: "/tmp/cyrus-home",
+		factoryHome: "/tmp/home",
 		linearWorkspaceId: "ws-1",
 		logger: silentLogger,
 		onMessage: () => {},
@@ -138,7 +138,7 @@ describe("RunnerConfigBuilder Codex sandbox plumbing", () => {
 			workspaceName: "chat",
 			systemPrompt: "test",
 			sessionId: "chat-1",
-			cyrusHome: "/tmp/cyrus-home",
+			factoryHome: "/tmp/home",
 			platformName: "slack",
 			logger: silentLogger,
 			additionalWritableDirectories: ["~/.tool-state"],
@@ -147,7 +147,7 @@ describe("RunnerConfigBuilder Codex sandbox plumbing", () => {
 		});
 		expect(config.allowedDirectories).toEqual([
 			"/ws/chat",
-			"/tmp/cyrus-home/slack-memory",
+			"/tmp/home/slack-memory",
 			join(homedir(), ".tool-state"),
 		]);
 	});

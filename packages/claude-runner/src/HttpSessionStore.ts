@@ -3,13 +3,13 @@ import type {
 	SessionStore,
 	SessionStoreEntry,
 } from "@anthropic-ai/claude-agent-sdk";
-import type { ILogger } from "cyrus-core";
+import type { ILogger } from "bobs-factory-core";
 
 /**
  * HTTP-backed Claude Agent SDK SessionStore.
  *
  * Mirrors session transcripts from an edge-worker / ClaudeRunner to the
- * Cyrus hosted control plane, which persists them in a per-team Supabase
+ * upstream Cyrus hosted control plane, which persists them in a per-team Supabase
  * table.
  *
  * References (CYPACK-1121):
@@ -21,9 +21,9 @@ import type { ILogger } from "cyrus-core";
  * Every request carries two pieces of identity, provided by the edge's
  * environment:
  *
- *   - `Authorization: Bearer <CYRUS_API_KEY>` — proves the caller holds the
+ *   - `Authorization: Bearer <BOBS_FACTORY_API_KEY>` — proves the caller holds the
  *     team's API key.
- *   - `X-Cyrus-Team-Id:  <CYRUS_TEAM_ID>`    — names the team the request
+ *   - `X-Cyrus-Team-Id:  <BOBS_FACTORY_TEAM_ID>`    — names the team the request
  *     belongs to.
  *
  * The server looks up the team by id (O(1) primary-key lookup) and verifies
@@ -71,7 +71,8 @@ type JsonBody = Record<string, unknown>;
  * Header name used to identify the team. Extracted as a module-level
  * constant so tests and any future alternate transport stay in sync.
  */
-export const CYRUS_TEAM_ID_HEADER = "X-Cyrus-Team-Id";
+// This is an upstream wire contract, not a display/product name.
+export const BOBS_FACTORY_TEAM_ID_HEADER = "X-Cyrus-Team-Id";
 
 export class HttpSessionStore implements SessionStore {
 	private readonly baseUrl: string;
@@ -159,7 +160,7 @@ export class HttpSessionStore implements SessionStore {
 		return {
 			"Content-Type": "application/json",
 			Authorization: `Bearer ${this.apiKey}`,
-			[CYRUS_TEAM_ID_HEADER]: this.teamId,
+			[BOBS_FACTORY_TEAM_ID_HEADER]: this.teamId,
 		};
 	}
 

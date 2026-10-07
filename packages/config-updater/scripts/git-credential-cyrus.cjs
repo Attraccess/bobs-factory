@@ -3,14 +3,14 @@
  * git-credential-cyrus — git credential helper for multi-org GitHub access.
  *
  * Self-contained Node script (no dependencies). Installed by Cyrus at
- * `<cyrusHome>/scripts/git-credential-cyrus.cjs` and wired into git via:
+ * `<factoryHome>/scripts/git-credential-cyrus.cjs` and wired into git via:
  *
  *   git config --global credential."https://github.com".useHttpPath true
  *   git config --global --replace-all credential."https://github.com".helper ""
  *   git config --global --add credential."https://github.com".helper "!node <this file>"
  *
  * For `get` operations against github.com it looks up the org (first path
- * segment) in `<cyrusHome>/github-tokens.json` — the per-installation
+ * segment) in `<factoryHome>/github-tokens.json` — the per-installation
  * GitHub App tokens pushed by cyrus-hosted — and prints credentials for a
  * case-insensitive org match. If no org matches but exactly one non-expired
  * token exists, that token is used. Otherwise it prints nothing and exits 0
@@ -46,8 +46,9 @@ function main() {
 	// With credential.useHttpPath=true git sends e.g. path=owner/repo.git
 	const org = (attrs.path || "").split("/")[0] || "";
 
-	const cyrusHome = process.env.CYRUS_HOME || path.join(os.homedir(), ".cyrus");
-	const tokensFile = path.join(cyrusHome, "github-tokens.json");
+	const factoryHome =
+		process.env.BOBS_FACTORY_HOME || path.join(os.homedir(), ".bobs-factory");
+	const tokensFile = path.join(factoryHome, "github-tokens.json");
 
 	let tokens = [];
 	try {

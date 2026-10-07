@@ -12,10 +12,10 @@ vi.mock("fs/promises", () => ({
 }));
 
 // Mock dependencies
-vi.mock("cyrus-claude-runner");
-vi.mock("cyrus-codex-runner");
-vi.mock("cyrus-gemini-runner");
-vi.mock("cyrus-linear-event-transport");
+vi.mock("bobs-factory-claude-runner");
+vi.mock("bobs-factory-codex-runner");
+vi.mock("bobs-factory-gemini-runner");
+vi.mock("bobs-factory-linear-event-transport");
 vi.mock("@linear/sdk");
 vi.mock("../src/SharedApplicationServer.js", () => ({
 	SharedApplicationServer: vi.fn().mockImplementation(function () {
@@ -45,7 +45,7 @@ vi.mock("../src/AgentSessionManager.js", () => ({
 		};
 	}),
 }));
-vi.mock("cyrus-core", async (importOriginal) => {
+vi.mock("bobs-factory-core", async (importOriginal) => {
 	const actual = (await importOriginal()) as any;
 	return {
 		...actual,
@@ -95,7 +95,7 @@ describe("EdgeWorker - Version Endpoint", () => {
 
 		mockConfig = {
 			platform: "linear",
-			cyrusHome: "/test/.cyrus",
+			factoryHome: "/test/.bobs-factory",
 			repositories: [mockRepository],
 			linearWorkspaces: {
 				"test-workspace": { linearToken: "test-token" },

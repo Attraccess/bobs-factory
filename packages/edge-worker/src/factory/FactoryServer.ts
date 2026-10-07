@@ -40,12 +40,12 @@ interface ServerHooks {
 	subscribe?(listener: (id: string) => void): () => void;
 	repositories(): { id: string; name: string }[];
 	sessions(): {
-		triggerOrigin?: import("cyrus-core").WorkflowTriggerOrigin;
+		triggerOrigin?: import("bobs-factory-core").WorkflowTriggerOrigin;
 		id: string;
 		title: string;
 		status: string;
 		createdAt: string;
-		titleGeneration?: import("cyrus-core").RunTitleJob;
+		titleGeneration?: import("bobs-factory-core").RunTitleJob;
 		workspace: string;
 		repositoryId?: string;
 	}[];
@@ -68,10 +68,10 @@ export class FactoryServer {
 		runtime: WorkflowRuntime,
 		hooks: ServerHooks,
 		access: FactoryAccess = factoryAccess(
-			Number(process.env.CYRUS_FACTORY_PORT ?? 3457),
-			process.env.CYRUS_FACTORY_ORIGIN ??
-				process.env.CYRUS_FACTORY_PUBLIC_ORIGIN,
-			Number(process.env.CYRUS_FACTORY_SESSION_HOURS ?? 12),
+			Number(process.env.BOBS_FACTORY_FACTORY_PORT ?? 3457),
+			process.env.BOBS_FACTORY_FACTORY_ORIGIN ??
+				process.env.BOBS_FACTORY_FACTORY_PUBLIC_ORIGIN,
+			Number(process.env.BOBS_FACTORY_FACTORY_SESSION_HOURS ?? 12),
 		),
 	) {
 		const shell = factoryWebAssets();
@@ -809,9 +809,10 @@ export class FactoryServer {
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/answer",
 			(request) => {
-				const { answer, context } = z
+				const { answer, context, kind } = z
 					.object({
 						answer: z.string().trim().min(1).max(100000),
+						kind: z.enum(["answer", "explanation"]).optional(),
 						context: z
 							.object({
 								questions: z.array(z.string()),
@@ -832,7 +833,7 @@ export class FactoryServer {
 					throw new Error(
 						"The question or step changed. Refresh and review your draft before answering.",
 					);
-				runtime.answer(request.params.id, answer);
+				runtime.answer(request.params.id, answer, kind);
 				return { accepted: true };
 			},
 		);

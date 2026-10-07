@@ -1,6 +1,9 @@
 import { expect, it } from "vitest";
 import { validateFactoryResult } from "../src/factory/FactoryResults.js";
-import { normalizeQuestionResult } from "../src/factory/Questions.js";
+import {
+	isExplanationRequest,
+	normalizeQuestionResult,
+} from "../src/factory/Questions.js";
 import {
 	answerChoice,
 	resolveAnswers,
@@ -97,4 +100,39 @@ it("uses retained custom text when a reviewed batch no longer has a recommendati
 			0: { mode: "recommendation", custom: "Account 1" },
 		}),
 	).toEqual(["Account 1"]);
+});
+
+it("recognizes explanation requests without treating leading explicit decisions as requests", () => {
+	for (const text of [
+		"Please explain this more simply. I have not chosen an option or authorized paid tests.",
+		"I don't understand",
+		"Could you rephrase this?",
+		"What do you mean?",
+	])
+		expect(isExplanationRequest(text)).toBe(true);
+	for (const text of [
+		"Use mocks",
+		"Proceed",
+		"Use mocks. Please explain the limitation.",
+	])
+		expect(isExplanationRequest(text)).toBe(false);
+});
+
+it("recognizes explanation text inside complete dashboard question batches", () => {
+	const questions = [
+		"Which tests?\n- Use simulated agents\n- Use paid agents",
+		"Which platform?",
+	];
+	expect(
+		isExplanationRequest(
+			serializeAnswers(questions, ["Please explain more simply", "Linux"]),
+			questions,
+		),
+	).toBe(true);
+	expect(
+		isExplanationRequest(
+			serializeAnswers(questions, ["Use simulated agents", "Linux"]),
+			questions,
+		),
+	).toBe(false);
 });

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { IIssueTrackerService, McpServerConfig } from "cyrus-core";
+import type { IIssueTrackerService, McpServerConfig } from "bobs-factory-core";
 import { z } from "zod";
 import { issueSnapshot } from "./issueSnapshot.js";
 import type { FactoryRun } from "./WorkflowRuntime.js";
