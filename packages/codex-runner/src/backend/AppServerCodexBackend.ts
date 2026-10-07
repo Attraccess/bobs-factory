@@ -45,6 +45,9 @@ export class AppServerCodexBackend
 	private threadId: string | null = null;
 	private activeTurnId: string | null = null;
 	private turnActive = false;
+	/** A failed start request does not prove that remote execution stopped. */
+	private remoteTurnPending = false;
+	private interruptCancelledTurn: ((turnId: string) => void) | null = null;
 	private lastUsage: NormalizedUsage = {
 		input_tokens: 0,
 		output_tokens: 0,
@@ -133,13 +136,15 @@ export class AppServerCodexBackend
 			this.turnReject = reject;
 		});
 		this.turnActive = true;
+		this.remoteTurnPending = true;
+		this.activeTurnId = null;
 		this.armIdleWatchdog();
 
 		const appServer = this.appServer;
 		const threadId = this.threadId;
 		const signal = this.cancellation.signal;
 		const started = appServer.request<TurnStartResult>("turn/start", {
-			threadId: this.threadId,
+			threadId,
 			input: this.toProtocolInput(input),
 			...(this.outputSchema !== undefined
 				? { outputSchema: this.outputSchema }
@@ -148,12 +153,7 @@ export class AppServerCodexBackend
 		const request = started.then((result) => {
 			const turnId = result?.turn?.id;
 			if (signal.aborted) {
-				// The process may still serve another lease. Interrupt a turn whose
-				// start response arrived after this backend was closed.
-				if (turnId)
-					void appServer
-						.request("turn/interrupt", { threadId, turnId })
-						.catch(() => undefined);
+				if (turnId) this.interruptCancelledTurn?.(turnId);
 				return;
 			}
 			if (this.turnActive) this.activeTurnId = turnId ?? this.activeTurnId;
@@ -216,16 +216,55 @@ export class AppServerCodexBackend
 		this.appServer = null;
 		this.threadId = null;
 		this.activeTurnId = null;
-		if (appServer && threadId && turnId) {
-			void appServer
-				.request("turn/interrupt", { threadId, turnId })
-				.catch(() => undefined);
-		}
 		if (appServer && threadId) {
 			appServer.unregisterThread(threadId, this.threadHandler);
+			if (this.remoteTurnPending) {
+				this.interruptCancelledTurn = this.watchCancelledTurn(
+					appServer,
+					threadId,
+				);
+				if (turnId) this.interruptCancelledTurn(turnId);
+			}
 		}
 		this.settleTurn(new Error("app-server backend closed"));
 		await appServer?.release();
+	}
+
+	/**
+	 * Retain only cancellation handling until this thread finishes or the process
+	 * exits. Releasing our lease must not discard a late turn/started, even when
+	 * turn/start rejected or timed out. The other threads keep their own leases.
+	 */
+	private watchCancelledTurn(
+		appServer: AppServerProcessLease,
+		threadId: string,
+	): (turnId: string) => void {
+		let finished = false;
+		const interrupted = new Set<string>();
+		const interrupt = (turnId: string) => {
+			if (finished || interrupted.has(turnId)) return;
+			interrupted.add(turnId);
+			void appServer
+				.request("turn/interrupt", { threadId, turnId })
+				.catch(() => interrupted.delete(turnId));
+		};
+		const finish = () => {
+			finished = true;
+			appServer.unregisterThread(threadId, handler);
+		};
+		const handler: AppServerThreadHandler = {
+			onNotification: (method, params) => {
+				if (method === "turn/completed") finish();
+				if (method === "turn/started") {
+					const turnId = (params as TurnStartResult | undefined)?.turn?.id;
+					if (turnId) interrupt(turnId);
+				}
+			},
+			onProcessGone: finish,
+			onProcessError: () => {},
+		};
+		appServer.registerThread(threadId, handler);
+		return interrupt;
 	}
 
 	// ---- Thread setup -------------------------------------------------------
@@ -368,6 +407,7 @@ export class AppServerCodexBackend
 			error?: { message?: string } | null;
 		};
 		this.turnActive = false;
+		this.remoteTurnPending = false;
 		this.activeTurnId = null;
 
 		if (turn.status === "failed") {
@@ -394,6 +434,7 @@ export class AppServerCodexBackend
 	}
 
 	private onProcessGone(): void {
+		this.remoteTurnPending = false;
 		if (this.turnActive) {
 			this.emit("event", {
 				kind: "turn-failed",

@@ -10,7 +10,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
-- Cover Codex cancellation during configuration, initialization, thread setup and delayed turn startup; close failed initialization and await shared cleanup. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+- Cover Codex cancellation during configuration, initialization, thread setup and delayed turn startup; close failed initialization and await shared cleanup. Retain cancellation handlers for late notifications and timed-out start requests until thread completion or process exit, without reviving stopped runners or interrupting other threads. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Preserve refinement recommendation metadata when review fixers request assistance, retaining both recovery and question-restart contracts during main integration. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))

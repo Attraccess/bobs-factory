@@ -239,6 +239,136 @@ describe("AppServerCodexBackend", () => {
 		expect(client.closeCalls).toBe(1);
 	});
 
+	it.each([
+		"late response",
+		"timeout before close",
+		"timeout after close",
+		"timeout after notification",
+	])("interrupts late turn notifications with %s on a shared process", async (timing) => {
+		const client = new FakeClient();
+		let thread = 0;
+		client.responses["thread/start"] = () => ({
+			thread: { id: `thread-${++thread}` },
+		});
+		client.responses["thread/resume"] = { thread: { id: "thread-1" } };
+		let finish!: () => void;
+		let timeout!: () => void;
+		client.responses["turn/start"] = (params) =>
+			(params as { threadId: string }).threadId === "thread-1"
+				? new Promise((resolve, reject) => {
+						finish = () => resolve({ turn: { id: "late-turn" } });
+						timeout = () => reject(new Error("turn/start timed out"));
+					})
+				: { turn: { id: "surviving-turn" } };
+		const manager = new AppServerProcessManager(() => client, {
+			idleCloseMs: 0,
+		});
+		const cancelled = new AppServerCodexBackend(manager);
+		const survivor = new AppServerCodexBackend(manager);
+		const config = { ...baseConfig, codexPath: "/bin/true" };
+		const events = vi.fn();
+		cancelled.on("event", events);
+		try {
+			await cancelled.open(config);
+			await survivor.open(config);
+			const first = cancelled.runTurn([]).catch(() => "cancelled");
+			const second = survivor.runTurn([]);
+			await vi.waitFor(() => expect(survivor.isTurnActive()).toBe(true));
+			if (timing === "timeout before close") {
+				timeout();
+				expect(await first).toBe("cancelled");
+			}
+			await cancelled.close();
+			expect(await first).toBe("cancelled");
+			if (timing === "timeout after close") timeout();
+			// Late events must cancel remote execution without reviving the runner.
+			events.mockClear();
+			client.push("turn/started", {
+				threadId: "thread-1",
+				turn: { id: "late-turn" },
+			});
+			if (timing === "late response") finish();
+			if (timing === "timeout after notification") timeout();
+			await Promise.resolve();
+			await Promise.resolve();
+			client.push("turn/started", {
+				threadId: "thread-1",
+				turn: { id: "late-turn" },
+			});
+			expect(
+				client.requests.filter((r) => r.method === "turn/interrupt"),
+			).toEqual([
+				{
+					method: "turn/interrupt",
+					params: { threadId: "thread-1", turnId: "late-turn" },
+				},
+			]);
+			expect(client.closeCalls).toBe(0);
+			expect(cancelled.isTurnActive()).toBe(false);
+			expect(survivor.isTurnActive()).toBe(true);
+			expect(events).not.toHaveBeenCalled();
+			client.push("turn/completed", {
+				threadId: "thread-1",
+				turn: { id: "late-turn", status: "interrupted" },
+			});
+			// Completion retires the cancellation handler so the thread can resume.
+			const resumed = new AppServerCodexBackend(manager);
+			await resumed.open({ ...config, resumeSessionId: "thread-1" });
+			await resumed.close();
+			client.push("turn/completed", {
+				threadId: "thread-2",
+				turn: { id: "surviving-turn", status: "completed" },
+			});
+			await second;
+			await survivor.close();
+			expect(client.closeCalls).toBe(1);
+		} finally {
+			await manager.closeAll();
+		}
+	});
+
+	it.each([
+		"completion",
+		"process exit",
+	])("ignores a late start response after cancellation and %s", async (terminal) => {
+		const client = new FakeClient();
+		let thread = 0;
+		client.responses["thread/start"] = () => ({
+			thread: { id: `thread-${++thread}` },
+		});
+		let finish!: () => void;
+		client.responses["turn/start"] = () =>
+			new Promise((resolve) => {
+				finish = () => resolve({ turn: { id: "late-turn" } });
+			});
+		const manager = new AppServerProcessManager(() => client, {
+			idleCloseMs: 0,
+		});
+		const cancelled = new AppServerCodexBackend(manager);
+		const survivor = new AppServerCodexBackend(manager);
+		const config = { ...baseConfig, codexPath: "/bin/true" };
+		try {
+			await cancelled.open(config);
+			await survivor.open(config);
+			const first = cancelled.runTurn([]).catch(() => "cancelled");
+			await cancelled.close();
+			expect(await first).toBe("cancelled");
+			if (terminal === "process exit") client.emit("exit");
+			else
+				client.push("turn/completed", {
+					threadId: "thread-1",
+					turn: { id: "late-turn", status: "completed" },
+				});
+			finish();
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(client.lastRequest("turn/interrupt")).toBeUndefined();
+		} finally {
+			await survivor.close();
+			await manager.closeAll();
+		}
+	});
+
 	it("declares steering support", () => {
 		const { backend } = makeBackend();
 		expect(backend.supportsSteer).toBe(true);

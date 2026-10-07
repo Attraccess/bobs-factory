@@ -61,7 +61,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Cancel Codex startup when a run is stopped, releasing its child and capacity slot so shutdown and restart can finish. Preserve other runs sharing the same process. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+- Cancel Codex startup when a run is stopped, releasing its child and capacity slot so shutdown and restart can finish. Interrupt late turn starts even after their request times out, while preserving other runs sharing the same process. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Preserve explicit feedback-provider choices and same-step recovery when integrating current main with Bob’s Factory naming. Keep saved answers usable after restart when visual-review assistance questions are unchanged; changed questions still require draft review. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
