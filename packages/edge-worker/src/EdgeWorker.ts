@@ -183,6 +183,7 @@ import {
 	parseAgentOutput,
 	toolArguments,
 } from "./factory/FactoryTools.js";
+import { factoryFeedbackContext } from "./factory/FeedbackPolicy.js";
 import {
 	validateGuideCoverage,
 	validateGuideGeneration,
@@ -7621,6 +7622,9 @@ ${taskSection}`;
 				? context.input
 				: { input: context.input }),
 			progress: context.progress,
+			...(step.id === "ci-fix"
+				? { feedback: factoryFeedbackContext(context) }
+				: {}),
 			...(captureCorrection ? { captureCorrection } : {}),
 			...(outputCorrection ? { outputCorrection } : {}),
 		});

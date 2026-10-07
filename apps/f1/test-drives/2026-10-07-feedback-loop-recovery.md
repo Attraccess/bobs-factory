@@ -3,9 +3,14 @@
 Date: 2026-10-07. Tested the working tree based on `1b30cfb0` on
 `fix/factory-feedback-loops`, committed as `712b81ef` without runtime changes.
 Driver: `/tmp/factory-feedback-drive.ts`.
-Successful evidence: `/tmp/factory-feedback-f1-G9rvZk`, including five full run
+Initial successful evidence: `/tmp/factory-feedback-f1-G9rvZk`, including five full run
 JSON files, `contexts.json`, and `receipts.json`. Output:
 `/tmp/factory-feedback-drive-final.log`.
+Supplemental validation used the working tree based on `4f7ed6cf`, including
+runtime-owned feedback context for recipes with restricted role inputs.
+Final six-case evidence: `/tmp/factory-feedback-f1-I13n4U`, including six full run
+JSON files, `contexts.json`, and `receipts.json`. Output:
+`/tmp/factory-feedback-drive-six.log`.
 
 ## Applicability and setup
 
@@ -48,8 +53,12 @@ structured outputs supplied the assertions below.
   provider edited the comment after the resumed role's snapshot, so that new
   content received one additional assessment. Three fixer invocations completed
   without redundant code review; the final content hash was retained.
+- **Restricted recipe inputs:** the fixer received only `draft-pr` through its
+  configured inputs. Runtime-owned feedback context still supplied exact pending
+  comments and the original user instruction, allowing a valid author policy
+  and assessment. One fixer and one review completed.
 
-All five runs completed. Their final readiness retained draft and required-human
+All six runs completed. Their final readiness retained draft and required-human
 approval blockers; none claimed approval or merged. All runner result costs were
 zero. Final capacity was zero active/queued requests. The worker stopped cleanly,
 freeing both ports. Historical evidence was preserved.
@@ -66,10 +75,13 @@ retained at `/tmp/factory-feedback-f1-37kzgf`.
   serialization, revocation precedence, task/answer/chat/human-review authority,
   invented or edited instruction rejection, exact content hashes, missing
   assessment correction, fresh revision/job handling, and no-progress waits.
-- All 1,353 EdgeWorker tests passed (one skipped). The initial parallel workspace
-  run hit an unrelated `ENOTEMPTY` race while a persistence fixture removed its
-  asynchronously initialized capacity directory. Its isolated four tests and
-  the subsequent complete EdgeWorker run passed without changing that code.
+- The focused runner integration check also verifies policy validation when a
+  custom recipe hides ordinary outputs and the original task input.
+- Full EdgeWorker verification exposed intermittent `ENOTEMPTY` races in
+  persistence and merge-recovery fixtures: constructor capacity initialization
+  was still writing when cleanup removed their homes. Both fixtures now await
+  that initialization before exercising their scenarios and removing homes.
+  The final full suite passed all 1,354 tests (one skipped).
 - Other workspace package tests passed. Build, typecheck, Biome, and diff checks
   passed. Biome retained the existing warnings.
 - CLI/F1 tests are recorded in the PR validation notes. The first concurrent CLI

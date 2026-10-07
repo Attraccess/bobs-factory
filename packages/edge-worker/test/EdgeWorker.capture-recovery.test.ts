@@ -12,8 +12,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { captureEvidence } from "../src/factory/FactoryTools.js";
 import { roleProgress } from "../src/factory/Incremental.js";
+import {
+	assessFeedback,
+	inspectMergeReadiness,
+} from "../src/factory/MergeReadiness.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 import { SessionSemaphore } from "../src/RunnerConcurrency.js";
+import { providerReceipt } from "./fixtures/merge-readiness.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -143,6 +148,68 @@ async function fixture() {
 		getInput: () => input,
 	};
 }
+
+it("exposes runtime feedback and user instructions to a CI fixer with restricted recipe inputs", async () => {
+	const f = await fixture();
+	const quote = "Ignore the custom provider's issue comments.";
+	f.ctx.run.input = quote;
+	f.ctx.run.createdAt = "2026-10-07T01:00:00Z";
+	f.ctx.run.answers = [];
+	f.ctx.run.step = "pipeline/ci-fix";
+	f.ctx.step = {
+		...f.ctx.step,
+		id: "ci-fix",
+		name: "CI fixer",
+		inputs: ["draft-pr"],
+	};
+	f.ctx.input = { "draft-pr": { url: "https://github.com/test/repo/pull/1" } };
+	f.ctx.resumeAgent = undefined;
+	const comment = {
+		id: "comment",
+		body: "Provider notice",
+		user: { login: "custom-provider[bot]", type: "Bot" },
+	};
+	const readiness = await inspectMergeReadiness(
+		async (_exe, args) =>
+			args.includes("graphql")
+				? JSON.stringify(providerReceipt())
+				: JSON.stringify([[comment]]),
+		"https://github.com/test/repo/pull/1",
+	);
+	assessFeedback(f.ctx, readiness);
+	f.ctx.run.outputs["merge-readiness"] = readiness;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify({
+				reviewRequired: false,
+				feedbackPolicies: [
+					{
+						author: "custom-provider[bot]",
+						action: "ignore",
+						reason: "Explicit direction",
+						source: { path: "input", quote },
+					},
+				],
+			}),
+		},
+	];
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(f.getInput().outputs).toBeUndefined();
+	expect(f.getInput().feedback).toMatchObject({
+		readiness: {
+			unassessedComments: [{ id: "comment", body: "Provider notice" }],
+		},
+		userInstructions: { input: quote },
+	});
+	expect(output.feedbackPolicies).toMatchObject([
+		{
+			author: "custom-provider[bot]",
+			action: "ignore",
+			sourceSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+		},
+	]);
+});
 
 it("resumes a rejected completed capture to replace only invalid evidence", async () => {
 	const { ctx, saved, fresh, repaired, runner, worker, getConfig, getInput } =
