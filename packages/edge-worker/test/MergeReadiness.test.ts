@@ -404,3 +404,74 @@ it.each([
 		new FactoryTools({ command: cmd, postComment: async () => {} }).tool(ctx),
 	).resolves.toMatchObject({ reviewRequired: required });
 });
+
+it.each([
+	"same-job",
+	"new-job",
+])("parks an unchanged failed CI check only when no new execution occurred (%s)", async (link) => {
+	const ctx = {
+		run: {
+			step: "pipeline/after-ci-fix",
+			history: [],
+			roleRevisions: {
+				"pipeline/code-review": { headSha: "head", dirty: false },
+			},
+			outputs: {
+				"draft-pr": { url },
+				ci: {
+					headSha: "head",
+					baseSha: "base",
+					checks: [
+						{
+							name: "CodeQL",
+							state: "FAILURE",
+							bucket: "fail",
+							link: "same-job",
+						},
+					],
+				},
+				"ci-fix": { reviewRequired: false },
+				"review-gate": { approved: true },
+			},
+		},
+		step: { tool: "review-after-fix" },
+		signal: new AbortController().signal,
+		log: vi.fn(),
+	} as unknown as ExecutionContext;
+	const cmd = async (_ctx: ExecutionContext, exe: string, args: string[]) =>
+		exe === "git"
+			? args[0] === "rev-parse"
+				? "head"
+				: ""
+			: args.includes("graphql")
+				? JSON.stringify(
+						providerReceipt({
+							headRefOid: "head",
+							baseRefOid: "base",
+							statusCheckRollup: {
+								contexts: {
+									nodes: [
+										{
+											name: "CodeQL",
+											status: "COMPLETED",
+											conclusion: "FAILURE",
+											detailsUrl: link,
+										},
+									],
+									pageInfo: {},
+								},
+							},
+						}),
+					)
+				: "[[]]";
+	const result = await new FactoryTools({
+		command: cmd,
+		postComment: async () => {},
+	}).tool(ctx);
+	if (link === "same-job")
+		expect(result).toMatchObject({
+			reviewRequired: false,
+			questions: [expect.stringContaining("CodeQL: same-job")],
+		});
+	else expect(result).not.toHaveProperty("questions");
+});

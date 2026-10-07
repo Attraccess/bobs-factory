@@ -7434,6 +7434,21 @@ ${taskSection}`;
 					}
 					return output;
 				} catch (error) {
+					context.signal.throwIfAborted();
+					if (
+						error instanceof Error &&
+						/^Agent step failed:.*codex app-server produced no activity for \d+ms/.test(
+							error.message,
+						) &&
+						context.resumeAgent?.runner === "codex" &&
+						(context.resumeAgent.idleRetries ?? 0) < 1
+					) {
+						context.checkpointAgent({ ...context.resumeAgent, idleRetries: 1 });
+						context.log(
+							"Codex turn went silent; resuming the saved conversation once. Completed role work and checkpoints are retained.",
+						);
+						continue;
+					}
 					const capture = error instanceof CaptureReuseError;
 					if (!(error instanceof OutputValidationError) && !capture)
 						throw error;
@@ -7580,6 +7595,7 @@ ${taskSection}`;
 				agentCheckpoint = {
 					runner: runnerType,
 					sessionId: message.session_id,
+					idleRetries: context.resumeAgent?.idleRetries,
 					...(context.resumeAgent?.result
 						? { result: context.resumeAgent.result }
 						: {}),
@@ -7671,6 +7687,7 @@ ${taskSection}`;
 					context.checkpointAgent?.({
 						runner: agentCheckpoint.runner,
 						sessionId: agentCheckpoint.sessionId,
+						idleRetries: context.resumeAgent?.idleRetries,
 						...(context.resumeAgent?.rejected
 							? { rejected: context.resumeAgent.rejected }
 							: {}),
