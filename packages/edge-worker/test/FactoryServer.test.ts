@@ -10,10 +10,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
-import { FactoryServer } from "../src/factory/FactoryServer.js";
 import type { ResolvedLaunchRequest } from "../src/factory/LaunchFields.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
+import { FactoryServer } from "./fixtures/authenticated-factory.js";
+import { factoryHttp } from "./fixtures/factory-http.js";
 
 it("serves question images only from the requested run, rejecting traversal, external symlinks and non-images", async () => {
 	const home = mkdtempSync(join(tmpdir(), "factory-question-images-"));
@@ -661,9 +662,13 @@ it("streams coalesced changes, reconnects with a fresh snapshot, and closes subs
 	try {
 		await server.start(0);
 		const address = server.app.server.address() as { port: number };
-		const response = await fetch(
+		const response = await factoryHttp(
 			`http://localhost:${address.port}/api/events`,
-			{ signal: controller.signal },
+			{
+				host: "localhost",
+				cookie: "factory-local-session=route-fixture-session",
+			},
+			controller.signal,
 		);
 		expect(response.headers.get("content-type")).toBe("text/event-stream");
 		const reader = response.body!.getReader();
@@ -1355,6 +1360,8 @@ it("rejects title saves overtaken during body parsing and simultaneous saves", a
 					method: "PUT",
 					headers: {
 						...headers,
+						cookie: "factory-local-session=route-fixture-session",
+						origin: "http://localhost",
 						"x-factory-config": originalRevision,
 						"x-test-delayed": "1",
 						"content-type": "application/json",

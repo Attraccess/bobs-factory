@@ -1,3 +1,4 @@
+import { accessState, onAccessLost } from "./auth-state";
 import {
 	emptyFeedback,
 	type FeedbackDraft,
@@ -60,6 +61,7 @@ class FeedbackSession {
 		this.publish(this.state.draft, false);
 	};
 	clear = (submitted: FeedbackDraft) => {
+		if (accessState().status !== "authenticated") return;
 		// Another tab can change storage while this request is in flight. Preserve
 		// those edits too, falling back to memory when storage is unavailable.
 		const stored = readStored<unknown>(this.key, null);
@@ -74,3 +76,5 @@ class FeedbackSession {
 export function feedbackSession(key: string) {
 	return pending.get(key) ?? new FeedbackSession(key);
 }
+
+onAccessLost(() => pending.clear());

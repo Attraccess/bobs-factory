@@ -18,7 +18,6 @@ import {
 } from "../src/factory/defaultWorkflows.js";
 import { qaDigest } from "../src/factory/EvidenceDigest.js";
 import { validateFactoryResult } from "../src/factory/FactoryResults.js";
-import { FactoryServer } from "../src/factory/FactoryServer.js";
 import { CaptureSchema } from "../src/factory/FactoryTools.js";
 import {
 	byteRange,
@@ -37,6 +36,7 @@ import {
 	type ExecutionContext,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { FactoryServer } from "./fixtures/authenticated-factory.js";
 import { qaScope } from "./fixtures/qa.js";
 
 const roots: string[] = [];
@@ -415,6 +415,17 @@ it("streams full/HEAD/open/suffix ranges and rejects stale, malformed, replaced 
 		});
 	try {
 		const bytes = readFileSync(f.path);
+		for (const asset of ["media", "poster", "captions"]) {
+			for (const method of ["GET", "HEAD"] as const) {
+				const denied = await server.app.inject({
+					url: url.replace("/media?", `/${asset}?`),
+					method,
+					headers: { cookie: "", range: "bytes=0-9" },
+				});
+				expect(denied.statusCode).toBe(401);
+				expect(denied.headers["cache-control"]).toBe("no-store");
+			}
+		}
 		expect((await get()).rawPayload).toEqual(bytes);
 		const head = await get(undefined, "HEAD");
 		expect(head.statusCode).toBe(200);
@@ -455,6 +466,8 @@ it("streams full/HEAD/open/suffix ranges and rejects stale, malformed, replaced 
 		expect((await get("bytes=0-9")).statusCode).toBe(409);
 		rmSync(f.path);
 		expect((await get()).statusCode).toBe(410);
+		server.auth.logout("route-fixture-session", "http://localhost");
+		expect((await get("bytes=0-9")).statusCode).toBe(401);
 	} finally {
 		await server.stop();
 		await f.runtime.shutdown();
