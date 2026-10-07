@@ -4,6 +4,8 @@ import {
 	filterReview,
 	QaCaptureSchema,
 } from "./FactoryTools.js";
+import { FeedbackPolicySchema } from "./FeedbackPolicy.js";
+
 import { QaScopeFieldsSchema, scopeIssues } from "./Qa.js";
 import {
 	normalizeQuestionResult,
@@ -338,7 +340,21 @@ function parseFactoryResult(
 			return GuideSchema.parse(output);
 		case "ci-fix":
 			return z
-				.object({ questions: z.array(text).optional() })
+				.object({
+					questions: z.array(text).optional(),
+					addressedCommentIds: z.array(text).optional(),
+					addressedReviewIds: z.array(text).optional(),
+					reviewRequired: z.boolean().optional(),
+					feedbackPolicies: z.array(FeedbackPolicySchema).optional(),
+					commentAssessments: z
+						.array(
+							z.object({
+								id: text,
+								bodySha256: z.string().regex(/^[a-f0-9]{64}$/),
+							}),
+						)
+						.optional(),
+				})
 				.passthrough()
 				.parse(output);
 		case "code-fix":
@@ -346,6 +362,10 @@ function parseFactoryResult(
 			return z
 				.object({
 					summary: text,
+					questions: z.array(text).optional(),
+					questionRecommendations: z
+						.array(QuestionRecommendationSchema)
+						.optional(),
 					dispositions: z.array(
 						z.object({
 							id: text,
