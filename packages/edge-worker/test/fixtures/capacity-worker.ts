@@ -1,4 +1,4 @@
-import { spawnExecution } from "cyrus-core";
+import { spawnExecution } from "bobs-factory-core";
 import { MachineCapacity } from "../../src/MachineCapacity.js";
 
 const [directory, home, ledger, mode] = process.argv.slice(2);

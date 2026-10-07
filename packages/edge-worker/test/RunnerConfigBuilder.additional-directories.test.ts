@@ -1,4 +1,8 @@
-import type { CyrusAgentSession, ILogger, RepositoryConfig } from "cyrus-core";
+import type {
+	CyrusAgentSession,
+	ILogger,
+	RepositoryConfig,
+} from "bobs-factory-core";
 import { describe, expect, it } from "vitest";
 import {
 	type IChatToolResolver,
@@ -63,7 +67,7 @@ function buildIssueConfig(session: CyrusAgentSession) {
 		allowedTools: ["Read(**)"],
 		allowedDirectories: ["/repos/repo-a"],
 		disallowedTools: [],
-		cyrusHome: "/tmp/cyrus-home",
+		factoryHome: "/tmp/home",
 		linearWorkspaceId: "ws-1",
 		logger: silentLogger,
 		onMessage: () => {},
@@ -127,11 +131,13 @@ describe("resolveIssueMcpConfigPath", () => {
 		const repository = makeRepository();
 		const result = resolveIssueMcpConfigPath(
 			repository,
-			["/home/user/.cyrus/mcp-configs/mcp-supabase.json"],
+			["/home/user/.bobs-factory/mcp-configs/mcp-supabase.json"],
 			() => "/repo/.mcp.json",
 		);
 
-		expect(result).toBe("/home/user/.cyrus/mcp-configs/mcp-supabase.json");
+		expect(result).toBe(
+			"/home/user/.bobs-factory/mcp-configs/mcp-supabase.json",
+		);
 	});
 
 	it("uses repo MCP config when the repo owns an allowedTools override", () => {
@@ -142,7 +148,7 @@ describe("resolveIssueMcpConfigPath", () => {
 		} as unknown as RepositoryConfig;
 		const result = resolveIssueMcpConfigPath(
 			repository,
-			["/home/user/.cyrus/mcp-configs/mcp-supabase.json"],
+			["/home/user/.bobs-factory/mcp-configs/mcp-supabase.json"],
 			(repo) => (repo as RepositoryConfig).mcpConfigPath,
 		);
 

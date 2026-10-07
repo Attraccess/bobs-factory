@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { SDKMessage, SdkPluginConfig } from "cyrus-claude-runner";
+import type { SDKMessage, SdkPluginConfig } from "bobs-factory-claude-runner";
 import type {
 	AgentRunnerConfig,
 	AgentSessionInfo,
@@ -11,8 +11,8 @@ import type {
 	OpenCodeConfigOverrides,
 	RepositoryConfig,
 	RunnerType,
-} from "cyrus-core";
-import { AgentSessionStatus, createLogger } from "cyrus-core";
+} from "bobs-factory-core";
+import { AgentSessionStatus, createLogger } from "bobs-factory-core";
 import { AgentSessionManager } from "./AgentSessionManager.js";
 import type { ChatRepositoryProvider } from "./ChatRepositoryProvider.js";
 import { type ChatState, steeringState } from "./factory/SessionChat.js";
@@ -103,7 +103,7 @@ export interface ChatSessionHandlerDeps {
 		instructions: string,
 		platform: string,
 	) => void;
-	cyrusHome: string;
+	factoryHome: string;
 	/** Provider for live repository paths, default repo, and workspace ID */
 	chatRepositoryProvider: ChatRepositoryProvider;
 	/** Shared RunnerConfigBuilder for constructing runner configs */
@@ -326,7 +326,7 @@ export class ChatSessionHandler<TEvent> {
 			// No session exists for this thread. Only events explicitly allowed to
 			// start a session may do so — e.g. a Slack @mention. A plain follow-up
 			// message in an unbound thread must be ignored, otherwise every message
-			// in any channel Cyrus can see would spin up a session.
+			// in any channel Bob’s Factory can see would spin up a session.
 			if (
 				!existingSessionId &&
 				this.adapter.isSessionInitiatingEvent?.(event) === false
@@ -1167,7 +1167,7 @@ export class ChatSessionHandler<TEvent> {
 		try {
 			const sanitizedKey = threadKey.replace(/[^a-zA-Z0-9.-]/g, "_");
 			const workspacePath = join(
-				this.deps.cyrusHome,
+				this.deps.factoryHome,
 				`${this.adapter.platformName}-workspaces`,
 				sanitizedKey,
 			);
@@ -1220,7 +1220,7 @@ export class ChatSessionHandler<TEvent> {
 			sessionId,
 			resumeSessionId,
 			runnerType,
-			cyrusHome: this.deps.cyrusHome,
+			factoryHome: this.deps.factoryHome,
 			platformName: this.adapter.platformName,
 			linearWorkspaceId,
 			repository,

@@ -1,30 +1,29 @@
-# Software factory MVP
+# Bob’s Factory
 
-The factory reuses Cyrus's runners, Git worktrees and ticket integrations. Its
+The factory builds on Cyrus’s runners, Git worktrees and ticket integrations. Its
 local dashboard and JSON workflow graph are deliberately small: no database,
 hosted login, queue service or separate orchestration platform.
 
 ## Start locally
 
-Install Node/pnpm, Bun, Git, `gh` and the agent CLI you want to use. Authenticate
-the agent CLI and run `gh auth login`. The target repository needs an `origin`
-remote you can push to, a base branch, and configured branch/merge rules for the factory pipeline.
+Install a verified macOS/Linux binary and prepare Git, `gh` and your selected
+agent CLI. Authenticate the agent and GitHub CLI. The repository needs a checked-out
+base branch and writable origin for delivery. The factory needs no separate Node,
+npm or Bun. See [binary distribution](distribution/README.md) for availability.
 
 ```sh
-pnpm install
-pnpm factory --repo /absolute/path/to/repo --agent codex --model gpt-6.1-sol
+bobs-factory --repo /absolute/path/to/repo --agent codex --model gpt-6.1-sol
 ```
 
 Open http://127.0.0.1:3457. `--port`, `--home` and `--agent` are optional;
-defaults are 3457, `~/.bobs-factory` and `claude`. The launcher builds the
-required packages first. Its issue-tracker RPC listener uses the next port.
-It works without Linear credentials for manually triggered tasks.
+defaults are 3457, `~/.bobs-factory` and `claude`. Local launch uses the next port
+for RPC/webhooks and works without Linear credentials for manually triggered tasks.
 
-An existing `cyrus start` also starts the dashboard on port 3457. Set
-`CYRUS_FACTORY_PORT` to choose another port, or `0` to disable it. That uses
-your existing Cyrus repository configuration and state directory. The dashboard
-binds to loopback separately from the webhook listener and is intended for one
-trusted local operator.
+`bobs-factory start` uses configured repositories/integrations. Set
+`BOBS_FACTORY_FACTORY_PORT` to choose a dashboard port, or `0` to disable it.
+The dashboard binds to loopback separately from webhook ingress. Its public tunnel
+must not expose the dashboard. zrok2 (#39) and frontend protection (#40) are separate
+work. Development checkouts can still use `pnpm factory`.
 
 ## Install Bob’s Factory
 
@@ -161,7 +160,7 @@ selected cards survive live updates. A reconnecting SSE connection sends coalesc
 pause following; **Scroll to latest** resumes it. Inspector Escape returns focus
 and screenshot Escape returns to the gallery first.
 
-**Simple / Cyrus** exposes a **Message Bob** composer below its conversation.
+**Simple / Bob’s Factory** exposes a **Message Bob** composer below its conversation.
 Send questions or instructions while Claude/Codex is working; after completion,
 a message resumes the same native conversation and worktree. Successful submissions
 appear as your chat bubbles and remain available after restart. Failed submissions
@@ -199,14 +198,14 @@ Messages target the current agent role. The composer explains when sending is
 unavailable: scripts/tools, multiple parallel agents, starting/finishing turns,
 unsupported streaming runners, and explicit clarification/review/recovery gates.
 Use those gates' existing controls; chat never approves a PR. Runners without
-streaming input can still receive follow-ups once a Cyrus session completes.
+streaming input can still receive follow-ups once a Bob’s Factory session completes.
 Completed multi-step workflows retain their existing **Follow-up** action, which
 starts a new run; chat does not reopen completed pipeline steps.
 Existing runs retain their saved chat setting; old Cyrus runs gain the default
 unless explicitly disabled.
 
 Select a repository and workflow in the composer, then fill its launch fields.
-**Simple / Cyrus** retains the existing Cyrus execution path and is the initial
+**Simple / Bob’s Factory** retains the existing Bob’s Factory execution path and is the initial
 default. **Software factory** adds the pipeline
 below. Apply `workflow:factory` (or `factory`) to a ticket to select it.
 Custom workflow labels are configurable. New launches use an explicit manual
@@ -267,7 +266,7 @@ including in fanout. A failed save leaves the previous configuration intact.
 
 | Stock or legacy definition without permissions | Normalized permissions |
 | --- | --- |
-| Simple / Cyrus | `manual`, `ticket-assignment` |
+| Simple / Bob’s Factory | `manual`, `ticket-assignment` |
 | Public stock/custom workflow | `workflow`, `manual`, `ticket-assignment` |
 | Internal/shared workflow | `workflow` |
 
@@ -386,7 +385,7 @@ and can use a short revision summary for a verified minor correction. Every new
 human review still requires an explicit decision.
 
 Visual capture requires browser/screenshot tools available to the selected
-agent through its CLI or existing Cyrus MCP configuration. Captures must be
+agent through its CLI or existing Bob’s Factory MCP configuration. Captures must be
 real PNG/JPEG files in the supplied evidence directory and cover every requested
 area/state. In the factory pipeline, missing capture evidence pauses at the
 visual gate with a question explaining the unavailable states and their causes.
@@ -675,7 +674,7 @@ Configured MCP tools can run directly:
 ```
 
 Exact template references preserve JSON types. String interpolation also works
-in `exec` arguments. MCP servers come from the existing Cyrus runner config
+in `exec` arguments. MCP servers come from the existing Bob’s Factory runner config
 (stdio, HTTP or SSE). Human checkpoints belong outside fanout groups. Parallel
 groups isolate their output dictionaries, but use the same worktree: reserve
 fanout for independent/read-only work to avoid file conflicts.
@@ -695,7 +694,7 @@ individual fanout branches. Unanswered clarification stays waiting for your
 answer; accepted answers survive restarts. An interrupted agent resumes its
 saved provider conversation in the same worktree, with a fresh context MCP
 connection. Manual Simple runs and original Linear/CLI ticket sessions use
-Cyrus's existing conversation continuation. Other standalone Cyrus chat/PR
+Bob’s Factory’s existing conversation continuation. Other standalone Bob’s Factory chat/PR
 comment sessions are outside factory recovery; use Takeover for existing PRs.
 Explicitly terminated, completed and failed runs do not restart. Active runs
 saved by earlier factory versions are upgraded using their retained history.
@@ -747,8 +746,8 @@ it admits queued work; decreasing it lets existing execution drain. A deliberate
 configuration edit updates the policy, and removing the numeric setting restores
 four. Unrelated config reloads and stale startup settings do not reset it.
 
-The coordinator lives at `~/.cyrus/machine-capacity`, independently of each worker's
-`--home`, repository or worktree. Set `CYRUS_CAPACITY_DIRECTORY` to an accessible
+The coordinator lives at `~/.bobs-factory/machine-capacity`, independently of each worker's
+`--home`, repository or worktree. Set `BOBS_FACTORY_CAPACITY_DIRECTORY` to an accessible
 shared directory for multiple service accounts, or an isolated directory for tests.
 All participating workers must use the coordinator. This release requires POSIX
 process inspection (`ps`) for reconciliation; unsupported or inaccessible process
@@ -802,7 +801,8 @@ that instruction is not a hard enforcement guarantee. Scheduled workflow childre
 receive their own slots. The cap bounds scheduled executions, not every subprocess,
 thread, inference request or arbitrary external program.
 
-Cursor's in-process SDK and intensive MCP tools cannot prove that all execution
+Cursor's SDK (in-process in checkout, user-prepared child process in binaries)
+and intensive MCP tools cannot prove that all execution
 has stopped after an owner crash or an interrupted external call. Their unverified leases remain counted and block
 new admission with a visible error; they are not reclaimed by heartbeat expiry.
 Reconcile the external execution before repairing its coordinator record. Never delete

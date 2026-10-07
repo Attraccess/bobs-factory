@@ -1,15 +1,15 @@
 /**
- * Default Cyrus app base URL
- * Can be overridden via CYRUS_APP_URL environment variable for preview environments
+ * Default Bob’s Factory app base URL
+ * Can be overridden via BOBS_FACTORY_APP_URL environment variable for preview environments
  */
-export const DEFAULT_CYRUS_APP_URL = "https://app.atcyrus.com";
+export const DEFAULT_BOBS_FACTORY_APP_URL = "";
 
 /**
- * Get the Cyrus app base URL from environment variable or use default
- * @returns The Cyrus app base URL (e.g., "https://app.atcyrus.com")
+ * Get the Bob’s Factory app base URL from environment variable or use default
+ * @returns The Bob’s Factory app base URL (e.g., "")
  */
 export function getCyrusAppUrl(): string {
-	return process.env.CYRUS_APP_URL || DEFAULT_CYRUS_APP_URL;
+	return process.env.BOBS_FACTORY_APP_URL || DEFAULT_BOBS_FACTORY_APP_URL;
 }
 
 /**
@@ -33,7 +33,7 @@ export interface ConfigApiResponse {
 // biome-ignore lint/complexity/noStaticOnlyClass: Static utility client keeps existing callsites stable.
 export class ConfigApiClient {
 	/**
-	 * Get the config API URL, respecting CYRUS_APP_URL environment variable
+	 * Get the config API URL, respecting BOBS_FACTORY_APP_URL environment variable
 	 */
 	private static getConfigApiUrl(): string {
 		return `${getCyrusAppUrl()}/api/config`;

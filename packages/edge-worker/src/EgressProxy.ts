@@ -14,8 +14,8 @@ import {
 	connect as netConnect,
 } from "node:net";
 import { join } from "node:path";
-import type { NetworkPolicy, SandboxConfig } from "cyrus-core";
-import { createLogger, type ILogger, TRUSTED_DOMAINS } from "cyrus-core";
+import type { NetworkPolicy, SandboxConfig } from "bobs-factory-core";
+import { createLogger, type ILogger, TRUSTED_DOMAINS } from "bobs-factory-core";
 import forge from "node-forge";
 
 /**
@@ -85,7 +85,7 @@ export class EgressProxy {
 
 	private isRunning = false;
 
-	constructor(config: SandboxConfig, cyrusHome: string, logger?: ILogger) {
+	constructor(config: SandboxConfig, factoryHome: string, logger?: ILogger) {
 		this.httpProxyPort = config.httpProxyPort ?? 9080;
 		this.socksProxyPort = config.socksProxyPort ?? 9081;
 		this.networkPolicy = config.networkPolicy;
@@ -93,7 +93,7 @@ export class EgressProxy {
 		this.logger = logger ?? createLogger({ component: "EgressProxy" });
 
 		// Generate CA cert and store path
-		this.certsDir = join(cyrusHome, "certs");
+		this.certsDir = join(factoryHome, "certs");
 		this.caCertPath = join(this.certsDir, "cyrus-egress-ca.pem");
 		this.generateCA(this.certsDir);
 
@@ -299,8 +299,8 @@ export class EgressProxy {
 		);
 
 		const attrs = [
-			{ name: "commonName", value: "Cyrus Egress Proxy CA" },
-			{ name: "organizationName", value: "Cyrus" },
+			{ name: "commonName", value: "Bob's Factory Egress Proxy CA" },
+			{ name: "organizationName", value: "Bob's Factory" },
 		];
 		cert.setSubject(attrs);
 		cert.setIssuer(attrs);

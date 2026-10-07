@@ -319,7 +319,7 @@ export function assessFeedback(
 		(comment) => {
 			if (
 				!comment.body?.trim() ||
-				/<!-- generated-by-cyrus -->/.test(comment.body) ||
+				/<!-- generated-by-(?:cyrus|bobs-factory) -->/.test(comment.body) ||
 				informationalComment(comment)
 			)
 				return false;

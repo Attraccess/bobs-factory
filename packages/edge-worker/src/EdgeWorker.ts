@@ -11,20 +11,14 @@ import type {
 	SDKMessage,
 	SessionStore,
 	WarmQuery,
-} from "cyrus-claude-runner";
+} from "bobs-factory-claude-runner";
 import {
 	buildBaseSessionEnv,
 	ClaudeRunner,
-	HttpSessionStore,
 	normalizeMcpHttpTransport,
-} from "cyrus-claude-runner";
-import { getCyrusAppUrl } from "cyrus-cloudflare-tunnel-client";
-import { CodexRunner, callCodexMcpTool } from "cyrus-codex-runner";
-import {
-	ConfigUpdater,
-	ensureGhTokenResolver,
-	ensureGitHubCredentialHelper,
-} from "cyrus-config-updater";
+} from "bobs-factory-claude-runner";
+import { CodexRunner, callCodexMcpTool } from "bobs-factory-codex-runner";
+import { ConfigUpdater } from "bobs-factory-config-updater";
 import type {
 	AgentActivityCreateInput,
 	AgentEvent,
@@ -57,7 +51,7 @@ import type {
 	WebhookIssue,
 	WorkflowTriggerOrigin,
 	Workspace,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import {
 	AgentSessionStatus,
 	AgentSessionType,
@@ -88,9 +82,9 @@ import {
 	requireLinearWorkspaceId,
 	resolvePath,
 	WebhookIpValidator,
-} from "cyrus-core";
-import { CursorRunner } from "cyrus-cursor-runner";
-import { GeminiRunner } from "cyrus-gemini-runner";
+} from "bobs-factory-core";
+import { CursorRunner } from "bobs-factory-cursor-runner";
+import { GeminiRunner } from "bobs-factory-gemini-runner";
 import {
 	extractCommentAuthor,
 	extractCommentBody,
@@ -115,8 +109,8 @@ import {
 	isPullRequestReviewCommentPayload,
 	isPullRequestReviewPayload,
 	stripMention,
-} from "cyrus-github-event-transport";
-import type { GitLabWebhookEvent } from "cyrus-gitlab-event-transport";
+} from "bobs-factory-github-event-transport";
+import type { GitLabWebhookEvent } from "bobs-factory-gitlab-event-transport";
 import {
 	extractDiscussionId,
 	extractSessionKey as extractGitLabSessionKey,
@@ -135,12 +129,12 @@ import {
 	GitLabEventTransport,
 	isNoteOnMergeRequest,
 	stripMention as stripGitLabMention,
-} from "cyrus-gitlab-event-transport";
+} from "bobs-factory-gitlab-event-transport";
 import {
 	LinearEventTransport,
 	LinearIssueTrackerService,
 	type LinearOAuthConfig,
-} from "cyrus-linear-event-transport";
+} from "bobs-factory-linear-event-transport";
 import {
 	type CyrusToolsOptions,
 	callConfiguredTool,
@@ -150,16 +144,16 @@ import {
 	factoryContextInstructions,
 	prepareFactoryContext,
 	type ResolvedSession,
-} from "cyrus-mcp-tools";
-import { OpenCodeRunner } from "cyrus-opencode-runner";
+} from "bobs-factory-mcp-tools";
+import { OpenCodeRunner } from "bobs-factory-opencode-runner";
 import {
 	SlackEventTransport,
 	type SlackWebhookEvent,
-} from "cyrus-slack-event-transport";
+} from "bobs-factory-slack-event-transport";
 import {
 	ZulipEventTransport,
 	type ZulipWebhookEvent,
-} from "cyrus-zulip-event-transport";
+} from "bobs-factory-zulip-event-transport";
 import { Sessions, streamableHttp } from "fastify-mcp";
 import { ActivityPoster } from "./ActivityPoster.js";
 import { AgentSessionManager } from "./AgentSessionManager.js";
@@ -339,7 +333,7 @@ export class EdgeWorker extends EventEmitter {
 	private configUpdater: ConfigUpdater | null = null; // Single config updater for configuration updates
 	private persistenceManager: PersistenceManager;
 	private sharedApplicationServer: SharedApplicationServer;
-	private cyrusHome: string;
+	private factoryHome: string;
 	private factoryRuntime?: WorkflowRuntime;
 	private ticketTracking?: TicketTracking;
 	private titleGenerator?: RunTitleGenerator;
@@ -381,25 +375,25 @@ export class EdgeWorker extends EventEmitter {
 	private promptBuilder: PromptBuilder;
 	private defaultSkillsDeployer: DefaultSkillsDeployer;
 	private skillsPluginResolver: SkillsPluginResolver;
-	private readonly cyrusToolsMcpEndpoint = "/mcp/cyrus-tools";
-	private cyrusToolsMcpRegistered = false;
-	private cyrusToolsMcpRequestContext =
+	private readonly factoryToolsMcpEndpoint = "/mcp/bobs-factory-tools";
+	private factoryToolsMcpRegistered = false;
+	private factoryToolsMcpRequestContext =
 		new AsyncLocalStorage<CyrusToolsMcpContext>();
-	private cyrusToolsMcpSessions = new Sessions<any>();
+	private factoryToolsMcpSessions = new Sessions<any>();
 	/** Validates webhook source IPs against known provider allowlists */
 	private webhookIpValidator: WebhookIpValidator;
 	/** Egress proxy for sandbox network traffic filtering and header injection */
 	private egressProxy: EgressProxy | null = null;
 	/** Base SDK sandbox settings to pass to ClaudeRunner sessions (set when proxy starts) */
 	private sdkSandboxSettings:
-		| import("cyrus-claude-runner").SandboxSettings
+		| import("bobs-factory-claude-runner").SandboxSettings
 		| null = null;
 	/** CA cert path for MITM TLS termination (passed per-session env, not process.env) */
 	private egressCaCertPath: string | null = null;
 	/**
-	 * Remote SessionStore that mirrors Claude SDK transcripts to the Cyrus
-	 * hosted control plane. Enabled when all three of `CYRUS_APP_URL`,
-	 * `CYRUS_API_KEY`, and `CYRUS_TEAM_ID` are set — used by any Claude
+	 * Remote SessionStore that mirrors Claude SDK transcripts to the Bob’s Factory
+	 * hosted control plane. Enabled when all three of `BOBS_FACTORY_APP_URL`,
+	 * `BOBS_FACTORY_API_KEY`, and `BOBS_FACTORY_TEAM_ID` are set — used by any Claude
 	 * runner spawned from this worker so transcripts survive ephemeral
 	 * worktrees and are resumable from any host.
 	 */
@@ -440,7 +434,7 @@ export class EdgeWorker extends EventEmitter {
 	 * passed verbatim to `fs.readFileSync` (which does not expand tildes).
 	 * Repository-scoped paths are normalized separately in addNew /
 	 * updateModified; this covers the platform-level MCP config lists that
-	 * cyrus-hosted writes with literal `~/.cyrus/...` prefixes when
+	 * cyrus-hosted writes with literal `~/.bobs-factory/...` prefixes when
 	 * generating self-host config.
 	 */
 	private static normalizeConfigPaths(
@@ -460,45 +454,14 @@ export class EdgeWorker extends EventEmitter {
 	constructor(config: EdgeWorkerConfig) {
 		super();
 		this.config = EdgeWorker.normalizeConfigPaths(config);
-		this.cyrusHome = config.cyrusHome;
-		this.githubTokenStore = new GitHubTokenStore(this.cyrusHome);
+		this.factoryHome = config.factoryHome;
+		this.githubTokenStore = new GitHubTokenStore(this.factoryHome);
 		this.logger = createLogger({ component: "EdgeWorker" });
 		this.persistenceManager = new PersistenceManager(
-			join(this.cyrusHome, "state"),
+			join(this.factoryHome, "state"),
 		);
 
-		// Mirror Claude SDK session transcripts to the hosted control plane
-		// when CYRUS_API_KEY (proof of team ownership) and CYRUS_TEAM_ID
-		// (which team the transcripts belong to) are configured. The
-		// destination URL defaults to DEFAULT_CYRUS_APP_URL but can be
-		// overridden via CYRUS_APP_URL for preview environments. If either
-		// of the required vars is missing the store stays null and the SDK
-		// falls back to local JSONL only. Operators can also opt out
-		// explicitly by setting CYRUS_DISABLE_REMOTE_SESSION_STORE=1, which
-		// keeps transcripts local even when the vars above are present.
-		const sessionStoreBaseUrl = getCyrusAppUrl();
-		const sessionStoreApiKey = process.env.CYRUS_API_KEY;
-		const sessionStoreTeamId = process.env.CYRUS_TEAM_ID;
-		const sessionStoreDisabled = this.isRemoteSessionStoreDisabled();
-		if (!sessionStoreDisabled && sessionStoreApiKey && sessionStoreTeamId) {
-			this.claudeSessionStore = new HttpSessionStore({
-				baseUrl: sessionStoreBaseUrl,
-				apiKey: sessionStoreApiKey,
-				teamId: sessionStoreTeamId,
-				logger: this.logger,
-			});
-			this.logger.info(
-				`[SessionStore] Mirroring Claude sessions to ${sessionStoreBaseUrl} for team ${sessionStoreTeamId}`,
-			);
-		} else if (
-			sessionStoreDisabled &&
-			sessionStoreApiKey &&
-			sessionStoreTeamId
-		) {
-			this.logger.info(
-				"[SessionStore] Remote session store disabled via CYRUS_DISABLE_REMOTE_SESSION_STORE; transcripts will stay local.",
-			);
-		}
+		// Independent self-hosting keeps transcripts local. Host credentials are unchanged.
 
 		// Initialize GitHub comment service for posting replies to GitHub PRs
 		this.gitHubCommentService = new GitHubCommentService();
@@ -507,7 +470,7 @@ export class EdgeWorker extends EventEmitter {
 		// For Self-Managed GitLab the API base URL must be derived from the
 		// configured repos' gitlabUrl host; otherwise the service falls back to
 		// gitlab.com and 404s on every reply. Picks the first configured
-		// GitLab repo's host (single GitLab host per Cyrus instance).
+		// GitLab repo's host (single GitLab host per Bob’s Factory instance).
 		const firstGitlabRepo = config.repositories.find((r) => r.gitlabUrl);
 		let gitlabApiBaseUrl: string | undefined;
 		if (firstGitlabRepo?.gitlabUrl) {
@@ -565,7 +528,7 @@ export class EdgeWorker extends EventEmitter {
 		};
 		this.repositoryRouter = new RepositoryRouter(repositoryRouterDeps);
 		this.gitService = new GitService({
-			cyrusHome: this.cyrusHome,
+			factoryHome: this.factoryHome,
 			capacity: () => this.runnerSlots,
 		});
 
@@ -577,10 +540,10 @@ export class EdgeWorker extends EventEmitter {
 		});
 
 		// Initialize webhook IP validator
-		// Enabled by default in self-hosted mode (CYRUS_HOST_EXTERNAL=true),
+		// Enabled by default in self-hosted mode (BOBS_FACTORY_HOST_EXTERNAL=true),
 		// can be overridden with WEBHOOK_IP_VALIDATION=false to disable
 		const isExternalHost =
-			process.env.CYRUS_HOST_EXTERNAL?.toLowerCase().trim() === "true";
+			process.env.BOBS_FACTORY_HOST_EXTERNAL?.toLowerCase().trim() === "true";
 		const ipValidationEnv =
 			process.env.WEBHOOK_IP_VALIDATION?.toLowerCase().trim();
 		const ipValidationEnabled =
@@ -688,7 +651,7 @@ export class EdgeWorker extends EventEmitter {
 		// Initialize user access control with global and per-repository configs
 		const repoAccessConfigs = new Map<
 			string,
-			import("cyrus-core").UserAccessControlConfig | undefined
+			import("bobs-factory-core").UserAccessControlConfig | undefined
 		>();
 		for (const repo of config.repositories) {
 			if (repo.isActive !== false) {
@@ -703,7 +666,7 @@ export class EdgeWorker extends EventEmitter {
 		// Initialize extracted service modules
 		this.attachmentService = new AttachmentService(
 			this.logger,
-			this.cyrusHome,
+			this.factoryHome,
 			this.config.linearWorkspaces || {},
 		);
 		this.runnerSelectionService = new RunnerSelectionService(this.config);
@@ -748,11 +711,11 @@ export class EdgeWorker extends EventEmitter {
 			gitService: this.gitService,
 		});
 		this.defaultSkillsDeployer = new DefaultSkillsDeployer(
-			this.cyrusHome,
+			this.factoryHome,
 			this.logger,
 		);
 		this.skillsPluginResolver = new SkillsPluginResolver(
-			this.cyrusHome,
+			this.factoryHome,
 			this.logger,
 		);
 
@@ -772,26 +735,8 @@ export class EdgeWorker extends EventEmitter {
 			const run = factory.runs.get(id);
 			return !run || ["completed", "failed", "stopped"].includes(run.status);
 		});
-		// If cyrus-hosted has pushed per-org GitHub App tokens previously, make
-		// sure the git credential helper and the per-invocation gh token
-		// resolver are wired up (idempotent). Covers the case where the
-		// process restarted after the helper config was wiped.
-		if (existsSync(this.githubTokenStore.filePath)) {
-			try {
-				ensureGitHubCredentialHelper(this.cyrusHome);
-				ensureGhTokenResolver(this.cyrusHome);
-				this.logger.info(
-					"✅ GitHub auth scripts configured from existing token store",
-				);
-			} catch (error) {
-				this.logger.warn(
-					"Failed to configure GitHub auth scripts on startup (non-fatal):",
-					error instanceof Error ? error : new Error(String(error)),
-				);
-			}
-		}
 
-		// Deploy default skills to cyrusHome if not already present (one-time setup)
+		// Deploy default skills to factoryHome if not already present (one-time setup)
 		await this.defaultSkillsDeployer.ensureDeployed();
 
 		// Scaffold user skills plugin manifest if needed (one-time setup)
@@ -800,7 +745,7 @@ export class EdgeWorker extends EventEmitter {
 		// Load persisted state for each repository
 		await this.loadPersistedState();
 		await this.runnerSlots.reconcileQueue((identity) => {
-			const preparationPrefix = `${this.cyrusHome}:preparation:`;
+			const preparationPrefix = `${this.factoryHome}:preparation:`;
 			if (identity.startsWith(preparationPrefix)) {
 				const receipt = this.getLaunchAdmission()
 					.values()
@@ -809,7 +754,7 @@ export class EdgeWorker extends EventEmitter {
 					);
 				return !receipt || receipt.phase === "settled";
 			}
-			const prefix = `${this.cyrusHome}:session:`;
+			const prefix = `${this.factoryHome}:session:`;
 			if (!identity.startsWith(prefix)) return false;
 			const session = this.titleSession(identity.slice(prefix.length));
 			return (
@@ -824,7 +769,7 @@ export class EdgeWorker extends EventEmitter {
 
 		// Pre-warm the 30 most recent Claude sessions in the background
 		// so their first query after restart has near-zero cold-start latency.
-		// Disabled by default; opt in with CYRUS_ENABLE_WARM_SESSIONS=1.
+		// Disabled by default; opt in with BOBS_FACTORY_ENABLE_WARM_SESSIONS=1.
 		if (this.isWarmSessionsEnabled()) {
 			this.warmupRecentSessions(30).catch((err) => {
 				this.logger.warn("Session warmup failed (non-fatal):", err);
@@ -873,7 +818,7 @@ export class EdgeWorker extends EventEmitter {
 			this.logger.info("🛡️  Sandbox egress proxy: starting...");
 			this.egressProxy = new EgressProxy(
 				this.config.sandbox,
-				this.cyrusHome,
+				this.factoryHome,
 				this.logger,
 			);
 			await this.egressProxy.start();
@@ -928,8 +873,8 @@ export class EdgeWorker extends EventEmitter {
 	 */
 	private async initializeComponents(): Promise<void> {
 		if (
-			process.env.CYRUS_FACTORY_PORT &&
-			process.env.CYRUS_FACTORY_PORT !== "0"
+			process.env.BOBS_FACTORY_FACTORY_PORT &&
+			process.env.BOBS_FACTORY_FACTORY_PORT !== "0"
 		) {
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
 				capacity: this.runnerSlots,
@@ -993,9 +938,11 @@ export class EdgeWorker extends EventEmitter {
 					void this.savePersistedState();
 				},
 			});
-			await this.factoryServer.start(Number(process.env.CYRUS_FACTORY_PORT));
+			await this.factoryServer.start(
+				Number(process.env.BOBS_FACTORY_FACTORY_PORT),
+			);
 			this.logger.info(
-				`Software factory UI: http://127.0.0.1:${process.env.CYRUS_FACTORY_PORT}`,
+				`Software factory UI: http://127.0.0.1:${process.env.BOBS_FACTORY_FACTORY_PORT}`,
 			);
 		}
 		// 1. Platform-specific initialization
@@ -1072,7 +1019,7 @@ export class EdgeWorker extends EventEmitter {
 			// Get appropriate secret based on mode
 			const secret = useDirectWebhooks
 				? process.env.LINEAR_WEBHOOK_SECRET || ""
-				: process.env.CYRUS_API_KEY || "";
+				: process.env.BOBS_FACTORY_API_KEY || "";
 
 			this.linearEventTransport = new LinearEventTransport({
 				fastifyServer: this.sharedApplicationServer.getFastifyInstance(),
@@ -1123,8 +1070,8 @@ export class EdgeWorker extends EventEmitter {
 		// 3. Create and register ConfigUpdater (both platforms)
 		this.configUpdater = new ConfigUpdater(
 			this.sharedApplicationServer.getFastifyInstance(),
-			this.cyrusHome,
-			() => process.env.CYRUS_API_KEY || "",
+			this.factoryHome,
+			() => process.env.BOBS_FACTORY_API_KEY || "",
 		);
 
 		// Register config update routes
@@ -1132,13 +1079,13 @@ export class EdgeWorker extends EventEmitter {
 
 		this.logger.info("✅ Config updater registered");
 		this.logger.info(
-			"   Routes: /api/update/cyrus-config, /api/update/cyrus-env,",
+			"   Routes: /api/update/bobs-factory-config, /api/update/bobs-factory-env,",
 		);
 		this.logger.info(
 			"           /api/update/repository, /api/update/test-mcp, /api/update/configure-mcp",
 		);
 
-		// 3. Register MCP endpoint for cyrus-tools on the same Fastify server/port
+		// 3. Register MCP endpoint for bobs-factory-tools on the same Fastify server/port
 		await this.registerCyrusToolsMcpEndpoint();
 		// 4. Register /status endpoint for process activity monitoring
 		this.registerStatusEndpoint();
@@ -1187,11 +1134,11 @@ export class EdgeWorker extends EventEmitter {
 	private registerGitHubEventTransport(): void {
 		// Use direct GitHub signature verification only when BOTH:
 		// 1. GITHUB_WEBHOOK_SECRET is set (we have the secret to verify)
-		// 2. CYRUS_HOST_EXTERNAL is true (self-hosted: GitHub sends directly to us)
+		// 2. BOBS_FACTORY_HOST_EXTERNAL is true (self-hosted: GitHub sends directly to us)
 		// On cloud droplets, CYHOST forwards webhooks with Bearer token auth
 		// (it verifies the GitHub signature itself and doesn't forward the headers).
 		const isExternalHost =
-			process.env.CYRUS_HOST_EXTERNAL?.toLowerCase().trim() === "true";
+			process.env.BOBS_FACTORY_HOST_EXTERNAL?.toLowerCase().trim() === "true";
 		const hasGithubWebhookSecret =
 			process.env.GITHUB_WEBHOOK_SECRET != null &&
 			process.env.GITHUB_WEBHOOK_SECRET !== "";
@@ -1199,7 +1146,7 @@ export class EdgeWorker extends EventEmitter {
 		const verificationMode = useSignatureVerification ? "signature" : "proxy";
 		const secret = useSignatureVerification
 			? process.env.GITHUB_WEBHOOK_SECRET!
-			: process.env.CYRUS_API_KEY || "";
+			: process.env.BOBS_FACTORY_API_KEY || "";
 
 		this.gitHubEventTransport = new GitHubEventTransport({
 			fastifyServer: this.sharedApplicationServer.getFastifyInstance(),
@@ -1252,7 +1199,7 @@ export class EdgeWorker extends EventEmitter {
 		const appId = process.env.GITHUB_APP_ID;
 		const installationId = process.env.GITHUB_APP_INSTALLATION_ID;
 		if (appId && installationId) {
-			const pemPath = join(this.cyrusHome, "github-app.pem");
+			const pemPath = join(this.factoryHome, "github-app.pem");
 			this.gitHubAppTokenProvider = new GitHubAppTokenProvider({
 				appId,
 				installationId,
@@ -1275,7 +1222,7 @@ export class EdgeWorker extends EventEmitter {
 	 */
 	private registerGitLabEventTransport(): void {
 		const isExternalHost =
-			process.env.CYRUS_HOST_EXTERNAL?.toLowerCase().trim() === "true";
+			process.env.BOBS_FACTORY_HOST_EXTERNAL?.toLowerCase().trim() === "true";
 		const hasGitlabWebhookSecret =
 			process.env.GITLAB_WEBHOOK_SECRET != null &&
 			process.env.GITLAB_WEBHOOK_SECRET !== "";
@@ -1283,7 +1230,7 @@ export class EdgeWorker extends EventEmitter {
 		const verificationMode = useSignatureVerification ? "signature" : "proxy";
 		const secret = useSignatureVerification
 			? process.env.GITLAB_WEBHOOK_SECRET!
-			: process.env.CYRUS_API_KEY || "";
+			: process.env.BOBS_FACTORY_API_KEY || "";
 
 		this.gitLabEventTransport = new GitLabEventTransport({
 			fastifyServer: this.sharedApplicationServer.getFastifyInstance(),
@@ -1321,14 +1268,16 @@ export class EdgeWorker extends EventEmitter {
 	}
 
 	/**
-	 * Whether Cyrus should follow plain replies in a Slack thread it was
+	 * Whether Bob’s Factory should follow plain replies in a Slack thread it was
 	 * @mentioned in. Enabled by default; controlled by the per-team
 	 * `slackThreadFollowing` config toggle (Behaviours page) and force-disabled
-	 * by the `CYRUS_SLACK_THREAD_FOLLOWING_DISABLED` env kill-switch, which takes
+	 * by the `BOBS_FACTORY_SLACK_THREAD_FOLLOWING_DISABLED` env kill-switch, which takes
 	 * precedence over the toggle. When disabled, only @mentions are processed.
 	 */
 	private isSlackThreadFollowingEnabled(): boolean {
-		const envValue = (process.env.CYRUS_SLACK_THREAD_FOLLOWING_DISABLED ?? "")
+		const envValue = (
+			process.env.BOBS_FACTORY_SLACK_THREAD_FOLLOWING_DISABLED ?? ""
+		)
 			.toLowerCase()
 			.trim();
 		if (envValue === "true" || envValue === "1" || envValue === "yes") {
@@ -1351,7 +1300,7 @@ export class EdgeWorker extends EventEmitter {
 		getPlatformMcpConfigOverrides: () => readonly string[] | undefined,
 	): ChatSessionHandlerDeps {
 		return {
-			cyrusHome: this.cyrusHome,
+			factoryHome: this.factoryHome,
 			chatRepositoryProvider,
 			onSessionChange: (id) => this.emit("chatSessionChanged", id),
 			runnerConfigBuilder: this.runnerConfigBuilder,
@@ -1512,16 +1461,14 @@ export class EdgeWorker extends EventEmitter {
 			this.promptBuilder.generateRoutingContextForAllWorkspaces();
 		// Only managed teams (cloud or self-hosted, paired with cyrus-hosted)
 		// have a Behaviours page where automatic Slack thread listening can be
-		// turned off — CYRUS_API_KEY is proof of that pairing, so the
+		// turned off — BOBS_FACTORY_API_KEY is proof of that pairing, so the
 		// stop-listening prompt guidance is gated on it. Community members
 		// don't have the key (or the page).
-		const cyrusAppBaseUrl = process.env.CYRUS_API_KEY
-			? getCyrusAppUrl()
-			: undefined;
+		const factoryAppBaseUrl = undefined;
 		const slackAdapter = new SlackChatAdapter(
 			chatRepositoryProvider,
 			this.logger,
-			{ repositoryRoutingContext: routingContext, cyrusAppBaseUrl },
+			{ repositoryRoutingContext: routingContext, factoryAppBaseUrl },
 		);
 
 		if (
@@ -1546,11 +1493,11 @@ export class EdgeWorker extends EventEmitter {
 
 		// Use direct Slack signature verification only when BOTH:
 		// 1. SLACK_SIGNING_SECRET is set (we have the secret to verify)
-		// 2. CYRUS_HOST_EXTERNAL is true (self-hosted: Slack sends directly to us)
+		// 2. BOBS_FACTORY_HOST_EXTERNAL is true (self-hosted: Slack sends directly to us)
 		// On cloud droplets, CYHOST forwards webhooks with Bearer token auth
 		// (it verifies the Slack signature itself and doesn't forward the headers).
 		const isExternalHost =
-			process.env.CYRUS_HOST_EXTERNAL?.toLowerCase().trim() === "true";
+			process.env.BOBS_FACTORY_HOST_EXTERNAL?.toLowerCase().trim() === "true";
 		const hasSlackSigningSecret =
 			process.env.SLACK_SIGNING_SECRET != null &&
 			process.env.SLACK_SIGNING_SECRET !== "";
@@ -1559,7 +1506,7 @@ export class EdgeWorker extends EventEmitter {
 		const slackVerificationMode = useDirectSlackWebhooks ? "direct" : "proxy";
 		const slackSecret = useDirectSlackWebhooks
 			? process.env.SLACK_SIGNING_SECRET!
-			: process.env.CYRUS_API_KEY || "";
+			: process.env.BOBS_FACTORY_API_KEY || "";
 
 		this.slackEventTransport = new SlackEventTransport({
 			fastifyServer: this.sharedApplicationServer.getFastifyInstance(),
@@ -1744,24 +1691,24 @@ export class EdgeWorker extends EventEmitter {
 				const shouldReply = wasMentioned || isPullRequestReview;
 
 				if (shouldReply && reactionToken && prNumber) {
-					// Presence of CYRUS_API_KEY indicates this worker is paired with the
+					// Presence of BOBS_FACTORY_API_KEY indicates this worker is paired with the
 					// managed control plane (paid customer). Absence means the worker is
 					// running on the Community plan (self-managed config.json).
-					const isManagedCustomer = !!process.env.CYRUS_API_KEY;
+					const isManagedCustomer = !!process.env.BOBS_FACTORY_API_KEY;
 
 					const commonPreamble = [
-						`Cyrus received this webhook but has no repository configured for \`${repoFullName}\`, so no agent session was started.`,
+						`Bob’s Factory received this webhook but has no repository configured for \`${repoFullName}\`, so no agent session was started.`,
 						``,
 						`**Likely causes:**`,
-						`- The owner/org was **renamed or transferred** on GitHub. Webhooks are delivered under the current owner name, but Cyrus's stored repository URL still points at the old one. GitHub's web redirects don't apply to webhook payloads — the stored URL has to be updated explicitly.`,
+						`- The owner/org was **renamed or transferred** on GitHub. Webhooks are delivered under the current owner name, but Bob’s Factory's stored repository URL still points at the old one. GitHub's web redirects don't apply to webhook payloads — the stored URL has to be updated explicitly.`,
 						`- The stored repository URL has a typo (e.g. wrong org/owner) and doesn't match the repo this event came from.`,
-						`- The GitHub App / webhook is installed on a repo Cyrus isn't configured for at all.`,
+						`- The GitHub App / webhook is installed on a repo Bob’s Factory isn't configured for at all.`,
 						``,
 					];
 
 					const fix = isManagedCustomer
-						? `**What to do:** there's currently no self-serve way to update the stored repository URL on your plan — please reach out to Cyrus support and reference \`${repoFullName}\` and we'll reconcile it on the backend.`
-						: `**What to do:** open \`~/.cyrus/config.json\` on the worker and update the \`githubUrl\` of the relevant repository to \`https://github.com/${repoFullName}\`. The worker watches the config file and will pick up the change automatically. If this repo shouldn't be sending events to Cyrus at all, remove the GitHub App from it instead.`;
+						? `**What to do:** there's currently no self-serve way to update the stored repository URL on your plan — please reach out to Bob’s Factory support and reference \`${repoFullName}\` and we'll reconcile it on the backend.`
+						: `**What to do:** open \`~/.bobs-factory/config.json\` on the worker and update the \`githubUrl\` of the relevant repository to \`https://github.com/${repoFullName}\`. The worker watches the config file and will pick up the change automatically. If this repo shouldn't be sending events to Bob’s Factory at all, remove the GitHub App from it instead.`;
 
 					this.gitHubCommentService
 						.postIssueComment({
@@ -1798,7 +1745,7 @@ export class EdgeWorker extends EventEmitter {
 								owner: extractRepoOwner(event),
 								repo: extractRepoName(event),
 								issueNumber: prNumber,
-								body: "Received your request. It is queued and will start after Cyrus finishes the current task on this PR.",
+								body: "Received your request. It is queued and will start after Bob’s Factory finishes the current task on this PR.",
 							})
 							.catch((err: unknown) => {
 								this.logger.warn(
@@ -3067,7 +3014,7 @@ ${taskSection}`;
 	}
 
 	/**
-	 * Compute the current status of the Cyrus process
+	 * Compute the current status of the Bob’s Factory process
 	 * @returns "idle" if the process can be safely restarted, "busy" if work is in progress
 	 */
 	private computeStatus(): "idle" | "busy" {
@@ -3216,8 +3163,8 @@ ${taskSection}`;
 		this.linearEventTransport = null;
 		this.configUpdater = null;
 		this.mcpConfigService.clearAllContexts();
-		this.cyrusToolsMcpSessions.removeAllListeners();
-		this.cyrusToolsMcpRegistered = false;
+		this.factoryToolsMcpSessions.removeAllListeners();
+		this.factoryToolsMcpRegistered = false;
 
 		// Stop egress proxy
 		if (this.egressProxy) {
@@ -3261,7 +3208,7 @@ ${taskSection}`;
 			this.logger.info("🛡️  Sandbox egress proxy: starting (config change)...");
 			this.egressProxy = new EgressProxy(
 				newConfig.sandbox!,
-				this.cyrusHome,
+				this.factoryHome,
 				this.logger,
 			);
 			await this.egressProxy.start();
@@ -3349,14 +3296,14 @@ ${taskSection}`;
 	}
 
 	/**
-	 * Check whether the Cyrus egress proxy CA is trusted at the OS level.
+	 * Check whether the Bob’s Factory egress proxy CA is trusted at the OS level.
 	 * macOS: searches the System keychain. Linux: checks update-ca-certificates output.
 	 */
 	private isCertTrustedSystemWide(): boolean {
 		try {
 			if (process.platform === "darwin") {
 				execSync(
-					'security find-certificate -c "Cyrus Egress Proxy CA" /Library/Keychains/System.keychain',
+					'security find-certificate -c "Bob’s Factory Egress Proxy CA" /Library/Keychains/System.keychain',
 					{ stdio: "ignore" },
 				);
 				return true;
@@ -3683,7 +3630,7 @@ ${taskSection}`;
 										agentSessionId: session.externalSessionId,
 										content: {
 											type: "response",
-											body: `**Repository Removed from Configuration**\n\nThis repository (\`${repo.name}\`) has been removed from the Cyrus configuration. All active sessions for this repository have been stopped.\n\nIf you need to continue working on this issue, please contact your administrator to restore the repository configuration.`,
+											body: `**Repository Removed from Configuration**\n\nThis repository (\`${repo.name}\`) has been removed from the Bob’s Factory configuration. All active sessions for this repository have been stopped.\n\nIf you need to continue working on this issue, please contact your administrator to restore the repository configuration.`,
 										},
 									},
 									"repository removal",
@@ -3763,7 +3710,7 @@ ${taskSection}`;
 		});
 
 		// Log verbose webhook info if enabled
-		if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+		if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 			this.logger.debug(
 				`Full webhook payload:`,
 				JSON.stringify(webhook, null, 2),
@@ -3801,7 +3748,7 @@ ${taskSection}`;
 				// Handle issue state changes — wake up parked sessions when blocking issues complete
 				await this.handleIssueStateChange(webhook);
 			} else {
-				if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+				if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 					this.logger.debug(
 						`Unhandled webhook type: ${(webhook as any).action}`,
 					);
@@ -3841,7 +3788,7 @@ ${taskSection}`;
 		// TODO: When legacy handlers are removed, restore activeWebhookCount tracking here.
 
 		// Log verbose message info if enabled
-		if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+		if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 			this.logger.debug(
 				`Internal message received: ${message.source}/${message.action}`,
 				JSON.stringify(message, null, 2),
@@ -3865,7 +3812,7 @@ ${taskSection}`;
 			} else {
 				// This branch should never be reached due to exhaustive type checking
 				// If it is reached, log the unexpected message for debugging
-				if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+				if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 					const unexpectedMessage = message as InternalMessage;
 					this.logger.debug(
 						`Unhandled message action: ${unexpectedMessage.action}`,
@@ -4009,7 +3956,7 @@ ${taskSection}`;
 		}
 
 		// Build the set of repositories involved with this issue so per-repo
-		// cyrus-teardown.sh scripts (if present) can run before worktrees are
+		// bobs-factory-teardown.sh scripts (if present) can run before worktrees are
 		// removed. Source-of-truth is the session manager: each session's
 		// repositoryId maps to a configured RepositoryConfig.
 		const repoIds = new Set<string>();
@@ -4128,7 +4075,7 @@ ${taskSection}`;
 	): Promise<void> {
 		// Check if issue update trigger is enabled (defaults to true if not set)
 		if (this.config.issueUpdateTrigger === false) {
-			if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+			if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 				this.logger.debug(
 					"Issue update trigger is disabled, skipping issue content update",
 				);
@@ -4206,7 +4153,7 @@ ${taskSection}`;
 		// Find session(s) for this issue
 		const sessions = this.agentSessionManager.getSessionsByIssueId(issueId);
 		if (sessions.length === 0) {
-			if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+			if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 				this.logger.debug(
 					`No sessions found for issue ${issueIdentifier} to receive update`,
 				);
@@ -4224,7 +4171,7 @@ ${taskSection}`;
 			}
 			const workspaceFolderName = basename(firstSession.workspace.path);
 			const attachmentsDir = join(
-				this.cyrusHome,
+				this.factoryHome,
 				workspaceFolderName,
 				"attachments",
 			);
@@ -4672,7 +4619,7 @@ ${taskSection}`;
 	}
 
 	/**
-	 * Create a new Cyrus agent session with all necessary setup
+	 * Create a new Bob’s Factory agent session with all necessary setup
 	 * @param sessionId The Linear agent activity session ID
 	 * @param issue Linear issue object
 	 * @param repositories Repository configurations (primary repo is repositories[0])
@@ -4767,7 +4714,7 @@ ${taskSection}`;
 					signal: preparation.signal,
 					service: this.runnerSlots,
 					capacity: {
-						identity: `${this.cyrusHome}:preparation:${sessionId}`,
+						identity: `${this.factoryHome}:preparation:${sessionId}`,
 						recoverable: true,
 					},
 				},
@@ -4920,7 +4867,7 @@ ${taskSection}`;
 		// Pre-create attachments directory even if no attachments exist yet
 		const workspaceFolderName = basename(workspace.path);
 		const attachmentsDir = join(
-			this.cyrusHome,
+			this.factoryHome,
 			workspaceFolderName,
 			"attachments",
 		);
@@ -4928,7 +4875,7 @@ ${taskSection}`;
 
 		// Write Claude settings to disable co-authored-by attribution in the workspace.
 		// This uses the SDK's "local" settings source (loaded via settingSources: ["user", "project", "local"])
-		// to ensure Cyrus sessions don't add "Co-Authored-By: Claude" trailers to git commits.
+		// to ensure Bob’s Factory sessions don't add "Co-Authored-By: Claude" trailers to git commits.
 		const claudeSettingsDir = join(workspace.path, ".claude");
 		await mkdir(claudeSettingsDir, { recursive: true });
 		await writeFile(
@@ -4982,7 +4929,7 @@ ${taskSection}`;
 	 * @param repos All available repositories for routing
 	 */
 	private getLaunchAdmission(): LaunchAdmission {
-		this.launchAdmission ??= new LaunchAdmission(this.cyrusHome);
+		this.launchAdmission ??= new LaunchAdmission(this.factoryHome);
 		return this.launchAdmission;
 	}
 
@@ -5363,7 +5310,7 @@ ${taskSection}`;
 
 			if (routingResult.type === "none") {
 				this.settleTicketLaunch(webhook.agentSession.id);
-				if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+				if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 					this.logger.info(
 						`No repository configured for webhook from workspace ${webhook.organizationId}`,
 					);
@@ -5435,7 +5382,7 @@ ${taskSection}`;
 		const { agentSession, guidance } = webhook;
 		const commentBody = agentSession.comment?.body;
 
-		// If this issue is a sub-issue of an issue Cyrus has a session on, link the
+		// If this issue is a sub-issue of an issue Bob’s Factory has a session on, link the
 		// two so the parent is resumed when this session completes. Done before the
 		// blocked-by check so a parked child is linked as well.
 		await this.linkChildSessionToParentIssueSession(
@@ -6140,7 +6087,7 @@ ${taskSection}`;
 		// Always set up attachments directory, even if no attachments in current comment
 		const workspaceFolderName = basename(session.workspace.path);
 		const attachmentsDir = join(
-			this.cyrusHome,
+			this.factoryHome,
 			workspaceFolderName,
 			"attachments",
 		);
@@ -6688,7 +6635,7 @@ ${taskSection}`;
 	 *
 	 * Skill scopes (persisted in `scope.json` sidecars by the config-updater)
 	 * match against:
-	 * - the active repository's Cyrus config ID,
+	 * - the active repository's Bob’s Factory config ID,
 	 * - the Linear team that owns the issue, and
 	 * - the Linear label IDs attached to the issue.
 	 *
@@ -6781,7 +6728,7 @@ ${taskSection}`;
 			this.runnerSlots,
 			signal,
 			{
-				identity: `${this.cyrusHome}:session:${sessionId}`,
+				identity: `${this.factoryHome}:session:${sessionId}`,
 				recoverable: true,
 				preserveOnShutdown: () =>
 					this.titleSession(sessionId)?.status !== AgentSessionStatus.Error,
@@ -6799,7 +6746,7 @@ ${taskSection}`;
 				mcp: (context, server, tool) =>
 					this.executeFactoryMcpTool(context, server, tool),
 			});
-			this.factoryRuntime = new WorkflowRuntime(this.cyrusHome, {
+			this.factoryRuntime = new WorkflowRuntime(this.factoryHome, {
 				capacity: this.runnerSlots,
 				track: (run, milestone) =>
 					this.getTicketTracking().record(run, milestone),
@@ -6972,7 +6919,7 @@ ${taskSection}`;
 			return;
 		this.titleStarted.add(id);
 		this.titleGenerator ??= new RunTitleGenerator(
-			this.cyrusHome,
+			this.factoryHome,
 			this.runnerSlots,
 			{
 				update: (runId, result, title) => {
@@ -7040,7 +6987,7 @@ ${taskSection}`;
 									: this.config.linearMcpConfigs),
 							linearWorkspaceId: repository.linearWorkspaceId ?? "",
 							requireLinearWorkspaceId,
-							cyrusHome: this.cyrusHome,
+							factoryHome: this.factoryHome,
 							logger: this.logger,
 							onMessage: () => {},
 							onError: () => {},
@@ -7524,7 +7471,7 @@ ${taskSection}`;
 				repository.repositoryPath,
 				context.evidenceDir,
 				...[
-					join(this.cyrusHome, basename(run.workspace), "attachments"),
+					join(this.factoryHome, basename(run.workspace), "attachments"),
 				].filter(existsSync),
 			],
 			this.buildDisallowedTools([repository]),
@@ -8257,7 +8204,7 @@ ${taskSection}`;
 		]);
 		const cancelQueuedRecovery = () =>
 			this.runnerSlots.reconcileQueue(
-				(identity) => identity === `${this.cyrusHome}:session:${session.id}`,
+				(identity) => identity === `${this.factoryHome}:session:${session.id}`,
 			);
 		const stopped = () => {
 			void cancelQueuedRecovery().catch((error) =>
@@ -8440,7 +8387,7 @@ ${taskSection}`;
 		}
 		const admission = this.getLaunchAdmission();
 		const resumingSessions = new Set<string>();
-		// Original Simple issue sessions retain Cyrus's continuation path and timeline.
+		// Original Simple issue sessions retain Bob’s Factory's continuation path and timeline.
 		// Factory/manual Simple runs use their own checkpoint below.
 		for (const session of this.agentSessionManager.getActiveSessions()) {
 			if (
@@ -8477,7 +8424,7 @@ ${taskSection}`;
 							repository,
 							session.id,
 							this.agentSessionManager,
-							"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
+							"Bob’s Factory restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
 							"",
 							false,
 							[],
@@ -8495,7 +8442,8 @@ ${taskSection}`;
 				// Failed recovery may leave a saved request parked before admission.
 				// Shutdown returns above so recoverable requests retain their order.
 				await this.runnerSlots.reconcileQueue(
-					(identity) => identity === `${this.cyrusHome}:session:${session.id}`,
+					(identity) =>
+						identity === `${this.factoryHome}:session:${session.id}`,
 				);
 				await this.savePersistedState();
 				await this.agentSessionManager.createResponseActivity(
@@ -8542,7 +8490,7 @@ ${taskSection}`;
 					run.id,
 					this.agentSessionManager,
 					run.simplePrompt ??
-						"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
+						"Bob’s Factory restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
 					"",
 					false,
 					[],
@@ -8972,7 +8920,7 @@ ${taskSection}`;
 	}
 
 	private async registerCyrusToolsMcpEndpoint(): Promise<void> {
-		if (this.cyrusToolsMcpRegistered) {
+		if (this.factoryToolsMcpRegistered) {
 			return;
 		}
 
@@ -8982,7 +8930,7 @@ ${taskSection}`;
 			typeof fastify.addHook !== "function"
 		) {
 			console.warn(
-				"[EdgeWorker] Skipping cyrus-tools MCP endpoint registration: Fastify instance does not support register/addHook",
+				"[EdgeWorker] Skipping bobs-factory-tools MCP endpoint registration: Fastify instance does not support register/addHook",
 			);
 			return;
 		}
@@ -8996,7 +8944,7 @@ ${taskSection}`;
 						: "";
 			const requestPath = rawUrl.split("?")[0];
 
-			if (requestPath !== this.cyrusToolsMcpEndpoint) {
+			if (requestPath !== this.factoryToolsMcpEndpoint) {
 				done();
 				return;
 			}
@@ -9007,7 +8955,7 @@ ${taskSection}`;
 				)
 			) {
 				_reply.code(401).send({
-					error: "Unauthorized cyrus-tools MCP request",
+					error: "Unauthorized bobs-factory-tools MCP request",
 				});
 				done();
 				return;
@@ -9018,44 +8966,47 @@ ${taskSection}`;
 				? rawContextHeader[0]
 				: rawContextHeader;
 
-			this.cyrusToolsMcpRequestContext.run({ contextId }, () => {
+			this.factoryToolsMcpRequestContext.run({ contextId }, () => {
 				done();
 			});
 		});
 
-		this.cyrusToolsMcpSessions.on("connected", (sessionId) => {
+		this.factoryToolsMcpSessions.on("connected", (sessionId) => {
 			console.log(
-				`[EdgeWorker] cyrus-tools MCP session connected: ${sessionId}`,
+				`[EdgeWorker] bobs-factory-tools MCP session connected: ${sessionId}`,
 			);
 		});
 
-		this.cyrusToolsMcpSessions.on("terminated", (sessionId) => {
+		this.factoryToolsMcpSessions.on("terminated", (sessionId) => {
 			console.log(
-				`[EdgeWorker] cyrus-tools MCP session terminated: ${sessionId}`,
+				`[EdgeWorker] bobs-factory-tools MCP session terminated: ${sessionId}`,
 			);
 		});
 
-		this.cyrusToolsMcpSessions.on("error", (error) => {
-			console.error("[EdgeWorker] cyrus-tools MCP session error:", error);
+		this.factoryToolsMcpSessions.on("error", (error) => {
+			console.error(
+				"[EdgeWorker] bobs-factory-tools MCP session error:",
+				error,
+			);
 		});
 
 		await fastify.register(streamableHttp, {
 			stateful: true,
-			mcpEndpoint: this.cyrusToolsMcpEndpoint,
-			sessions: this.cyrusToolsMcpSessions,
+			mcpEndpoint: this.factoryToolsMcpEndpoint,
+			sessions: this.factoryToolsMcpSessions,
 			createServer: async () => {
 				const contextId =
-					this.cyrusToolsMcpRequestContext.getStore()?.contextId;
+					this.factoryToolsMcpRequestContext.getStore()?.contextId;
 				if (!contextId) {
 					throw new Error(
-						"Missing x-cyrus-mcp-context-id header for cyrus-tools MCP request",
+						"Missing x-cyrus-mcp-context-id header for bobs-factory-tools MCP request",
 					);
 				}
 
 				const context = this.mcpConfigService.getContext(contextId);
 				if (!context) {
 					throw new Error(
-						`Unknown cyrus-tools MCP context '${contextId}'. Build MCP config before connecting.`,
+						`Unknown bobs-factory-tools MCP context '${contextId}'. Build MCP config before connecting.`,
 					);
 				}
 
@@ -9071,9 +9022,9 @@ ${taskSection}`;
 			},
 		});
 
-		this.cyrusToolsMcpRegistered = true;
+		this.factoryToolsMcpRegistered = true;
 		console.log(
-			`✅ Cyrus tools MCP endpoint registered at ${this.cyrusToolsMcpEndpoint}`,
+			`✅ Bob’s Factory tools MCP endpoint registered at ${this.factoryToolsMcpEndpoint}`,
 		);
 	}
 
@@ -9081,19 +9032,20 @@ ${taskSection}`;
 
 	/**
 	 * Lazily build the HTTP client used by `log_failure_mode` to POST to
-	 * cyrus-hosted. Uses `CYRUS_APP_URL` (the same env var the remote
+	 * cyrus-hosted. Uses `BOBS_FACTORY_APP_URL` (the same env var the remote
 	 * session-store client reads, see top of this file) so preview
 	 * environments and prod share a single way to point at a control
-	 * plane. Returns null when either the URL or the `CYRUS_API_KEY` are
+	 * plane. Returns null when either the URL or the `BOBS_FACTORY_API_KEY` are
 	 * missing — in that mode the tool is simply not registered, so
 	 * customer-mode CLI users without a control plane don't see a broken
 	 * tool.
 	 */
 	private getFailureModesClient(): FailureModesHttpClient | null {
 		if (this.failureModesClient) return this.failureModesClient;
-		const apiKey = process.env.CYRUS_API_KEY?.trim();
+		const apiKey = process.env.BOBS_FACTORY_API_KEY?.trim();
 		if (!apiKey) return null;
-		const baseUrl = getCyrusAppUrl();
+		const baseUrl = process.env.BOBS_FACTORY_APP_URL?.trim();
+		if (!baseUrl) return null;
 		this.failureModesClient = createFetchFailureModesClient({
 			baseUrl,
 			apiKey,
@@ -9109,7 +9061,7 @@ ${taskSection}`;
 	 */
 	/**
 	 * Resolve a working-directory string to the rich session bundle a
-	 * Cyrus team member needs to triage a failure-mode report: the
+	 * Bob’s Factory team member needs to triage a failure-mode report: the
 	 * internal session id (for dedup), the runner session id + runner
 	 * type (so triage can pull the Claude/Gemini/Codex/Cursor transcript),
 	 * the Linear AgentSession + source-issue identifiers (so triage can
@@ -9252,12 +9204,12 @@ ${taskSection}`;
 	}
 
 	/**
-	 * Link a newly created agent session to the most recent Cyrus session on its
+	 * Link a newly created agent session to the most recent Bob’s Factory session on its
 	 * parent issue, so that when this (child) session completes, the parent
 	 * session is resumed with the child's result.
 	 *
 	 * Parent-child *issue* relationships are the channel for child completion
-	 * messages. Any issue whose parent has a Cyrus session is linked, regardless
+	 * messages. Any issue whose parent has a Bob’s Factory session is linked, regardless
 	 * of whether that parent session is currently running: an orchestrator that
 	 * has halted to wait for its sub-issue has status "complete" and is exactly
 	 * the parent that must be woken, so this deliberately does not filter to
@@ -9266,7 +9218,7 @@ ${taskSection}`;
 	 * runner session id).
 	 *
 	 * This replaces the mapping that used to be established by the removed
-	 * `linear_agent_session_create*` cyrus-tools. Linear delegation creates
+	 * `linear_agent_session_create*` bobs-factory-tools. Linear delegation creates
 	 * exactly one session per issue, so deriving the link from the issue
 	 * hierarchy does not reintroduce concurrent child sessions on one issue.
 	 *
@@ -9307,7 +9259,7 @@ ${taskSection}`;
 				this.agentSessionManager.getSessionsByIssueId(parentIssueId);
 			if (parentSessions.length === 0) {
 				log.debug(
-					`Parent issue ${parentIssueId} has no Cyrus session; no parent callback will be sent`,
+					`Parent issue ${parentIssueId} has no Bob’s Factory session; no parent callback will be sent`,
 				);
 				return;
 			}
@@ -9462,7 +9414,7 @@ ${taskSection}`;
 			typeof server.getPort === "function"
 				? server.getPort()
 				: this.config.serverPort || this.config.webhookPort || 3456;
-		return `http://127.0.0.1:${port}${this.cyrusToolsMcpEndpoint}`;
+		return `http://127.0.0.1:${port}${this.factoryToolsMcpEndpoint}`;
 	}
 
 	/**
@@ -9899,9 +9851,9 @@ ${input.userComment}
 					: this.config.githubMcpConfigs,
 			strictMcpConfig: this.config.strictMcpConfig,
 			linearWorkspaceId,
-			cyrusHome: this.cyrusHome,
+			factoryHome: this.factoryHome,
 			// Org-matched GitHub App installation token (pushed by cyrus-hosted):
-			// exposed to the session as GH_TOKEN / CYRUS_GH_TOKEN so `gh` and
+			// exposed to the session as GH_TOKEN / BOBS_FACTORY_GH_TOKEN so `gh` and
 			// other tools authenticate against this repo's org. Undefined when
 			// no token store entry matches — zero behavior change for self-host
 			// users without the token file.
@@ -10123,22 +10075,6 @@ ${input.userComment}
 		// Warm queries cannot await admission before each follow-up; resume the
 		// saved conversation through a fresh gated start instead.
 		return false;
-	}
-
-	/**
-	 * Whether the remote Claude session store is explicitly disabled.
-	 *
-	 * The remote store mirrors SDK transcripts to the Cyrus hosted control
-	 * plane and is on by default whenever `CYRUS_APP_URL`, `CYRUS_API_KEY`,
-	 * and `CYRUS_TEAM_ID` are all set. Operators can opt out — without
-	 * unsetting those vars (which other features depend on) — by setting
-	 * `CYRUS_DISABLE_REMOTE_SESSION_STORE=1` (or `=true`).
-	 */
-	private isRemoteSessionStoreDisabled(): boolean {
-		const raw = process.env.CYRUS_DISABLE_REMOTE_SESSION_STORE;
-		if (!raw) return false;
-		const v = raw.toLowerCase().trim();
-		return v === "1" || v === "true";
 	}
 
 	/**
@@ -10476,7 +10412,7 @@ ${input.userComment}
 	 * 1. Check if runner is actively streaming
 	 * 2. Add to stream if streaming, OR resume session if not
 	 *
-	 * @param session The Cyrus agent session
+	 * @param session The Bob’s Factory agent session
 	 * @param repository Repository configuration
 	 * @param sessionId Linear agent activity session ID
 	 * @param agentSessionManager Agent session manager instance
@@ -10577,7 +10513,7 @@ ${input.userComment}
 	/**
 	 * Resume or create an Agent session with the given prompt
 	 * This is the core logic for handling prompted agent activities
-	 * @param session The Cyrus agent session
+	 * @param session The Bob’s Factory agent session
 	 * @param repository The repository configuration
 	 * @param sessionId The Linear agent session ID
 	 * @param agentSessionManager The agent session manager
@@ -10688,7 +10624,7 @@ ${input.userComment}
 		// Set up attachments directory
 		const workspaceFolderName = basename(session.workspace.path);
 		const attachmentsDir = join(
-			this.cyrusHome,
+			this.factoryHome,
 			workspaceFolderName,
 			"attachments",
 		);
@@ -10749,7 +10685,7 @@ ${input.userComment}
 					this.runnerSlots,
 					recoverySignal,
 					{
-						identity: `${this.cyrusHome}:session:${sessionId}`,
+						identity: `${this.factoryHome}:session:${sessionId}`,
 						recoverable: true,
 						remote: runnerType === "cursor",
 						onChange: () => this.emit("chatSessionChanged", sessionId),

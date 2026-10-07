@@ -13,7 +13,7 @@ import type {
 	RunTitleJob,
 	WorkflowTrigger,
 	WorkflowTriggerOrigin,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import type {
 	CapacityOptions,
 	CapacityRequest,
@@ -167,7 +167,7 @@ export interface FactoryRun {
 	};
 	launchRequest?: import("./LaunchFields.js").ResolvedLaunchRequest;
 	setupComplete?: boolean;
-	sessionSnapshot?: import("cyrus-core").SerializedCyrusAgentSession;
+	sessionSnapshot?: import("bobs-factory-core").SerializedCyrusAgentSession;
 	reviewGate?: ReviewGate;
 	humanDecisions?: HumanDecision[];
 	roleRevisions?: Record<string, RoleRevision>;
@@ -347,7 +347,9 @@ export class WorkflowRuntime {
 			run.status !== "completed" ||
 			this.isExecuting(id)
 		)
-			throw new Error("Only a finished Cyrus session can continue here");
+			throw new Error(
+				"Only a finished Bob’s Factory session can continue here",
+			);
 		if (run.simpleExecution) {
 			if (!run.simpleExecution.agent)
 				throw new Error("Session conversation unavailable");

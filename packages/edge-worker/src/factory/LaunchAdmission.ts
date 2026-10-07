@@ -9,7 +9,7 @@ import { join } from "node:path";
 import type {
 	AgentSessionCreatedWebhook,
 	WorkflowTriggerOrigin,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import type { Workflow } from "./Workflow.js";
 
 export interface TicketLaunchReceipt {

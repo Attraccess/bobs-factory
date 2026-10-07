@@ -4,8 +4,8 @@ import type {
 	HookCallbackMatcher,
 	HookEvent,
 	PostToolUseHookInput,
-} from "cyrus-claude-runner";
-import type { ILogger } from "cyrus-core";
+} from "bobs-factory-claude-runner";
+import type { ILogger } from "bobs-factory-core";
 
 /**
  * Tool names whose successful invocation may have produced a brand-new file

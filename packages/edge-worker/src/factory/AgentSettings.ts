@@ -1,4 +1,4 @@
-import type { AgentRunnerConfig, RunnerType } from "cyrus-core";
+import type { AgentRunnerConfig, RunnerType } from "bobs-factory-core";
 import { z } from "zod";
 
 export const serviceTierRunners = ["codex", "claude"] as const;

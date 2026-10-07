@@ -1,7 +1,7 @@
-// Translates Cyrus / Claude-style tool patterns into the simpler pattern
+// Translates Bob’s Factory / Claude-style tool patterns into the simpler pattern
 // vocabulary that the .cursor/cyrus-permission-check.mjs hook understands.
 //
-// Cyrus tool patterns look like (Claude SDK conventions):
+// Bob’s Factory tool patterns look like (Claude SDK conventions):
 //   Read(<glob>)           Bash(<cmd>:<args>)
 //   Write(<glob>)          mcp__<server>__<tool>
 //   Edit(<glob>)           Read | Bash | Edit | Write   (bare tool name)
@@ -85,7 +85,7 @@ function mapMcpPattern(pattern: string): string | null {
 }
 
 /**
- * Map a single Cyrus/Claude tool pattern into zero or more Cursor hook
+ * Map a single Bob’s Factory/Claude tool pattern into zero or more Cursor hook
  * patterns. Returns an empty array for unrecognized patterns.
  */
 function mapToolPatternToHookPatterns(pattern: string): string[] {

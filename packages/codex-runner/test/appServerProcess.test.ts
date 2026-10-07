@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { executionScope } from "cyrus-core";
+import { executionScope } from "bobs-factory-core";
 import { describe, expect, it, vi } from "vitest";
 import type {
 	IAppServerClient,

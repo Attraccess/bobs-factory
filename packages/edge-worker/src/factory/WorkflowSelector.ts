@@ -1,4 +1,4 @@
-import type { WorkflowTriggerOrigin } from "cyrus-core";
+import type { WorkflowTriggerOrigin } from "bobs-factory-core";
 
 export class WorkflowSelectionError extends Error {}
 

@@ -2,7 +2,7 @@ import { passiveTools } from "./CapacityPolicy.js";
 
 export { isComputeIntensive, passiveTools } from "./CapacityPolicy.js";
 
-import type { WorkflowTrigger } from "cyrus-core";
+import type { WorkflowTrigger } from "bobs-factory-core";
 import { z } from "zod";
 import { agentSettings, resolveAgentSettings } from "./AgentSettings.js";
 
@@ -158,7 +158,7 @@ export function validateWorkflows(value: unknown): Workflow[] {
 			workflow.allowedTriggers.includes("workflow")
 		)
 			throw new Error(
-				"Simple / Cyrus cannot be called by another workflow; clone it under another ID with graph steps to customize.",
+				"Simple / Bob’s Factory cannot be called by another workflow; clone it under another ID with graph steps to customize.",
 			);
 		const fields = workflow.launchFields ?? [];
 		if (new Set(fields.map((field) => field.name)).size !== fields.length)
@@ -195,7 +195,7 @@ export function validateWorkflows(value: unknown): Workflow[] {
 		}
 		if (workflow.id === "simple" && workflow.steps.length)
 			throw new Error(
-				"simple uses Cyrus's existing execution path; clone it under another ID to customize",
+				"simple uses Bob’s Factory’s existing execution path; clone it under another ID to customize",
 			);
 		if (workflow.id !== "simple" && !workflow.steps.length)
 			throw new Error(`Workflow ${workflow.id} needs steps`);

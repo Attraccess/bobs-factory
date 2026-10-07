@@ -713,7 +713,7 @@ export function FocusCard({
 								{icons[run.step?.split("/").at(-1)] ?? "⚙️"}{" "}
 								{stepsOf(run, config).find((s) => s.key === run.step)?.name ??
 									run.step ??
-									"Cyrus session"}
+									"Bob’s Factory session"}
 							</strong>
 							<Markdown>
 								{run.error ?? "The run stopped before finishing."}
@@ -780,7 +780,7 @@ export function Progress({ run, config }: { run: any; config: any }) {
 			aria-label={
 				steps.length
 					? `${visited.size} of ${steps.length} steps completed`
-					: "Cyrus session working"
+					: "Bob’s Factory session working"
 			}
 		>
 			{(steps.length ? steps : [{ key: "simple" }]).map((step) => (
@@ -834,7 +834,7 @@ export function WorkingRow({
 				<strong>{run.title}</strong>
 				<span className={`step-chip ${phase(stepId)}`}>
 					{workingLabel(data)} · {icons[stepId] ?? "⚙️"}{" "}
-					{step?.name ?? run.step ?? "Cyrus session"}
+					{step?.name ?? run.step ?? "Bob’s Factory session"}
 					{/fix/.test(stepId) && " · fixing"}
 					{visits > 1 && ` · ↺${visits}`}
 				</span>

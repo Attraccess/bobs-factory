@@ -14,61 +14,19 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
-import { executionScope, resolvePath } from "cyrus-core";
+import {
+	type CapacityOwner,
+	executionScope,
+	CapacityOwnerSchema as Owner,
+	type CapacityRequest as PersistedCapacityRequest,
+	resolvePath,
+	CapacityStateSchema as State,
+} from "bobs-factory-core";
 import { z } from "zod";
 
 export const DEFAULT_MACHINE_CAPACITY = 4;
+export type CapacityRequest = PersistedCapacityRequest;
 const runFile = promisify(execFile);
-const Owner = z.object({
-	pid: z.number().int().positive(),
-	start: z.string().min(1),
-	incarnation: z.string().min(1),
-});
-const Request = z.object({
-	id: z.string(),
-	token: z.string(),
-	owner: Owner,
-	sequence: z.number().int().positive(),
-	queuedAt: z.string(),
-	phase: z.enum(["queued", "executing", "stopping"]),
-	background: z.boolean(),
-	parked: z.boolean().default(false),
-	identity: z.string(),
-	recoverable: z.boolean(),
-	remote: z.boolean(),
-});
-const State = z
-	.object({
-		version: z.literal(1),
-		limit: z.number().int().positive(),
-		sequence: z.number().int().nonnegative(),
-		bypass: z.number().int().nonnegative(),
-		requests: z.array(Request),
-	})
-	.superRefine((state, ctx) => {
-		for (const field of ["id", "token", "identity", "sequence"] as const) {
-			if (
-				new Set(state.requests.map((request) => request[field])).size !==
-				state.requests.length
-			)
-				ctx.addIssue({
-					code: "custom",
-					message: `Duplicate capacity ${field}`,
-				});
-		}
-		if (
-			state.requests.some(
-				(request) =>
-					request.sequence > state.sequence ||
-					(request.parked && request.phase !== "queued"),
-			)
-		)
-			ctx.addIssue({
-				code: "custom",
-				message: "Invalid capacity queue bookkeeping",
-			});
-	});
-export type CapacityRequest = z.infer<typeof Request>;
 export interface CapacitySnapshot {
 	limit: number;
 	active: number;
@@ -114,17 +72,17 @@ async function processStart(pid: number): Promise<string | undefined> {
 		throw error; // Permission/tool errors are not proof that execution stopped.
 	}
 }
-async function living(owner: z.infer<typeof Owner>): Promise<boolean> {
+async function living(owner: CapacityOwner): Promise<boolean> {
 	return (await processStart(owner.pid)) === owner.start;
 }
 /** Scan only for our unguessable lease marker; never expose the process environment. */
-async function descendants(token: string): Promise<number[]> {
+async function descendants(token: string, legacy = false): Promise<number[]> {
 	if (process.platform === "win32")
 		throw new Error("Capacity process reconciliation requires POSIX ps");
 	const { stdout } = await runFile("ps", ["axeww", "-o", "pid=,command="], {
 		maxBuffer: 32 * 1024 * 1024,
 	});
-	const marker = `CYRUS_EXECUTION_LEASE=${token}`;
+	const marker = `${legacy ? "CYRUS_EXECUTION_LEASE" : "BOBS_FACTORY_EXECUTION_LEASE"}=${token}`;
 	return stdout
 		.split("\n")
 		.filter((line) => line.split(/\s+/).includes(marker))
@@ -151,10 +109,33 @@ async function drain(token: string): Promise<void> {
 	);
 }
 
+/** Safety barrier only: no legacy state fallback or automatic lease deletion. */
+export async function assertLegacyCapacityDrained(
+	directory = process.env.BOBS_FACTORY_MIGRATION_SOURCE_CAPACITY_DIRECTORY ??
+		join(homedir(), ".cyrus", "machine-capacity"),
+): Promise<void> {
+	let raw: string;
+	try {
+		raw = await readFile(join(directory, "state.json"), "utf8");
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+		throw error;
+	}
+	const state = State.parse(JSON.parse(raw));
+	for (const request of state.requests) {
+		if (
+			(await living(request.owner)) ||
+			(await descendants(request.token, true)).length
+		)
+			throw new Error(
+				"A Cyrus coordinator still owns live execution. Drain and stop its workers and descendants before starting Bob’s Factory; use the migration guide.",
+			);
+	}
+}
 /** One durable pool per OS user, independent of each worker's state home. */
 export class MachineCapacity implements ExecutionCapacity {
 	readonly directory: string;
-	private owner!: z.infer<typeof Owner>;
+	private owner!: CapacityOwner;
 	private initialized: Promise<void>;
 	private listeners = new Set<() => void>();
 	private poll?: ReturnType<typeof setInterval>;
@@ -165,8 +146,8 @@ export class MachineCapacity implements ExecutionCapacity {
 	private transactions: Promise<void> = Promise.resolve();
 	constructor(
 		private configuredLimit?: number,
-		directory = process.env.CYRUS_CAPACITY_DIRECTORY ??
-			join(homedir(), ".cyrus", "machine-capacity"),
+		directory = process.env.BOBS_FACTORY_CAPACITY_DIRECTORY ??
+			join(homedir(), ".bobs-factory", "machine-capacity"),
 	) {
 		this.directory = resolvePath(directory);
 		this.initialized = this.initialize();
@@ -174,6 +155,7 @@ export class MachineCapacity implements ExecutionCapacity {
 		void this.initialized.catch(() => {});
 	}
 	private async initialize(): Promise<void> {
+		await assertLegacyCapacityDrained();
 		if (this.configuredLimit !== undefined)
 			z.number().int().positive().parse(this.configuredLimit);
 		await mkdir(this.directory, { recursive: true, mode: 0o700 });
@@ -282,7 +264,7 @@ export class MachineCapacity implements ExecutionCapacity {
 			// Share process observations only within this locked transaction. Repeated
 			// leaves from one owner must not launch one ps process per leaf per poll.
 			const observed = new Map<string, boolean>();
-			const isLiving = async (owner: z.infer<typeof Owner>) => {
+			const isLiving = async (owner: CapacityOwner) => {
 				if (owner.pid === this.owner.pid && owner.start === this.owner.start)
 					return true;
 				const key = `${owner.pid}:${owner.start}`;

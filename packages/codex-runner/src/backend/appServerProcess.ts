@@ -1,4 +1,4 @@
-import { executionEnvironment } from "cyrus-core";
+import { executionEnvironment } from "bobs-factory-core";
 import type { CodexConfigValue } from "../types.js";
 import {
 	AppServerClient,
@@ -8,7 +8,7 @@ import {
 import { resolveCodexAppServerLaunch } from "./codexBinary.js";
 import type { ResolvedCodexConfig } from "./types.js";
 
-const CLIENT_INFO = { name: "cyrus-codex-runner", version: "1.0.0" };
+const CLIENT_INFO = { name: "bobs-factory-codex-runner", version: "1.0.0" };
 const DEFAULT_IDLE_CLOSE_MS = 30_000;
 
 export interface AppServerThreadHandler {
@@ -321,7 +321,8 @@ export class AppServerProcessManager {
 				this.clientFactory,
 				// MCP endpoints can be ephemeral. Release cached transports and the
 				// thread's writer lock before a later invocation resumes from disk.
-				launchOptions.mcpServers || launchOptions.env?.CYRUS_EXECUTION_LEASE
+				launchOptions.mcpServers ||
+					launchOptions.env?.BOBS_FACTORY_EXECUTION_LEASE
 					? 0
 					: this.idleCloseMs,
 				() => {

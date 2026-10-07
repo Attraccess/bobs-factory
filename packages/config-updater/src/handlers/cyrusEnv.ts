@@ -3,12 +3,12 @@ import { dirname, join } from "node:path";
 import type { ApiResponse, CyrusEnvPayload } from "../types.js";
 
 /**
- * Handle Cyrus environment variables update
+ * Handle Bob’s Factory environment variables update
  * Primarily used to update/provide the Claude API token
  */
 export async function handleCyrusEnv(
 	payload: CyrusEnvPayload,
-	cyrusHome: string,
+	factoryHome: string,
 ): Promise<ApiResponse> {
 	try {
 		// Validate payload
@@ -41,9 +41,9 @@ export async function handleCyrusEnv(
 			};
 		}
 
-		const envPath = join(cyrusHome, ".env");
+		const envPath = join(factoryHome, ".env");
 
-		// Ensure the .cyrus directory exists
+		// Ensure the .bobs-factory directory exists
 		const envDir = dirname(envPath);
 		if (!existsSync(envDir)) {
 			mkdirSync(envDir, { recursive: true });
@@ -91,7 +91,7 @@ export async function handleCyrusEnv(
 		if (payload.backupEnv && existsSync(envPath)) {
 			try {
 				const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-				const backupPath = join(cyrusHome, `.env.backup-${timestamp}`);
+				const backupPath = join(factoryHome, `.env.backup-${timestamp}`);
 				const existingEnvFile = readFileSync(envPath, "utf-8");
 				writeFileSync(backupPath, existingEnvFile, "utf-8");
 			} catch (backupError) {

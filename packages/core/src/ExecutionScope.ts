@@ -5,7 +5,7 @@ import { type SpawnOptions, spawn } from "node:child_process";
 export const executionScope = new AsyncLocalStorage<{ token: string }>();
 export function executionEnvironment(): Record<string, string> {
 	const scope = executionScope.getStore();
-	return scope ? { CYRUS_EXECUTION_LEASE: scope.token } : {};
+	return scope ? { BOBS_FACTORY_EXECUTION_LEASE: scope.token } : {};
 }
 /** Same spawn contract, with capacity provenance confined to the child environment. */
 export const spawnExecution: typeof spawn = ((

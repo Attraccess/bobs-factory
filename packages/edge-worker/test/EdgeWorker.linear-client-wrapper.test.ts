@@ -1,5 +1,5 @@
 import { LinearClient } from "@linear/sdk";
-import type { EdgeWorkerConfig } from "cyrus-core";
+import type { EdgeWorkerConfig } from "bobs-factory-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 
@@ -74,7 +74,7 @@ describe("EdgeWorker LinearClient Wrapper", () => {
 					linearWorkspaceName: "Test Workspace",
 				},
 			},
-			cyrusHome: "/test/.cyrus",
+			factoryHome: "/test/.bobs-factory",
 			serverPort: 3456,
 			serverHost: "localhost",
 		};

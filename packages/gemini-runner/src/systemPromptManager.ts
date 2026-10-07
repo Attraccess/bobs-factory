@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runtimeAssetPath } from "bobs-factory-core";
 
 /**
  * Manages system prompts for Gemini CLI by writing them to disk
@@ -13,15 +14,15 @@ import { fileURLToPath } from "node:url";
  * Supports parallel execution by using unique file paths per workspace.
  */
 export class SystemPromptManager {
-	private cyrusHome: string;
+	private factoryHome: string;
 	private systemPromptPath: string;
 
-	constructor(cyrusHome: string, workspaceName: string) {
-		this.cyrusHome = cyrusHome;
+	constructor(factoryHome: string, workspaceName: string) {
+		this.factoryHome = factoryHome;
 		// Use workspace-specific path to support parallel execution
-		// Format: ~/.cyrus/gemini-system-prompts/<workspace-name>.md
+		// Format: ~/.bobs-factory/gemini-system-prompts/<workspace-name>.md
 		// NOTE: Workspace-name is the Linear issue identifier
-		const promptsDir = join(this.cyrusHome, "gemini-system-prompts");
+		const promptsDir = join(this.factoryHome, "gemini-system-prompts");
 		this.systemPromptPath = join(promptsDir, `${workspaceName}.md`);
 	}
 
@@ -31,13 +32,16 @@ export class SystemPromptManager {
 	async prepareSystemPrompt(dynamicSystemPrompt: string): Promise<string> {
 		try {
 			// Ensure prompts directory exists
-			const promptsDir = join(this.cyrusHome, "gemini-system-prompts");
+			const promptsDir = join(this.factoryHome, "gemini-system-prompts");
 			await mkdir(promptsDir, { recursive: true });
 
 			// Get Gemini system prompt, which we will append
 			const __filename = fileURLToPath(import.meta.url);
 			const __dirname = dirname(__filename);
-			const subroutinePromptPath = join(__dirname, "prompts", "system.md");
+			const subroutinePromptPath = runtimeAssetPath(
+				"gemini-runner/prompts/system.md",
+				join(__dirname, "prompts", "system.md"),
+			);
 
 			const geminiSystemPrompt = await readFile(subroutinePromptPath, "utf-8");
 			const completeSystemPrompt = geminiSystemPrompt + dynamicSystemPrompt;

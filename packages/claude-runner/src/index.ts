@@ -37,8 +37,8 @@ export {
 	type SandboxRequirementsResult,
 } from "./sandbox-requirements.js";
 export {
+	BOBS_FACTORY_SESSION_ENV,
 	buildBaseSessionEnv,
-	CYRUS_SESSION_ENV,
 	normalizeMcpHttpTransport,
 } from "./session-env.js";
 export type {

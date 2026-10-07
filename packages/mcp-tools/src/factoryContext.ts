@@ -50,7 +50,7 @@ export function compactFactoryContext(input: unknown): unknown {
 
 export function prepareFactoryContext(input: unknown) {
 	input = compactFactoryContext(input);
-	const directory = mkdtempSync(join(tmpdir(), "cyrus-factory-context-"));
+	const directory = mkdtempSync(join(tmpdir(), "bobs-factory-context-"));
 	const path = join(directory, "input.json");
 	try {
 		writeFileSync(path, JSON.stringify(input) ?? "null", { mode: 0o600 });
@@ -62,10 +62,14 @@ export function prepareFactoryContext(input: unknown) {
 		config: {
 			type: "stdio" as const,
 			command: process.execPath,
-			args: [
-				fileURLToPath(new URL("./factory-context-stdio.js", import.meta.url)),
-				path,
-			],
+			args: process.env.BOBS_FACTORY_INTERNAL_EXECUTABLE
+				? ["internal", "factory-context", path]
+				: [
+						fileURLToPath(
+							new URL("./factory-context-main.js", import.meta.url),
+						),
+						path,
+					],
 		},
 		cleanup: () => rmSync(directory, { recursive: true, force: true }),
 	};

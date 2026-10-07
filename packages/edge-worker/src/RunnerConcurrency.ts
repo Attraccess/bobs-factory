@@ -10,7 +10,7 @@
  * kernel OOM killer).
  */
 
-import type { IAgentRunner } from "cyrus-core";
+import type { IAgentRunner } from "bobs-factory-core";
 import type {
 	CapacityLease,
 	CapacityOptions,

@@ -91,7 +91,7 @@ describe("AppServerCodexBackend", () => {
 		undefined,
 	] as const)("passes %s tier independently of model/reasoning into native thread config", async (serviceTier) => {
 		const resolved = await new CodexConfigBuilder({
-			cyrusHome: "/tmp",
+			factoryHome: "/tmp",
 			workingDirectory: "/tmp",
 			model: "gpt-6.1-sol",
 			modelReasoningEffort: "low",

@@ -33,12 +33,12 @@ interface ServerHooks {
 	subscribe?(listener: (id: string) => void): () => void;
 	repositories(): { id: string; name: string }[];
 	sessions(): {
-		triggerOrigin?: import("cyrus-core").WorkflowTriggerOrigin;
+		triggerOrigin?: import("bobs-factory-core").WorkflowTriggerOrigin;
 		id: string;
 		title: string;
 		status: string;
 		createdAt: string;
-		titleGeneration?: import("cyrus-core").RunTitleJob;
+		titleGeneration?: import("bobs-factory-core").RunTitleJob;
 		workspace: string;
 		repositoryId?: string;
 	}[];
@@ -120,7 +120,7 @@ export class FactoryServer {
 				reply.header("X-Factory-Build", shell.build);
 			}
 		});
-		// This separate listener is loopback-only and never registered on Cyrus's webhook tunnel.
+		// This separate listener is loopback-only and never registered on Bob’s Factory's webhook tunnel.
 		this.app.addHook("onRequest", async (request, reply) => {
 			const host = request.headers.host ?? "";
 			if (!/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host))

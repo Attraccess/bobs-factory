@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
-import type { IAgentRunner, IMessageFormatter, SDKMessage } from "cyrus-core";
+import type {
+	IAgentRunner,
+	IMessageFormatter,
+	SDKMessage,
+} from "bobs-factory-core";
 import { AppServerCodexBackend } from "./backend/AppServerCodexBackend.js";
 import type {
 	CodexBackend,
@@ -29,7 +33,7 @@ export declare interface CodexRunner {
 }
 
 /**
- * Adapts Codex to Cyrus's {@link IAgentRunner} contract.
+ * Adapts Codex to Bob’s Factory's {@link IAgentRunner} contract.
  *
  * The runner is a thin orchestrator: it owns session lifecycle and delegates
  * configuration assembly ({@link CodexConfigBuilder}), skill staging
