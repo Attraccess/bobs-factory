@@ -54,6 +54,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Recover stalled QA and handoff runs from their saved evidence, retry malformed QA and one silent Codex turn, and request assistance when CI repeats the same unresolved failure. Known defects proceed to correction before access waits. ([#36](https://github.com/Attraccess/bobs-factory/pull/36))
+
 - Allow an explicitly configured public Factory UI origin while retaining host, origin, and request-header checks.
 
 - Scope capacity limits and queues to each Cyrus instance's home, so temporary F1 instances can run tests while the parent QA step occupies its own slot. Recipes now labels the setting Instance capacity.
