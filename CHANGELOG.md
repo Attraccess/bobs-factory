@@ -55,6 +55,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Make passkey sign-in the default, fold operator setup away for existing installations, and move key management and sign-out into Settings. Let signed-out Factory users update a cached app after deployment so passkey login can continue, including from Settings and after signing out there. Honor the configured session lifetime when launching Factory, with explicit CLI settings taking precedence and invalid values rejected. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
+
 - Retry Codex startup failures without saving nonexistent conversations, and recover older invalid capture checkpoints while preserving completed work, evidence and review allowances. ([#40](https://github.com/Attraccess/bobs-factory/pull/40))
 
 - Make Bob’s questions, progress messages and review summaries easier to follow: lead with the decision or outcome, explain choices in everyday words, and keep internal test IDs in technical details. Saved review-fix workflows now receive the same question guidance as clarification. ([#39](https://github.com/Attraccess/bobs-factory/pull/39))

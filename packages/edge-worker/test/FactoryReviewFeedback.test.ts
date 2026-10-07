@@ -1,4 +1,5 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { accessRequired, checkAccess } from "../src/factory/web/auth-state.js";
 import { forgetDraft } from "../src/factory/web/restoration.js";
 import {
 	emptyFeedback,
@@ -15,7 +16,20 @@ import {
 import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
 import { reviewKey } from "../src/factory/web/review-state.js";
 
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(async () => {
+	const previous = globalThis.fetch;
+	globalThis.fetch = async () =>
+		Response.json({ authenticated: true, expires: Date.now() + 3600000 });
+	try {
+		await checkAccess();
+	} finally {
+		globalThis.fetch = previous;
+	}
+});
+afterEach(() => {
+	accessRequired();
+	vi.unstubAllGlobals();
+});
 const target = (
 	path: string,
 	order: number[],
