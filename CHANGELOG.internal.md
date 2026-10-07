@@ -6,7 +6,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
-- Format video evidence styles to pass the repository-wide CI formatting check. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Fix video evidence CI validation by formatting styles, installing media test tools and updating the full-prompt expectation for video capabilities. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 
 ### Added
 
