@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { resolveClaudeExecutable } from "bobs-factory-claude-runner";
+import { resolveCodexAppServerLaunch } from "bobs-factory-codex-runner";
 import type { AgentRunnerConfig, RunnerType } from "bobs-factory-core";
+import { resolveCursorInstallation } from "bobs-factory-cursor-runner";
 import type { ExecutionSnapshot } from "./ExecutionProfiles.js";
 
 /** Version gates are deliberately explicit; native source suppression is not portable across releases. */
@@ -10,70 +10,34 @@ export function executionCapabilities(runner: RunnerType): {
 	binary: string;
 	version: string;
 } {
-	const require = createRequire(import.meta.url);
-	if (runner === "cursor") {
-		const sdk = require.resolve("bobs-factory-cursor-runner");
-		const localRequire = createRequire(sdk);
-		const entry = localRequire.resolve("@cursor/sdk");
-		const version = JSON.parse(
-			readFileSync(join(dirname(entry), "..", "..", "package.json"), "utf8"),
-		).version as string;
-		if (version !== "1.0.19")
-			throw new Error(
-				"Cursor execution profiles require capability-tested SDK 1.0.19",
-			);
-		return { binary: "@cursor/sdk (isolated worker)", version };
-	}
 	let binary = runner as string;
-	let args = ["--version"];
-	if (runner === "codex") {
-		const localRequire = createRequire(
-			require.resolve("bobs-factory-codex-runner"),
-		);
-		const file = localRequire.resolve("@openai/codex/package.json");
-		const pkg = localRequire(file);
-		binary = process.execPath;
-		args = [
-			join(
-				dirname(file),
-				typeof pkg.bin === "string" ? pkg.bin : pkg.bin.codex,
-			),
-			"--version",
-		];
-	} else if (runner === "claude") {
-		const sdk = require.resolve("@anthropic-ai/claude-agent-sdk");
-		const localRequire = createRequire(sdk);
-		const suffix = process.platform === "win32" ? ".exe" : "";
-		let libcSuffix = "";
-		if (process.platform === "linux") {
-			// Only Linux needs libc detection. Node reports otherwise inspect open
-			// sockets and can block on reverse DNS before the executable timeout.
-			// Available since Node 20.13; the workspace's Node 20 typings lag it.
-			const diagnostic = process.report as typeof process.report & {
-				excludeNetwork: boolean;
-			};
-			const excludeNetwork = diagnostic.excludeNetwork;
-			try {
-				diagnostic.excludeNetwork = true;
-				const report = diagnostic.getReport() as {
-					header?: { glibcVersionRuntime?: string };
-				};
-				if (!report.header?.glibcVersionRuntime) libcSuffix = "-musl";
-			} finally {
-				diagnostic.excludeNetwork = excludeNetwork;
-			}
+	const args = ["--version"];
+	if (runner === "cursor") {
+		const { sdk, node, version } = resolveCursorInstallation();
+		if (node) {
+			const nodeVersion = execFileSync(node, ["--version"], {
+				encoding: "utf8",
+				timeout: 15000,
+				stdio: ["ignore", "pipe", "pipe"],
+			}).trim();
+			const match = /^v(\d+)\.(\d+)\./.exec(nodeVersion);
+			if (
+				!match ||
+				Number(match[1]) < 22 ||
+				(Number(match[1]) === 22 && Number(match[2]) < 13)
+			)
+				throw new Error(
+					"Prepared Cursor SDK requires Node >=22.13; configure BOBS_FACTORY_CURSOR_NODE",
+				);
 		}
-		try {
-			binary = localRequire.resolve(
-				`@anthropic-ai/claude-agent-sdk-${process.platform}-${process.arch}${libcSuffix}/claude${suffix}`,
-			);
-		} catch {
-			throw new Error(
-				"Claude SDK native executable unavailable. Install its matching optional dependency before selecting a profile",
-			);
-		}
-		args = ["--version"];
+		return {
+			binary: `${sdk} (isolated worker${node ? `; ${node}` : ""})`,
+			version,
+		};
 	}
+	if (runner === "codex") binary = resolveCodexAppServerLaunch().command;
+	else if (runner === "claude") binary = resolveClaudeExecutable();
+
 	let version: string;
 	try {
 		version = execFileSync(binary, args, {
@@ -96,7 +60,7 @@ export function executionCapabilities(runner: RunnerType): {
 		throw new Error(
 			`${runner} version ${version} has not been capability-tested for execution profiles; expected ${expected}`,
 		);
-	return { binary: [binary, ...args.slice(0, -1)].join(" "), version };
+	return { binary, version };
 }
 
 /** Reject requests the installed adapter cannot faithfully enforce, before constructing a runner. */

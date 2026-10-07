@@ -1,5 +1,6 @@
 export { CursorRunner } from "./CursorRunner.js";
 export { serveCursorWorker } from "./cursor-worker.js";
+export { resolveCursorInstallation } from "./installation.js";
 export {
 	buildAutoDenyPatterns,
 	buildCyrusPermissionsConfig,

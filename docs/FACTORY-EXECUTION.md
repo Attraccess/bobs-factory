@@ -131,3 +131,10 @@ All supported explicit modes retain managed policy. Incompatible managed enforce
 For host identity with private tool roots, resolve host credential references independently of HOME/config materialization: retain explicitly allowed SSH/GPG sockets or use the chosen host provider credential binding. The required cross-case does not depend on copying refreshable native OAuth stores. Native subscription login combined with factory-only tools is explicitly unavailable unless a separate supported binding exists; show this before Start.
 
 Shared tools in the factory-only identity cross-case are declared MCP definitions and supported ordinary runner settings. Their authentication fields are separately resolved. Arbitrary plugins/scripts that introduce undocumented automatic credential lookup are not supported isolated-auth sources merely because they were installed on the host.
+
+Capability previews and admission inspect the executable selected by each runner.
+Binary installations use prepared Claude/Codex launchers and the configured Cursor
+SDK/Node installation. Unsupported versions reject before setup; a checkout SDK
+version does not certify a different CLI on PATH. Cursor's two prepared-tool path
+variables survive private environment selection, with `~/` SDK paths expanded
+before assigning a private HOME. They do not enable ambient credential inheritance.

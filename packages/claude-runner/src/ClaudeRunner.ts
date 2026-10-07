@@ -27,12 +27,11 @@ import {
 	executionEnvironment,
 	type IAgentRunner,
 	type ILogger,
-	isPackagedExecutable,
 	LogLevel,
-	preparedExecutable,
 	StreamingPrompt,
 } from "bobs-factory-core";
 import dotenv from "dotenv";
+import { resolveClaudeExecutable } from "./executable.js";
 import { ClaudeMessageFormatter, type IMessageFormatter } from "./formatter.js";
 import { buildHomeDirectoryDisallowedTools } from "./home-directory-restrictions.js";
 import {
@@ -641,9 +640,9 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 				);
 			}
 
-			const pathToClaudeCodeExecutable =
-				this.config.pathToClaudeCodeExecutable ??
-				(isPackagedExecutable ? preparedExecutable("claude") : undefined);
+			const pathToClaudeCodeExecutable = resolveClaudeExecutable(
+				this.config.pathToClaudeCodeExecutable,
+			);
 
 			// On Linux, setting CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 causes the SDK
 			// to run tool invocations under a bubblewrap-backed sandbox. If the

@@ -161,6 +161,40 @@ describe("Private execution materialization", () => {
 		tools: tools(),
 		sources: { identity: "manual" as const, tools: "manual" as const },
 	});
+	it("retains prepared Cursor paths across private HOME changes without passing ambient credentials", async () => {
+		const { directory, host } = setup();
+		const resolver = new ExecutionEnvironmentResolver(
+			join(directory, "factory"),
+			{
+				...host,
+				BOBS_FACTORY_CURSOR_SDK_PATH: "~/prepared/sdk",
+				BOBS_FACTORY_CURSOR_NODE: "/prepared/node",
+				BOBS_FACTORY_CURSOR_MOCK: "1",
+				CURSOR_API_KEY: "ambient-credential",
+			},
+		);
+		const input = snapshot();
+		input.identity.runners.cursor = {
+			mode: "factory-only",
+			provider: "cursor",
+			credential: { source: "env", name: "FACTORY_TEST_KEY", version: "v1" },
+		};
+		const resolved = await resolver.resolve(
+			input,
+			"cursor-paths",
+			directory,
+			"cursor",
+		);
+		expect(resolved.environment.HOME).not.toBe(host.HOME);
+		expect(resolved.environment.BOBS_FACTORY_CURSOR_SDK_PATH).toBe(
+			join(directory, "prepared/sdk"),
+		);
+		expect(resolved.environment.BOBS_FACTORY_CURSOR_NODE).toBe(
+			"/prepared/node",
+		);
+		expect(resolved.environment.BOBS_FACTORY_CURSOR_MOCK).toBeUndefined();
+		expect(resolved.environment.CURSOR_API_KEY).toBe("fixture-secret-canary");
+	});
 	it("applies separate real Git identities and disables host signing, helpers and environment fallback", async () => {
 		const { directory, resolver } = setup();
 		const resolved = await resolver.resolve(

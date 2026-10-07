@@ -289,6 +289,20 @@ export class ExecutionEnvironmentResolver {
 						),
 					)
 				: { ...this.host };
+		// These locate prepared tools, not credentials or host configuration.
+		// Expand SDK home paths before assigning the private runner HOME.
+		if (runner === "cursor") {
+			for (const key of [
+				"BOBS_FACTORY_CURSOR_SDK_PATH",
+				"BOBS_FACTORY_CURSOR_NODE",
+			]) {
+				const value = this.host[key];
+				if (value)
+					env[key] = value.startsWith("~/")
+						? join(this.hostHome, value.slice(2))
+						: value;
+			}
+		}
 		const home = join(root, "jobs", job, runner, "home");
 		mkdirSync(home, { recursive: true, mode: 0o700 });
 		if (identity || tools) {
