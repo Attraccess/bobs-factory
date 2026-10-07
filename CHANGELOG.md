@@ -61,6 +61,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Align migration guidance with mandatory passkey access, HTTPS origin configuration, enrollment and local authentication recovery. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
 - Invalidate rephrased questions and saved answers when the pending decision changes, and keep explanation revision records separate from blocked work. Preserve unchanged rephrasings across restart. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Keep explanation requests separate from accepted answers, preserve the pending decision across restart, and rephrase it without resuming blocked work. Align self-hosting instructions and binary CI smoke with passkey-protected dashboard access. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))

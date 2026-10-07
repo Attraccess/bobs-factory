@@ -46,6 +46,7 @@ agents, Git identity/signing configuration, keychains and agent credentials inta
    apply. Keep the verified custom-pool backup for recovery.
 5. Back up source state, config, env, service definitions, destination files being
    affected and relevant native conversation stores with mode 0700 directories.
+   Include existing `factory/auth` files and their configured dashboard origins.
    Verify bytes, permissions and symlinks. Keep originals. The helper copies
    source state and approved external files through a preservation plan. Read
    [preservation.md](preservation.md) when external stores, service definitions or
@@ -81,13 +82,43 @@ agents, Git identity/signing configuration, keychains and agent credentials inta
    different identities for the same directory.
    Preserve ingress URLs, provider registrations and direct verification secrets.
    Hosted Cyrus enrollment requires explicit independent OAuth/webhook conversion;
-   never send migrated secrets to a new hosted service. Enable/start only the
-   intended replacement after the old consumer and descendants are proven stopped.
+   never send migrated secrets to a new hosted service. Configure dashboard access
+   as described below before starting the replacement; keep webhook ingress separate.
+   Enable/start only the intended replacement after the old consumer and
+   descendants are proven stopped.
 10. Verify dashboard/API, configured integrations, workflow selection/permissions,
     waiting-run recovery, queue order, native continuation and ticket identity.
+    Check unauthenticated dashboard API denial and successful passkey sign-in.
     Completed steps stay completed. Interrupted scripts/external tools retain
     reconciliation semantics; do not promise exactly-once execution. Finish only
     when preservation checks pass or clearly report the remaining blocker.
+
+## Dashboard access after cutover
+
+Every dashboard address, including localhost, requires a passkey session for data,
+live updates, media and actions. For remote access, configure the exact HTTPS browser
+origin with `--origin https://YOUR_HOST` for local launch or
+`BOBS_FACTORY_FACTORY_ORIGIN=https://YOUR_HOST` for configured services. The proxy
+must preserve that authority and browser Origin; unconfigured origins are denied.
+Webhook ingress retains its separate provider signature checks.
+
+Preserve existing authentication files and origin settings. For first setup, start
+the replacement, privately read the ten-minute, single-use `token` value from
+`<home>/factory/auth/enroll.json`, and enter it in the setup screen to create a
+passkey. Localhost and the public hostname need separate passkeys. For another
+enrollment, use Settings with a recent passkey verification, or generate a new code
+on the service machine with `bobs-factory --home /absolute/service/home factory-auth`.
+Use the running service's home; codes are invalidated on restart and stay out of
+prompts, tickets and screenshots.
+
+If configured origins change, restore the original configuration or deliberately
+recover authentication. For lost keys or corrupt authentication state, run
+`bobs-factory --home /absolute/service/home factory-auth --recover --confirm
+"RESET FACTORY AUTHENTICATION"`. Recovery revokes all passkeys and sessions while
+preserving runs and integrations. If startup was blocked, start the service again;
+then re-enroll with the new code. Follow
+[passkey setup and recovery](../../docs/FACTORY.md#passkey-access-and-first-setup)
+for the complete access contract. Confirm sign-in before declaring cutover complete.
 
 ## Recovery
 
@@ -102,6 +133,6 @@ consumer. Verify one active pool and one consumer. Retain backups until the user
 explicitly elects to remove them.
 
 There is no old command alias, implicit old-home fallback or deprecation phase.
-Automatic updates, Windows, zrok2 (#39), remote dashboard protection (#40) and
-independent identity overlays (#57) are separate work. See
+Automatic updates, Windows, zrok2 (#39) and independent identity overlays (#57)
+are separate work. See
 `docs/PRODUCT_CONTRACTS.md` and `docs/distribution/README.md` in the checkout.
