@@ -10,6 +10,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Added
 
+- Record authenticated HTTPS Web Push QA through an isolated `zrok2` tunnel, including proxy guards, device controls, refreshed notification destinations and loss of access; retain explicit native-delivery and production-deployment limitations. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
 - Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))
 
 ### Changed

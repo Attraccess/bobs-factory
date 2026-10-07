@@ -126,8 +126,11 @@ Set `CYRUS_FACTORY_ORIGIN` to that exact HTTPS origin (no path or trailing slash
 when the proxy forwards its public Host or Origin. The listener remains loopback-only;
 only that configured origin and the existing local origin pass the request guards.
 No forwarded-header trust, public listener or permissive CORS is added. Do not expose
-Factory through a public tunnel to enable push. The deployed proxy configuration
-and protected-origin flow have not been verified by automated local checks.
+Factory through a public tunnel to enable push. For explicitly authorized QA, an
+isolated fixture may use an authenticated `zrok2` HTTPS tunnel. The
+[protected HTTPS QA record](WEB_PUSH_HTTPS_QA.md) verifies browser/API flows through
+that tunnel with mocked subscriptions and delivery. Production Tailscale proxy
+configuration and native foreground/background receipt remain unverified.
 
 Set `CYRUS_FACTORY_PUSH_SUBJECT` to an operator contact, such as
 `mailto:operator@example.org` or an HTTPS contact page, then restart Factory.

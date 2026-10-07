@@ -70,6 +70,11 @@ The process restart stopped the isolated fixture after its evidence was saved.
 
 ## Unresolved required validation
 
+The following records the state at this drive. The later user-authorized
+[authenticated HTTPS follow-up](../../../docs/WEB_PUSH_HTTPS_QA.md) supplies the
+protected browser/API checks; its native-device and production-Tailscale limits
+remain explicit.
+
 WP-QA-001, WP-QA-002 and gate-generated `qa-8db530f67f19c085` are corrected and
 their affected failed criteria were retested. WP-QA-003 remains open, not rejected
 or waived. Three deployed-device criteria still require reassessment and execution:
