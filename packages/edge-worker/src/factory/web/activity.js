@@ -277,7 +277,7 @@ export function formatActivities(run) {
 				? "Agent error"
 				: {
 						response: "Response",
-						thought: "Agent",
+						thought: "Bob’s Factory",
 						user: "You",
 						system: "Workflow",
 					}[type],

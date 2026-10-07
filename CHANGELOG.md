@@ -59,6 +59,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Attribute unlabeled assistant activity to Bob’s Factory and explain how to recover from a missing or invalid repository directory before launching Git. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
 - Reconcile the fork with current instance-capacity, mocked F1, browser and workflow-recovery fixes while retaining migrated names and completed results; restore the pre-commit schema check with the renamed package filter. Block migration with capacity-directory overrides until custom/shared policy and queues are explicitly reconciled into the instance pool. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Recover stalled QA and handoff runs from their saved evidence, retry malformed QA and one silent Codex turn, and request assistance when CI repeats the same unresolved failure. Known defects proceed to correction before access waits. ([#36](https://github.com/Attraccess/bobs-factory/pull/36))

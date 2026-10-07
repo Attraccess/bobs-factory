@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 
 import { getAllTools } from "bobs-factory-claude-runner";
@@ -20,6 +21,18 @@ export async function launchLocal(values: {
 		!["claude", "codex", "gemini", "cursor", "opencode"].includes(values.agent!)
 	)
 		throw new Error("Unknown agent");
+	let isDirectory = false;
+	try {
+		isDirectory = statSync(repo).isDirectory();
+	} catch {
+		throw new Error(
+			`Cannot access repository directory: ${repo}. Choose an existing Git repository with --repo <path>, or create the directory and run git init there.`,
+		);
+	}
+	if (!isDirectory)
+		throw new Error(
+			`Repository path is not a directory: ${repo}. Use --repo <path> to select a Git repository directory.`,
+		);
 	const home = resolvePath(values.home!);
 	let baseBranch: string;
 	try {
