@@ -2622,6 +2622,117 @@ it.each([
 	await restarted.shutdown();
 });
 
+it.each([
+	"unchanged",
+	"question",
+	"answer",
+	"reason",
+	"removed",
+	"legacy",
+	"pending",
+] as const)("restores a rephrased review question only when its source is unchanged (%s)", async (changed) => {
+	const output = {
+		approved: false,
+		reviewBlocked: true,
+		findings: [{ id: "fixture", status: "open" }],
+		questions: ["Restore deployment access?"],
+		questionRecommendations: [
+			{ questionIndex: 0, answer: "Restore access", reason: "QA needs access" },
+		],
+	};
+	const tool = vi.fn(async () => structuredClone(output));
+	const execute = vi.fn(async (ctx: ExecutionContext) =>
+		ctx.step.id === "question-explanation"
+			? {
+					questions: ["Can you restore deployment access?"],
+					questionRecommendations: output.questionRecommendations,
+				}
+			: {},
+	);
+	const question = vi.fn();
+	const { home, runtime } = create({ tool, agent: execute, question });
+	const run = start(
+		runtime,
+		workflow([
+			agent("visual-review"),
+			{
+				id: "visual-gate",
+				name: "Gate",
+				type: "tool",
+				tool: "visual-gate",
+				qaContract: "qa-v1",
+				next: "end",
+				branches: [
+					{ when: { path: "approved", equals: false }, next: "visual-fix" },
+				],
+			},
+			agent("visual-fix", { next: "end" }),
+		]),
+	);
+	const first = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	runtime.answer(run.id, "Please explain", "explanation");
+	await vi.waitFor(() => {
+		expect(run.status).toBe("waiting");
+		expect(run.questions).toEqual(["Can you restore deployment access?"]);
+	});
+	const batch = run.questionBatchId;
+	await runtime.shutdown();
+	await first;
+	if (changed === "question")
+		output.questions = ["Which deployment account is available?"];
+	else if (changed === "removed") output.questionRecommendations = [];
+	else if (changed === "answer" || changed === "reason")
+		output.questionRecommendations[0]![changed] = "Updated guidance";
+	const restarted = reload(home, { tool, agent: execute, question });
+	const restored = restarted.get(run.id);
+	if (changed === "legacy") {
+		delete restored.checkpoint!.active!.questionDisplay!.source;
+	}
+	if (changed === "pending") {
+		const state = restored.checkpoint!.active!;
+		state.questionExplanation = {
+			source: state.questionDisplay!.source,
+			questions: state.questionDisplay!.questions,
+			text: "Please explain again",
+		};
+		state.questionDisplay = undefined;
+		output.questions = ["Which deployment account is available?"];
+	}
+	const second = restarted.launch(restored);
+	await vi.waitFor(() => {
+		expect(tool).toHaveBeenCalledTimes(2);
+		expect(restored.status).toBe("waiting");
+	});
+	if (changed === "unchanged") {
+		expect(restored.questions).toEqual(["Can you restore deployment access?"]);
+		expect(restored.questionBatchId).toBe(batch);
+		expect(question).toHaveBeenCalledTimes(2);
+	} else {
+		expect(restored.questions).toEqual(output.questions);
+		expect(restored.questionRecommendations).toEqual(
+			output.questionRecommendations,
+		);
+		expect(restored.questionBatchId).not.toBe(batch);
+		expect(restored.checkpoint!.active!.questionDisplay).toBeUndefined();
+		expect(question).toHaveBeenCalledTimes(3);
+	}
+	expect(restored.answers).toEqual([]);
+	expect(execute.mock.calls.map(([ctx]) => ctx.step.id)).toEqual([
+		"visual-review",
+		"question-explanation",
+	]);
+	restarted.answer(run.id, "Use the available deployment account", "answer");
+	await second;
+	expect(restored.answers[0]!.questions).toEqual(
+		changed === "unchanged"
+			? ["Can you restore deployment access?"]
+			: output.questions,
+	);
+	expect(restored.status).toBe("completed");
+	await restarted.shutdown();
+});
+
 it("upgrades the original stock end-at-handoff recipe with QA and its human checkpoint together", () => {
 	const saved = structuredClone(defaultWorkflows);
 	const pipeline = saved.find((w) => w.id === "factory-pipeline")!;

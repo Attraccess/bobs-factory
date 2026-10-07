@@ -102,10 +102,18 @@ export interface GraphCheckpoint {
 	active?: {
 		phase: "executing" | "result" | "waiting" | "answered";
 		questionDisplay?: {
+			source?: {
+				questions: string[];
+				recommendations?: QuestionRecommendation[];
+			};
 			questions: string[];
 			recommendations?: QuestionRecommendation[];
 		};
 		questionExplanation?: {
+			source?: {
+				questions: string[];
+				recommendations?: QuestionRecommendation[];
+			};
 			text: string;
 			questions: string[];
 			agent?: AgentCheckpoint;
@@ -1191,7 +1199,9 @@ export class WorkflowRuntime {
 						readPath(output, "questions") as string[],
 						signal,
 						state,
-						undefined,
+						normalizeQuestionResult(output).questionRecommendations as
+							| QuestionRecommendation[]
+							| undefined,
 						context,
 					);
 				checkpoint.current = fixer;
@@ -1271,6 +1281,25 @@ export class WorkflowRuntime {
 		recommendations: QuestionRecommendation[] | undefined,
 		context: ExecutionContext,
 	): Promise<void> {
+		const source = structuredClone({
+			questions,
+			...(recommendations === undefined ? {} : { recommendations }),
+		});
+		// A rephrasing belongs to the decision it explained. Revalidated gates
+		// may change while waiting; legacy displays without provenance cannot
+		// establish that the decision is still the same.
+		if (
+			state.questionDisplay &&
+			!isDeepStrictEqual(state.questionDisplay.source, source)
+		) {
+			state.questionDisplay = undefined;
+			state.questionExplanation = undefined;
+		}
+		if (
+			state.questionExplanation &&
+			!isDeepStrictEqual(state.questionExplanation.source, source)
+		)
+			state.questionExplanation = undefined;
 		questions = state.questionDisplay?.questions ?? questions;
 		recommendations = state.questionDisplay
 			? state.questionDisplay.recommendations
@@ -1338,7 +1367,7 @@ export class WorkflowRuntime {
 					| QuestionRecommendation[]
 					| undefined;
 				notify = true;
-				state.questionDisplay = { questions, recommendations };
+				state.questionDisplay = { source, questions, recommendations };
 				state.questionExplanation = undefined;
 				run.questions = questions;
 				run.questionRecommendations = recommendations;
@@ -1480,6 +1509,16 @@ export class WorkflowRuntime {
 			});
 			run.status = "running";
 			state.questionExplanation = {
+				source: structuredClone(
+					state.questionDisplay?.source ?? {
+						questions: run.questions,
+						...(run.questionRecommendations === undefined
+							? {}
+							: {
+									recommendations: run.questionRecommendations,
+								}),
+					},
+				),
 				text: answer,
 				questions: [...run.questions],
 			};

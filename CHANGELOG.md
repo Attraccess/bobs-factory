@@ -61,6 +61,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Invalidate rephrased questions and saved answers when the pending decision changes, and keep explanation revision records separate from blocked work. Preserve unchanged rephrasings across restart. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
 - Keep explanation requests separate from accepted answers, preserve the pending decision across restart, and rephrase it without resuming blocked work. Align self-hosting instructions and binary CI smoke with passkey-protected dashboard access. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Reconcile current passkey protection, Codex startup recovery and dependency cleanup with the binary CLI and renamed settings. Preserve cancellation and saved-review recovery. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))

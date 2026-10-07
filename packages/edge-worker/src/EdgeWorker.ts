@@ -7768,7 +7768,7 @@ ${taskSection}`;
 		if (completed) {
 			run.roleRevisions ??= {};
 			completed.historyLength = run.history.length + 1;
-			run.roleRevisions[run.step ?? step.id] = completed;
+			run.roleRevisions[context.stepKey ?? run.step ?? step.id] = completed;
 		}
 		return output;
 	}
