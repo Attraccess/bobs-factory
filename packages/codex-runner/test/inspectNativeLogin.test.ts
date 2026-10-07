@@ -36,6 +36,7 @@ function responses(
 }
 it("inspects the named store and returns only principal and native MCP names without a thread or model turn", async () => {
 	responses(undefined, {
+		notify: [],
 		chatgpt_base_url: "https://chatgpt.com/backend-api/",
 		mcp_servers: {
 			inherited: { headers: { Authorization: "private-canary" } },
@@ -82,6 +83,14 @@ it.each([
 	[
 		{ type: "chatgpt", email: "native@example.test" },
 		{ plugins: { automatic: { enabled: true } } },
+	],
+	[
+		{ type: "chatgpt", email: "native@example.test" },
+		{ notify: ["/private/notification-canary", "private-canary-secret"] },
+	],
+	[
+		{ type: "chatgpt", email: "native@example.test" },
+		{ notify: "unexpected-command-shape" },
 	],
 ])("rejects missing/competing native sources and closes inspection", async (account, config) => {
 	responses(account, config);

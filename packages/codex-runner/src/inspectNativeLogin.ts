@@ -49,13 +49,15 @@ export async function inspectCodexNativeLogin(
 			);
 		if (
 			config.hooks ||
+			(config.notify != null &&
+				(!Array.isArray(config.notify) || config.notify.length > 0)) ||
 			Object.values(
 				(config.plugins as Record<string, { enabled?: boolean }>) ?? {},
 			).some((plugin) => plugin.enabled !== false) ||
 			config.apps
 		)
 			throw new Error(
-				"Native Codex Share requires a root without automatic hooks, plugins or app connectors; declare MCP sources instead",
+				"Native Codex Share requires a root without automatic hooks, notification commands, plugins or app connectors; declare MCP sources instead",
 			);
 		return {
 			account: account.email,
@@ -63,7 +65,7 @@ export async function inspectCodexNativeLogin(
 		};
 	} catch {
 		throw new Error(
-			"Native Codex login inspection failed. Select an existing first-party ChatGPT login without competing provider policy, hooks, enabled plugins or app connectors",
+			"Native Codex login inspection failed. Select an existing first-party ChatGPT login without competing provider policy, hooks, notification commands, enabled plugins or app connectors",
 		);
 	} finally {
 		await client.close();
