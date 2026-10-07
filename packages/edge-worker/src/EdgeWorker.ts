@@ -201,7 +201,11 @@ import {
 } from "./factory/LaunchAdmission.js";
 import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
-import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
+import {
+	assessFeedback,
+	type MergeReadiness,
+	recordFeedbackAssessment,
+} from "./factory/MergeReadiness.js";
 import {
 	confirmedMerge,
 	pendingMergeConfirmation,
@@ -7769,16 +7773,23 @@ ${taskSection}`;
 	}
 
 	private refreshFactoryFeedbackContext(context: ExecutionContext): void {
-		if (
-			!["ci-fix", "code-fix", "visual-fix"].includes(context.step.id) ||
-			!this.factoryRuntime
-		)
-			return;
-		context.chatMessages = this.factoryRuntime.chatMessages(context.run.id);
-		context.input = {
-			...(context.input as Record<string, unknown>),
-			chatMessages: context.chatMessages,
-		};
+		if (!["ci-fix", "code-fix", "visual-fix"].includes(context.step.id)) return;
+		if (this.factoryRuntime) {
+			context.chatMessages = this.factoryRuntime.chatMessages(context.run.id);
+			context.input = {
+				...(context.input as Record<string, unknown>),
+				chatMessages: context.chatMessages,
+			};
+		}
+		if (context.step.id === "ci-fix") {
+			const receipt = (context.run.outputs["merge-readiness"] ??
+				context.run.outputs.ci) as MergeReadiness | undefined;
+			// Runs paused before feedback recovery was installed retain legacy
+			// receipts. Derive the exact pending versions before exposing context
+			// or validating a recovered result, without inventing assessments.
+			if (receipt && receipt.unassessedComments === undefined)
+				assessFeedback(context, receipt);
+		}
 	}
 
 	private async finalizeFactoryAgentOutput(
