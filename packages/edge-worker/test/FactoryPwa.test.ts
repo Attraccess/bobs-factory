@@ -443,6 +443,64 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });
+it.each([
+	"",
+	"/execution",
+	"/identities",
+	"/tools",
+	"/capacity",
+	"/titles",
+])("restores Settings%s and unsaved capacity/title drafts through updates", (section) => {
+	browserState();
+	const route = `#/settings${section}`;
+	vi.stubGlobal("location", { hash: route });
+	const saved = storage();
+	vi.stubGlobal("sessionStorage", saved);
+	const edits = {
+		"recipe/machine-capacity": { value: { limit: "7" }, revision: "old-limit" },
+		"recipe/title-settings": {
+			value: { value: { runner: "codex", model: "cheap" } },
+			revision: "old-title-settings",
+		},
+	};
+	for (const [key, draft] of Object.entries(edits))
+		rememberDraft(key, draft.value, draft.revision);
+	preserveForUpdate(build, saved);
+	expect(decodeSnapshot([...saved.values.values()][0])).toMatchObject({
+		route,
+		drafts: edits,
+	});
+	for (const key of Object.keys(edits)) forgetDraft(key);
+	location.hash = "#/";
+	loadRestoration(build, saved);
+	expect(location.hash).toBe(route);
+	for (const [key, draft] of Object.entries(edits)) {
+		expect(restoredDraft(key)).toEqual(draft.value);
+		expect(draftRevision(key)).toBe(draft.revision);
+		forgetDraft(key);
+	}
+	completeRestoration();
+	expect(saved.values.size).toBe(0);
+});
+it.each([
+	"#/settings/unknown",
+	"#/settings/tools/extra",
+	"#/settings/tools?redirect=evil",
+	"https://example.test/settings/tools",
+])("rejects unsupported update routes: %s", (route) => {
+	expect(
+		decodeSnapshot(
+			JSON.stringify({
+				schema: 1,
+				target: build,
+				route,
+				expires: Date.now() + 1000,
+				drafts: {},
+				details: [],
+			}),
+		),
+	).toBeUndefined();
+});
 it("preserves dedicated review routes, checked steps and revision-scoped feedback during updates", () => {
 	browserState();
 	vi.stubGlobal("location", {
