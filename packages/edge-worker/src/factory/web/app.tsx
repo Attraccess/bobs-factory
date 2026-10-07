@@ -12,6 +12,7 @@ import {
 	useParams,
 } from "react-router-dom";
 import { ArtifactCard, Inspector } from "./artifacts";
+import { AccessBoundary, AccessSettings } from "./auth";
 import {
 	active,
 	ago,
@@ -174,7 +175,11 @@ function Header({
 				</Link>
 				<nav className="nav-pill" aria-label="Main navigation">
 					<Link
-						aria-current={location.pathname !== "/recipes" ? "page" : undefined}
+						aria-current={
+							!["/recipes", "/settings"].includes(location.pathname)
+								? "page"
+								: undefined
+						}
 						to="/"
 						state={todayContext(location.pathname, location.state)}
 					>
@@ -186,6 +191,14 @@ function Header({
 						to="/recipes"
 					>
 						Recipes
+					</Link>
+					<Link
+						aria-current={
+							location.pathname === "/settings" ? "page" : undefined
+						}
+						to="/settings"
+					>
+						Settings
 					</Link>
 				</nav>
 				<div className="header-actions">
@@ -1130,6 +1143,7 @@ function App() {
 								}
 							/>
 							<Route path="/recipes" element={<Recipes />} />
+							<Route path="/settings" element={<AccessSettings />} />
 							<Route
 								path="/runs/:id/review"
 								element={
@@ -1215,7 +1229,9 @@ createRoot(document.getElementById("root")!).render(
 	<QueryClientProvider client={client}>
 		<HashRouter>
 			<ToastProvider>
-				<App />
+				<AccessBoundary>
+					<App />
+				</AccessBoundary>
 			</ToastProvider>
 		</HashRouter>
 	</QueryClientProvider>,

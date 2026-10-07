@@ -1,3 +1,9 @@
+import {
+	accessGeneration,
+	accessRequired,
+	accessSignal,
+	accessState,
+} from "./auth-state";
 import { checkVersion, uiBuild } from "./pwa";
 export interface PushDevice {
 	id: string;
@@ -53,23 +59,38 @@ export async function pushApi<T>(
 	path = "",
 	options: RequestInit = {},
 ): Promise<T> {
+	const epoch = accessGeneration();
+	const signal = accessSignal();
+	if (accessState().status !== "authenticated")
+		throw new Error("Sign in required");
 	if (!(await checkVersion()))
 		throw new Error(
 			"Reconnect or update Factory before managing notifications.",
 		);
+	if (epoch !== accessGeneration()) throw new Error("Session changed");
 	const response = await fetch(`/api/push${path}`, {
 		...options,
 		cache: "no-store",
-		signal: AbortSignal.timeout(10000),
+		signal: AbortSignal.any([
+			signal,
+			AbortSignal.timeout(10000),
+			...(options.signal ? [options.signal] : []),
+		]),
 		headers: {
 			...(options.body != null ? { "Content-Type": "application/json" } : {}),
 			"X-Factory-Request": "1",
 			"X-Factory-Build": uiBuild,
 		},
 	});
+	if (response.status === 401) {
+		accessRequired("Your session expired. Sign in again.");
+		throw new Error("Sign in required");
+	}
+	if (epoch !== accessGeneration()) throw new Error("Session changed");
 	if (response.headers.get("X-Factory-Build") !== uiBuild)
 		throw new Error("Update Factory before managing notifications.");
 	const data = await response.json();
+	if (epoch !== accessGeneration()) throw new Error("Session changed");
 	if (!response.ok)
 		throw new Error(data.error ?? "Notification request failed");
 	return data;

@@ -14,8 +14,9 @@ import { runInNewContext } from "node:vm";
 import { buildSync } from "esbuild";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { factoryWebAssets } from "../src/factory/FactoryWebAssets.js";
+import { accessRequired, checkAccess } from "../src/factory/web/auth-state.js";
 import {
 	installApp,
 	pwaState,
@@ -46,6 +47,13 @@ import {
 import { feedbackSession } from "../src/factory/web/review-feedback-session.js";
 import { reviewKey } from "../src/factory/web/review-state.js";
 
+beforeEach(async () => {
+	const previous = globalThis.fetch;
+	globalThis.fetch = async () =>
+		Response.json({ authenticated: true, expires: Date.now() + 3600000 });
+	await checkAccess();
+	globalThis.fetch = previous;
+});
 const build = "b".repeat(24),
 	oldBuild = "a".repeat(24),
 	prefix = "bobs-factory-shell-";
@@ -436,6 +444,28 @@ it("round-trips bounded tab-local drafts, identifiers and stable reading anchors
 	expect(snapshot?.drafts["recipe/title-settings"]?.revision).toBe(
 		"old-title-settings",
 	);
+	completeRestoration();
+	expect(saved.values.size).toBe(0);
+});
+it.each([
+	false,
+	true,
+])("preserves the Settings route during updates with signed-out state %s", (signedOut) => {
+	browserState();
+	vi.stubGlobal("location", { hash: "#/settings" });
+	const saved = storage();
+	vi.stubGlobal("sessionStorage", saved);
+	rememberDraft("chat/r", "private draft");
+	if (signedOut) accessRequired("Signed out");
+	preserveForUpdate(build, saved);
+	const snapshot = decodeSnapshot([...saved.values.values()][0]);
+	expect(snapshot?.route).toBe("#/settings");
+	expect(snapshot?.drafts["chat/r"]).toEqual(
+		signedOut ? undefined : { value: "private draft" },
+	);
+	location.hash = "#/";
+	loadRestoration(build, saved);
+	expect(location.hash).toBe("#/settings");
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
 });

@@ -27,6 +27,10 @@ export { ChatSessionHandler } from "./ChatSessionHandler.js";
 export { DefaultSkillsDeployer } from "./DefaultSkillsDeployer.js";
 export { EdgeWorker } from "./EdgeWorker.js";
 export { EgressProxy } from "./EgressProxy.js";
+export {
+	authorizeFactoryEnrollment,
+	requestFactoryAuthRecovery,
+} from "./factory/FactoryAuthOperator.js";
 export type { CreateGitWorktreeOptions } from "./GitService.js";
 export { GitService } from "./GitService.js";
 export type { SerializedGlobalRegistryState } from "./GlobalSessionRegistry.js";

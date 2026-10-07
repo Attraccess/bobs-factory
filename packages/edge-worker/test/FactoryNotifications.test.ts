@@ -1,6 +1,11 @@
 import Fastify from "fastify";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+	accessRequired,
+	accessState,
+	checkAccess,
+} from "../src/factory/web/auth-state.js";
+import {
 	disablePush,
 	enablePush,
 	pushApi,
@@ -66,6 +71,15 @@ beforeEach(async () => {
 					: response({ id: "one", ok: true }),
 		),
 	);
+	const pushFetch = fetch;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			response({ authenticated: true, expires: Date.now() + 3600000 }),
+		),
+	);
+	await checkAccess();
+	vi.stubGlobal("fetch", pushFetch);
 	await checkVersion();
 	authoritativeReady();
 	vi.clearAllMocks();
@@ -198,4 +212,63 @@ it("keeps a later cross-tab disable when an earlier enable finishes registration
 	await rejected;
 	expect(pushPreference().optOut).toBe(true);
 	expect(subscription.unsubscribe).toHaveBeenCalled();
+});
+
+it("handles expired push sessions before build validation and clears access", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (path: string) =>
+			path === "/api/version"
+				? response({ build: uiBuild, protocol: 1 })
+				: Response.json({ error: "Sign in with a passkey" }, { status: 401 }),
+		),
+	);
+	await expect(pushApi()).rejects.toThrow("Sign in required");
+	expect(accessState().status).toBe("required");
+	vi.mocked(fetch).mockClear();
+	await expect(pushApi()).rejects.toThrow("Sign in required");
+	expect(fetch).not.toHaveBeenCalled();
+});
+
+it("discards a late push response after sign-out", async () => {
+	let complete!: (value: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (path: string) =>
+			path === "/api/version"
+				? response({ build: uiBuild, protocol: 1 })
+				: new Promise<Response>((resolve) => {
+						complete = resolve;
+					}),
+		),
+	);
+	const pending = pushApi();
+	await vi.waitFor(() => expect(complete).toBeTypeOf("function"));
+	accessRequired();
+	complete(response({ devices: [{ id: "private-device", enabled: true }] }));
+	await expect(pending).rejects.toThrow("Session changed");
+});
+
+it("retains withdrawn consent and deferred device cleanup when access is lost, while clearing private drafts", () => {
+	const storage: Record<string, any> = {
+		getItem(key: string) {
+			return this[key] ?? null;
+		},
+		setItem(key: string, value: string) {
+			this[key] = value;
+		},
+		removeItem(key: string) {
+			delete this[key];
+		},
+		"factory-private-draft": "private run text",
+	};
+	vi.stubGlobal("localStorage", storage);
+	savePushPreference({ id: "device", optOut: true, cleanup: "device" });
+	accessRequired();
+	expect(pushPreference()).toEqual({
+		id: "device",
+		optOut: true,
+		cleanup: "device",
+	});
+	expect(storage["factory-private-draft"]).toBeUndefined();
 });

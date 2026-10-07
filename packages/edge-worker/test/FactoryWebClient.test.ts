@@ -10,6 +10,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { artifactType, RenderArtifact } from "../src/factory/web/artifacts.js";
 import {
+	accessRequired,
+	accessState,
+	checkAccess,
+} from "../src/factory/web/auth-state.js";
+import {
 	api,
 	artifactsOf,
 	client,
@@ -44,6 +49,17 @@ const factoryResponse = (body: unknown, init: ResponseInit = {}) =>
 	});
 const version = () => factoryResponse({ build: uiBuild, protocol: 1 });
 beforeEach(async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => version()),
+	);
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			factoryResponse({ authenticated: true, expires: Date.now() + 60000 }),
+		),
+	);
+	await checkAccess();
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async () => version()),
@@ -189,6 +205,17 @@ it("blocks offline and stale writes without sending a mutation", async () => {
 		api("/api/runs", { method: "POST", body: "{}" }),
 	).rejects.toThrow("paused");
 	expect(fetch).not.toHaveBeenCalled();
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => version()),
+	);
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			factoryResponse({ authenticated: true, expires: Date.now() + 60000 }),
+		),
+	);
+	await checkAccess();
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async () => version()),
@@ -402,4 +429,61 @@ it("refreshes review deep links and their current gate before enabling writes", 
 		reviewGate: { id: "current", status: "approve" },
 	});
 	expect(pwaState().status).toBe("ready");
+});
+
+it("handles 401 before version errors, clears sensitive caches and prevents late response repopulation", async () => {
+	client.setQueryData(["run", "private"], { transcript: "private content" });
+	let complete!: (response: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (path: string) =>
+			path === "/api/version"
+				? version()
+				: new Promise<Response>((resolve) => {
+						complete = resolve;
+					}),
+		),
+	);
+	const late = api("/api/runs");
+	while (!complete) await new Promise((resolve) => setTimeout(resolve, 0));
+	accessRequired("Signed out");
+	complete(factoryResponse([{ transcript: "late private content" }]));
+	await expect(late).rejects.toThrow("Session changed");
+	expect(client.getQueryData(["run", "private"])).toBeUndefined();
+	expect(accessState().status).toBe("required");
+});
+
+it("keeps credential management mounted during verified-session refresh, but clears private state on denial", async () => {
+	client.setQueryData(["run", "private"], { transcript: "private content" });
+	let respond!: (response: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					respond = resolve;
+				}),
+		),
+	);
+	const refreshed = checkAccess(true);
+	expect(accessState().status).toBe("authenticated");
+	const expires = Date.now() + 120000;
+	respond(factoryResponse({ authenticated: true, expires }));
+	await refreshed;
+	expect(accessState()).toEqual({ status: "authenticated", expires });
+	expect(client.getQueryData(["run", "private"])).toEqual({
+		transcript: "private content",
+	});
+
+	const revoked = checkAccess(true);
+	respond(factoryResponse({ authenticated: false, setupRequired: false }));
+	await revoked;
+	expect(accessState().status).toBe("required");
+	expect(client.getQueryData(["run", "private"])).toBeUndefined();
+
+	const signedOut = checkAccess(true);
+	expect(accessState().status).toBe("checking");
+	respond(factoryResponse({}, { status: 401 }));
+	await signedOut;
+	expect(accessState().status).toBe("required");
 });

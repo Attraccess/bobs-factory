@@ -6,11 +6,15 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
+- Integrate Web Push with Factory passkey authentication, protecting device management and refreshed notification destinations after sign-in, while retaining opt-out and deferred device cleanup across session loss. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
 - Integrate Web Push with Codex startup checkpoint recovery while retaining both user-facing fix entries. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 
 - Integrate Web Push with the current question guidance, preserving both changelog entries and the saved review-fix instruction path. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Integrate Web Push with the current Factory base, retaining configured public/trusted proxy access, refinement guidance and both PWA regression suites. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Update the routing prompt test fixture for the accepted Web Push capability description, retaining complete prompt assertions and restoring CI. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
+- Correct the selected signed-out passkey update screenshot to 1280×900 and retain explicit viewport, build and protected-access receipts for QA reassessment. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Preserve refinement recommendation metadata when review fixers request assistance, retaining both recovery and question-restart contracts during main integration. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
@@ -26,6 +30,10 @@ This changelog documents internal development changes, refactors, tooling update
 - Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))
 
 ### Changed
+
+- Integrate passkey access with refinement recommendations, preserving explicit answer submission, protected drafts and both capability references. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
+
+- Restore CI coverage for authenticated Factory review drafts and the complete passkey-aware routing prompt; integrate capacity/recovery updates while preserving passkey gates and the public-origin compatibility setting; format the authentication CSS for the repository-wide Biome gate. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Run F1 agents as deterministic mocks by default, including Factory roles, chat sessions, and background titles; require an explicit live-mode opt-in for provider usage.
 

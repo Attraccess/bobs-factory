@@ -978,7 +978,6 @@ export class EdgeWorker extends EventEmitter {
 			this.factoryPush ??= new FactoryPush(this.cyrusHome);
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
 				push: this.factoryPush,
-				trustedOrigin: process.env.CYRUS_FACTORY_ORIGIN,
 				capacity: this.runnerSlots,
 				defaultRunner: () => this.runnerSelectionService.getDefaultRunner(),
 				repositories: () =>
