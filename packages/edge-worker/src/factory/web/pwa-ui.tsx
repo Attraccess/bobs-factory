@@ -1,31 +1,8 @@
 import { useState } from "react";
 import { client } from "./client";
 import { installApp, reconnect, updateApp, usePwa } from "./pwa";
-import {
-	acknowledgeDraft,
-	recoveredDrafts,
-	restorationNotice,
-} from "./restoration";
+import { restorationNotice } from "./restoration";
 import { Button, Modal } from "./ui";
-export function DraftNotice({
-	conflict,
-	draftKey,
-}: {
-	conflict: boolean;
-	draftKey: string;
-}) {
-	if (!conflict) return null;
-	return (
-		<div className="connection-error" role="alert">
-			This draft was written against questions, a review, or settings that have
-			since changed. Review the current state and adjust your draft before
-			sending.{" "}
-			<Button variant="ghost" onClick={() => acknowledgeDraft(draftKey)}>
-				I reviewed the current state
-			</Button>
-		</div>
-	);
-}
 export function InstallControl() {
 	const pwa = usePwa();
 	const [help, setHelp] = useState(false);
@@ -115,8 +92,8 @@ export function ConnectionNotice({
 							: "Can’t reach the factory. Check your connection and try again. Current runs and actions need the factory server."}
 					{hasData && pwa.status !== "checking" && (
 						<p>
-							Already-loaded information may be stale. Your drafts stay here; no
-							offline actions are queued.
+							Already-loaded information may be stale. Unsent edits remain only
+							in this open form; no offline actions are queued.
 						</p>
 					)}
 					{pwa.status !== "mismatch" && (
@@ -136,7 +113,7 @@ export function ConnectionNotice({
 					<span>
 						{signedOut
 							? "Update this device’s app to continue. Active runs continue on the server."
-							: "Your drafts and reading position will be preserved. Active runs continue on the server."}
+							: "Unsent edits will be discarded. Active runs continue on the server."}
 					</span>
 					<div className="actions">
 						<Button
@@ -169,47 +146,5 @@ export function ConnectionNotice({
 				</p>
 			)}
 		</>
-	);
-}
-
-export function RecoveredDrafts() {
-	const [saved] = useState(recoveredDrafts),
-		[dismissed, setDismissed] = useState(false);
-	const entries = Object.entries(saved).filter(
-		([key, draft]) =>
-			/^(chat|answers|feedback\/text|recipe\/(json|modal-json)|composer\/inputs)/.test(
-				key,
-			) &&
-			draft.value &&
-			JSON.stringify(draft.value) !== "{}" &&
-			draft.value !== "",
-	);
-	if (dismissed || !entries.length) return null;
-	return (
-		<details className="update-notice">
-			<summary>Drafts recovered by this update ({entries.length})</summary>
-			<p>
-				These are copies saved before updating, including drafts whose question
-				or gate may no longer be open. Review current state before sending
-				anything.
-			</p>
-			{entries.map(([key, draft]) => (
-				<label key={key}>
-					{key}
-					<textarea
-						readOnly
-						value={
-							typeof draft.value === "string"
-								? draft.value
-								: JSON.stringify(draft.value, null, 2)
-						}
-						rows={3}
-					/>
-				</label>
-			))}
-			<Button variant="ghost" onClick={() => setDismissed(true)}>
-				Dismiss recovered copies
-			</Button>
-		</details>
 	);
 }

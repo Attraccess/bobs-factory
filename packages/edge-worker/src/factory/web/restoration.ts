@@ -3,109 +3,38 @@ import {
 	type SetStateAction,
 	useCallback,
 	useEffect,
-	useRef,
 	useState,
 } from "react";
 import { onAccessLost } from "./auth-state";
 
-const snapshotKey = "bobs-factory-update-v1";
+const snapshotKey = "bobs-factory-view-update-v2";
 const maxBytes = 512000,
 	ttl = 30 * 60 * 1000;
-type Draft = { value: any; revision?: string };
+type ViewState = { value: any; revision?: string };
 type Snapshot = {
-	schema: 1;
+	schema: 2;
 	expires: number;
 	target: string;
 	route: string;
-	drafts: Record<string, Draft>;
+	views: Record<string, ViewState>;
 	details: string[];
 };
-const allowed =
-	/^(composer|today|recipe|answers|feedback|chat|panels|inspector|reading|review|position)\//;
-function validDraft(key: string, value: any): boolean {
+const allowed = /^(today|panels|inspector|reading|review\/progress|position)\//;
+function validView(key: string, value: any): boolean {
 	const record = (v: any) =>
 		v !== null && typeof v === "object" && !Array.isArray(v);
 	const strings = (v: any) =>
 		Array.isArray(v) && v.every((item) => typeof item === "string");
 	const values = (v: any, type: string) =>
 		record(v) && Object.values(v).every((item) => typeof item === type);
-	if (key.startsWith("feedback/draft/"))
-		return (
-			record(value) &&
-			typeof value.feedback === "string" &&
-			typeof value.open === "boolean" &&
-			(value.collectedOpen === undefined ||
-				typeof value.collectedOpen === "boolean") &&
-			(value.editing === undefined || typeof value.editing === "string") &&
-			Array.isArray(value.items) &&
-			value.items.every((item: any) => {
-				const target = item?.target;
-				return (
-					record(item) &&
-					typeof item.text === "string" &&
-					record(target) &&
-					["path", "pageTitle", "kind", "label", "context"].every(
-						(k) => typeof target[k] === "string",
-					) &&
-					target.path.startsWith("/") &&
-					Number.isInteger(target.page) &&
-					target.page >= 0 &&
-					Array.isArray(target.order) &&
-					target.order.length > 0 &&
-					target.order.every((n: any) => Number.isInteger(n) && n >= 0)
-				);
-			})
-		);
 	if (key.startsWith("position/"))
 		return typeof value === "number" && Number.isFinite(value) && value >= 0;
-	if (
-		/^(chat\/|feedback\/text\/|recipe\/(json\/|modal-json$))/.test(key) ||
-		[
-			"composer/workflow",
-			"composer/repository",
-			"today/selected",
-			"today/expanded",
-		].includes(key)
-	)
+	if (["today/selected", "today/expanded"].includes(key))
 		return typeof value === "string";
-	if (
-		/^(feedback\/open\/|inspector\/raw\/|review\/decision\/)/.test(key) ||
-		["composer/agent-panel", "today/all-attention"].includes(key)
-	)
+	if (key.startsWith("inspector/raw/") || key === "today/all-attention")
 		return typeof value === "boolean";
 	if (key === "today/skipped") return strings(value);
-	if (key.startsWith("answers/"))
-		return (
-			record(value) &&
-			Object.entries(value).every(
-				([index, item]) =>
-					/^\d+$/.test(index) &&
-					(typeof item === "string" ||
-						(record(item) &&
-							["custom", "recommendation"].includes((item as any).mode) &&
-							typeof (item as any).custom === "string")),
-			)
-		);
-	if (/^composer\/(inputs|settings)$/.test(key)) return values(value, "string");
 	if (key.startsWith("panels/")) return values(value, "boolean");
-	if (key === "recipe/title-settings")
-		return record(value) && values(value.value, "string");
-	if (key === "recipe/machine-capacity")
-		return record(value) && typeof value.limit === "string";
-	if (key === "recipe/editing")
-		return (
-			record(value) &&
-			typeof value.id === "string" &&
-			typeof value.name === "string"
-		);
-	if (key === "recipe/role")
-		return (
-			record(value) &&
-			typeof value.workflowId === "string" &&
-			typeof value.stepId === "string" &&
-			record(value.value) &&
-			typeof value.value.name === "string"
-		);
 	if (key === "inspector/selection")
 		return (
 			record(value) &&
@@ -159,7 +88,7 @@ export function decodeSnapshot(
 	try {
 		const data = JSON.parse(text);
 		if (
-			data.schema !== 1 ||
+			data.schema !== 2 ||
 			!Number.isFinite(data.expires) ||
 			data.expires < now ||
 			data.expires > now + ttl ||
@@ -170,10 +99,10 @@ export function decodeSnapshot(
 			!/^#\/(?:$|recipes$|settings$|runs\/[^/?#]+(?:\/review(?:\?[^#\s]*)?)?$)/.test(
 				data.route,
 			) ||
-			!data.drafts ||
-			Array.isArray(data.drafts) ||
-			typeof data.drafts !== "object" ||
-			Object.keys(data.drafts).length > 300 ||
+			!data.views ||
+			Array.isArray(data.views) ||
+			typeof data.views !== "object" ||
+			Object.keys(data.views).length > 300 ||
 			!Array.isArray(data.details) ||
 			data.details.length > 100 ||
 			!data.details.every(
@@ -181,14 +110,14 @@ export function decodeSnapshot(
 			)
 		)
 			return;
-		for (const [key, draft] of Object.entries(data.drafts)) {
+		for (const [key, draft] of Object.entries(data.views)) {
 			if (
 				!allowed.test(key) ||
 				key.length > 512 ||
 				!draft ||
 				typeof draft !== "object" ||
 				!("value" in draft) ||
-				!validDraft(key, draft.value) ||
+				!validView(key, draft.value) ||
 				("revision" in draft && typeof draft.revision !== "string")
 			)
 				return;
@@ -198,7 +127,7 @@ export function decodeSnapshot(
 		return;
 	}
 }
-const drafts = new Map<string, Draft>();
+const views = new Map<string, ViewState>();
 let restored: Snapshot | undefined;
 let storageIssue = "";
 const collectors = new Set<() => void>();
@@ -208,16 +137,13 @@ export function collectRestoration(collect: () => void) {
 		collectors.delete(collect);
 	};
 }
-export function recoveredDrafts() {
-	return restored?.drafts ?? {};
-}
-// Nothing is written during ordinary editing. Only an explicit Update creates this tab-local snapshot.
 export function loadRestoration(
 	build: string,
 	storage?: Pick<Storage, "getItem" | "removeItem">,
 ) {
 	try {
 		storage ??= sessionStorage;
+		storage.removeItem("bobs-factory-update-v1");
 		const text = storage.getItem(snapshotKey);
 		if (!text) return;
 		const data = decodeSnapshot(text);
@@ -228,66 +154,27 @@ export function loadRestoration(
 			return;
 		}
 		restored = data;
-		for (const [key, draft] of Object.entries(data.drafts))
-			rememberDraft(key, draft.value, draft.revision);
+		for (const [key, draft] of Object.entries(data.views))
+			rememberView(key, draft.value, draft.revision);
 		if (location.hash !== data.route) location.hash = data.route;
 	} catch {
 		storageIssue =
-			"Browser storage is unavailable. Draft preservation will be checked before an update.";
+			"Browser storage is unavailable. Reading position may not be restored.";
 	}
 }
 export function restorationNotice() {
 	return storageIssue;
 }
-export function restoredDraft<T>(key: string): T | undefined {
-	return drafts.get(key)?.value;
+export function restoredView<T>(key: string): T | undefined {
+	return views.get(key)?.value;
 }
-export function draftRevision(key: string): string | undefined {
-	return drafts.get(key)?.revision;
-}
-/** Move this tab's latest draft to a replacement identity, retaining its old context. */
-export function recoverDraft<T>(
-	key: string,
-	previousPrefix?: string,
-): T | undefined {
-	if (drafts.has(key)) return restoredDraft<T>(key);
-	if (!previousPrefix) return;
-	const previous = [...drafts.entries()]
-		.reverse()
-		.find(([candidate]) => candidate.startsWith(previousPrefix));
-	if (!previous) return;
-	const [source, draft] = previous;
-	rememberDraft(key, draft.value, draft.revision ?? source);
-	forgetDraft(source);
-	return draft.value;
-}
-function pristineDraft(key: string, value: any): boolean {
+function pristineView(key: string, value: any): boolean {
 	if (value === undefined) return true;
-	if (key.startsWith("feedback/draft/"))
-		return (
-			!value.feedback &&
-			!value.open &&
-			!value.collectedOpen &&
-			!value.editing &&
-			!value.items?.length
-		);
-	// Only discard known defaults. A blank recipe editor or an explicit panel
-	// collapse is still an edit and must survive an update.
-	if (/^(chat\/|feedback\/text\/|recipe\/modal-json$)/.test(key))
-		return value === "";
-	if (
-		/^(feedback\/open\/|inspector\/raw\/|review\/decision\/)/.test(key) ||
-		["composer/agent-panel", "today/all-attention"].includes(key)
-	)
+	if (key.startsWith("inspector/raw/") || key === "today/all-attention")
 		return value === false;
 	if (key === "today/skipped")
 		return Array.isArray(value) && value.length === 0;
-	if (/^(answers\/|panels\/|composer\/(inputs|settings)$)/.test(key))
-		return (
-			value !== null &&
-			typeof value === "object" &&
-			Object.keys(value).length === 0
-		);
+	if (key.startsWith("panels/")) return Object.keys(value ?? {}).length === 0;
 	// False entries and visited pages still describe this tab's choices; shared
 	// storage may contain different progress written by another tab.
 	if (key.startsWith("review/progress/"))
@@ -306,114 +193,80 @@ function pristineDraft(key: string, value: any): boolean {
 		);
 	return false;
 }
-export function rememberDraft(key: string, value: any, revision?: string) {
-	if (!allowed.test(key)) throw new Error("Unknown update draft surface");
-	if (pristineDraft(key, value)) drafts.delete(key);
-	else drafts.set(key, { value, revision });
+export function rememberView(key: string, value: any, revision?: string) {
+	if (!allowed.test(key)) return;
+	if (value === undefined) {
+		views.delete(key);
+		return;
+	}
+	if (!validView(key, value)) return;
+	if (pristineView(key, value)) views.delete(key);
+	else views.set(key, { value, revision });
 }
-export function forgetDraft(key: string) {
-	drafts.delete(key);
+export function forgetView(key: string) {
+	views.delete(key);
 }
+/** Reading/layout state only. Editable forms use useFormState instead. */
 export function useRestorableState<T>(
 	key: string,
 	initial: T | (() => T),
-	revision?: string,
-): [T, Dispatch<SetStateAction<T>>, boolean] {
+): [T, Dispatch<SetStateAction<T>>] {
 	const [value, setValue] = useState<T>(
 		() =>
-			drafts.get(key)?.value ??
+			views.get(key)?.value ??
 			(typeof initial === "function" ? (initial as () => T)() : initial),
 	);
-	const originalRevision = useRef(drafts.get(key)?.revision ?? revision);
-	if (
-		revision !== undefined &&
-		(originalRevision.current === undefined ||
-			!drafts.has(key) ||
-			value === undefined ||
-			value === "" ||
-			JSON.stringify(value) === "{}")
-	)
-		originalRevision.current = revision;
-	const current = useRef(value);
-	const [acknowledged, setAcknowledged] = useState(0);
-	void acknowledged;
-	const conflict =
-		drafts.has(key) &&
-		value !== undefined &&
-		value !== "" &&
-		JSON.stringify(value) !== "{}" &&
-		originalRevision.current !== undefined &&
-		revision !== undefined &&
-		originalRevision.current !== revision;
 	const set: Dispatch<SetStateAction<T>> = useCallback(
 		(next) => {
-			const result =
-				typeof next === "function"
-					? (next as (v: T) => T)(current.current)
-					: next;
-			if (Object.is(result, current.current)) return;
-			current.current = result;
-			setValue(result);
-			rememberDraft(key, result, originalRevision.current);
+			setValue((current) => {
+				const result =
+					typeof next === "function" ? (next as (v: T) => T)(current) : next;
+				rememberView(key, result);
+				return result;
+			});
 		},
 		[key],
 	);
 	useEffect(() => {
-		if (key.startsWith("recipe/json/")) return;
-		rememberDraft(key, current.current, originalRevision.current);
-	}, [key]);
-	// Deliberate acknowledgement is separate from editing: a changed gate must never silently accept an old draft.
-	useEffect(() => {
-		const handler = (event: Event) => {
-			if ((event as CustomEvent).detail !== key) return;
-			originalRevision.current = revision;
-			rememberDraft(key, current.current, revision);
-			setAcknowledged((n) => n + 1);
-		};
-		window.addEventListener("factory-draft-reviewed", handler);
-		return () => window.removeEventListener("factory-draft-reviewed", handler);
-	}, [key, revision]);
-	return [value, set, conflict];
-}
-export function acknowledgeDraft(key: string) {
-	window.dispatchEvent(
-		new CustomEvent("factory-draft-reviewed", { detail: key }),
-	);
+		rememberView(key, value);
+	}, [key, value]);
+	return [value, set];
 }
 export function preserveForUpdate(
 	target: string,
 	storage?: Pick<Storage, "setItem" | "getItem">,
 ) {
-	for (const collect of collectors) collect();
-	const details = [
-		...document.querySelectorAll<HTMLDetailsElement>(
-			"details[open][data-restore]",
-		),
-	].map((el) => el.dataset.restore!);
-	const snapshot: Snapshot = {
-		schema: 1,
-		expires: Date.now() + ttl,
-		target,
-		route: location.hash || "#/",
-		drafts: Object.fromEntries(drafts),
-		details,
-	};
-	const text = JSON.stringify(snapshot);
-	if (text.length > maxBytes || !decodeSnapshot(text))
-		throw new Error(
-			"Your drafts are too large to preserve safely. Copy them somewhere safe or shorten them before updating.",
-		);
+	// View restoration is optional; storage failures must not postpone an update.
 	try {
+		for (const collect of collectors) collect();
+		const details = [
+			...document.querySelectorAll<HTMLDetailsElement>(
+				"details[open][data-restore]",
+			),
+		]
+			.filter(
+				(el) =>
+					!el.dataset.restore?.startsWith("recipe-") &&
+					el.dataset.restore !== "composer-details",
+			)
+			.map((el) => el.dataset.restore!);
+		const snapshot: Snapshot = {
+			schema: 2,
+			expires: Date.now() + ttl,
+			target,
+			route: location.hash || "#/",
+			views: Object.fromEntries(views),
+			details,
+		};
+		const text = JSON.stringify(snapshot);
+		if (!decodeSnapshot(text)) return;
 		storage ??= sessionStorage;
 		storage.setItem(snapshotKey, text);
-		if (storage.getItem(snapshotKey) !== text)
-			throw new Error("Storage did not retain drafts");
 	} catch {
-		throw new Error(
-			"Your browser could not save the update snapshot. Update postponed; your edits are still here. Allow session storage or copy your drafts before reloading.",
-		);
+		/* Reading position is best effort. */
 	}
 }
+
 export function completeRestoration() {
 	if (!restored) return;
 	for (const id of restored.details)
@@ -431,7 +284,7 @@ export function completeRestoration() {
 }
 
 onAccessLost(() => {
-	drafts.clear();
+	views.clear();
 	collectors.clear();
 	restored = undefined;
 });

@@ -46,12 +46,12 @@ import {
 } from "./focus";
 import { Composer, Recipes } from "./forms";
 import { pwaState, startPwa, usePwa } from "./pwa";
-import { ConnectionNotice, InstallControl, RecoveredDrafts } from "./pwa-ui";
+import { ConnectionNotice, InstallControl } from "./pwa-ui";
 import { useReadingPosition } from "./reading-position";
 import {
 	completeRestoration,
-	forgetDraft,
-	restoredDraft,
+	forgetView,
+	restoredView,
 	useRestorableState,
 } from "./restoration";
 import { ReviewPage } from "./review-page";
@@ -761,12 +761,12 @@ function RunPage({
 			`panels/${id}`,
 			{},
 		),
-		panelsEdited = useRef(Boolean(restoredDraft(`panels/${id}`)));
+		panelsEdited = useRef(Boolean(restoredView(`panels/${id}`)));
 	// Auto-opened steps belong to this mounted page. Retain historical panel
 	// state only when the user changed it or it was restored from an update.
 	useEffect(
 		() => () => {
-			if (!panelsEdited.current) forgetDraft(`panels/${id}`);
+			if (!panelsEdited.current) forgetView(`panels/${id}`);
 		},
 		[id],
 	);
@@ -1123,7 +1123,6 @@ function App() {
 			/>
 			<main id="main-content" className="page">
 				<ConnectionNotice hasData={Boolean(config || runs.length)} />
-				<RecoveredDrafts />
 				<div inert={pwa.updating}>
 					{!config || (runsQuery.isLoading && !runsQuery.data) ? (
 						pwa.status === "offline" || pwa.status === "mismatch" ? (

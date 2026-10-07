@@ -1,11 +1,3 @@
-import {
-	draftRevision,
-	forgetDraft,
-	recoverDraft,
-	rememberDraft,
-} from "./restoration";
-import { readStored, writeStored } from "./review-state";
-
 export type FeedbackTarget = {
 	path: string;
 	page: number;
@@ -31,78 +23,6 @@ export const emptyFeedback = (): FeedbackDraft => ({
 export const feedbackKey = (identity: string, gateId?: string) =>
 	`${identity}/feedback/${gateId ?? "finished"}`;
 
-/** Also accepts the original single-text draft without losing its contents. */
-export function normalizeFeedback(value: unknown): FeedbackDraft {
-	const saved = value as Partial<FeedbackDraft> | null;
-	if (!saved || typeof saved !== "object") return emptyFeedback();
-	const items: ItemComment[] = [];
-	if (Array.isArray(saved.items))
-		for (const item of saved.items) {
-			const t = item?.target;
-			if (
-				t &&
-				typeof item.text === "string" &&
-				["path", "pageTitle", "kind", "label", "context"].every(
-					(k) => typeof t[k as keyof FeedbackTarget] === "string",
-				) &&
-				t.path.startsWith("/") &&
-				Number.isInteger(t.page) &&
-				t.page >= 0 &&
-				Array.isArray(t.order) &&
-				t.order.length > 0 &&
-				t.order.every((n) => Number.isInteger(n) && n >= 0) &&
-				!items.some((i) => i.target.path === t.path)
-			)
-				items.push({ target: t, text: item.text });
-		}
-	return {
-		feedback: typeof saved.feedback === "string" ? saved.feedback : "",
-		open: saved.open === true,
-		collectedOpen: saved.collectedOpen === true,
-		items,
-		editing: typeof saved.editing === "string" ? saved.editing : undefined,
-	};
-}
-export function loadFeedback(key: string) {
-	// Revision-scoped shared storage must never supply another tab's old edits.
-	// Only this tab's mounted drafts or explicit update snapshot can cross revisions.
-	const runPrefix = key.match(/^factory-review\/[^/]+\//)?.[0];
-	const recover = <T>(kind: string) =>
-		recoverDraft<T>(
-			`feedback/${kind}/${key}`,
-			runPrefix ? `feedback/${kind}/${runPrefix}` : undefined,
-		);
-	const snapshot = recover<FeedbackDraft>("draft");
-	if (snapshot !== undefined) return normalizeFeedback(snapshot);
-	// Updates from the original single-text shell carry the tab's draft under
-	// these keys. Shared storage may belong to another tab, including comments
-	// the original shell could never have collected.
-	const text = recover<string>("text");
-	const open = recover<boolean>("open");
-	if (text === undefined && open === undefined)
-		return normalizeFeedback(readStored(key, null));
-	const migrated = normalizeFeedback({
-		...emptyFeedback(),
-		feedback: text ?? "",
-		open: open ?? false,
-	});
-	rememberDraft(
-		`feedback/draft/${key}`,
-		migrated,
-		draftRevision(`feedback/text/${key}`) ??
-			draftRevision(`feedback/open/${key}`),
-	);
-	forgetDraft(`feedback/text/${key}`);
-	forgetDraft(`feedback/open/${key}`);
-	return migrated;
-}
-export function saveFeedback(key: string, draft: FeedbackDraft) {
-	writeStored(key, draft);
-	const snapshotKey = `feedback/draft/${key}`;
-	rememberDraft(snapshotKey, draft, draftRevision(snapshotKey));
-	forgetDraft(`feedback/text/${key}`);
-	forgetDraft(`feedback/open/${key}`);
-}
 export function orderedComments(draft: FeedbackDraft, includeEmpty = false) {
 	return draft.items
 		.filter((i) => includeEmpty || i.text.trim())
@@ -133,7 +53,7 @@ export function serializeFeedback(
 	if (!context) {
 		if (draft.feedback.length > MAX_FEEDBACK_LENGTH)
 			throw new Error(
-				"Feedback exceeds 100,000 characters. Shorten your feedback before submitting; your draft is saved.",
+				"Feedback exceeds 100,000 characters. Shorten your feedback before submitting.",
 			);
 		return draft.feedback;
 	}
@@ -150,7 +70,7 @@ export function serializeFeedback(
 	const result = sections.join("\n\n");
 	if (result.length > MAX_FEEDBACK_LENGTH)
 		throw new Error(
-			"Collected feedback exceeds 100,000 characters. Shorten or remove comments before submitting; your drafts are saved.",
+			"Collected feedback exceeds 100,000 characters. Shorten or remove comments before submitting.",
 		);
 	return result;
 }

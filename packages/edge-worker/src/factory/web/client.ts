@@ -1,6 +1,7 @@
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import {
 	QueryClient,
+	useIsMutating,
 	useMutation,
 	useQuery,
 	useQueryClient,
@@ -13,6 +14,7 @@ import {
 	accessState,
 	onAccessLost,
 } from "./auth-state";
+import { useFormState } from "./form-state";
 import {
 	authoritativeReady,
 	beginWrite,
@@ -236,10 +238,14 @@ export function useRun(id?: string) {
 			api(`/api/runs/${encodeURIComponent(id!)}?view=dashboard`, { signal }),
 	});
 }
-export function useAction() {
+const pendingActions = new Set<string>();
+export function useAction(scope?: string, context?: string) {
 	const cache = useQueryClient();
 	const connection = usePwa();
+	const [formContext] = useFormState(context ?? "", () => ({}));
+	const pendingCount = useIsMutating({ mutationKey: ["action", scope] });
 	const mutation = useMutation({
+		mutationKey: ["action", scope],
 		mutationFn: ({
 			path,
 			body = {},
@@ -248,6 +254,7 @@ export function useAction() {
 			path: string;
 			body?: any;
 			method?: string;
+			formContext?: object;
 		}) => api(path, { method, body: JSON.stringify(body) }),
 		onSuccess: async (data, { path, method = "POST" }) => {
 			if (
@@ -271,6 +278,20 @@ export function useAction() {
 	});
 	return {
 		...mutation,
+		error:
+			mutation.variables?.formContext === formContext ? mutation.error : null,
+		isPending: mutation.isPending || (scope !== undefined && pendingCount > 0),
+		mutateAsync: async (...args: Parameters<typeof mutation.mutateAsync>) => {
+			if (scope && pendingActions.has(scope))
+				throw new Error("This request is already pending.");
+			if (scope) pendingActions.add(scope);
+			try {
+				const [request, options] = args;
+				return await mutation.mutateAsync({ ...request, formContext }, options);
+			} finally {
+				if (scope) pendingActions.delete(scope);
+			}
+		},
 		isBlocked: connection.status !== "ready" || connection.updating,
 	};
 }
