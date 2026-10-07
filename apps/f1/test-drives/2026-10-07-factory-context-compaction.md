@@ -1,7 +1,7 @@
 # Factory context compaction
 
-Date: 2026-10-07. Tested the working tree based on `9badbae6` with the context
-compaction changes. Driver: `/tmp/bobs-context-compaction-drive.mjs`.
+Date: 2026-10-07. Tested runtime changes committed in `d740929a`, based on
+`9badbae6`. Driver: `/tmp/bobs-context-compaction-drive.mjs`.
 Final evidence: `/tmp/bobs-context-compaction-f1-cc7Dlo`.
 
 ## Applicability and expected behavior
