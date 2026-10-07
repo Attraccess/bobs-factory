@@ -7,12 +7,10 @@ import { Reveal, SectionTitle } from "./ui";
 export const REPO = "https://github.com/Attraccess/bobs-factory";
 
 const lines = [
+	{ cmd: "# Download a verified macOS or Linux binary release" },
+	{ cmd: "./install-binary.sh ARCHIVE.tar.gz ARCHIVE.manifest.json ~/.local" },
 	{
-		cmd: "git clone https://github.com/Attraccess/bobs-factory && cd bobs-factory",
-	},
-	{ cmd: "pnpm install", out: "Done in 41s" },
-	{
-		cmd: "pnpm factory --repo ~/code/pancake-palace --agent claude",
+		cmd: "bobs-factory --repo ~/code/pancake-palace --agent claude",
 		out: "Bob's Factory: http://127.0.0.1:3457\nRepository: ~/code/pancake-palace\nState: ~/.bobs-factory",
 	},
 ];
@@ -72,22 +70,24 @@ export function GetStarted() {
 			<div aria-hidden className="pointer-events-none absolute inset-0">
 				<div className="absolute left-1/2 top-20 size-[44rem] -translate-x-1/2 rounded-full bg-[#ffd23f]/20 blur-[140px]" />
 			</div>
-			<div className="relative mx-auto grid max-w-6xl items-center gap-14 px-6 lg:grid-cols-2">
-				<div>
+			<div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 px-6 lg:grid-cols-2">
+				<div className="min-w-0">
 					<SectionTitle
 						eyebrow="Get started"
 						color="#08683f"
 						title={
 							<>
-								Three commands to{" "}
+								From your laptop to{" "}
 								<span className="rainbow-text">your first PR.</span>
 							</>
 						}
 					>
-						You'll need Node + pnpm, Bun, Git, the GitHub CLI and an
-						authenticated agent CLI. Your repository needs an{" "}
+						Install a verified binary for macOS or Linux. You'll need Git, the
+						GitHub CLI and an authenticated agent CLI. Your repository needs an{" "}
 						<code className="font-mono text-base">origin</code> you can push to.
-						Then open the dashboard and tell Bob what to build.
+						The factory bundles its runtime. Then open the dashboard and tell
+						Bob what to build. Binary releases are being validated; use the docs
+						for current availability.
 					</SectionTitle>
 					<Reveal delay={0.1} className="mt-8 flex flex-wrap gap-3">
 						<a
@@ -104,13 +104,13 @@ export function GetStarted() {
 						</a>
 					</Reveal>
 				</div>
-				<Reveal delay={0.15} className="relative">
+				<Reveal delay={0.15} className="relative min-w-0">
 					<div className="absolute -right-2 -top-[92px] z-10">
 						<Bob mood="happy" size={96} />
 					</div>
 					<Terminal />
 					<div className="mt-4 flex justify-center">
-						<CopyCommand command="pnpm factory --repo . --agent codex" />
+						<CopyCommand command="bobs-factory --repo . --agent codex" />
 					</div>
 				</Reveal>
 			</div>

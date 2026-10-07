@@ -7,7 +7,7 @@
  * - File-based configuration
  */
 
-import { EdgeWorker } from "cyrus-edge-worker";
+import { EdgeWorker } from "bobs-factory-edge-worker";
 import { FSWorkspaceService } from "../cli/adapters/FSWorkspaceService";
 import { OAuthHelper } from "../cli/utils/OAuthHelper";
 

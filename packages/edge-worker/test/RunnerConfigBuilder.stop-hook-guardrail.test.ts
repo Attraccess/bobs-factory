@@ -2,8 +2,8 @@ import { execSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { StopHookInput } from "cyrus-claude-runner";
-import type { ILogger } from "cyrus-core";
+import type { StopHookInput } from "bobs-factory-claude-runner";
+import type { ILogger } from "bobs-factory-core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	buildStopHook,

@@ -1,7 +1,7 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
 import readline from "node:readline";
-import { spawnExecution as spawn } from "cyrus-core";
+import { spawnExecution as spawn } from "bobs-factory-core";
 
 /** Handles a server→client notification (no response expected). */
 export type NotificationHandler = (method: string, params: unknown) => void;

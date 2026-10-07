@@ -11,6 +11,7 @@ export {
 	type CursorSandboxInput,
 	type CursorSandboxJson,
 } from "./sandbox.js";
+export { loadCursorSdk } from "./sdk.js";
 export type {
 	CursorRunnerConfig,
 	CursorRunnerEvents,

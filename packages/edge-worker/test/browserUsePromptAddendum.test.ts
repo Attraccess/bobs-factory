@@ -6,15 +6,16 @@ import {
 } from "../src/prompts/browserUsePromptAddendum.js";
 
 describe("browser-use prompt addendum", () => {
-	const original = process.env.CYRUS_BROWSER_USE_ENABLED;
+	const original = process.env.BOBS_FACTORY_BROWSER_USE_ENABLED;
 
 	beforeEach(() => {
-		delete process.env.CYRUS_BROWSER_USE_ENABLED;
+		delete process.env.BOBS_FACTORY_BROWSER_USE_ENABLED;
 	});
 
 	afterEach(() => {
-		if (original === undefined) delete process.env.CYRUS_BROWSER_USE_ENABLED;
-		else process.env.CYRUS_BROWSER_USE_ENABLED = original;
+		if (original === undefined)
+			delete process.env.BOBS_FACTORY_BROWSER_USE_ENABLED;
+		else process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = original;
 	});
 
 	it("includes the agent-browser CLI name and a screenshot hint", () => {
@@ -23,8 +24,8 @@ describe("browser-use prompt addendum", () => {
 	});
 
 	it("adds headless guidance without claiming tooling is installed when the env var is unset", () => {
-		expect(appendBrowserUseAddendum("You are Cyrus.")).toBe(
-			`You are Cyrus.\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}`,
+		expect(appendBrowserUseAddendum("You are Bob’s Factory.")).toBe(
+			`You are Bob’s Factory.\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}`,
 		);
 		for (const base of [undefined, null, "", " \n"]) {
 			expect(appendBrowserUseAddendum(base)).toBe(
@@ -35,22 +36,22 @@ describe("browser-use prompt addendum", () => {
 
 	it("retains headless guidance when the browser availability flag is falsy", () => {
 		for (const value of ["false", "0", "", "no"]) {
-			process.env.CYRUS_BROWSER_USE_ENABLED = value;
-			expect(appendBrowserUseAddendum("You are Cyrus.")).toBe(
-				`You are Cyrus.\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}`,
+			process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = value;
+			expect(appendBrowserUseAddendum("You are Bob’s Factory.")).toBe(
+				`You are Bob’s Factory.\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}`,
 			);
 		}
 	});
 
 	it("appends the addendum with a blank-line separator when enabled", () => {
-		process.env.CYRUS_BROWSER_USE_ENABLED = "true";
-		expect(appendBrowserUseAddendum("You are Cyrus.\n ")).toBe(
-			`You are Cyrus.\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}`,
+		process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = "true";
+		expect(appendBrowserUseAddendum("You are Bob’s Factory.\n ")).toBe(
+			`You are Bob’s Factory.\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}`,
 		);
 	});
 
 	it("returns both addenda when enabled with no base prompt", () => {
-		process.env.CYRUS_BROWSER_USE_ENABLED = "1";
+		process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = "1";
 		for (const base of [undefined, null, ""]) {
 			expect(appendBrowserUseAddendum(base)).toBe(
 				`${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}`,
@@ -60,7 +61,7 @@ describe("browser-use prompt addendum", () => {
 
 	it("accepts common truthy spellings", () => {
 		for (const value of ["true", "1", "yes", "TRUE", " Yes "]) {
-			process.env.CYRUS_BROWSER_USE_ENABLED = value;
+			process.env.BOBS_FACTORY_BROWSER_USE_ENABLED = value;
 			expect(appendBrowserUseAddendum("base")).toBe(
 				`base\n\n${HEADLESS_BROWSER_PROMPT_ADDENDUM}\n\n${BROWSER_USE_PROMPT_ADDENDUM}`,
 			);

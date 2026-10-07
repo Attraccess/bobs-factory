@@ -1,5 +1,5 @@
-import type { SDKMessage } from "cyrus-claude-runner";
-import type { CyrusAgentSession, Issue, Workspace } from "cyrus-core";
+import type { SDKMessage } from "bobs-factory-claude-runner";
+import type { CyrusAgentSession, Issue, Workspace } from "bobs-factory-core";
 
 /**
  * Events emitted by EdgeWorker

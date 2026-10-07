@@ -169,3 +169,38 @@ evidence: `/tmp/factory-feedback-f1-RLyuY1`, output
 `/tmp/factory-review-recovery-f1-zxSjfQ`, output
 `/tmp/factory-merge37-review-f1.log`. Both drives released capacity and stopped
 cleanly; no provider inference or external mutation occurred.
+
+
+## Bob’s Factory PR #34 integration validation
+
+Tested the merge working tree with parents `6d53fb83` and `b317ea9e`.
+The conflict resolution retains both generated reply markers and the explicit
+feedback-provider assessment policy. All existing discussion, historical reports,
+and accepted recommendation-test exclusions remain intact.
+
+All 13 isolated simulated-agent scenarios passed: six feedback cases, four
+review-recovery cases, two legacy receipt cases, and the saved communication
+instruction case. The drivers were adapted to this checkout's `factoryHome`
+and `BOBS_FACTORY_*` contracts with disposable configuration and legacy-capacity
+paths. The first feedback attempt correctly refused startup when its fixture
+inspected the active host Cyrus coordinator. The corrected fixture isolated that
+path without changing or stopping the host service.
+
+The scenarios retain the assertions documented above, including exact comment
+versions, policy reversal, same-role correction, assistance persistence through
+restart, and fresh review after a revision change. The communication case
+preserves the custom saved prompt, leaves explanation-only replies waiting,
+and completes only after an explicit fixture answer. All workers stopped;
+feedback/review/legacy receipts confirm zero active or queued capacity requests.
+No provider inference, real PR mutation, or human approval occurred in the drives.
+
+Commands: `F1_AGENT_MODE=mock bun run <adapted-driver.ts>` for the three recovery
+drivers; `F1_AGENT_MODE=mock BOBS_FACTORY_DISABLE_REMOTE_SESSION_STORE=1 node
+<adapted-language-driver.mjs>` for communication. Drivers, logs, complete run JSON
+and receipts are retained in
+`/Users/jappy/.cyrus/factory/evidence/manual-7f0c7c6e-cca1-4387-b7ee-7d81e06997ba/ci-feedback-merge/`.
+
+Root build, typecheck, Biome CI and diff checks passed. Nine affected suites
+passed all 230 tests. Biome retained 18 existing warnings. Live model reasoning,
+Taskbot remote state and the external hosted MCP catalog remain unverified;
+prior platform, Cursor, security-exception and publication limits remain.

@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { AgentMessage, RunnerType } from "cyrus-core";
+import type { AgentMessage, RunnerType } from "bobs-factory-core";
 import { describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_MOCK_RESPONSE,
@@ -30,7 +30,7 @@ describe("F1 agent mode", () => {
 		const runner = f1AgentHandlers(parseF1AgentMode())?.createAgentRunner?.(
 			runnerType,
 			{
-				cyrusHome: "/tmp/f1-mock-test",
+				factoryHome: "/tmp/f1-mock-test",
 				onMessage: (message) => {
 					messages.push(message);
 				},
@@ -65,7 +65,7 @@ describe("F1 agent mode", () => {
 	it("keeps the resumed session ID and supplies structured fixture output", async () => {
 		const response = JSON.stringify({ outcome: "complete", outputs: {} });
 		const runner = new MockAgentRunner(
-			{ cyrusHome: "/tmp/f1-mock-test", resumeSessionId: "f1-mock-existing" },
+			{ factoryHome: "/tmp/f1-mock-test", resumeSessionId: "f1-mock-existing" },
 			response,
 		);
 		expect((await runner.start("Continue")).sessionId).toBe("f1-mock-existing");
@@ -76,7 +76,7 @@ describe("F1 agent mode", () => {
 		const onError = vi.fn();
 		const onComplete = vi.fn();
 		const runner = new MockAgentRunner({
-			cyrusHome: "/tmp/f1-mock-test",
+			factoryHome: "/tmp/f1-mock-test",
 			onError,
 			onComplete,
 			onMessage: () => runner.stop(),
@@ -91,12 +91,12 @@ describe("F1 agent mode", () => {
 	});
 
 	it("completes background title jobs with valid title JSON", async () => {
-		const cyrusHome = "/tmp/f1-mock-test";
+		const factoryHome = "/tmp/f1-mock-test";
 		const runner = f1AgentHandlers("mock", "Role fixture")?.createAgentRunner?.(
 			"claude",
 			{
-				cyrusHome,
-				workingDirectory: join(cyrusHome, "factory", "title-jobs", "run-1"),
+				factoryHome,
+				workingDirectory: join(factoryHome, "factory", "title-jobs", "run-1"),
 			},
 		);
 		await runner?.start("Generate a title");

@@ -1,4 +1,4 @@
-import { AgentSessionStatus } from "cyrus-core";
+import { AgentSessionStatus } from "bobs-factory-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager";
 import type { IActivitySink } from "../src/sinks/IActivitySink";

@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentSessionStatus, type RepositoryConfig } from "cyrus-core";
+import { AgentSessionStatus, type RepositoryConfig } from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { GitService, setupExecutionScope } from "../src/GitService.js";
@@ -26,7 +26,7 @@ it("gates constructor-unconfigured GitService hooks using the launch scope", asy
 	const marker = join(home, "executed");
 	const script = join(home, "setup.sh");
 	writeFileSync(script, `touch '${marker}'\n`, { mode: 0o755 });
-	const service = new GitService({ cyrusHome: home });
+	const service = new GitService({ factoryHome: home });
 	const pending = setupExecutionScope.run(
 		{ signal: new AbortController().signal, service: slots },
 		() =>
@@ -51,7 +51,7 @@ it("settling an integration launch cancels setup queued in the production custom
 	const script = join(home, "setup.sh");
 	writeFileSync(script, `touch '${marker}'\n`, { mode: 0o755 });
 	// WorkerService's custom handler owns a GitService without constructor capacity.
-	const service = new GitService({ cyrusHome: home });
+	const service = new GitService({ factoryHome: home });
 	const receipt: any = {
 		sessionId: "launch",
 		phase: "starting",
@@ -59,7 +59,7 @@ it("settling an integration launch cancels setup queued in the production custom
 	};
 	const worker: any = Object.create(EdgeWorker.prototype);
 	Object.assign(worker, {
-		cyrusHome: home,
+		factoryHome: home,
 		runnerSlots: slots,
 		recoveryAbort: new AbortController(),
 		preparationStarts: new Map(),
@@ -154,7 +154,7 @@ it.each([
 	const worker: any = Object.create(EdgeWorker.prototype);
 	const runtime = { runs: new Map(), resumeAll: vi.fn() };
 	Object.assign(worker, {
-		cyrusHome: home,
+		factoryHome: home,
 		runnerSlots: slots,
 		recoveryAbort: new AbortController(),
 		preparationStarts: new Map(),
@@ -272,7 +272,7 @@ function recoveryFixture(platform = "github", runnerType = "cursor") {
 	const scopedLogger = { ...logger, withContext: () => scopedLogger };
 	const worker: any = Object.create(EdgeWorker.prototype);
 	Object.assign(worker, {
-		cyrusHome: home,
+		factoryHome: home,
 		runnerSlots: slots,
 		recoveryAbort: new AbortController(),
 		preparationStarts: new Map(),
@@ -439,7 +439,7 @@ it("removes the parked pre-restart queue immediately when configuration recovery
 		slots: old,
 	} = recoveryFixture();
 	const blocker = await old.acquireLease();
-	const identity = `${worker.cyrusHome}:session:${session.id}`;
+	const identity = `${worker.factoryHome}:session:${session.id}`;
 	const queued = old.acquireLease(undefined, { identity, recoverable: true });
 	const rejectedQueue = expect(queued).rejects.toThrow(/shutting down/);
 	await vi.waitFor(async () => expect((await old.snapshot()).queued).toBe(1));
@@ -476,8 +476,8 @@ it.each([
 		provider,
 		slots: old,
 	} = recoveryFixture(platform);
-	const identity = `${worker.cyrusHome}:session:${session.id}`;
-	const otherIdentity = `${worker.cyrusHome}:session:other`;
+	const identity = `${worker.factoryHome}:session:${session.id}`;
+	const otherIdentity = `${worker.factoryHome}:session:other`;
 	const blocker = await old.acquireLease();
 	const queued = [identity, otherIdentity].map((identity) =>
 		old.acquireLease(undefined, { identity, recoverable: true }),

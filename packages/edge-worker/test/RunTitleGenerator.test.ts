@@ -13,7 +13,7 @@ import type {
 	IAgentRunner,
 	RunTitleJob,
 	SDKMessage,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import {

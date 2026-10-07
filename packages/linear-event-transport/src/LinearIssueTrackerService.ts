@@ -49,8 +49,8 @@ import type {
 	Team,
 	User,
 	WorkflowState,
-} from "cyrus-core";
-import { createLogger, type ILogger } from "cyrus-core";
+} from "bobs-factory-core";
+import { createLogger, type ILogger } from "bobs-factory-core";
 import { LinearEventTransport } from "./LinearEventTransport.js";
 
 /**

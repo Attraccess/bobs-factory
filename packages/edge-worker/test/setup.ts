@@ -1,21 +1,26 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SDKMessage } from "cyrus-claude-runner";
+import type { SDKMessage } from "bobs-factory-claude-runner";
 import { vi } from "vitest";
+
+// Legacy migration safety checks must not inspect host-owned coordinator state.
+process.env.BOBS_FACTORY_MIGRATION_SOURCE_CAPACITY_DIRECTORY = mkdtempSync(
+	join(tmpdir(), "bobs-factory-test-legacy-capacity-"),
+);
 
 // Disable the remote session store in tests so EdgeWorker construction
 // doesn't try to instantiate HttpSessionStore. Tests using a partial
-// `cyrus-claude-runner` mock can omit the HttpSessionStore export, and
-// the CYRUS_APP_URL fallback (DEFAULT_CYRUS_APP_URL) means the store
-// would otherwise activate whenever CYRUS_API_KEY + CYRUS_TEAM_ID are
+// `bobs-factory-claude-runner` mock can omit the HttpSessionStore export, and
+// the BOBS_FACTORY_APP_URL fallback (DEFAULT_BOBS_FACTORY_APP_URL) means the store
+// would otherwise activate whenever BOBS_FACTORY_API_KEY + BOBS_FACTORY_TEAM_ID are
 // present in the developer's shell env.
-process.env.CYRUS_DISABLE_REMOTE_SESSION_STORE = "1";
+process.env.BOBS_FACTORY_DISABLE_REMOTE_SESSION_STORE = "1";
 
 // Keep Claude SDK debug output inside the test workspace to avoid HOME write restrictions.
 const claudeConfigDir =
 	process.env.CLAUDE_CONFIG_DIR ??
-	join(tmpdir(), "cyrus-edge-worker-test-claude");
+	join(tmpdir(), "bobs-factory-edge-worker-test-claude");
 process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
 mkdirSync(join(claudeConfigDir, "debug"), { recursive: true });
 

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+import { isPackagedExecutable, runtimeAssetPath } from "bobs-factory-core";
 import { z } from "zod";
 
 const InventorySchema = z.object({
@@ -25,11 +27,12 @@ const InventorySchema = z.object({
 		.max(16),
 });
 /** Read and validate one completed build into memory; routes and version cannot drift during a rebuild. */
-export function factoryWebAssets(
-	root = existsSync(new URL("./web/current.json", import.meta.url))
-		? new URL("./web/", import.meta.url)
-		: new URL("../../dist/factory/web/", import.meta.url),
-) {
+export function factoryWebAssets(root?: URL) {
+	root ??= isPackagedExecutable
+		? pathToFileURL(`${runtimeAssetPath("edge-worker/dist/factory/web", "")}/`)
+		: existsSync(new URL("./web/current.json", import.meta.url))
+			? new URL("./web/", import.meta.url)
+			: new URL("../../dist/factory/web/", import.meta.url);
 	const { directory } = z
 		.object({ directory: z.string().regex(/^build-[a-f0-9]{24}$/) })
 		.parse(JSON.parse(readFileSync(new URL("current.json", root), "utf8")));

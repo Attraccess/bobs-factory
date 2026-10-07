@@ -47,3 +47,9 @@ CLAUDE.local.md
 
 # Claude Code harness runtime artifacts
 .claude/scheduled_tasks.lock
+
+# Local binary candidates
+/artifacts/
+
+# Temporary Bun compiler files
+/.*.bun-build

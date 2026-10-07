@@ -1,4 +1,4 @@
-// Run from the repository root after building cyrus-edge-worker and cyrus-f1.
+// Run from the repository root after building bobs-factory-edge-worker and bobs-factory-f1.
 // Explicit runner injection is required: this older embedded F1 server does not
 // implement F1_AGENT_MODE. No live provider is reachable from this fixture.
 import assert from "node:assert/strict";
@@ -26,8 +26,12 @@ git("remote", "add", "origin", repo);
 
 // Keep the real bounded admission mechanism in a temporary fixture pool.
 // Never edit or increase the production pool, and never start a live agent.
-process.env.CYRUS_CAPACITY_DIRECTORY = join(home, "capacity");
-process.env.CYRUS_FACTORY_PORT = "3543";
+// This fresh fixture has no legacy coordinator; isolate migration checks too.
+process.env.BOBS_FACTORY_MIGRATION_SOURCE_CAPACITY_DIRECTORY = join(
+	home,
+	"legacy-capacity",
+);
+process.env.BOBS_FACTORY_FACTORY_PORT = "3543";
 const { EdgeWorker } = await import(
 	join(root, "packages/edge-worker/dist/index.js")
 );
@@ -41,7 +45,7 @@ const tracker = new CLIIssueTrackerService();
 tracker.seedDefaultData();
 const worker = new EdgeWorker({
 	platform: "cli",
-	cyrusHome: home,
+	factoryHome: home,
 	serverPort: 3623,
 	serverHost: "127.0.0.1",
 	defaultRunner: "codex",
@@ -158,7 +162,7 @@ async function command(file, args, env = {}) {
 	return result.stdout.replace(/\u001b\[[0-9;]*m/g, "");
 }
 const f1 = (...args) =>
-	command(join(root, "apps/f1/f1"), args, { CYRUS_PORT: "3623" });
+	command(join(root, "apps/f1/f1"), args, { BOBS_FACTORY_PORT: "3623" });
 const browserSession = `refinement83-${Date.now()}`;
 const browser = (...args) =>
 	command("agent-browser", ["--session", browserSession, ...args]);

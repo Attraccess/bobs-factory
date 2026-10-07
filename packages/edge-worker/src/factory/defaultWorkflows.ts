@@ -34,9 +34,9 @@ const definitions = [
 		id: "simple",
 		allowedTriggers: ["manual", "ticket-assignment"],
 		icon: "⚡",
-		name: "Simple / Cyrus",
+		name: "Simple / Bob’s Factory",
 		description:
-			"The existing Cyrus run, with its original prompts, skills and runner lifecycle.",
+			"The existing Bob’s Factory run, with its original prompts, skills and runner lifecycle.",
 		labels: ["workflow:simple"],
 		chat: true,
 		steps: [],
@@ -117,7 +117,7 @@ Open the actual selected screenshots. Return acceptedScreenshots:[{area,state,im
 			agent(
 				"ci-fix",
 				"Fix CI failures",
-				`Diagnose and fix CI failures, merge conflicts, stale branches and actionable PR review comments in the supplied merge-readiness receipt and full history. Fetch the base before resolving conflicts. For each supplied unresolved review thread, address it or post an evidence-backed response before resolving it using gh api graphql resolveReviewThread. Do not dismiss reviews or bypass rules. Required reviewer approvals must wait for the reviewer; do not impersonate one. Assess every supplied new PR comment. Act on requested corrections or document why a comment is informational. Record its ID in addressedCommentIds after assessment, and include disposition/reason in the summary. Add <!-- generated-by-cyrus --> to any PR reply you write. Retain all discussion and report addressed comment/thread IDs. Run relevant checks, commit and push to the same draft PR. Return {"summary":"...","checks":["..."],"addressedReviewIds":["review IDs"],"addressedCommentIds":["comment IDs"]}. Do not merge or mark ready.` +
+				`Diagnose and fix CI failures, merge conflicts, stale branches and actionable PR review comments in the supplied merge-readiness receipt and full history. Fetch the base before resolving conflicts. For each supplied unresolved review thread, address it or post an evidence-backed response before resolving it using gh api graphql resolveReviewThread. Do not dismiss reviews or bypass rules. Required reviewer approvals must wait for the reviewer; do not impersonate one. Assess every supplied new PR comment. Act on requested corrections or document why a comment is informational. Record its ID in addressedCommentIds after assessment, and include disposition/reason in the summary. Add <!-- generated-by-bobs-factory --> to any PR reply you write. Retain all discussion and report addressed comment/thread IDs. Run relevant checks, commit and push to the same draft PR. Return {"summary":"...","checks":["..."],"addressedReviewIds":["review IDs"],"addressedCommentIds":["comment IDs"]}. Do not merge or mark ready.` +
 					ciAssessmentInstructions,
 				{ next: "after-ci-fix" },
 			),

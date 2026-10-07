@@ -367,7 +367,7 @@ export function assessFeedback(
 			const policy = policies.get(comment.user?.login?.toLowerCase() ?? "");
 			if (
 				!comment.body?.trim() ||
-				/<!-- generated-by-cyrus -->/.test(comment.body) ||
+				/<!-- generated-by-(?:cyrus|bobs-factory) -->/.test(comment.body) ||
 				(policy?.action !== "assess" && informationalComment(comment))
 			)
 				return false;

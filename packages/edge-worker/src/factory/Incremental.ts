@@ -43,7 +43,7 @@ export async function roleProgress(
 	context: ExecutionContext,
 ): Promise<RoleProgress> {
 	const { run } = context,
-		key = run.step ?? context.step.id;
+		key = context.stepKey ?? run.step ?? context.step.id;
 	const previousRevision = run.roleRevisions?.[key];
 	const previousOutput = [...run.history]
 		.reverse()
