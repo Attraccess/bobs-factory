@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import type { Inventory } from "./SpecialistReview.js";
 
 export const QA_CONTRACT = "qa-v1" as const;
 const text = z.string().min(1);
@@ -254,17 +255,8 @@ export function qaRequirementIssues(
 	scope: QaScope,
 	outputs: Record<string, unknown>,
 	answers: unknown[],
+	inventory?: Inventory,
 ) {
-	const aggregate = outputs["review-gate"] as
-		| {
-				baseline?: {
-					inventory?: {
-						requirements: { id: string; classification: string }[];
-					};
-				};
-		  }
-		| undefined;
-	const inventory = aggregate?.baseline?.inventory;
 	if (inventory) {
 		const ids = inventory.requirements
 			.filter((r) => r.classification === "active")

@@ -339,7 +339,12 @@ export class FactoryTools {
 		});
 		const coverage = qaCoverage(scope, capture);
 		coverage.blocked.push(
-			...qaRequirementIssues(scope, run.outputs, run.answers),
+			...qaRequirementIssues(
+				scope,
+				context.outputs ?? run.outputs,
+				run.answers,
+				aggregateForContext(context)?.baseline.inventory,
+			),
 		);
 		if (
 			dirty ||
@@ -714,7 +719,8 @@ export class FactoryTools {
 					readiness.headSha !== headSha ||
 					!previousBase ||
 					previousBase !== readiness.baseSha ||
-					readPath(run.outputs, "review-gate.approved") !== true ||
+					(aggregate?.approved ??
+						readPath(run.outputs, "review-gate.approved")) !== true ||
 					Boolean(
 						aggregate &&
 							(!aggregate.approved ||

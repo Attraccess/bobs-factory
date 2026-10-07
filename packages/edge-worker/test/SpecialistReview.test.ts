@@ -9,6 +9,7 @@ import {
 	upgradeWorkflows,
 } from "../src/factory/defaultWorkflows.js";
 import { GuideSchema } from "../src/factory/FactoryResults.js";
+import { FactoryTools } from "../src/factory/FactoryTools.js";
 import {
 	attachRequirementCoverage,
 	validateGuideCoverage,
@@ -17,9 +18,11 @@ import { roleProgress } from "../src/factory/Incremental.js";
 import { qaRequirementIssues } from "../src/factory/Qa.js";
 import {
 	type AggregateReview,
+	aggregateForContext,
 	aggregateReview,
 	assertAggregateRevision,
 	type ReviewBaseline,
+	validateContractOutput,
 	validateInventory,
 	validateSpecialist,
 } from "../src/factory/SpecialistReview.js";
@@ -29,6 +32,7 @@ import {
 	type RuntimeHooks,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { providerReceipt } from "./fixtures/merge-readiness.js";
 import { qaScope } from "./fixtures/qa.js";
 
 const dirs: string[] = [];
@@ -106,6 +110,243 @@ function receipt(b = baseline(), value: unknown = review()) {
 		},
 	};
 }
+it.each([
+	"resolved",
+	"accepted-rejection",
+])("blocks unsupported reopening after an intervening omission of a %s finding", (status) => {
+	const b = baseline();
+	const finding = {
+		id: "invalid",
+		rating: 2,
+		summary: "Invalid input",
+		evidence: "validator.ts:4",
+		status,
+		reason: "Prior evidence settled this complaint",
+		requirementIds: ["R1"],
+	};
+	const first = aggregateReview(b, [
+		{ business: receipt(b, { ...review(), findings: [finding] }) },
+	]);
+	const secondBaseline = { ...b, round: 2 };
+	const second = aggregateReview(
+		secondBaseline,
+		[{ business: receipt(secondBaseline) }],
+		first,
+	);
+	expect(second.rawFindings[0]!.status).toBe(status);
+	expect(second.reviewers[0]!.findings).toEqual([]);
+	const thirdBaseline = { ...b, round: 3 };
+	const context = {
+		step: { id: "business", reviewContract: "coverage-v1" },
+		stepKey: b.reviewers[0]!.key,
+		run: {
+			reviewRounds: [b, secondBaseline, thirdBaseline],
+			history: [{ output: first }, { output: second }],
+		},
+	} as unknown as ExecutionContext;
+	const reopened = { ...review(), findings: [{ ...finding, status: "open" }] };
+	expect(() => validateContractOutput(context, reopened)).toThrow(
+		"fresh evidence",
+	);
+	expect(() =>
+		aggregateReview(
+			thirdBaseline,
+			[{ business: receipt(thirdBaseline, reopened) }],
+			second,
+		),
+	).toThrow("fresh evidence");
+	const supported = {
+		...reopened,
+		findings: [
+			{
+				...reopened.findings[0],
+				freshEvidence: "New caller crashes at validator.ts:9 on revised head",
+			},
+		],
+	};
+	expect(() => validateContractOutput(context, supported)).not.toThrow();
+	expect(
+		aggregateReview(
+			thirdBaseline,
+			[{ business: receipt(thirdBaseline, supported) }],
+			second,
+		).approved,
+	).toBe(false);
+});
+
+it("retains a nested review association for parent guides, called QA, and restored approval steps", async () => {
+	const tools = new FactoryTools({
+		postComment: vi.fn(),
+		command: async (_context, exe, args) =>
+			exe === "git"
+				? args[0] === "status"
+					? ""
+					: "changed-head"
+				: args.includes("graphql")
+					? JSON.stringify(providerReceipt({ headRefOid: "changed-head" }))
+					: "[[]]",
+	});
+	let accepted: AggregateReview | undefined;
+	const fixture = setup({
+		agent: async (context) => {
+			if (context.step.id !== "guide")
+				return context.step.reviewContract === "inventory-v1"
+					? inventory()
+					: context.step.reviewContract === "coverage-v1"
+						? review()
+						: { summary: "Reviewed", findings: [] };
+			accepted = aggregateForContext(context);
+			expect(accepted?.approved).toBe(true);
+			const guide = {
+				goal: "Validation",
+				summary: "Reviewed",
+				decision: { status: "ready", summary: "Ready" },
+				requirements: [
+					{
+						requirementId: "R1",
+						criterion: "Reject invalid input",
+						status: "supported",
+						evidence: ["validator.ts:4"],
+					},
+				],
+				behavior: [],
+				checks: [],
+				risks: [],
+				reviewInstructions: ["Check input"],
+			};
+			return attachRequirementCoverage(context, guide);
+		},
+		tool: async (context) => {
+			if (context.step.id === "qa") {
+				const scope = qaScope();
+				scope.stories.forEach((s) => {
+					s.requirementRefs = ["R1"];
+				});
+				expect(aggregateForContext(context)).toEqual(accepted);
+				expect(
+					qaRequirementIssues(
+						scope,
+						context.outputs!,
+						[],
+						aggregateForContext(context)?.baseline.inventory,
+					),
+				).toEqual([]);
+				return {};
+			}
+			// The parent human-review step must detect the changed revision.
+			return tools.tool(context);
+		},
+	});
+	const child = structuredClone(fixture.workflow);
+	child.allowedTriggers = ["workflow"];
+	child.steps.at(-1)!.id = "aggregate-review";
+	const qa = {
+		id: "qa-child",
+		name: "Called QA",
+		allowedTriggers: ["workflow"],
+		steps: [{ id: "qa", name: "QA", type: "tool", tool: "qa-fixture" }],
+	};
+	const parent = {
+		id: "parent",
+		name: "Parent",
+		steps: [
+			{ id: "child", name: "Review", type: "workflow", workflow: child.id },
+			{ id: "guide", name: "Guide", type: "agent", prompt: "Build guide" },
+			{ id: "qa-call", name: "QA", type: "workflow", workflow: qa.id },
+			{
+				id: "human-review",
+				name: "Approve",
+				type: "tool",
+				tool: "human-review",
+			},
+		],
+	};
+	const definitions = validateWorkflows([
+		...defaultWorkflows,
+		child,
+		qa,
+		parent,
+	]);
+	fixture.runtime.updateWorkflows(definitions);
+	fixture.run.workflow = definitions.at(-1)!;
+	fixture.run.workflowDefinitions = definitions;
+	fixture.run.outputs["draft-pr"] = {
+		url: "https://github.com/test/repo/pull/1",
+	};
+	await fixture.runtime.launch(fixture.run);
+	expect(fixture.run.status).toBe("failed");
+	expect(fixture.run.error).toContain(
+		"Revision or accepted scope changed after review",
+	);
+	expect(fixture.run.outputs["review-gate"]).toBeUndefined();
+	expect(
+		(fixture.run.outputs.guide as { requirementCoverage: unknown })
+			.requirementCoverage,
+	).toBeDefined();
+	expect(fixture.run.checkpoint?.reviewKey).toBe("child/specialist-review");
+	const restored = new WorkflowRuntime(fixture.state, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const run = restored.get(fixture.run.id);
+	expect(run.checkpoint?.reviewKey).toBe("child/specialist-review");
+	const context = {
+		run,
+		step: { id: "handoff" },
+		stepKey: "handoff",
+		reviewKey: run.checkpoint?.reviewKey,
+	} as unknown as ExecutionContext;
+	expect(aggregateForContext(context)).toEqual(accepted);
+	// Old accepted runs also retain safeguards without the newly persisted key.
+	delete context.reviewKey;
+	expect(aggregateForContext(context)).toEqual(accepted);
+	context.stepKey = "unrelated/guide";
+	expect(aggregateForContext(context)).toBeUndefined();
+	context.stepKey = "guide";
+	run.reviewRounds!.push({ ...run.reviewRounds!.at(-1)!, round: 2 });
+	expect(() => aggregateForContext(context)).toThrow("no complete aggregate");
+});
+
+it("uses a renamed aggregate for unchanged-revision readiness after a fix", async () => {
+	const b = baseline();
+	b.key = "child/specialist-review";
+	b.reviewers[0]!.key = `${b.key}/0/business`;
+	const aggregate = aggregateReview(b, [{ business: receipt(b) }]);
+	const context = {
+		step: { id: "review-after-fix", tool: "review-after-fix" },
+		stepKey: "review-after-fix",
+		reviewKey: b.key,
+		currentScope: () => ({}),
+		run: {
+			answers: [],
+			reviewRounds: [b],
+			history: [{ step: "child/aggregate-review", output: aggregate }],
+			outputs: {
+				"draft-pr": { url: "https://github.com/test/repo/pull/1" },
+				"aggregate-review": aggregate,
+			},
+		},
+		signal: new AbortController().signal,
+		log: vi.fn(),
+	} as unknown as ExecutionContext;
+	const tools = new FactoryTools({
+		postComment: vi.fn(),
+		command: async (_context, exe, args) =>
+			exe === "git"
+				? args[0] === "status"
+					? ""
+					: "head"
+				: args.includes("graphql")
+					? JSON.stringify(providerReceipt())
+					: "[[]]",
+	});
+	await expect(tools.tool(context)).resolves.toMatchObject({
+		reviewRequired: false,
+		headSha: "head",
+		baseSha: "base",
+	});
+});
 it("retains stable IDs and historical scope, requires amendments and explicit accepted skips", () => {
 	const original = inventory();
 	expect(validateInventory(original, original).version).toBe(1);
@@ -465,15 +706,15 @@ it("cancels incomplete reviewers without approving; retry restores the same base
 it("requires stable inventory QA references and explicit exclusions, even with zero stories", () => {
 	const scope = qaScope();
 	const inv = inventory();
-	const outputs = { "review-gate": { baseline: { inventory: inv } } };
-	expect(qaRequirementIssues(scope, outputs, [])).not.toEqual([]);
+	const outputs = {};
+	expect(qaRequirementIssues(scope, outputs, [], inv)).not.toEqual([]);
 	scope.stories.forEach((s) => {
 		s.requirementRefs = ["R1"];
 	});
-	expect(qaRequirementIssues(scope, outputs, [])).toEqual([]);
+	expect(qaRequirementIssues(scope, outputs, [], inv)).toEqual([]);
 	scope.stories = [];
 	scope.exclusions = [];
-	expect(qaRequirementIssues(scope, outputs, [])).toEqual([
+	expect(qaRequirementIssues(scope, outputs, [], inv)).toEqual([
 		"R1: no QA story or explicit justified exclusion",
 	]);
 	scope.exclusions = [
@@ -482,7 +723,7 @@ it("requires stable inventory QA references and explicit exclusions, even with z
 			reason: "Verified with static type check; no executable behavior",
 		},
 	];
-	expect(qaRequirementIssues(scope, outputs, [])).toEqual([]);
+	expect(qaRequirementIssues(scope, outputs, [], inv)).toEqual([]);
 });
 
 it("re-extracts refined requirements after a real fix, preserves settled findings and accepted skip evidence", async () => {

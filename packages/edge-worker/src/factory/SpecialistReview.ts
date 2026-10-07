@@ -207,7 +207,7 @@ export function validateSpecialist(
 	value: unknown,
 	baseline: ReviewBaseline,
 	coverage: boolean,
-	previous?: ReviewerReceipt,
+	previous?: Pick<ReviewerReceipt, "findings" | "disagreements">,
 ): z.infer<typeof CoverageSchema> {
 	const review = coverage
 		? CoverageSchema.parse(value)
@@ -418,8 +418,9 @@ export function validateContractOutput(
 	const baseline = roundFor(context);
 	if (!baseline)
 		throw new Error("Specialist has no runtime-owned review baseline");
-	const previous = latestAggregate(context.run, baseline.key)?.reviewers.find(
-		(r) => r.stamp.reviewer === context.step.id,
+	const previous = priorReviewer(
+		latestAggregate(context.run, baseline.key),
+		context.step.id,
 	);
 	return validateSpecialist(
 		value,
@@ -427,6 +428,21 @@ export function validateContractOutput(
 		contract === "coverage-v1",
 		previous,
 	);
+}
+/** The aggregate retains dispositions even when a later receipt omits them. */
+function priorReviewer(
+	aggregate: AggregateReview | undefined,
+	reviewer: string,
+) {
+	if (!aggregate) return;
+	return {
+		findings: aggregate.rawFindings
+			.filter((f) => f.reviewer === reviewer)
+			.map((f) => ({ ...f, id: f.id.slice(reviewer.length + 1) })),
+		disagreements: aggregate.disagreements
+			.filter((d) => d.startsWith(`${reviewer}: `))
+			.map((d) => d.slice(reviewer.length + 2)),
+	};
 }
 export function stampSpecialist(
 	context: ExecutionContext,
@@ -486,7 +502,12 @@ export function aggregateReview(
 			throw new Error(
 				`${expected.id}: missing, incomplete or stale specialist receipt`,
 			);
-		validateSpecialist(receipt, baseline, expected.contract === "coverage-v1");
+		validateSpecialist(
+			receipt,
+			baseline,
+			expected.contract === "coverage-v1",
+			priorReviewer(previous, expected.id),
+		);
 		return receipt!;
 	});
 	const rawFindings = reviewers.flatMap((r) =>
@@ -582,9 +603,13 @@ export function aggregateForContext(
 		context.run.step ??
 		context.step.id
 	).replace(/[^/]+$/, "");
-	const baseline = [...(context.run.reviewRounds ?? [])]
-		.reverse()
-		.find((r) => r.key.replace(/[^/]+$/, "") === prefix);
+	const baseline = [...context.run.reviewRounds].reverse().find((r) => {
+		if (context.reviewKey) return r.key === context.reviewKey;
+		// Older persisted checkpoints have no association. Retain safeguards for
+		// the current graph and its callers/callees, excluding sibling branches.
+		const reviewPrefix = r.key.replace(/[^/]+$/, "");
+		return reviewPrefix.startsWith(prefix) || prefix.startsWith(reviewPrefix);
+	});
 	if (!baseline) return;
 	const aggregate = latestAggregate(context.run, baseline.key);
 	if (!aggregate || aggregate.baseline.round !== baseline.round)

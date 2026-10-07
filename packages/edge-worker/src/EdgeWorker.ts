@@ -224,7 +224,10 @@ import {
 	SessionChat,
 	steeringState,
 } from "./factory/SessionChat.js";
-import { validateContractOutput } from "./factory/SpecialistReview.js";
+import {
+	aggregateForContext,
+	validateContractOutput,
+} from "./factory/SpecialistReview.js";
 import {
 	inspectPullRequest,
 	type TakeoverPullRequest,
@@ -7712,8 +7715,9 @@ ${taskSection}`;
 			if (step.id === "visual-scope" && step.qaContract) {
 				const issues = qaRequirementIssues(
 					output as QaScope,
-					run.outputs,
+					context.outputs ?? run.outputs,
 					run.answers,
+					aggregateForContext(context)?.baseline.inventory,
 				);
 				if (issues.length) throw new Error(issues.join("; "));
 			}

@@ -99,6 +99,8 @@ export interface AgentCheckpoint {
 	};
 }
 export interface GraphCheckpoint {
+	// Inherited by called workflows and returned to their caller, persisted on restart.
+	reviewKey?: string;
 	current: string;
 	visits: Record<string, number>;
 	additionalVisits?: Record<string, number>;
@@ -200,6 +202,7 @@ export interface ChatMessage {
 	step: string;
 }
 export interface ExecutionContext {
+	reviewKey?: string;
 	stepKey?: string;
 	reviewBaseline?: ReviewBaseline;
 	currentScope?: () => unknown;
@@ -844,6 +847,7 @@ export class WorkflowRuntime {
 							humanDecisions: structuredClone(run.humanDecisions ?? []),
 						};
 			const context: ExecutionContext = {
+				reviewKey: checkpoint.reviewKey,
 				run,
 				step,
 				stepKey: key,
@@ -964,6 +968,8 @@ export class WorkflowRuntime {
 						};
 						run.reviewRounds.push(state.reviewBaseline);
 					}
+					if (state.reviewBaseline)
+						checkpoint.reviewKey = state.reviewBaseline.key;
 					state.children ??= (step.groups ?? []).map((group) => ({
 						...this.newCheckpoint(group),
 						outputs: step.review ? {} : structuredClone(outputs),
@@ -1046,6 +1052,7 @@ export class WorkflowRuntime {
 						);
 					}
 					state.children ??= [this.newCheckpoint(definition.steps)];
+					state.children[0]!.reviewKey ??= checkpoint.reviewKey;
 					this.save(run);
 					await this.graph(
 						run,
@@ -1059,6 +1066,7 @@ export class WorkflowRuntime {
 						parallel,
 					);
 					output = { workflow: definition.id, completed: true };
+					checkpoint.reviewKey = state.children[0]!.reviewKey;
 				} else {
 					run.capacityLeaves ??= {};
 					run.capacityLeaves[key] = {
