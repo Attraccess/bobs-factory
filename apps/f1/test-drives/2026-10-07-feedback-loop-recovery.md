@@ -152,3 +152,20 @@ exposed the same pre-existing constructor-write cleanup race in workflow-trigger
 fixtures; their cleanup now awaits capacity initialization as well.
 The final full EdgeWorker suite passed 1,379 tests (one skipped); build, types,
 Biome and diff checks passed, retaining the 29 existing Biome warnings.
+
+## Main integration validation
+
+Merged main `b9974c8b` into the tested branch based on `282dc5d9`, retaining
+refinement recommendations, durable question batches and the recovery guards.
+Review-fixer schemas retain optional recommendation metadata; both actual runner
+integration cases assert it survives the restricted-input assistance path.
+The combined EdgeWorker suite passed 1,396 tests (one skipped), and all 112
+focused question/runtime/runner integration tests passed after that adjustment.
+Build, types and diff checks passed.
+
+All ten mocked scenarios passed again on the combined working tree. Feedback
+evidence: `/tmp/factory-feedback-f1-RLyuY1`, output
+`/tmp/factory-merge37-feedback-f1.log`. Review recovery evidence:
+`/tmp/factory-review-recovery-f1-zxSjfQ`, output
+`/tmp/factory-merge37-review-f1.log`. Both drives released capacity and stopped
+cleanly; no provider inference or external mutation occurred.

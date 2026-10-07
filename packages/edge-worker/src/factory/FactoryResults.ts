@@ -7,6 +7,10 @@ import {
 import { FeedbackPolicySchema } from "./FeedbackPolicy.js";
 
 import { QaScopeFieldsSchema, scopeIssues } from "./Qa.js";
+import {
+	normalizeQuestionResult,
+	QuestionRecommendationSchema,
+} from "./Questions.js";
 
 const text = z.string().min(1);
 export const VisualScopeSchema = z
@@ -251,7 +255,7 @@ export const GeneratedGuideSchema = GuideSchema.extend({
 });
 export type Guide = z.infer<typeof GuideSchema>;
 export type GuideChapter = NonNullable<Guide["chapters"]>[number];
-export function validateFactoryResult(
+function parseFactoryResult(
 	step: string,
 	output: unknown,
 	qaContract?: "qa-v1",
@@ -261,6 +265,9 @@ export function validateFactoryResult(
 			return z
 				.object({
 					questions: z.array(text),
+					questionRecommendations: z
+						.array(QuestionRecommendationSchema)
+						.optional(),
 					decisions: z.array(
 						z.object({ question: text, answer: text, reason: text }),
 					),
@@ -285,6 +292,9 @@ export function validateFactoryResult(
 					summary: text,
 					checks: z.array(text),
 					questions: z.array(text),
+					questionRecommendations: z
+						.array(QuestionRecommendationSchema)
+						.optional(),
 				})
 				.refine(
 					(result) =>
@@ -341,6 +351,9 @@ export function validateFactoryResult(
 				.object({
 					summary: text,
 					questions: z.array(text).optional(),
+					questionRecommendations: z
+						.array(QuestionRecommendationSchema)
+						.optional(),
 					dispositions: z.array(
 						z.object({
 							id: text,
@@ -353,4 +366,15 @@ export function validateFactoryResult(
 		default:
 			return output;
 	}
+}
+
+export function validateFactoryResult(
+	step: string,
+	output: unknown,
+	qaContract?: "qa-v1",
+): unknown {
+	const result = parseFactoryResult(step, output, qaContract);
+	return result && typeof result === "object" && "questions" in result
+		? normalizeQuestionResult(result)
+		: result;
 }
