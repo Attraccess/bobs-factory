@@ -812,6 +812,7 @@ export class FactoryServer {
 						context: z
 							.object({
 								questions: z.array(z.string()),
+								questionBatchId: z.string().optional(),
 								step: z.string().optional(),
 							})
 							.optional(),
@@ -821,6 +822,8 @@ export class FactoryServer {
 				if (
 					context &&
 					(context.step !== run.step ||
+						(context.questionBatchId !== undefined &&
+							context.questionBatchId !== run.questionBatchId) ||
 						!isDeepStrictEqual(context.questions, run.questions))
 				)
 					throw new Error(
