@@ -204,7 +204,11 @@ import {
 	outputValidationError,
 } from "./factory/OutputValidation.js";
 import { type QaScope, qaDigest, qaRequirementIssues } from "./factory/Qa.js";
-import { questionInstructions } from "./factory/Questions.js";
+import {
+	normalizeQuestionResult,
+	questionInstructions,
+	questionNotification,
+} from "./factory/Questions.js";
 import { finalizeGuideFiles } from "./factory/ReviewFiles.js";
 import {
 	buildTitleContext,
@@ -6779,7 +6783,7 @@ ${taskSection}`;
 					return tools.tool(context);
 				},
 				question: async (run) => {
-					const body = `## Factory clarification\n\n${run.questions.map((question, index) => `${index + 1}. ${question}`).join("\n")}\n\nReply here or answer in the factory UI. The run waits for your answers.`;
+					const body = `## Factory clarification\n\n${questionNotification(run.questions, run.questionRecommendations)}`;
 					if (!run.ticketReference) await this.postFactoryComment(run, body);
 					await this.agentSessionManager.createResponseActivity(run.id, body);
 				},
@@ -7661,7 +7665,7 @@ ${taskSection}`;
 	): unknown {
 		const { run, step } = context;
 		try {
-			let output = value;
+			let output = step.askQuestions ? normalizeQuestionResult(value) : value;
 			if (
 				step.qaContract ||
 				["factory", "takeover"].includes(run.workflow.id) ||

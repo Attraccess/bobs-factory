@@ -8,8 +8,15 @@ This changelog documents internal development changes, refactors, tooling update
 
 - Prepare private workspace packages, embedded runtime assets, binary candidate verification and migration preservation checks for Taskbot #38. Retire upstream npm publication; retain historical tooling. Load user-prepared Cursor through a separate Node process with native ID, MCP, stream and cancellation regression checks; exclude its SDK/native sidecars from archives. Validate referenced MCP configuration before migration, preserve frozen workflow history while updating executable tool names, and share environment-file ownership between bootstrap and reload. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
+### Fixed
+
+- Integrate refinement recommendations with the latest workflow recovery changes, retaining recommendation validation and bounded retry regression coverage. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
+
+- Update the complete routing-prompt expectation for refinement recommendations so CI validates the current capability guidance. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 ### Added
+
+- Add a reproducible mocked F1 follow-up for refinement recommendation submission and existing-session replies, retaining the disputed native-only QA coverage as an explicit limitation. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))
 

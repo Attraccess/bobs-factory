@@ -354,6 +354,28 @@ Use `![caption](/api/runs/RUN_ID/question-images/unique-filename.png)` to displa
 a local image beside the question; nested paths and external symlink targets
 are rejected. Visuals supplement a question that is understandable on its own.
 
+Refinement roles generate evidence-based suggestions alongside string questions:
+
+```json
+{"questions":["Which approach should we use?"],"questionRecommendations":[{"questionIndex":0,"answer":"Use the existing approach.","reason":"It meets the requirement without a migration."}]}
+```
+
+Recommendation indices are zero-based and unique within the batch. Answers and
+reasons must be nonblank. Missing facts, credentials or access must be requested
+instead of invented; omit recommendations where no supported choice exists.
+Custom and frozen question-enabled recipes receive these instructions at execution.
+Legacy results without metadata continue to show blank answer fields.
+
+“Use recommendation” is selected by default. “Custom answer” focuses a separate
+empty field, and switching back and forth preserves the custom draft. Mixed
+answers submit together. Blank custom answers prevent submission. **Send answers
+is always required**: generating, selecting, refreshing or restoring suggestions
+never advances work. Ticket replies also require an explicit answer.
+Drafts retain both the choice and text through navigation and PWA updates. Older
+text drafts remain custom answers. Changed question batches or recommendations
+require draft review, and contextual API submissions reject outdated batch IDs,
+even when the question wording repeats.
+
 The factory runs clarification → decisions → planner/plan-review loop →
 implementation → push/draft PR → code-review/fix loop → CI/fix loop → QA story and screenshot
 plan → QA execution/screenshot review/fix loop → human review guide. The implementer
