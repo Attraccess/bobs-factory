@@ -35,6 +35,9 @@ const opaqueFields = new Set([
 	"history",
 	"messages",
 	"agentSessionEntries",
+	// Completed and rejected agent checkpoints use singular output; it is also
+	// arbitrary result data, even when it resembles operational configuration.
+	"output",
 	"outputs",
 	"reviewGate",
 	"humanDecisions",

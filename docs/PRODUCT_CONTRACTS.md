@@ -33,6 +33,9 @@ headers, environment values, tool arguments, completed receipts or review gates.
 Workflow tool changes are limited to saved recipes and the run's top-level frozen
 `workflow` / `workflowDefinitions`; workflow-shaped step outputs and checkpoint
 outputs remain completed results, including when later steps consume them.
+Singular `output` payloads in completed and rejected agent checkpoints (including
+nested graph frames and Simple execution) remain opaque result data. Migration
+does not rewrite their fields or interpret them as native conversation records.
 
 The issued egress certificate keeps its existing `cyrus-egress-ca.pem` filename
 inside the new home. Migration preserves certificate/key bytes and system trust;

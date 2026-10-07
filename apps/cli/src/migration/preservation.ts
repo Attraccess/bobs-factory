@@ -79,6 +79,7 @@ export function nativeSessions(
 				"agentSessionEntries",
 				"workflow",
 				"workflowDefinitions",
+				"output",
 				"outputs",
 				"events",
 			].includes(key)

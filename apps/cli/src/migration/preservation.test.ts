@@ -18,13 +18,37 @@ import {
 	restoreMigration,
 } from "./migration.js";
 import { canonicalPath } from "./paths.js";
-import { PreservationPlanSchema } from "./preservation.js";
+import { nativeSessions, PreservationPlanSchema } from "./preservation.js";
 
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn(() => "") }));
 const roots: string[] = [];
 afterEach(() => {
 	for (const path of roots.splice(0))
 		rmSync(path, { recursive: true, force: true });
+});
+it("discovers native checkpoints without interpreting completed or rejected output as sessions", () => {
+	const payload = {
+		runner: "codex",
+		sessionId: "data-only",
+		workspace: "/payload",
+	};
+	expect(
+		nativeSessions({
+			workspace: "/worktree",
+			checkpoint: {
+				active: {
+					agent: {
+						runner: "codex",
+						sessionId: "native-session",
+						result: { output: payload },
+						rejected: { output: [payload] },
+					},
+				},
+			},
+		}),
+	).toEqual([
+		{ runner: "codex", sessionId: "native-session", workspace: "/worktree" },
+	]);
 });
 function fixture() {
 	const root = canonicalPath(

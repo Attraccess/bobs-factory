@@ -20,7 +20,11 @@ import {
 	writePreview,
 } from "./migration.js";
 import { canonicalPath } from "./paths.js";
-import { transformEnvironment, transformState } from "./transform.js";
+import {
+	transformEnvironment,
+	transformRun,
+	transformState,
+} from "./transform.js";
 
 const roots: string[] = [];
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn(() => "") }));
@@ -385,6 +389,63 @@ it("migrates saved and frozen workflow tool steps while preserving workflow-shap
 			readFileSync(join(destination, "factory/runs/run.json"), "utf8"),
 		),
 	).toEqual({ ...run, workflow: expected, workflowDefinitions: [expected] });
+});
+it.each([
+	"result",
+	"rejected",
+])("preserves %s agent output in root, nested and Simple checkpoints", (slot) => {
+	const { root, source, destination } = fixture();
+	const output = {
+		path: source,
+		allowedTools: ["mcp__cyrus-tools"],
+		cyrusHome: source,
+		workflowDefinitions: ["arbitrary result"],
+	};
+	const agent = {
+		runner: "codex",
+		sessionId: "native-session",
+		[slot]: {
+			output,
+			revision: {
+				headSha: "saved",
+				dirty: false,
+				historyLength: 0,
+				at: "saved",
+			},
+			...(slot === "result"
+				? { finalizing: true }
+				: { issues: [], attempts: 1 }),
+		},
+	};
+	const frame = {
+		current: "ask",
+		visits: { ask: 1 },
+		active: { phase: "executing", agent },
+		outputs: { completed: output },
+	};
+	const run = {
+		id: "run",
+		workflow: { id: "custom", steps: [] },
+		history: [],
+		workspace: root,
+		evidenceDir: join(source, "factory/evidence/run"),
+		checkpoint: {
+			...frame,
+			active: {
+				...frame.active,
+				children: [
+					frame,
+					{ ...frame, active: { ...frame.active, children: [frame] } },
+				],
+			},
+		},
+		simpleExecution: { userPrompt: "Cyrus prompt", runner: "codex", agent },
+		outputs: { completed: output },
+	};
+	expect(transformRun(run, source, destination)).toEqual({
+		...run,
+		evidenceDir: join(destination, "factory/evidence/run"),
+	});
 });
 it("relocates owned environment paths while keeping secret values and comments", () => {
 	expect(
