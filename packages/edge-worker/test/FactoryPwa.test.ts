@@ -906,3 +906,32 @@ it.each([
 		for (const surface of [textKey, openKey, draftKey]) forgetDraft(surface);
 	}
 });
+
+it("restores answer modes and retained custom text alongside historical string drafts", () => {
+	const snapshot = {
+		schema: 1,
+		expires: Date.now() + 1000,
+		target: build,
+		route: "#/",
+		details: [],
+		drafts: {
+			"answers/current": {
+				revision: "old-batch",
+				value: {
+					0: { mode: "recommendation", custom: "keep my draft" },
+					1: { mode: "custom", custom: "typed answer" },
+				},
+			},
+			"answers/legacy": {
+				revision: "old-question",
+				value: { 0: "legacy answer" },
+			},
+		},
+	};
+	expect(decodeSnapshot(JSON.stringify(snapshot))?.drafts).toEqual(
+		snapshot.drafts,
+	);
+	const invalid = structuredClone(snapshot);
+	invalid.drafts["answers/current"].value[0].mode = "automatic";
+	expect(decodeSnapshot(JSON.stringify(invalid))).toBeUndefined();
+});

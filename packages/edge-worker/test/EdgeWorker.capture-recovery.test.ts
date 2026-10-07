@@ -455,6 +455,110 @@ it("retries IO failures during correction by revalidating the completed candidat
 	expect(f.ctx.resumeAgent!.rejected).toBeUndefined();
 });
 
+it("corrects invalid recommendation indices from a custom question-enabled role", async () => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "custom-questions",
+		name: "Questions",
+		type: "agent",
+		prompt: "Ask a question",
+		askQuestions: true,
+	};
+	f.ctx.run.step = "custom-questions";
+	const valid = {
+		questions: ["Proceed?"],
+		questionRecommendations: [
+			{ questionIndex: 0, answer: "Wait", reason: "Approval needed" },
+		],
+		customField: true,
+	};
+	const invalid = {
+		...valid,
+		questionRecommendations: [
+			{ ...valid.questionRecommendations[0], questionIndex: 2 },
+		],
+	};
+	f.ctx.resumeAgent!.result!.output = invalid;
+	f.runner.getMessages = () => [
+		{ type: "result", result: JSON.stringify(valid) },
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toEqual(valid);
+	expect(f.getInput().outputCorrection).toMatchObject({
+		attempts: 1,
+		output: invalid,
+	});
+	expect(f.getInput().outputCorrection.issues).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				path: "/questionRecommendations/0/questionIndex",
+			}),
+		]),
+	);
+	expect(f.runner.start).toHaveBeenCalledOnce();
+});
+
+it.each([
+	false,
+	true,
+])("retains extraction recommendations and corrects invalid inventory output (saved result: %s)", async (saved) => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "extract-requirements",
+		name: "Extract requirements",
+		type: "agent",
+		prompt: "Extract scope",
+		askQuestions: true,
+		reviewContract: "inventory-v1",
+	};
+	f.ctx.run.step = "extract-requirements";
+	const source = { source: "originalInput", reference: "/acceptance/0" };
+	const valid = {
+		schemaVersion: 1,
+		requirements: [
+			{
+				id: "R1",
+				criterion: "Reject blank strings",
+				classification: "active",
+				sources: [source],
+			},
+		],
+		decisions: [],
+		conflicts: [],
+		sourceReceipt: { considered: [source], unavailable: [] },
+		questions: ["Should blank strings be rejected?"],
+		questionRecommendations: [
+			{
+				questionIndex: 0,
+				answer: "Reject blank strings",
+				reason: "Required by the caller contract",
+			},
+		],
+	};
+	const invalid = { ...valid, requirements: [] };
+	if (saved) f.ctx.resumeAgent!.result!.output = invalid;
+	else delete f.ctx.resumeAgent!.result;
+	let turn = 0;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify(!saved && turn++ === 0 ? invalid : valid),
+		},
+	];
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(output).toMatchObject(valid);
+	expect(output.decisions).toEqual([]);
+	expect(f.runner.start).toHaveBeenCalledTimes(saved ? 1 : 2);
+	expect(f.getInput().outputCorrection).toMatchObject({
+		output: invalid,
+		attempts: 1,
+	});
+	expect(f.getInput().outputCorrection.issues).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ path: "/requirements" }),
+		]),
+	);
+});
+
 it("resumes one silent Codex turn in the same conversation and persists the retry budget", async () => {
 	const f = await fixture();
 	f.ctx.resumeAgent = { runner: "codex", sessionId: "existing-conversation" };

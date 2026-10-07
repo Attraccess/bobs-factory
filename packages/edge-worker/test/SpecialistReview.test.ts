@@ -59,6 +59,30 @@ function inventory() {
 		questions: [],
 	});
 }
+it("retains and validates extraction recommendations without treating them as scope decisions", () => {
+	const value = {
+		...inventory(),
+		questions: ["Should input validation reject blank strings?"],
+		questionRecommendations: [
+			{
+				questionIndex: 0,
+				answer: "Reject blank strings",
+				reason: "The caller contract requires a nonblank string",
+			},
+		],
+	};
+	const result = validateInventory(value);
+	expect(result.questionRecommendations).toEqual(value.questionRecommendations);
+	expect(result.decisions).toEqual([]);
+	expect(() =>
+		validateInventory({
+			...value,
+			questionRecommendations: [
+				{ ...value.questionRecommendations[0], questionIndex: 1 },
+			],
+		}),
+	).toThrow("unique index within this questions array");
+});
 function baseline(): ReviewBaseline {
 	return {
 		schemaVersion: 1,

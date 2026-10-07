@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { qaDigest } from "./Qa.js";
+import { QuestionFieldsSchema } from "./Questions.js";
 import type { WorkflowStep } from "./Workflow.js";
 import type { ExecutionContext, FactoryRun } from "./WorkflowRuntime.js";
 
@@ -16,7 +17,7 @@ const decision = z.object({
 	kind: z.enum(["scope", "skip"]),
 	requirementIds: z.array(id).min(1),
 });
-export const InventorySchema = z.object({
+export const InventorySchema = QuestionFieldsSchema.safeExtend({
 	schemaVersion: z.literal(1),
 	requirements: z
 		.array(

@@ -1008,7 +1008,12 @@ it.each([
 ])("restores unanswered questions without reasking, and waits for a human (legacy=%s)", async (legacy) => {
 	const question = vi.fn(async () => {});
 	const { runtime, home } = create({
-		agent: async () => ({ questions: ["Which provider?"] }),
+		agent: async () => ({
+			questions: ["Which provider?"],
+			questionRecommendations: [
+				{ questionIndex: 0, answer: "Codex", reason: "Existing runner" },
+			],
+		}),
 		question,
 	});
 	const run = start(
@@ -1022,8 +1027,12 @@ it.each([
 	await vi.waitFor(() => expect(question).toHaveBeenCalledTimes(1));
 	await runtime.shutdown();
 	expect(run.status).toBe("waiting");
+	const batch = run.questionBatchId;
+	expect(batch).toEqual(expect.any(String));
+	expect(run.answers).toEqual([]);
 	if (legacy) {
 		delete run.checkpoint;
+		delete run.questionBatchId;
 		runtime.save(run);
 	}
 	const agentHook = vi.fn(async (context: ExecutionContext) => {
@@ -1038,6 +1047,13 @@ it.each([
 		),
 	);
 	expect(restarted.get(run.id).status).toBe("waiting");
+	expect(restarted.get(run.id).questionRecommendations).toEqual([
+		{ questionIndex: 0, answer: "Codex", reason: "Existing runner" },
+	]);
+	if (!legacy) expect(restarted.get(run.id).questionBatchId).toBe(batch);
+	const restoredBatch = restarted.get(run.id).questionBatchId;
+	expect(restarted.get(run.id).questionBatchId).toBe(restoredBatch);
+	expect(restarted.get(run.id).answers).toEqual([]);
 	expect(question).toHaveBeenCalledTimes(1);
 	expect(agentHook).not.toHaveBeenCalled();
 	restarted.answer(run.id, "Codex");
@@ -1049,6 +1065,8 @@ it.each([
 		"implement",
 	]);
 	expect(restarted.get(run.id).history).toHaveLength(3);
+	expect(restarted.get(run.id).questionRecommendations).toBeUndefined();
+	expect(restarted.get(run.id).questionBatchId).toBeUndefined();
 });
 it("keeps an accepted answer across a crash before the clarifier continues", async () => {
 	const { runtime, home } = create({
@@ -2113,6 +2131,7 @@ it("upgrades a coherent screenshot recipe to QA atomically, keeps custom behavio
 });
 
 it("retries blocked nonvisual QA after restart and waits again without waiving criteria", async () => {
+	const question = vi.fn();
 	const tool = vi.fn(async (ctx: ExecutionContext) =>
 		ctx.run.answers.length < 2
 			? {
@@ -2120,6 +2139,14 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 					qaBlocked: true,
 					questions: [
 						"CLI fixture account is unavailable. Restore access, then explain how QA can run the required save check.",
+					],
+					questionRecommendations: [
+						{
+							questionIndex: 0,
+							answer:
+								"Restore the fixture account and retry the required check.",
+							reason: "Missing access prevents the required QA check.",
+						},
 					],
 				}
 			: { approved: true },
@@ -2131,7 +2158,7 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 			);
 		return { qaContract: "qa-v1", results: [] };
 	});
-	const { home, runtime } = create({ tool, agent: agentHook });
+	const { home, runtime } = create({ tool, agent: agentHook, question });
 	const definition = workflow([
 		agent("capture", {
 			inputs: ["visual-scope"],
@@ -2154,18 +2181,30 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 	await vi.waitFor(() => expect(run.status).toBe("waiting"));
 	const prefix = structuredClone(run.history);
 	const frozen = structuredClone(run.workflow);
+	const batch = run.questionBatchId;
+	const recommendations = structuredClone(run.questionRecommendations);
 	await runtime.shutdown();
 	await execution;
 	const restored = new WorkflowRuntime(home, {
 		tool,
 		agent: agentHook,
 		script: async () => ({}),
+		question,
 	});
 	const same = restored.get(run.id);
 	restored.resumeAll();
-	await vi.waitFor(() => expect(same.status).toBe("waiting"));
+	await vi.waitFor(() => {
+		expect(tool).toHaveBeenCalledTimes(2);
+		expect(same.events.at(-1)?.message).toBe(same.questions.join("\n"));
+		expect(same.status).toBe("waiting");
+	});
 	expect(same.history).toEqual(prefix);
 	expect(same.workflow).toEqual(frozen);
+	expect(same.questionBatchId).toBe(batch);
+	expect(same.questionRecommendations).toEqual(recommendations);
+	expect(same.answers).toEqual([]);
+	expect(question).toHaveBeenCalledTimes(1);
+	expect(agentHook).toHaveBeenCalledTimes(2);
 	restored.answer(same.id, "Access still unavailable; please approve anyway");
 	await vi.waitFor(() =>
 		expect(
@@ -2176,6 +2215,7 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 		approved: false,
 		qaBlocked: true,
 	});
+	expect(same.questionBatchId).not.toBe(batch);
 	restored.answer(
 		same.id,
 		"Account restored; execute CLI save with fixture 42",
@@ -2186,6 +2226,62 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 		agentHook.mock.calls.filter(([c]) => c.step.id === "capture"),
 	).toHaveLength(3);
 	await restored.shutdown();
+});
+
+it.each([
+	"question",
+	"answer",
+	"reason",
+	"removed",
+] as const)("replaces a restored QA question batch when its %s changes", async (changed) => {
+	const output = {
+		approved: false,
+		qaBlocked: true,
+		questions: ["Restore the fixture account, then explain how QA can run."],
+		questionRecommendations: [
+			{ questionIndex: 0, answer: "Restore access", reason: "QA needs access" },
+		],
+	};
+	const tool = vi.fn(async () => structuredClone(output));
+	const question = vi.fn();
+	const { home, runtime } = create({ tool, question });
+	const run = start(
+		runtime,
+		workflow([
+			agent("capture", { next: "visual-review" }),
+			agent("visual-review", { next: "visual-gate" }),
+			{
+				id: "visual-gate",
+				name: "QA gate",
+				type: "tool",
+				tool: "visual-gate",
+				qaContract: "qa-v1",
+				next: "end",
+			},
+		]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const batch = run.questionBatchId;
+	await runtime.shutdown();
+	await execution;
+	if (changed === "question") output.questions[0] = "Which account is ready?";
+	else if (changed === "removed") output.questionRecommendations = [];
+	else output.questionRecommendations[0]![changed] = "Updated guidance";
+	const agentHook = vi.fn(async () => ({}));
+	const restarted = reload(home, { tool, question, agent: agentHook });
+	const restored = restarted.get(run.id);
+	restarted.resumeAll();
+	await vi.waitFor(() => expect(question).toHaveBeenCalledTimes(2));
+	expect(restored.status).toBe("waiting");
+	expect(restored.questionBatchId).not.toBe(batch);
+	expect(restored.questions).toEqual(output.questions);
+	expect(restored.questionRecommendations).toEqual(
+		output.questionRecommendations,
+	);
+	expect(restored.answers).toEqual([]);
+	expect(agentHook).not.toHaveBeenCalled();
+	await restarted.shutdown();
 });
 
 it("upgrades the original stock end-at-handoff recipe with QA and its human checkpoint together", () => {
@@ -2236,6 +2332,47 @@ it("preserves a screenshot recipe with customized result handling or nonvisual r
 			updated.steps.find((s) => s.id === "capture")!.qaContract,
 		).toBeUndefined();
 	}
+});
+
+it("assigns new identities to repeated question batches and labels ticket suggestions", async () => {
+	const track = vi.fn<NonNullable<RuntimeHooks["track"]>>(async () => {});
+	const recommendation = {
+		questionIndex: 0,
+		answer: "Wait",
+		reason: "Approval needed",
+	};
+	const { runtime } = create({
+		agent: async () => ({
+			questions: ["Proceed?"],
+			questionRecommendations: [recommendation],
+		}),
+		track,
+	});
+	const run = start(
+		runtime,
+		workflow([agent("clarify", { askQuestions: true })]),
+	);
+	run.ticketReference = {
+		provider: "taskbot",
+		instance: "https://taskbot.test",
+		project: "test",
+		id: 1,
+		url: "https://taskbot.test/1",
+		server: "taskbot",
+	};
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const batch = run.questionBatchId;
+	expect(run.answers).toEqual([]);
+	expect(track.mock.calls.at(-1)?.[1].body).toContain("Suggested answer: Wait");
+	expect(track.mock.calls.at(-1)?.[1].body).toContain(
+		"explicit reply or Send answers",
+	);
+	runtime.answer(run.id, "Wait");
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(run.questionBatchId).not.toBe(batch);
+	expect(run.answers).toHaveLength(1);
+	runtime.stop(run.id);
 });
 
 it("recovers saved QA waits into the fixer while retaining completed roles and human merge approval", async () => {

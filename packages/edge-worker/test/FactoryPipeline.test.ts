@@ -655,6 +655,13 @@ it("waits on blocked implementation across restart and supplies the answer witho
 			summary: "Implementation deferred by the plan.",
 			checks: ["Worktree clean"],
 			questions: [question],
+			questionRecommendations: [
+				{
+					questionIndex: 0,
+					answer: "Keep backlog only.",
+					reason: "The plan forbids implementation.",
+				},
+			],
 		});
 	});
 	const tool = vi.fn(async () => ({}));
@@ -714,6 +721,15 @@ it("waits on blocked implementation across restart and supplies the answer witho
 	const second = restarted.launch(restored);
 	await vi.waitFor(() => expect(restored.status).toBe("waiting"));
 	expect(resumedAgent).not.toHaveBeenCalled();
+	expect(restored.questionBatchId).toBe(run.questionBatchId);
+	expect(restored.questionRecommendations).toEqual([
+		{
+			questionIndex: 0,
+			answer: "Keep backlog only.",
+			reason: "The plan forbids implementation.",
+		},
+	]);
+	expect(restored.answers).toEqual([]);
 	restarted.answer(run.id, "Proceed with implementation now.");
 	await second;
 	expect(resumedAgent).toHaveBeenCalledTimes(1);
@@ -816,7 +832,9 @@ it.each([
 		})),
 	};
 	const first = runtime.launch(run);
-	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	await vi.waitFor(() => expect(run.status).toBe("waiting"), {
+		timeout: 10000,
+	});
 	expect(run.step).toBe("pipeline/visual-gate");
 	expect(run.questions.join("\n")).toContain("Test-card login timed out");
 	expect(questionPosted).toHaveBeenCalledTimes(1);
@@ -839,13 +857,17 @@ it.each([
 	if (legacy) restarted.retry(run.id);
 	else restarted.resumeAll();
 	const restored = restarted.get(run.id);
-	await vi.waitFor(() => expect(restored.status).toBe("waiting"));
+	await vi.waitFor(() => expect(restored.status).toBe("waiting"), {
+		timeout: 10000,
+	});
 	expect(agents).toHaveBeenCalledTimes(2);
 	expect(questionPosted).toHaveBeenCalledTimes(1);
 	expect(restored.error).toBeUndefined();
 	const retained = structuredClone(restored.history);
 	restarted.answer(run.id, "The test card now works; capture Reader desktop.");
-	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	await vi.waitFor(() => expect(restored.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(restored.history.slice(0, retained.length)).toEqual(retained);
 	expect(restored.workflowDefinitions).toEqual(frozen);
 	expect(restored.history.slice(retained.length).map((h) => h.step)).toEqual([

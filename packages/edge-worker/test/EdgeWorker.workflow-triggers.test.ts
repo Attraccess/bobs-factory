@@ -65,6 +65,8 @@ function setup() {
 		await runtime.shutdown();
 		edge.ticketTracking?.stop();
 		await edge.stateSaveQueue;
+		await edge.runnerSlots.ready();
+		await edge.runnerSlots.shutdown();
 		rmSync(home, { recursive: true, force: true });
 	});
 	return {

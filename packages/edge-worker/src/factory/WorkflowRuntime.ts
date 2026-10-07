@@ -31,6 +31,11 @@ import {
 	upgradeWorkflows,
 } from "./defaultWorkflows.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
+import {
+	normalizeQuestionResult,
+	type QuestionRecommendation,
+	questionNotification,
+} from "./Questions.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
 	aggregateReview,
@@ -192,6 +197,8 @@ export interface FactoryRun {
 	history: { step: string; output: unknown; at: string; call?: WorkflowCall }[];
 	answers: { questions: string[]; answer: string; at: string }[];
 	questions: string[];
+	questionRecommendations?: QuestionRecommendation[];
+	questionBatchId?: string;
 	events: RunEvent[];
 	activitySteps?: { at: string; step: string }[];
 	iterationLimit?: { step: string; visits: number; limit: number };
@@ -1152,7 +1159,8 @@ export class WorkflowRuntime {
 				step.qaContract
 			) {
 				output = outputs[step.id] = await this.hooks.tool(context);
-				state.phase = "result";
+				// Keep the restored wait until its questions and suggestions are compared
+				// below. Gate revalidation alone does not create a new question batch.
 				this.save(run);
 			}
 			if (
@@ -1266,7 +1274,15 @@ export class WorkflowRuntime {
 				)
 					throw new Error("QA/capture assistance requires a question");
 				if (state.phase !== "answered")
-					await this.waitForAnswers(run, questions, signal, state);
+					await this.waitForAnswers(
+						run,
+						questions,
+						signal,
+						state,
+						normalizeQuestionResult(output).questionRecommendations as
+							| QuestionRecommendation[]
+							| undefined,
+					);
 				checkpoint.current = capture.id;
 				checkpoint.active = undefined;
 				this.log(
@@ -1306,7 +1322,15 @@ export class WorkflowRuntime {
 					throw new Error("Clarifier must return a questions array");
 				if (questions.length) {
 					if (state.phase !== "answered")
-						await this.waitForAnswers(run, questions, signal, state);
+						await this.waitForAnswers(
+							run,
+							questions,
+							signal,
+							state,
+							normalizeQuestionResult(output).questionRecommendations as
+								| QuestionRecommendation[]
+								| undefined,
+						);
 					checkpoint.active = undefined;
 					this.save(run);
 					continue;
@@ -1363,10 +1387,16 @@ export class WorkflowRuntime {
 		questions: string[],
 		signal: AbortSignal,
 		state: NonNullable<GraphCheckpoint["active"]>,
+		recommendations?: QuestionRecommendation[],
 	): Promise<void> {
-		const restored = state.phase === "waiting";
+		const restored =
+			state.phase === "waiting" &&
+			isDeepStrictEqual(run.questions, questions) &&
+			isDeepStrictEqual(run.questionRecommendations, recommendations);
 		state.phase = "waiting";
 		run.questions = questions;
+		run.questionRecommendations = recommendations;
+		if (!restored || !run.questionBatchId) run.questionBatchId = randomUUID();
 		run.status = "waiting";
 		const waiting = new Promise<void>((resolve, reject) =>
 			this.pendingAnswers.set(run.id, { resolve, reject }),
@@ -1381,7 +1411,7 @@ export class WorkflowRuntime {
 			if (run.ticketReference && this.hooks.track)
 				await this.track(run, {
 					key: `questions:${run.step}:${run.answers.length}`,
-					body: `Factory needs assistance:\n\n${questions.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nReply on the ticket or answer in the Factory UI to resume.`,
+					body: `Factory needs assistance:\n\n${questionNotification(questions, run.questionRecommendations)}`,
 				});
 			if (!restored) await this.hooks.question?.(run);
 			signal.throwIfAborted();
@@ -1407,6 +1437,8 @@ export class WorkflowRuntime {
 		state.phase = "waiting";
 		run.status = "waiting";
 		run.questions = [];
+		run.questionRecommendations = undefined;
+		run.questionBatchId = undefined;
 		const waiting = new Promise<void>((resolve, reject) =>
 			this.pendingAnswers.set(run.id, { resolve, reject }),
 		);
@@ -1483,6 +1515,8 @@ export class WorkflowRuntime {
 		};
 		markAnswered(run.checkpoint);
 		run.questions = [];
+		run.questionRecommendations = undefined;
+		run.questionBatchId = undefined;
 		run.status = "running";
 		this.log(run, run.step ?? "clarify", `Human answer: ${answer}`);
 		pending.resolve();
