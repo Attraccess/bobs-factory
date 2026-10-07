@@ -1,5 +1,19 @@
 import { isAbsolute, relative, resolve } from "node:path";
+import { parse } from "dotenv";
 import { canonicalPath } from "./paths.js";
+
+export function assertInstanceCapacityEnvironment(
+	environment: Record<string, string | undefined>,
+): void {
+	if (
+		["CYRUS_CAPACITY_DIRECTORY", "BOBS_FACTORY_CAPACITY_DIRECTORY"].some(
+			(key) => Object.hasOwn(environment, key),
+		)
+	)
+		throw new Error(
+			"Capacity directory override requires explicit reconciliation: preserve the selected pool's policy and queue in the source home's machine-capacity directory, resolve shared consumers, and remove the override from environment files and service definitions before apply",
+		);
+}
 
 const pathFields = new Set([
 	"factoryHome",
@@ -215,6 +229,7 @@ export function transformEnvironment(
 	source?: string,
 	destination?: string,
 ): string {
+	assertInstanceCapacityEnvironment(parse(text));
 	const keys = new Set(
 		text
 			.split(/\r?\n/)
@@ -231,7 +246,6 @@ export function transformEnvironment(
 				"BOBS_FACTORY_HOME",
 				"BOBS_FACTORY_REPOS_DIR",
 				"BOBS_FACTORY_WORKTREES_DIR",
-				"BOBS_FACTORY_CAPACITY_DIRECTORY",
 			];
 			if (source && destination && pathKeys.includes(renamed)) {
 				const match =

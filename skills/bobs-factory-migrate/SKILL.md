@@ -35,6 +35,15 @@ agents, Git identity/signing configuration, keychains and agent credentials inta
    effects. Verify both workers and descendants stopped. An uncertain lease is
    a blocker, not permission to delete coordinator files. A custom/shared capacity
    directory requires a separate verified backup and coordination of all consumers.
+   `CYRUS_CAPACITY_DIRECTORY` / `BOBS_FACTORY_CAPACITY_DIRECTORY` in the source
+   `.env` or helper environment block automatic apply: the replacement uses only
+   `<factoryHome>/machine-capacity`. After verifying every consumer stopped, back
+   up both the selected pool and any existing default pool. Resolve collisions or
+   shared-instance ownership explicitly; preserve policy, request identities and
+   queue order in the source home's `machine-capacity`. Remove obsolete overrides
+   from env files, the helper environment and replacement service definitions;
+   regenerate inspect/preview and require coordinator validation to pass before
+   apply. Keep the verified custom-pool backup for recovery.
 5. Back up source state, config, env, service definitions, destination files being
    affected and relevant native conversation stores with mode 0700 directories.
    Verify bytes, permissions and symlinks. Keep originals. The helper copies

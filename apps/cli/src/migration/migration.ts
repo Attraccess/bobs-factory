@@ -15,6 +15,7 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { CapacityStateSchema, resolvePath } from "bobs-factory-core";
+import { parse } from "dotenv";
 import { canonicalPath } from "./paths.js";
 import {
 	nativeSessions,
@@ -23,6 +24,7 @@ import {
 	verifyContinuations,
 } from "./preservation.js";
 import {
+	assertInstanceCapacityEnvironment,
 	transformEnvironment,
 	transformMcpConfig,
 	transformRun,
@@ -239,6 +241,21 @@ export function inspectMigration(
 	const entries = inventory(source);
 	const blockers: string[] = [],
 		conflicts: string[] = [];
+	// Instance pools no longer honor directory overrides. Also inspect the caller's
+	// environment: service/shell settings can change after the preview was written.
+	try {
+		assertInstanceCapacityEnvironment(process.env);
+		if (existsSync(join(source, ".env")))
+			assertInstanceCapacityEnvironment(
+				parse(readFileSync(join(source, ".env"), "utf8")),
+			);
+	} catch (error) {
+		blockers.push(
+			error instanceof Error
+				? error.message
+				: "Capacity environment requires explicit reconciliation before apply",
+		);
+	}
 	const external = new Set<string>();
 	const preservationPlan = preservation
 		? PreservationPlanSchema.parse(preservation)

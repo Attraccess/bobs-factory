@@ -751,7 +751,9 @@ directories have independent limits and queues, so temporary F1 instances do not
 compete with the instance running their parent QA step. Processes using the same
 Factory home share its durable policy and restart queue. Repositories and worktrees
 within an instance share that instance's pool. `BOBS_FACTORY_CAPACITY_DIRECTORY` no longer
-overrides this location. The default home retains `~/.bobs-factory/machine-capacity` and
+overrides this location. Migration blocks capacity-directory overrides until the
+selected pool and its consumers are explicitly reconciled; follow the migration
+guide before cutover. The default home retains `~/.bobs-factory/machine-capacity` and
 its saved policy. This release requires POSIX
 process inspection (`ps`) for reconciliation; unsupported or inaccessible process
 inspection fails closed. Existing older worker versions must be upgraded to join.

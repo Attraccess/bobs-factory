@@ -11,7 +11,7 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | Product environment | CLI, worker, runners, capacity, helpers | `BOBS_FACTORY_*` | Rename keys, refuse collisions; keep provider keys |
 | Home configuration | application, worker, config | `factoryHome`, `~/.bobs-factory` | Transform config field and owned paths only |
 | Persistence | worker state, factory runs / chats / evidence | `<home>/state`, `<home>/factory` | Preserve versions, IDs, receipts, gates, accepted definitions |
-| Coordinator | MachineCapacity and execution scope | `<factoryHome>/machine-capacity`, one pool per instance | Stop old consumers and descendants before transfer |
+| Coordinator | MachineCapacity and execution scope | `<factoryHome>/machine-capacity`, one pool per instance | Stop old consumers and descendants before transfer; capacity-directory overrides block apply until explicitly reconciled |
 | Repo hooks | GitService setup / teardown | `bobs-factory-setup.sh`, `bobs-factory-teardown.sh` | Rename only explicitly approved repository files |
 | Owned MCP references | registrations, allowlists, prompts | `bobs-factory-tools`, `mcp__bobs-factory-tools__*` | Transform server-wide allow/deny entries, saved/frozen workflow tool steps (including fanout/nested definitions), server keys and owned HTTP routes; preserve prompts and transcripts |
 | Stock skills / plugin | deployer, runner configs, instructions | `bobs-factory-skills`, `bobs-factory-skills-plugin` | Preserve custom skills and prompts |
@@ -24,6 +24,14 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 External cyrus-hosted tool catalogs are absent from this repository. They cannot
 be updated here. This independent fork does not enroll with the upstream hosted
 control plane. Migration must flag hosted-only setup for explicit conversion.
+
+Migration blocks `CYRUS_CAPACITY_DIRECTORY` and `BOBS_FACTORY_CAPACITY_DIRECTORY`
+in the source `.env` or the helper's inherited environment. These overrides no
+longer select a runtime pool. Reconcile custom/shared coordinator state and all
+consumers explicitly, preserving policy, request identities and queue order in
+the source home's `machine-capacity` directory; remove obsolete overrides from
+environment files and service definitions, then regenerate the preview. The
+helper validates the reconciled state before apply and relocates owned identities.
 
 Migration validates persisted MCP JSON files and configured MCP references before
 apply. External or linked files needing owned-reference changes, ambiguous relative

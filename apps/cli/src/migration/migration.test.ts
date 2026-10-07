@@ -5,6 +5,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	renameSync,
 	rmSync,
 	statSync,
 	symlinkSync,
@@ -30,12 +31,99 @@ const roots: string[] = [];
 vi.mock("node:child_process", () => ({ execFileSync: vi.fn(() => "") }));
 beforeEach(() => {
 	vi.clearAllMocks();
+	vi.stubEnv("CYRUS_CAPACITY_DIRECTORY", undefined);
+	vi.stubEnv("BOBS_FACTORY_CAPACITY_DIRECTORY", undefined);
 	vi.mocked(childProcess.execFileSync).mockReturnValue("");
 });
 afterEach(() => {
 	vi.restoreAllMocks();
+	vi.unstubAllEnvs();
 	for (const root of roots.splice(0))
 		rmSync(root, { recursive: true, force: true });
+});
+it.each([
+	"CYRUS_CAPACITY_DIRECTORY",
+	"BOBS_FACTORY_CAPACITY_DIRECTORY",
+])("blocks %s in .env until the pool is explicitly reconciled", (key) => {
+	const { source, destination, backup } = fixture();
+	const custom = join(source, "custom-capacity");
+	mkdirSync(custom);
+	const state = {
+		version: 1,
+		limit: 2,
+		sequence: 9,
+		bypass: 0,
+		requests: [
+			{
+				id: "queued",
+				token: "queued-token",
+				owner: { pid: 999991, start: "fixture", incarnation: "fixture" },
+				queuedAt: "2026-10-07T00:00:00Z",
+				background: false,
+				parked: true,
+				recoverable: true,
+				remote: false,
+				phase: "queued",
+				identity: `${source}/factory:run:queued:leaf:1`,
+				sequence: 9,
+			},
+		],
+	};
+	const bytes = JSON.stringify(state);
+	writeFileSync(join(custom, "state.json"), bytes);
+	const env = `export ${key} = '${custom}' # selected pool\n`;
+	writeFileSync(join(source, ".env"), env);
+	const manifest = inspectMigration(source, destination);
+	expect(manifest.blockers).toContainEqual(
+		expect.stringMatching(
+			/Capacity directory override requires explicit reconciliation/,
+		),
+	);
+	expect(() => applyMigration(manifest, backup)).toThrow(
+		/Capacity directory override/,
+	);
+	expect(existsSync(backup)).toBe(false);
+	expect(existsSync(destination)).toBe(false);
+	expect(readFileSync(join(custom, "state.json"), "utf8")).toBe(bytes);
+	expect(readFileSync(join(source, ".env"), "utf8")).toBe(env);
+	expect(() => transformEnvironment(env, source, destination)).toThrow(
+		/Capacity directory override/,
+	);
+	// Model the explicit reconciliation performed after a verified pool backup.
+	renameSync(custom, join(source, "machine-capacity"));
+	writeFileSync(join(source, ".env"), "");
+	const reconciled = inspectMigration(source, destination);
+	expect(reconciled.blockers).toEqual([]);
+	applyMigration(reconciled, backup);
+	expect(
+		JSON.parse(
+			readFileSync(join(destination, "machine-capacity/state.json"), "utf8"),
+		),
+	).toEqual({
+		...state,
+		requests: [
+			{
+				...state.requests[0],
+				identity: `${destination}/factory:run:queued:leaf:1`,
+			},
+		],
+	});
+});
+it.each([
+	"CYRUS_CAPACITY_DIRECTORY",
+	"BOBS_FACTORY_CAPACITY_DIRECTORY",
+])("rechecks inherited %s at apply without exposing its value", (key) => {
+	const { source, destination, backup } = fixture();
+	const preview = inspectMigration(source, destination);
+	expect(preview.blockers).toEqual([]);
+	vi.stubEnv(key, "/private/shared-pool");
+	const current = inspectMigration(source, destination);
+	expect(JSON.stringify(current)).not.toContain("/private/shared-pool");
+	expect(() => applyMigration(preview, backup)).toThrow(
+		/Capacity directory override/,
+	);
+	expect(existsSync(backup)).toBe(false);
+	expect(existsSync(destination)).toBe(false);
 });
 function fixture() {
 	const root = canonicalPath(mkdtempSync(join(tmpdir(), "factory-migration-")));
