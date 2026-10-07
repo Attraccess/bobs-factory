@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import type { IAgentRunner, IMessageFormatter, SDKMessage } from "cyrus-core";
 import { AppServerCodexBackend } from "./backend/AppServerCodexBackend.js";
@@ -144,7 +143,9 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		}
 
 		this.sessionInfo = {
-			sessionId: this.config.resumeSessionId || crypto.randomUUID(),
+			// Only Codex can assign a resumable thread ID. A startup failure must
+			// not publish a locally generated UUID as a native conversation.
+			sessionId: this.config.resumeSessionId || null,
 			startedAt: new Date(),
 			isRunning: true,
 		};
