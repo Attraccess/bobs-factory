@@ -75,9 +75,12 @@ Each passkey belongs to the address where it was created. Localhost and the
 public hostname need separate keys. The `http://127.0.0.1:3457` entrypoint redirects
 to `http://localhost:3457` because WebAuthn rejects IP addresses as RP IDs.
 Both addresses protect data; the redirect provides a usable local login.
-`Passkeys` lets the authenticated operator add another phone/security key, view
-credential names and remove keys after a verification within the last five
-minutes. Reverification is explicit. Keep at least one key per enrolled address;
+`Settings` in the main navigation contains passkey management and sign-out.
+The sign-in screen folds new-key setup under `Set up a new passkey` once the
+first key exists. First-time setup opens automatically. In Settings, add a named
+phone/security key or remove a saved key; each change explicitly verifies an
+existing passkey first. Viewing keys also requires verification within the last
+five minutes, with a verification button when that window has expired. Keep at least one key per enrolled address;
 removing the last key requires local recovery. Removing a key revokes its sessions
 and live streams. Labels and metadata are shown; public keys and session tokens
 are never returned.

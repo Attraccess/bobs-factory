@@ -55,10 +55,11 @@ export function useAccess() {
 	}, accessState);
 }
 let request = 0;
-export async function checkAccess() {
+export async function checkAccess(background = false) {
 	const id = ++request,
 		epoch = generation;
-	publish({ ...state, status: "checking" });
+	if (!background || state.status !== "authenticated")
+		publish({ ...state, status: "checking" });
 	try {
 		const response = await fetch("/api/auth/status", {
 			cache: "no-store",

@@ -54,7 +54,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Let signed-out Factory users update a cached app after deployment so passkey login can continue. Honor the configured session lifetime when launching Factory, with explicit CLI settings taking precedence and invalid values rejected. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
+- Make passkey sign-in the default, fold operator setup away for existing installations, and move key management and sign-out into Settings. Let signed-out Factory users update a cached app after deployment so passkey login can continue. Honor the configured session lifetime when launching Factory, with explicit CLI settings taking precedence and invalid values rejected. ([Taskbot #79](https://taskbot.apps.janjaap.de/p/bobs-factory/t/79), [#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 
 - Recover stalled QA and handoff runs from their saved evidence, retry malformed QA and one silent Codex turn, and request assistance when CI repeats the same unresolved failure. Known defects proceed to correction before access waits. ([#36](https://github.com/Attraccess/bobs-factory/pull/36))

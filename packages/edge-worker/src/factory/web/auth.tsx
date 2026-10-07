@@ -4,7 +4,7 @@ import {
 	startRegistration,
 	WebAuthnAbortService,
 } from "@simplewebauthn/browser";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import {
 	accessGeneration,
 	accessRequired,
@@ -53,7 +53,10 @@ async function ceremony(
 			? await startAuthentication({ optionsJSON: options })
 			: await startRegistration({ optionsJSON: options });
 	await authRequest(`${purpose}/verify`, { transaction, response });
-	await checkAccess();
+	// The verified ceremony rotated the session. Refresh its deadline without
+	// unmounting an in-progress credential management action. Failed checks
+	// still clear access through the normal boundary.
+	await checkAccess(true);
 }
 export function AccessBoundary({ children }: { children: ReactNode }) {
 	const access = useAccess();
@@ -91,8 +94,8 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 		};
 	}, []);
 	if (access.status === "authenticated") return <>{children}</>;
-	const enroll = access.setupRequired || Boolean(grant);
-	const submit = async () => {
+
+	const submit = async (enroll: boolean) => {
 		setBusy(true);
 		setError(undefined);
 		try {
@@ -126,23 +129,45 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 				{access.status !== "checking" && (
 					<>
 						<p>{access.error}</p>
-						{access.setupRequired && (
+						{!browserSupportsWebAuthn() && (
+							<p role="alert">
+								This browser cannot use passkeys. Open Factory in a current
+								browser at HTTPS or localhost.
+							</p>
+						)}
+						{error && <p role="alert">{error}</p>}
+						{!access.setupRequired && (
+							<Button
+								className="auth-sign-in"
+								disabled={busy || updateRequired || !browserSupportsWebAuthn()}
+								onClick={() => void submit(false)}
+							>
+								{busy ? "Waiting for your passkey…" : "Sign in with passkey"}
+							</Button>
+						)}
+						<details
+							className="auth-setup"
+							open={access.setupRequired || undefined}
+						>
+							<summary>
+								{access.setupRequired
+									? "First passkey setup"
+									: "Set up a new passkey"}
+							</summary>
 							<p>
 								Get a single-use setup code from the operator on the Factory
 								machine. Create this passkey at the address where you will use
 								it. Phone and security-key passkeys are supported.
 							</p>
-						)}
-						<label>
-							Operator setup code (for a new passkey)
-							<input
-								autoComplete="off"
-								type="password"
-								value={grant}
-								onChange={(e) => setGrant(e.target.value.trim())}
-							/>
-						</label>
-						{enroll && (
+							<label>
+								Operator setup code
+								<input
+									autoComplete="off"
+									type="password"
+									value={grant}
+									onChange={(e) => setGrant(e.target.value.trim())}
+								/>
+							</label>
 							<label>
 								Passkey name
 								<input
@@ -152,44 +177,30 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 									placeholder="My phone"
 								/>
 							</label>
-						)}
-						{!browserSupportsWebAuthn() && (
-							<p role="alert">
-								This browser cannot use passkeys. Open Factory in a current
-								browser at HTTPS or localhost.
-							</p>
-						)}
-						{error && <p role="alert">{error}</p>}
-						<Button
-							disabled={
-								busy ||
-								updateRequired ||
-								!browserSupportsWebAuthn() ||
-								(Boolean(access.setupRequired) && !grant)
-							}
-							onClick={() => void submit()}
-						>
-							{busy
-								? "Waiting for your passkey…"
-								: enroll
-									? "Create passkey"
-									: "Sign in with passkey"}
-						</Button>
-						<Button onClick={() => void checkAccess()} disabled={busy}>
-							Check connection
-						</Button>
+							<Button
+								disabled={
+									busy || updateRequired || !browserSupportsWebAuthn() || !grant
+								}
+								onClick={() => void submit(true)}
+							>
+								{busy ? "Waiting for your passkey…" : "Create passkey"}
+							</Button>
+						</details>
 					</>
 				)}
 			</section>
 		</main>
 	);
 }
-export function PasskeyControls() {
-	const [open, setOpen] = useState(false),
-		[keys, setKeys] = useState<any[]>([]),
+type Passkey = { id: string; label: string; origin: string; createdAt: number };
+
+export function AccessSettings() {
+	const [keys, setKeys] = useState<Passkey[]>(),
 		[error, setError] = useState<string>(),
-		[busy, setBusy] = useState(false);
-	const run = async (action: () => Promise<void>) => {
+		[busy, setBusy] = useState(false),
+		[adding, setAdding] = useState(false),
+		[label, setLabel] = useState("");
+	const run = useCallback(async (action: () => Promise<void>) => {
 		setBusy(true);
 		setError(undefined);
 		try {
@@ -199,45 +210,42 @@ export function PasskeyControls() {
 		} finally {
 			setBusy(false);
 		}
-	};
-	const load = async () =>
-		setKeys(await authRequest("credentials", undefined, "GET"));
+	}, []);
+	const load = useCallback(
+		async () => setKeys(await authRequest("credentials", undefined, "GET")),
+		[],
+	);
+	useEffect(() => {
+		void run(load);
+	}, [run, load]);
 	return (
-		<div className="auth-controls">
-			<Button
-				onClick={() => {
-					setOpen(!open);
-					if (!open) void run(load);
-				}}
-			>
-				Passkeys
-			</Button>
-			<Button
-				disabled={busy}
-				onClick={() => {
-					if (
-						!window.confirm(
-							"Sign out? Unsent edits, review comments and saved drafts will be discarded in every Factory tab.",
-						)
-					)
-						return;
-					void run(async () => {
-						await authRequest("logout");
-						accessRequired("Signed out", true);
-					});
-				}}
-			>
-				Sign out
-			</Button>
-			{open && (
-				<section className="auth-card">
-					<h2>Your passkeys</h2>
-					<p>
-						Passkeys belong to the address where they were created. Verify again
-						before managing keys.
+		<div className="access-settings">
+			<h1>Settings</h1>
+			<p className="intro">Manage access to your Factory.</p>
+			<section className="settings-card" aria-labelledby="passkeys-heading">
+				<div className="settings-heading">
+					<div>
+						<h2 id="passkeys-heading">Passkeys</h2>
+						<p>Use a saved passkey to sign in on your devices.</p>
+					</div>
+					<Button
+						variant="secondary"
+						disabled={busy}
+						onClick={() => setAdding(!adding)}
+						aria-expanded={adding}
+					>
+						Add passkey
+					</Button>
+				</div>
+				{error && (
+					<p className="settings-error" role="alert">
+						{error}
 					</p>
+				)}
+				{!keys && (
 					<Button
 						disabled={busy}
+						variant="secondary"
 						onClick={() =>
 							void run(async () => {
 								await ceremony("login");
@@ -245,51 +253,115 @@ export function PasskeyControls() {
 							})
 						}
 					>
-						Verify passkey again
+						{busy ? "Loading passkeys…" : "Verify to view passkeys"}
 					</Button>
-					<Button
-						disabled={busy}
-						onClick={() =>
+				)}
+				{adding && (
+					<form
+						className="passkey-add"
+						onSubmit={(event) => {
+							event.preventDefault();
 							void run(async () => {
-								const label = window.prompt("Name this passkey", "My phone");
-								if (label === null) return;
+								await ceremony("login");
 								await ceremony("register", undefined, label);
 								await load();
-							})
-						}
+								setAdding(false);
+								setLabel("");
+							});
+						}}
 					>
-						Add passkey
-					</Button>
-					{keys.map((key) => (
-						<div key={key.id}>
-							<strong>{key.label}</strong>
-							<p>{key.origin}</p>
+						<label>
+							Passkey name
+							<input
+								maxLength={80}
+								required
+								value={label}
+								onChange={(e) => setLabel(e.target.value)}
+								placeholder="My phone"
+							/>
+						</label>
+						<p>You’ll verify an existing passkey, then create the new one.</p>
+						<div className="settings-actions">
+							<Button type="submit" disabled={busy || !label.trim()}>
+								Continue
+							</Button>
 							<Button
+								variant="secondary"
 								disabled={busy}
-								onClick={() =>
-									void run(async () => {
-										if (
-											!window.confirm(
-												`Remove ${key.label} and revoke its sessions?`,
-											)
+								onClick={() => setAdding(false)}
+							>
+								Cancel
+							</Button>
+						</div>
+					</form>
+				)}
+				<ul className="passkey-list">
+					{keys?.map((key) => (
+						<li key={key.id}>
+							<div>
+								<strong>{key.label}</strong>
+								<span>
+									Added {new Date(key.createdAt).toLocaleDateString()}
+								</span>
+								<span>{key.origin}</span>
+							</div>
+							<Button
+								variant="secondary"
+								disabled={busy}
+								aria-label={`Remove ${key.label}`}
+								onClick={() => {
+									if (
+										!window.confirm(
+											`Remove ${key.label} and revoke its sessions?`,
 										)
-											return;
+									)
+										return;
+									void run(async () => {
+										await ceremony("login");
 										await authRequest(
 											`credentials/${encodeURIComponent(key.id)}`,
 											{},
 											"DELETE",
 										);
 										await load();
-									})
-								}
+									});
+								}}
 							>
 								Remove
 							</Button>
-						</div>
+						</li>
 					))}
-					{error && <p role="alert">{error}</p>}
-				</section>
-			)}
+				</ul>
+				<p className="settings-hint">
+					Passkeys work at the address where they were created. Keep at least
+					one for each address.
+				</p>
+			</section>
+			<section className="settings-card" aria-labelledby="session-heading">
+				<h2 id="session-heading">This session</h2>
+				<p>
+					Signing out discards unsent edits, review comments and saved drafts in
+					every Factory tab.
+				</p>
+				<Button
+					variant="secondary"
+					disabled={busy}
+					onClick={() => {
+						if (
+							!window.confirm(
+								"Sign out? Unsent edits, review comments and saved drafts will be discarded in every Factory tab.",
+							)
+						)
+							return;
+						void run(async () => {
+							await authRequest("logout");
+							accessRequired("Signed out", true);
+						});
+					}}
+				>
+					Sign out
+				</Button>
+			</section>
 		</div>
 	);
 }

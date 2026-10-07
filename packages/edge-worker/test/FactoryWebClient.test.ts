@@ -427,3 +427,38 @@ it("handles 401 before version errors, clears sensitive caches and prevents late
 	expect(client.getQueryData(["run", "private"])).toBeUndefined();
 	expect(accessState().status).toBe("required");
 });
+
+it("keeps credential management mounted during verified-session refresh, but clears private state on denial", async () => {
+	client.setQueryData(["run", "private"], { transcript: "private content" });
+	let respond!: (response: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					respond = resolve;
+				}),
+		),
+	);
+	const refreshed = checkAccess(true);
+	expect(accessState().status).toBe("authenticated");
+	const expires = Date.now() + 120000;
+	respond(factoryResponse({ authenticated: true, expires }));
+	await refreshed;
+	expect(accessState()).toEqual({ status: "authenticated", expires });
+	expect(client.getQueryData(["run", "private"])).toEqual({
+		transcript: "private content",
+	});
+
+	const revoked = checkAccess(true);
+	respond(factoryResponse({ authenticated: false, setupRequired: false }));
+	await revoked;
+	expect(accessState().status).toBe("required");
+	expect(client.getQueryData(["run", "private"])).toBeUndefined();
+
+	const signedOut = checkAccess(true);
+	expect(accessState().status).toBe("checking");
+	respond(factoryResponse({}, { status: 401 }));
+	await signedOut;
+	expect(accessState().status).toBe("required");
+});
