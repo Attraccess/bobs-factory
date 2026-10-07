@@ -2555,6 +2555,74 @@ it.each([
 });
 
 it.each([
+	false,
+	true,
+])("restores visual-review assistance without invalidating unchanged drafts (changed=%s)", async (changed) => {
+	const output = {
+		approved: false,
+		reviewBlocked: true,
+		findings: [{ id: "blocked", status: "open" }],
+		questions: ["Restore deployment access"],
+	};
+	const tool = vi.fn(async () => structuredClone(output));
+	const question = vi.fn();
+	const agentHook = vi.fn(async (_ctx: ExecutionContext) => ({}));
+	const { home, runtime } = create({ tool, question, agent: agentHook });
+	const run = start(
+		runtime,
+		workflow([
+			agent("visual-review"),
+			{
+				id: "visual-gate",
+				name: "Visual gate",
+				type: "tool",
+				tool: "visual-gate",
+				qaContract: "qa-v1",
+				next: "end",
+				branches: [
+					{ when: { path: "approved", equals: false }, next: "visual-fix" },
+				],
+			},
+			agent("visual-fix", { next: "end" }),
+		]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(question).toHaveBeenCalledTimes(1));
+	const batch = run.questionBatchId;
+	const history = structuredClone(run.history);
+	const frozen = structuredClone(run.workflow);
+	await runtime.shutdown();
+	await execution;
+	if (changed) output.questions = ["Which deployment account is available?"];
+	const restarted = reload(home, { tool, question, agent: agentHook });
+	const restored = restarted.get(run.id);
+	restarted.resumeAll();
+	await vi.waitFor(() => {
+		expect(tool).toHaveBeenCalledTimes(2);
+		expect(restored.status).toBe("waiting");
+		expect(restored.events.at(-1)?.message).toBe(output.questions.join("\n"));
+	});
+	if (changed) expect(restored.questionBatchId).not.toBe(batch);
+	else expect(restored.questionBatchId).toBe(batch);
+	expect(question).toHaveBeenCalledTimes(changed ? 2 : 1);
+	expect(restored.questions).toEqual(output.questions);
+	expect(restored.history).toEqual(history);
+	expect(restored.workflow).toEqual(frozen);
+	expect(restored.answers).toEqual([]);
+	expect(agentHook).toHaveBeenCalledTimes(1);
+	restarted.answer(restored.id, "Deployment access restored");
+	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	expect(agentHook.mock.calls.map(([ctx]) => ctx.step.id)).toEqual([
+		"visual-review",
+		"visual-fix",
+	]);
+	expect(restored.outputs["visual-gate"]).toEqual(output);
+	expect(restored.answers[0]?.questions).toEqual(output.questions);
+	expect(restored.humanDecisions ?? []).toEqual([]);
+	await restarted.shutdown();
+});
+
+it.each([
 	"ci-fix",
 	"code-fix",
 	"visual-fix",

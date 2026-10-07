@@ -61,7 +61,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Preserve explicit feedback-provider choices and same-step recovery when integrating current main with Bob’s Factory naming. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+- Preserve explicit feedback-provider choices and same-step recovery when integrating current main with Bob’s Factory naming. Keep saved answers usable after restart when visual-review assistance questions are unchanged; changed questions still require draft review. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 - Reconcile refinement recommendations and restart-safe question drafts with the renamed product; update the mocked F1 fixture to use an isolated Bob’s Factory home. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 

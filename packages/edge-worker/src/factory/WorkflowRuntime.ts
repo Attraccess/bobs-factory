@@ -1005,9 +1005,12 @@ export class WorkflowRuntime {
 			}
 			if (
 				step.tool === "visual-gate" &&
+				readPath(output, "reviewBlocked") !== true &&
 				Array.isArray(readPath(output, "findings")) &&
 				(readPath(output, "findings") as unknown[]).length
 			) {
+				// Review assistance retains its saved questions for waitForAnswers to
+				// compare after restart. Findings without a wait proceed to correction.
 				run.status = "running";
 				run.questions = [];
 			}
