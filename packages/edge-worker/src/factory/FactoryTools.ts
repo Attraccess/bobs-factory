@@ -616,6 +616,9 @@ export class FactoryTools {
 					);
 				const branch = await command("git", ["branch", "--show-current"]);
 				if (!branch) throw new Error("Draft PR requires a branch");
+				// Keep provider validation ahead of mutations for a delivery candidate.
+				// A grouped context-only repository needs no publication provider.
+				if (!context.allowUnchangedRepository) await provider();
 				if (readPath(run.outputs, "source.url")) {
 					if (readPath(run.outputs, "source.headRefName") !== branch)
 						throw new Error("Takeover must publish to the original PR branch");
@@ -625,6 +628,7 @@ export class FactoryTools {
 						throw new Error("Takeover PR must remain open and draft");
 				}
 				if (await command("git", ["status", "--porcelain"])) {
+					await provider();
 					await command("git", ["add", "-A"]);
 					// Ticket titles are not commit messages; conventional-commit hooks
 					// require a type and subject. Keep the header short and single-line.

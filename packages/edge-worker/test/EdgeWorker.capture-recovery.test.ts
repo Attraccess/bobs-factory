@@ -122,7 +122,18 @@ async function fixture() {
 	};
 	const worker = Object.assign(Object.create(EdgeWorker.prototype), {
 		agentSessionManager: { getSession: () => ({}), addAgentRunner: vi.fn() },
-		repositories: new Map([["repo", { repositoryPath: workspace }]]),
+		repositories: new Map([
+			[
+				"repo",
+				{
+					id: "repo",
+					name: "Fixture",
+					isActive: true,
+					baseBranch: "main",
+					repositoryPath: workspace,
+				},
+			],
+		]),
 		factoryHome: workspace,
 		runnerSlots: new SessionSemaphore(1),
 		buildAgentRunnerConfig: vi.fn(async () => ({
