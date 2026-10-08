@@ -27,12 +27,11 @@ import {
 	executionEnvironment,
 	type IAgentRunner,
 	type ILogger,
-	isPackagedExecutable,
 	LogLevel,
-	preparedExecutable,
 	StreamingPrompt,
 } from "bobs-factory-core";
 import dotenv from "dotenv";
+import { resolveClaudeExecutable } from "./executable.js";
 import { ClaudeMessageFormatter, type IMessageFormatter } from "./formatter.js";
 import { buildHomeDirectoryDisallowedTools } from "./home-directory-restrictions.js";
 import {
@@ -497,7 +496,7 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 
 		// Load environment variables from repository .env file
 		// This must happen BEFORE MCP config processing so the SDK can expand ${VAR} references
-		if (this.config.workingDirectory) {
+		if (this.config.workingDirectory && !this.config.childEnvironment) {
 			this.loadRepositoryEnv(this.config.workingDirectory);
 		}
 
@@ -641,9 +640,9 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 				);
 			}
 
-			const pathToClaudeCodeExecutable =
-				this.config.pathToClaudeCodeExecutable ??
-				(isPackagedExecutable ? preparedExecutable("claude") : undefined);
+			const pathToClaudeCodeExecutable = resolveClaudeExecutable(
+				this.config.pathToClaudeCodeExecutable,
+			);
 
 			// On Linux, setting CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1 causes the SDK
 			// to run tool invocations under a bubblewrap-backed sandbox. If the
@@ -679,15 +678,19 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 					// load file based settings, to maintain more backwards compatibility,
 					// particularly with CLAUDE.md files, settings files, and custom slash commands,
 					// see: https://docs.claude.com/en/docs/claude-code/sdk/migration-guide#settings-sources-no-longer-loaded-by-default
-					settingSources: ["user", "project", "local"],
+					settingSources: this.config.settingSources ?? [
+						"user",
+						"project",
+						"local",
+					],
 					env: {
-						...buildBaseSessionEnv(),
+						...(this.config.childEnvironment ?? buildBaseSessionEnv()),
 						// CLAUDE_CODE_SUBPROCESS_ENV_SCRUB is intentionally NOT set while
 						// the Linux bubblewrap sandbox side effects it triggers are being
 						// investigated. The sandbox requirements precheck is still run
 						// above so the diagnostics remain available when we re-enable.
 						// See: CYPACK-1108.
-						...this.repositoryEnv,
+						...(this.config.childEnvironment ? {} : this.repositoryEnv),
 						...this.config.additionalEnv,
 						...executionEnvironment(),
 						// When logging at DEBUG level, enable the SDK's own debug output so
@@ -721,8 +724,11 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 					...(this.config.sessionStore && {
 						sessionStore: this.config.sessionStore,
 					}),
-					...((this.config.autoMemoryDirectory || this.config.serviceTier) && {
+					...((this.config.runnerSettings ||
+						this.config.autoMemoryDirectory ||
+						this.config.serviceTier) && {
 						settings: {
+							...this.config.runnerSettings,
 							...(this.config.autoMemoryDirectory && {
 								autoMemoryDirectory: this.config.autoMemoryDirectory,
 							}),
@@ -765,7 +771,9 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 					serializeQueryOptionsReplacer,
 					2,
 				);
-				this.logger.debug(`Claude query options: ${serializedQueryOptions}`);
+				this.logger.debug(
+					`Claude query options: ${this.config.redact?.(serializedQueryOptions) ?? serializedQueryOptions}`,
+				);
 			}
 			// What ships to Sentry is a flattened set of primitive attributes,
 			// not a single nested-JSON string. A long JSON value attached
@@ -796,7 +804,12 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 			} else {
 				this.activeQuery = query(queryOptions);
 			}
-			for await (const message of this.activeQuery) {
+			for await (const rawMessage of this.activeQuery) {
+				const message = this.config.redact
+					? (JSON.parse(
+							this.config.redact(JSON.stringify(rawMessage)),
+						) as SDKMessage)
+					: rawMessage;
 				if (!this.sessionInfo?.isRunning) {
 					this.logger.info("Session was stopped, breaking from query loop");
 					break;
@@ -891,7 +904,16 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 			}
 
 			this.emit("complete", this.messages);
-		} catch (error) {
+		} catch (caughtError) {
+			const error = this.config.redact
+				? new Error(
+						this.config.redact(
+							caughtError instanceof Error
+								? caughtError.message
+								: String(caughtError),
+						),
+					)
+				: caughtError;
 			if (this.sessionInfo) {
 				this.sessionInfo.isRunning = false;
 			}

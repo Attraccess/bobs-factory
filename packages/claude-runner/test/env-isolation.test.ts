@@ -90,6 +90,29 @@ describe("Environment variable isolation", () => {
 		envFileContents.clear();
 	});
 
+	it("uses a complete child environment without host credentials or project .env", async () => {
+		envFileContents.set(
+			"/repo-private/.env",
+			"ANTHROPIC_API_KEY=project-secret\nFROM_PROJECT=yes",
+		);
+		mockSuccessfulQuery();
+		const runner = new ClaudeRunner({
+			...makeConfig("/repo-private"),
+			childEnvironment: {
+				HOME: "/private/home",
+				ANTHROPIC_API_KEY: "selected-key",
+			},
+			settingSources: [],
+		});
+		await runner.start("fixture");
+		expect(getQueryEnv()).toEqual({
+			HOME: "/private/home",
+			ANTHROPIC_API_KEY: "selected-key",
+			DEBUG_CLAUDE_AGENT_SDK: undefined,
+		});
+		expect(mockQuery.mock.calls.at(-1)[0].options.settingSources).toEqual([]);
+	});
+
 	it("should load .env vars into the child env without polluting process.env", async () => {
 		envFileContents.set(
 			"/repo-a/.env",

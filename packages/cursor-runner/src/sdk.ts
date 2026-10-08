@@ -1,14 +1,9 @@
 import { fork } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
-import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Run, SDKAgent, SDKMessage } from "@cursor/sdk";
-import {
-	isPackagedExecutable,
-	preparedExecutable,
-	resolvePath,
-	runtimeAssetPath,
-} from "bobs-factory-core";
+import { isPackagedExecutable, runtimeAssetPath } from "bobs-factory-core";
+
+import { resolvePreparedCursorInstallation } from "./installation.js";
 
 export type CursorRun = Pick<Run, "stream" | "cancel">;
 export type CursorAgent = Pick<SDKAgent, "agentId" | "close"> & {
@@ -24,20 +19,7 @@ export async function createPreparedCursorAgent(
 	options: AgentOptions,
 	sessionId?: string,
 ): Promise<CursorAgent> {
-	const configured = process.env.BOBS_FACTORY_CURSOR_SDK_PATH;
-	if (!configured)
-		throw new Error(
-			"Cursor requires a user-prepared @cursor/sdk 1.0.19 installation. Set BOBS_FACTORY_CURSOR_SDK_PATH to its package directory and BOBS_FACTORY_CURSOR_NODE to Node >=22.13 (or put Node on PATH). See docs/distribution/README.md. Bob’s Factory does not install or authenticate Cursor.",
-		);
-	const sdk = realpathSync(resolvePath(configured));
-	const pkg = JSON.parse(readFileSync(join(sdk, "package.json"), "utf8"));
-	if (pkg.name !== "@cursor/sdk" || pkg.version !== "1.0.19")
-		throw new Error(
-			"Prepared Cursor installation must be @cursor/sdk 1.0.19; preserve native session compatibility before upgrading.",
-		);
-	const node = preparedExecutable(
-		process.env.BOBS_FACTORY_CURSOR_NODE || "node",
-	);
+	const { sdk, node } = resolvePreparedCursorInstallation();
 	const host = runtimeAssetPath(
 		"cursor-runner/sdk-host.mjs",
 		fileURLToPath(new URL("./sdk-host.mjs", import.meta.url)),

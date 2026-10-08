@@ -1568,3 +1568,70 @@ it.each([
 	await f.edge.recoverFactoryTicketTracking(run);
 	expect(fetch).not.toHaveBeenCalled();
 });
+
+it("validates the manually selected model before creating or launching a profiled run", async () => {
+	const f = setup();
+	const ref = {
+		source: "env",
+		name: "TEST_KEY",
+		version: "v1",
+		owner: "Fixture",
+	};
+	f.runtime.executionProfiles.save(
+		{
+			schemaVersion: 1,
+			revision: 0,
+			identities: [
+				{
+					id: "identity",
+					revision: 1,
+					name: "Identity",
+					author: { mode: "share" },
+					committer: { mode: "share" },
+					signing: { format: "disabled" },
+					repositories: [],
+					runners: {
+						claude: { mode: "share", provider: "anthropic", credential: ref },
+						opencode: {
+							mode: "factory-only",
+							provider: "anthropic",
+							credential: ref,
+						},
+					},
+				},
+			],
+			tools: [
+				{ id: "tools", revision: 1, name: "Tools", mode: "factory-only" },
+			],
+			defaults: { identityProfile: "identity", toolProfile: "tools" },
+			repositories: {},
+		},
+		0,
+	);
+	vi.spyOn(f.edge, "getDefaultModelForRunner").mockImplementation((runner) =>
+		runner === "opencode" ? "openai/default" : "sonnet",
+	);
+	vi.spyOn(f.edge, "resolveRunExecution").mockResolvedValue(undefined);
+	const launch = vi.spyOn(f.runtime, "launch").mockResolvedValue(undefined);
+	const create = vi.spyOn(f.runtime, "create");
+	const workflow = defaultWorkflows.find((w) => w.id === "simple")!;
+	const input = resolveLaunchRequest(workflow, {
+		repositoryId: "repo",
+		workflow: workflow.id,
+		runner: "opencode",
+		model: "anthropic/selected",
+		inputs: { prompt: "Check model" },
+	});
+	const run = await f.edge.startManualFactoryRun(input);
+	expect(run.model).toBe("anthropic/selected");
+	expect(launch).toHaveBeenCalledTimes(1);
+	expect(create).toHaveBeenCalledTimes(1);
+	create.mockClear();
+	launch.mockClear();
+	await expect(
+		f.edge.startManualFactoryRun({ ...input, model: "openai/incompatible" }),
+	).rejects.toThrow("model provider differs");
+	expect(create).not.toHaveBeenCalled();
+	expect(launch).not.toHaveBeenCalled();
+	expect(f.createWorkspace).not.toHaveBeenCalled();
+});

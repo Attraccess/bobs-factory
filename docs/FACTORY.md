@@ -145,6 +145,14 @@ not prove biometric, Safari or synced-phone behavior. Connection failure means
 reconnect to sign in; a browser cancellation means retry with a fresh setup code
 when enrollment has consumed its previous authorization.
 
+## Execution identities and tools
+
+**Settings** has separate pages for **Access** (passkeys and sign-out), **Execution defaults**, **Identity profiles**, **Tool profiles**, **Instance capacity** and **Run titles**. Recipes manages workflow definitions and launch permissions. In Identity profiles, create an identity with separate Git author/committer, repository account, signing policy and per-runner API references. Create a tool profile with declared MCP sources/definitions, per-server credential references, removals, denials and supported ordinary settings. Enter credential names or protected-file paths, never token values.
+
+The composer selects identity and tools independently and offers an effective preview. Manual choices override repository defaults, which override factory defaults. No selection/default keeps Legacy behavior. Explicit profiles require both concerns and an authentication binding for every workflow provider and the title agent. Unsupported native sources fail before worktree setup. Saved runs keep their accepted definitions even when defaults change or profiles are deleted.
+
+See [execution profiles](FACTORY-EXECUTION.md) for supported CLI versions, clean-project restrictions, API authentication and recovery limits. Profiles do not replace OS sandbox controls. Native subscription login remains available through Legacy and eligible explicit Claude/Codex native-login Share profiles with Share tools.
+
 ## Install Bob’s Factory
 
 Open your usual **stable HTTPS factory address** with the factory server running.
@@ -657,7 +665,7 @@ with the repository's Git hooks and signing configuration still enabled.
 
 ## Automatic run titles
 
-**Recipes → Run titles** configures one global title agent using the existing
+**Settings → Run titles** configures one global title agent using the existing
 provider authentication. Choose a fast, inexpensive provider/model independently
 of run, repository and recipe execution settings. Leaving the agent or model
 empty uses the global runner or that provider's global default model. Provider
@@ -905,8 +913,8 @@ guarantee of flawless software.
 Factory and integration/chat sessions in one Bob’s Factory instance use one pool. The default is
 four slots, including installations that previously omitted `maxConcurrentSessions`.
 Existing numeric settings seed a new pool. Joining workers without a setting adopt
-the persisted policy; an explicit conflicting setting is reported in Recipes.
-Change **Instance capacity** in Recipes to update that instance's durable limit. Increasing
+the persisted policy; an explicit conflicting setting is reported in Settings → Instance capacity.
+Change **Settings → Instance capacity** to update that instance’s durable limit. Increasing
 it admits queued work; decreasing it lets existing execution drain. A deliberate
 configuration edit updates the policy, and removing the numeric setting restores
 four. Unrelated config reloads and stale startup settings do not reset it.

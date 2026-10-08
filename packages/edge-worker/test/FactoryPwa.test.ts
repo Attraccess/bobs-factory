@@ -386,6 +386,10 @@ it("round-trips only view state and excludes every editable surface", () => {
 		otherTab = storage();
 	vi.stubGlobal("sessionStorage", saved);
 	rememberView("composer/inputs", { prompt: "launch draft" });
+	rememberView("composer/execution", {
+		identityProfile: "native-claude",
+		toolProfile: "shared",
+	});
 	rememberView("chat/r", "chat draft");
 	rememberView("answers/r", { 0: "clarification draft" }, "old-question");
 	rememberView("feedback/text/r", "feedback", "old-gate");
@@ -416,6 +420,7 @@ it("round-trips only view state and excludes every editable surface", () => {
 	for (const key of [
 		"chat/r",
 		"composer/inputs",
+		"composer/execution",
 		"answers/r",
 		"feedback/text/r",
 		"recipe/json/test",
@@ -427,6 +432,54 @@ it("round-trips only view state and excludes every editable surface", () => {
 	}
 	completeRestoration();
 	expect(saved.values.size).toBe(0);
+});
+it.each([
+	"",
+	"/access",
+	"/execution",
+	"/identities",
+	"/tools",
+	"/capacity",
+	"/titles",
+])("restores Settings%s without unsaved inputs through updates", (section) => {
+	browserState();
+	const route = `#/settings${section}`;
+	vi.stubGlobal("location", { hash: route });
+	const saved = storage();
+	vi.stubGlobal("sessionStorage", saved);
+	rememberView("recipe/machine-capacity", { limit: "7" });
+	rememberView("recipe/title-settings", { value: { model: "cheap" } });
+	preserveForUpdate(build, saved);
+	expect(decodeSnapshot([...saved.values.values()][0])).toMatchObject({
+		route,
+		views: {},
+	});
+	location.hash = "#/";
+	loadRestoration(build, saved);
+	expect(location.hash).toBe(route);
+	expect(restoredView("recipe/machine-capacity")).toBeUndefined();
+	expect(restoredView("recipe/title-settings")).toBeUndefined();
+	completeRestoration();
+	expect(saved.values.size).toBe(0);
+});
+it.each([
+	"#/settings/unknown",
+	"#/settings/tools/extra",
+	"#/settings/tools?redirect=evil",
+	"https://example.test/settings/tools",
+])("rejects unsupported update routes: %s", (route) => {
+	expect(
+		decodeSnapshot(
+			JSON.stringify({
+				schema: 2,
+				target: build,
+				route,
+				expires: Date.now() + 1000,
+				views: {},
+				details: [],
+			}),
+		),
+	).toBeUndefined();
 });
 it.each([
 	false,
@@ -613,6 +666,8 @@ it("rejects expired, malformed and unexpected snapshot surfaces", () => {
 		),
 	).toBeUndefined();
 	for (const [key, value] of [
+		["composer/execution", { identityProfile: 1 }],
+		["composer/execution", { credential: "secret" }],
 		["recipe/role", { workflowId: "r" }],
 		["recipe/title-settings", { value: { model: 4 } }],
 		["recipe/machine-capacity", { limit: 7 }],
@@ -671,7 +726,12 @@ it("ignores and removes legacy update snapshots without reading their inputs", (
 			},
 		}),
 	);
+	saved.setItem(
+		"bob-composer-execution",
+		JSON.stringify({ identityProfile: "old-profile" }),
+	);
 	loadRestoration(build, saved);
+	expect(saved.getItem("bob-composer-execution")).toBeNull();
 	expect(saved.getItem("bobs-factory-update-v1")).toBeNull();
 	expect(restoredView("answers/r")).toBeUndefined();
 	expect(restoredView("chat/r")).toBeUndefined();

@@ -2964,6 +2964,94 @@ it.each([
 });
 
 it.each([
+	"clarify",
+	"ci-fix",
+	"code-fix",
+	"visual-fix",
+])("resumes %s's conversation after restart, explanation and an explicit answer", async (fixer) => {
+	const conversation = {
+		runner: "codex" as const,
+		sessionId: "assistance-thread",
+	};
+	const calls: string[] = [];
+	const resumes: ExecutionContext["resumeAgent"][] = [];
+	const hooks: Partial<RuntimeHooks> = {
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			if (ctx.step.id === "completed") return {};
+			resumes.push(structuredClone(ctx.resumeAgent));
+			if (ctx.step.id === "receipt") return { completed: true };
+			if (ctx.step.id === "question-explanation")
+				return {
+					questions: ["Should I retry with the restored test account?"],
+				};
+			const output = {
+				questions: ctx.run.answers.length === 0 ? ["Restore test access?"] : [],
+			};
+			ctx.checkpointAgent?.({
+				...conversation,
+				idleRetries: 1,
+				result: {
+					output,
+					revision: {
+						headSha: "unchanged",
+						dirty: false,
+						historyLength: 0,
+						at: ctx.run.createdAt,
+					},
+				},
+			});
+			return output;
+		},
+	};
+	const { runtime, home } = create(hooks);
+	const run = start(
+		runtime,
+		workflow([
+			agent("completed"),
+			agent(fixer, { askQuestions: fixer === "clarify", maxVisits: 3 }),
+			agent("receipt", { next: "end" }),
+		]),
+	);
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	await runtime.shutdown();
+	const restarted = reload(home, hooks);
+	restarted.resumeAll();
+	const recovered = restarted.get(run.id);
+	await vi.waitFor(() =>
+		expect(restarted.pendingAnswers.has(run.id)).toBe(true),
+	);
+	expect(calls).toEqual(["completed", fixer]);
+	restarted.answer(run.id, "Please explain. I have not decided.");
+	await vi.waitFor(() =>
+		expect(recovered.questions).toEqual([
+			"Should I retry with the restored test account?",
+		]),
+	);
+	expect(recovered.status).toBe("waiting");
+	expect(recovered.outputs.receipt).toBeUndefined();
+	expect(resumes).toEqual([undefined, undefined]);
+	expect(recovered.answers).toEqual([]);
+	expect(recovered.checkpoint.active?.agent?.sessionId).toBe(
+		conversation.sessionId,
+	);
+	restarted.answer(run.id, "Use the restored test account.");
+	await vi.waitFor(() => expect(recovered.status).toBe("completed"));
+	expect(calls).toEqual([
+		"completed",
+		fixer,
+		"question-explanation",
+		fixer,
+		"receipt",
+	]);
+	expect(resumes).toEqual([undefined, undefined, conversation, undefined]);
+	expect(recovered.checkpoint.visits[fixer]).toBe(2);
+	expect(recovered.answers).toHaveLength(1);
+	await restarted.shutdown();
+});
+
+it.each([
 	"review-gate",
 	"visual-gate",
 ])("%s assistance resumes its configured fixer without replaying review or approving findings", async (gate) => {
