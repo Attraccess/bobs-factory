@@ -107,3 +107,37 @@ numerals. These are purpose-written presentation fixtures, not native-agent
 writing evidence. Real-agent authoring, real provider merges and physical-device
 behavior remain untested. The existing ticket snapshot/runtime status discrepancy
 remains a tracking limitation.
+
+
+## CI repair and current-base integration
+
+The CI repair updates the complete routing-prompt expectation for the accepted
+review-guide capability text. It also merges base `d6e3ad8322c4e7445de51a0b81e73c932e95be15`
+into previous PR head `2a5fb6814a8e96b379e8398ecfc7ede930d3c477`. The base removes
+unsent input persistence; both that behavior and chapter-to-Decide comment
+collection remain intact. The merge had no conflicts.
+
+- Reproduced the routing-prompt failure before the fix; all five tests passed afterward.
+- `pnpm biome ci`, `pnpm build` and edge-worker typecheck passed. Biome retained 19 warnings.
+- `env -u BOBS_FACTORY_INTERNAL_EXECUTABLE F1_AGENT_MODE=mock pnpm -r test:run`:
+  2,726 tests passed across 214 files, with two skipped tests. Initial local runs
+  inherited the Factory binary-launch variable and failed unrelated source-argument
+  expectations; CI does not supply that variable. No code was changed for those failures.
+- An isolated F1 instance at `/tmp/review92-f1-BIWpBY` injected `f1AgentHandlers("mock")`.
+  F1 ping/status reported a healthy, ready worker. Guide preparation ran once;
+  a missing-map guide was corrected on the second authoring attempt and reached
+  the pending human gate without approval.
+- A fresh headless browser session `review92-ci-20261008` used an actual operator
+  setup code and virtual passkey. Private API access was rejected before login.
+  A comment survived chapter navigation and appeared on Decide with correct
+  singular count. Leaving the review reset unsent comments; the mobile Decide
+  form reopened empty. No uncaught browser errors occurred.
+
+Scripts and receipts are in `E/ci-fix/`: `fixture.mjs`, `drive.mjs`,
+`results.json`, `runtime-summary.json` and the validation logs. Desktop
+`feedback-desktop-light.png` and mobile `fresh-feedback-mobile.png` were inspected.
+The driver was adjusted to wait for route unmount and settled layout before
+recording the final screenshots; initial attempt logs are retained. The fixture
+and browser were stopped after validation. Simulated agents and virtual passkeys
+do not prove real-agent authoring, physical-device behavior or provider merges.
+The existing ticket snapshot/runtime status discrepancy remains a limitation.

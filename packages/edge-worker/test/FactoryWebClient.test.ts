@@ -32,8 +32,24 @@ import { qaExecution } from "./fixtures/qa.js";
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@tanstack/react-query")>()),
-	useMutation: vi.fn(),
+	useMutation: vi.fn(() => ({
+		isPending: false,
+		variables: undefined,
+		error: null,
+	})),
+	useIsMutating: vi.fn(() => 0),
 	useQueryClient: vi.fn(),
+}));
+
+// These mutation-cache checks call mocked hooks outside a mounted form.
+vi.mock("../src/factory/web/form-state.js", async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import("../src/factory/web/form-state.js")
+	>()),
+	useFormState: (_context: string, initial: unknown) => [
+		typeof initial === "function" ? initial() : initial,
+		vi.fn(),
+	],
 }));
 
 vi.mock("../src/factory/web/pwa.js", async (importOriginal) => {
