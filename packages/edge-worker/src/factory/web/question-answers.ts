@@ -8,7 +8,7 @@ export type Recommendation = {
 	answer: string;
 	reason: string;
 };
-/** Historical text drafts are always deliberate custom answers. */
+/** Text values are treated as explicit custom answers. */
 export function answerChoice(
 	value: AnswerChoice | string | undefined,
 	recommendation?: Recommendation,

@@ -93,6 +93,13 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 			window.removeEventListener("offline", offline);
 		};
 	}, []);
+	useEffect(() => {
+		if (access.status === "authenticated") {
+			setGrant("");
+			setLabel("");
+			setError(undefined);
+		}
+	}, [access.status]);
 	if (access.status === "authenticated") return <>{children}</>;
 
 	const submit = async (enroll: boolean) => {
@@ -231,7 +238,11 @@ export function AccessSettings() {
 					<Button
 						variant="secondary"
 						disabled={busy}
-						onClick={() => setAdding(!adding)}
+						onClick={() => {
+							setAdding(!adding);
+							setLabel("");
+							setError(undefined);
+						}}
 						aria-expanded={adding}
 					>
 						Add passkey
@@ -288,7 +299,11 @@ export function AccessSettings() {
 							<Button
 								variant="secondary"
 								disabled={busy}
-								onClick={() => setAdding(false)}
+								onClick={() => {
+									setAdding(false);
+									setLabel("");
+									setError(undefined);
+								}}
 							>
 								Cancel
 							</Button>
@@ -340,8 +355,8 @@ export function AccessSettings() {
 			<section className="settings-card" aria-labelledby="session-heading">
 				<h2 id="session-heading">This session</h2>
 				<p>
-					Signing out discards unsent edits, review comments and saved drafts in
-					every Factory tab.
+					Signing out discards unsent edits and review comments in every Factory
+					tab.
 				</p>
 				<Button
 					variant="secondary"
@@ -349,7 +364,7 @@ export function AccessSettings() {
 					onClick={() => {
 						if (
 							!window.confirm(
-								"Sign out? Unsent edits, review comments and saved drafts will be discarded in every Factory tab.",
+								"Sign out? Unsent edits and review comments will be discarded in every Factory tab.",
 							)
 						)
 							return;

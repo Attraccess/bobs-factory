@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Make guided review more compact, require system maps for new technical and mixed guides, identify individual file areas, and collect feedback and review actions on Decide. Keep neighboring map labels and reverse connections distinct, align split-diff columns across long lines, and keep unopened flow-stage numbers readable. Keep chapter checks compact, use a plain reviewed checkbox row, and announce singular feedback counts correctly ([Taskbot #92](https://taskbot.apps.janjaap.de/p/bobs-factory/t/92), [#44](https://github.com/Attraccess/bobs-factory/pull/44)).
 - Record the user-approved simulated-agent QA scope for refinement recommendations, retaining real-agent and ticket-delivery limitations. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 - Rebrand maintained product contracts for Bob’s Factory and prepare independent binary installation and explicit Cyrus migration ([Taskbot #38](https://taskbot.apps.janjaap.de/p/bobs-factory/t/38), [#34](https://github.com/Attraccess/bobs-factory/pull/34)). Binary rollout remains pending publication. Cursor stays user-prepared; archives exclude its proprietary SDK and native files. Preserve native sessions and Git worktrees through verified migration backups; retain waiting review gates and queue order, and reject malformed coordinator state before cutover. Reconcile owned MCP permissions, configuration and saved/frozen workflow tool references during migration while preserving completed step outputs and completed/rejected agent checkpoint payloads for resumed steps; reload file-owned environment values while preserving process overrides.
 
@@ -50,6 +51,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Keep unsent form edits only while their current form and context remain open. Navigation, context changes, reloads, app updates and canceling follow-up feedback or new-passkey setup now discard them without stale-draft warnings; saved server data and pending-request guards remain intact. ([#41](https://github.com/Attraccess/bobs-factory/pull/41))
+
 - Factory QA now tests agreed user stories across UI, API and CLI changes, captures representative screenshots during those flows, and requires fixes and retesting for consequential failures. QA evidence and optional improvements remain visible for human review. ([Taskbot #74](https://taskbot.apps.janjaap.de/p/bobs-factory/t/74))
 
 - Review guides open on a dedicated reading page, with a compact entry on Today, saved reading positions and feedback drafts, and a clear empty state when no guide is available. ([Taskbot #59](https://taskbot.apps.janjaap.de/p/bobs-factory/t/59), [#9](https://github.com/Attraccess/bobs-factory/pull/9))
@@ -63,7 +66,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Reconcile feature-video evidence with the current guide layout and form resets, preserving both capability descriptions and video styling. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 - Reject malformed caption timestamps, reversed intervals and out-of-order cues before accepting recorded audio evidence. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Update the routing prompt test to cover the current review-guide requirements and restore CI validation ([#44](https://github.com/Attraccess/bobs-factory/pull/44)).
 - Recover PR/worktree revision mismatches through the configured CI fixer; preserve both revisions and wait for assistance when synchronization makes no progress, keeping old CI from approving newer work. ([#43](https://github.com/Attraccess/bobs-factory/pull/43))
 
 - Reconcile compact Factory review history with the binary fork, retaining original evidence, explicit answers and explanation revision records across restart. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))

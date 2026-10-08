@@ -21,6 +21,7 @@ import {
 } from "./review-comments";
 import { type FeedbackTarget, feedbackKey } from "./review-feedback";
 import { ChangedFiles, FileLink, useReviewFiles } from "./review-files";
+import { useReviewInput } from "./review-input";
 import {
 	chapterColor,
 	chaptersFor,
@@ -182,7 +183,10 @@ function ReviewReader({
 	controls?: (identity: string, decisionPage: boolean) => ReactNode;
 	revisionChanged: boolean;
 }) {
+	useReviewInput();
 	const feedback = useReviewFeedback();
+	const feedbackCount =
+		feedback?.draft.items.filter((i) => i.text.trim()).length ?? 0;
 	const chapters = useMemo(() => chaptersFor(guide), [guide]),
 		tokens = useMemo(() => pageTokens(chapters), [chapters]),
 		titles = [
@@ -210,6 +214,7 @@ function ReviewReader({
 		}),
 		[highlight, setHighlight] = useState<number | null>(null),
 		heading = useRef<HTMLHeadingElement>(null),
+		segments = useRef<HTMLElement>(null),
 		explicit = useRef(false),
 		lastLocation = useRef(location.key),
 		initialReset = useRef(revisionChanged),
@@ -218,6 +223,19 @@ function ReviewReader({
 			page > 0 && page <= chapters.length ? chapters[page - 1] : undefined,
 		files = page === chapters.length + 1,
 		final = page === tokens.length - 1;
+	useEffect(() => {
+		const bar = segments.current,
+			current = bar?.children[page] as HTMLElement | undefined;
+		if (!bar || !current) return;
+		if (current.offsetLeft < bar.scrollLeft)
+			bar.scrollLeft = current.offsetLeft;
+		else if (
+			current.offsetLeft + current.offsetWidth >
+			bar.scrollLeft + bar.clientWidth
+		)
+			bar.scrollLeft =
+				current.offsetLeft + current.offsetWidth - bar.clientWidth;
+	}, [page]);
 	const evidence = useQuery({
 			queryKey: [
 				"guide-evidence",
@@ -456,7 +474,8 @@ function ReviewReader({
 			}
 		>
 			<nav
-				className={`guide-segments ${tokens.length > 8 ? "many-pages" : ""}`}
+				ref={segments}
+				className={`guide-segments ${tokens.length > 14 ? "many-pages" : ""}`}
 				aria-label="Review pages"
 			>
 				{tokens.map((token, i) => (
@@ -478,7 +497,7 @@ function ReviewReader({
 					/>
 				))}
 			</nav>
-			<label className="guide-jump">
+			<label className={`guide-jump ${tokens.length > 14 ? "many-pages" : ""}`}>
 				Review page
 				<select
 					aria-label="Review page"
@@ -492,12 +511,6 @@ function ReviewReader({
 					))}
 				</select>
 			</label>
-			{feedback && (
-				<p className="comment-hint">
-					Hold an item to comment, or use its comment button.
-				</p>
-			)}
-			<CollectedFeedback go={goToItem} />
 			<section className="guide-page" key={page}>
 				<small className="guide-eyebrow">
 					{page === 0
@@ -535,10 +548,12 @@ function ReviewReader({
 				{page === 0 ? (
 					<>
 						<div className="guide-facts">
-							<span className="chip">{chapters.length} steps</span>
+							<span className="chip">
+								{chapters.length} {chapters.length === 1 ? "step" : "steps"}
+							</span>
 							<span className="chip">
 								{fileQuery.data
-									? `${fileQuery.data.manifest.files.length} files`
+									? `${fileQuery.data.manifest.files.length} ${fileQuery.data.manifest.files.length === 1 ? "file" : "files"}`
 									: fileQuery.isPending
 										? "Files loading…"
 										: "File count unavailable"}
@@ -577,6 +592,13 @@ function ReviewReader({
 							<Screens
 								strip
 								refs={shots}
+								onSelect={(i) =>
+									go(
+										chapters.findIndex((c) =>
+											c.screenshots.includes(shots[i]!),
+										) + 1,
+									)
+								}
 								inventory={inventory}
 								runId={run.id}
 								loading={evidence.isPending}
@@ -652,6 +674,7 @@ function ReviewReader({
 							chapters={chapters}
 							run={run}
 							onChapter={(i) => go(i)}
+							reviewed={progress.reviewed}
 						/>
 					</>
 				) : final ? (
@@ -677,7 +700,9 @@ function ReviewReader({
 									}
 								>
 									<button type="button" onClick={() => go(i + 1)}>
-										<span className="step-badge">{i + 1}</span>
+										<span className="step-badge">
+											{progress.reviewed[c.id] ? "✓" : i + 1}
+										</span>
 										<span>
 											<strong>{c.title}</strong>
 											{c.risk && (
@@ -809,6 +834,7 @@ function ReviewReader({
 									{chapter.risk.text}
 								</p>,
 							)}
+						{chapter.keyChecks?.length ? <h3>CHECK</h3> : null}
 						{chapter.keyChecks?.map((check, i) => {
 							const id = `${chapter.id}/${i}`,
 								checked = progress.checked?.[id] ?? false;
@@ -841,7 +867,6 @@ function ReviewReader({
 											}}
 										/>
 										<span>
-											<small>CHECK</small>
 											<strong>{check.do}</strong>{" "}
 											<span className="muted">→ {check.expect}</span>
 										</span>
@@ -861,11 +886,12 @@ function ReviewReader({
 									}));
 								}}
 							/>{" "}
-							I’ve reviewed this change
+							I've reviewed this step
 						</label>
 						<details {...disclosure("detail")}>
 							<summary>
-								More detail · Full text, evidence & {chapter.files.length} files
+								More detail · Full text, evidence & {chapter.files.length}{" "}
+								{chapter.files.length === 1 ? "file" : "files"}
 							</summary>
 							{annotate(
 								`${base}/summary`,
@@ -973,7 +999,12 @@ function ReviewReader({
 					</>
 				) : null}
 			</section>
-			{controls?.(storageKey, final)}
+			{final && (
+				<>
+					<CollectedFeedback go={goToItem} />
+					{controls?.(storageKey, true)}
+				</>
+			)}
 			<footer className="guide-navigation">
 				<Button
 					variant="secondary"
@@ -991,6 +1022,26 @@ function ReviewReader({
 								? "Decide"
 								: `${page} / ${chapters.length}`}
 				</span>
+				{feedback && (
+					<Button
+						variant="secondary"
+						className="feedback-count"
+						aria-label={`Collected feedback: ${feedbackCount} ${feedbackCount === 1 ? "comment" : "comments"}. Open Decide`}
+						onClick={() => {
+							feedback.update((d) => ({ ...d, collectedOpen: true }));
+							go(tokens.length - 1);
+							requestAnimationFrame(() =>
+								requestAnimationFrame(() =>
+									document
+										.querySelector<HTMLElement>(".collected-feedback")
+										?.scrollIntoView({ block: "center" }),
+								),
+							);
+						}}
+					>
+						✎ <span>{feedbackCount}</span>
+					</Button>
+				)}
 				{!final && (
 					<Button onClick={() => go(page + 1, true)}>
 						{page === 0
