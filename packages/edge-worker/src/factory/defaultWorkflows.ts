@@ -4,6 +4,11 @@ import { takeoverLaunchFields } from "./LaunchFields.js";
 import { legacyScreenshotSteps } from "./legacyScreenshotSteps.js";
 import { QA_CONTRACT } from "./Qa.js";
 import { reviewFixInstructions } from "./ReviewRecovery.js";
+import {
+	inventoryGuideInstructions,
+	inventoryQaInstructions,
+	specialistSteps,
+} from "./specialistSteps.js";
 import { validateWorkflows, type WorkflowStep } from "./Workflow.js";
 
 const agent = (id: string, name: string, prompt: string, extra = {}) => ({
@@ -48,7 +53,7 @@ const definitions = [
 		icon: "🏭",
 		name: "Software factory",
 		description:
-			"Clarify → plan → implement → draft PR → review → CI → QA and screenshot review → human guide.",
+			"Clarify → plan → implement → draft PR → requirements → specialist review → CI → QA and screenshot review → human guide.",
 		labels: ["workflow:factory", "factory"],
 		steps: [
 			agent(
@@ -188,6 +193,43 @@ const previousPlanPrompt = planStep.prompt;
 const ticketPlanInstructions =
 	" Include the verified originating ticket reference, tracker instance/workspace/project and URL, runtime tracking ownership, coding Done-after-confirmed-merge rule, and any synchronization gaps in the self-contained plan. Roles supply summaries and blockers; the tracking service owns lifecycle comments, status and PR links.";
 planStep.prompt += ticketPlanInstructions;
+// Kept for conservative saved-recipe detection and legacy runtime regression fixtures.
+export const legacyReviewSteps = structuredClone(pipeline.steps);
+function installSpecialists(steps: Record<string, any>[]) {
+	const index = steps.findIndex((s) => s.id === "code-review");
+	steps.splice(index, 1, ...structuredClone(specialistSteps));
+	for (const step of steps) {
+		if (step.next === "code-review") step.next = "extract-requirements";
+		for (const branch of step.branches ?? [])
+			if (branch.next === "code-review") branch.next = "extract-requirements";
+		if (step.id === "review-gate") {
+			step.name = "Aggregate specialist findings and coverage";
+			step.review = {
+				inventory: "extract-requirements",
+				fanout: "specialist-review",
+			};
+		}
+		if (step.tool === "human-review")
+			step.branches = [
+				...(step.branches ?? []),
+				{
+					when: { path: "rework", equals: true },
+					next: "extract-requirements",
+				},
+			];
+		if (
+			step.id === "visual-scope" &&
+			!step.prompt.includes(inventoryQaInstructions)
+		)
+			step.prompt += inventoryQaInstructions;
+		if (
+			step.id === "guide" &&
+			!step.prompt.includes(inventoryGuideInstructions)
+		)
+			step.prompt += inventoryGuideInstructions;
+	}
+}
+installSpecialists(pipeline.steps);
 export const defaultWorkflows = validateWorkflows([
 	definitions[0],
 	{
@@ -342,6 +384,12 @@ export function upgradeWorkflows(value: unknown): unknown {
 					? step.tool === old.tool
 					: step.prompt === old.prompt ||
 						step.prompt === current.prompt ||
+						step.prompt ===
+							(
+								legacyReviewSteps.find((s) => s.id === id) as
+									| { prompt?: string }
+									| undefined
+							)?.prompt ||
 						(legacyVisualPrompts[id] ?? []).includes(String(step.prompt));
 			const routeMatches =
 				(step.next === old.next ||
@@ -371,7 +419,15 @@ export function upgradeWorkflows(value: unknown): unknown {
 						step.id === "handoff" ? (step.branches ?? []) : stock.branches,
 					),
 					...(stock.prompt ? { prompt: stock.prompt } : {}),
-					...(stock.next ? { next: stock.next } : {}),
+					...(stock.next
+						? {
+								next:
+									stock.next === "extract-requirements" &&
+									steps.some((s) => s.id === "code-review")
+										? "code-review"
+										: stock.next,
+							}
+						: {}),
 				});
 				if (!stock.next) delete step.next;
 				if (
@@ -411,6 +467,7 @@ export function upgradeWorkflows(value: unknown): unknown {
 				stock?.type === "tool" &&
 				step.tool === stock.tool &&
 				(step.name === stock.name ||
+					step.name === legacyReviewSteps.find((s) => s.id === step.id)?.name ||
 					(step.id === "ci" && step.name === "Watch pull request CI"))
 			)
 				step.maxVisits = stock.maxVisits;
@@ -442,13 +499,14 @@ export function upgradeWorkflows(value: unknown): unknown {
 					.steps.find((step) => step.id === "ci-fix")!.prompt
 		) {
 			ciFix.next = "after-ci-fix";
-			steps.push(
-				structuredClone(
+			steps.push({
+				...structuredClone(
 					defaultWorkflows
 						.find((item) => item.id === "factory-pipeline")!
 						.steps.find((step) => step.id === "after-ci-fix")!,
-				) as unknown as Record<string, unknown>,
-			);
+				),
+				next: "code-review",
+			} as unknown as Record<string, unknown>);
 		}
 		const ci = steps.find((step) => step.tool === "ci");
 		if (ci && Array.isArray(ci.branches))
@@ -478,6 +536,80 @@ export function upgradeWorkflows(value: unknown): unknown {
 				),
 			).map((step) => ({ ...step })),
 		);
+	}
+	for (const definition of definitions) {
+		if (
+			!["factory-pipeline", "factory"].includes(String(definition.id)) ||
+			!Array.isArray(definition.steps)
+		)
+			continue;
+		const steps = definition.steps as Record<string, any>[];
+		const reviewer = steps.find((s) => s.id === "code-review");
+		const gate = steps.find((s) => s.id === "review-gate");
+		const old = legacyReviewSteps.find((s) => s.id === "code-review")!;
+		// Do not overwrite a customized reviewer, source restriction, output setting or graph.
+		const stockReviewer =
+			reviewer &&
+			reviewer.prompt === review &&
+			reviewer.name === old.name &&
+			reviewer.type === "agent" &&
+			![
+				"runner",
+				"model",
+				"reasoningEffort",
+				"modelVariant",
+				"serviceTier",
+				"inputs",
+				"chat",
+				"reviewContract",
+				"review",
+			].some((k) => reviewer[k] !== undefined) &&
+			reviewer.json !== false &&
+			!reviewer.askQuestions &&
+			!reviewer.next &&
+			!reviewer.branches?.length &&
+			(reviewer.maxVisits ?? 8) === 8;
+		const stockGate =
+			gate &&
+			gate.tool === "review-gate" &&
+			!gate.args?.length &&
+			!gate.arguments &&
+			!gate.review &&
+			!gate.next &&
+			JSON.stringify(gate.branches ?? []) ===
+				JSON.stringify([
+					{ when: { path: "approved", equals: false }, next: "code-fix" },
+				]);
+		const compatibleConsumers =
+			steps.every(
+				(s) =>
+					!(s.inputs ?? []).some((path: string) =>
+						path.includes("code-review"),
+					),
+			) &&
+			["visual-scope", "guide"].every((id) => {
+				const step = steps.find((s) => s.id === id);
+				const previous = legacyReviewSteps.find((s) => s.id === id);
+				const current = defaultWorkflows
+					.find((w) => w.id === "factory-pipeline")!
+					.steps.find((s) => s.id === id);
+				return (
+					!step ||
+					(previous &&
+						"prompt" in previous &&
+						step.prompt === previous.prompt) ||
+					step.prompt === current?.prompt
+				);
+			});
+		if (
+			stockReviewer &&
+			stockGate &&
+			compatibleConsumers &&
+			!steps.some((s) =>
+				["extract-requirements", "specialist-review"].includes(s.id),
+			)
+		)
+			installSpecialists(steps);
 	}
 	return definitions;
 }

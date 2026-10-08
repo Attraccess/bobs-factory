@@ -198,6 +198,7 @@ import {
 import { isPullRequestSource } from "./factory/GitProviderReference.js";
 import { confirmedGroupedMerge } from "./factory/GroupedTools.js";
 import {
+	attachRequirementCoverage,
 	validateGuideCoverage,
 	validateGuideGeneration,
 } from "./factory/Guide.js";
@@ -255,6 +256,10 @@ import {
 	SessionChat,
 	steeringState,
 } from "./factory/SessionChat.js";
+import {
+	aggregateForContext,
+	validateContractOutput,
+} from "./factory/SpecialistReview.js";
 import {
 	inspectPullRequest,
 	type TakeoverPullRequest,
@@ -8067,7 +8072,10 @@ ${taskSection}`;
 	): unknown {
 		const { run, step } = context;
 		try {
-			let output = step.askQuestions ? normalizeQuestionResult(value) : value;
+			let output = validateContractOutput(
+				context,
+				step.askQuestions ? normalizeQuestionResult(value) : value,
+			);
 			if (
 				step.qaContract ||
 				["factory", "takeover"].includes(run.workflow.id) ||
@@ -8079,8 +8087,9 @@ ${taskSection}`;
 			if (step.id === "visual-scope" && step.qaContract) {
 				const issues = qaRequirementIssues(
 					output as QaScope,
-					run.outputs,
+					context.outputs ?? run.outputs,
 					run.answers,
+					aggregateForContext(context)?.baseline.inventory,
 				);
 				if (issues.length) throw new Error(issues.join("; "));
 			}
@@ -8130,7 +8139,11 @@ ${taskSection}`;
 	): Promise<unknown> {
 		const { run, step } = context;
 		let output = this.validateFactoryAgentOutput(context, value);
-		if (step.id === "guide") output = await finalizeGuideFiles(context, output);
+		if (step.id === "guide")
+			output = await finalizeGuideFiles(
+				context,
+				attachRequirementCoverage(context, output),
+			);
 		if (step.id === "capture") output = captureEvidence(context, output);
 		const completed = (await roleProgress(context)).currentRevision;
 		if (["code-fix", "visual-fix"].includes(step.id))

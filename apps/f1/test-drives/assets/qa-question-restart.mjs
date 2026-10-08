@@ -6,14 +6,19 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultWorkflows } from "../../../../packages/edge-worker/dist/factory/defaultWorkflows.js";
-import { FactoryServer } from "../../../../packages/edge-worker/dist/factory/FactoryServer.js";
 import {
 	captureEvidence,
 	FactoryTools,
 } from "../../../../packages/edge-worker/dist/factory/FactoryTools.js";
 import { qaDigest } from "../../../../packages/edge-worker/dist/factory/Qa.js";
+import {
+	TicketTracking,
+	taskbotAdapter,
+	taskbotSource,
+} from "../../../../packages/edge-worker/dist/factory/TicketTracking.js";
 import { validateWorkflows } from "../../../../packages/edge-worker/dist/factory/Workflow.js";
 import { WorkflowRuntime } from "../../../../packages/edge-worker/dist/factory/WorkflowRuntime.js";
+import { FactoryServer } from "../../../../packages/edge-worker/test/fixtures/authenticated-factory.ts";
 import {
 	qaExecution,
 	qaScope,
@@ -48,9 +53,35 @@ const revision = {
 };
 const calls = [],
 	records = [];
+const ticketSource = "https://taskbot.example/p/f1-fixture/t/1";
+const ticketReference = { ...taskbotSource(ticketSource), server: "taskbot" };
+const ticket = { id: 1, status: "backlog", comments: [], attachments: [] };
+const trackerCalls = [];
+const adapter = taskbotAdapter(ticketReference, async (tool, args) => {
+	trackerCalls.push({ tool, args });
+	if (tool === "set_status") ticket.status = args.to;
+	if (tool === "comment") ticket.comments.push({ body: args.body });
+	return {
+		content: [
+			{
+				type: "text",
+				text: JSON.stringify(tool === "get_ticket" ? ticket : { ok: true }),
+			},
+		],
+	};
+});
+let runtime;
+const tracking = new TicketTracking(
+	async () => adapter,
+	(run) => runtime.save(run),
+	(run, message) => runtime.log(run, "ticket-sync", message),
+);
+const assistance = () =>
+	ticket.comments.filter((c) => c.body.startsWith("Factory needs assistance:"));
 let guidance = "Restore the fixture account and retry the required check.";
 const tools = new FactoryTools({ postComment: async () => {} });
 const hooks = {
+	track: (run, milestone) => tracking.record(run, milestone),
 	// These canned receipts test gate orchestration, never actual record persistence.
 	agent: async (ctx) => {
 		calls.push(ctx.step.id);
@@ -130,8 +161,8 @@ const workflow = validateWorkflows([
 		],
 	},
 ]).at(-1);
-let runtime = new WorkflowRuntime(home, hooks),
-	server;
+runtime = new WorkflowRuntime(home, hooks);
+let server;
 const until = async (check) => {
 	const end = Date.now() + 10000;
 	while (!check()) {
@@ -146,7 +177,8 @@ const until = async (check) => {
 };
 const waiting = () =>
 	runtime.get(run.id).status === "waiting" &&
-	runtime.pendingAnswers.has(run.id);
+	runtime.pendingAnswers.has(run.id) &&
+	runtime.get(run.id).ticketSync?.receipts.every((r) => r.delivered);
 const context = () => {
 	const saved = runtime.get(run.id);
 	return {
@@ -169,27 +201,41 @@ const run = runtime.create({
 	input: "Fixture",
 	workflow,
 });
+run.ticketReference = ticketReference;
 run.outputs.clarify = { requirements: ["Persist a record"], decisions: [] };
 run.outputs["visual-scope"] = qaScope("api");
 try {
 	void runtime.launch(run);
 	await until(waiting);
+	assert.equal(assistance().length, 1);
 	const original = context();
 	for (let i = 0; i < 2; i++) {
 		await restart();
 		assert.deepEqual(context(), original);
 		assert.deepEqual(runtime.get(run.id).answers, []);
 		assert.equal(calls.filter((id) => id === "capture").length, 1);
+		assert.equal(assistance().length, 1);
 		records.push({
 			state: "unchanged restart",
 			context: context(),
 			calls: [...calls],
 		});
 	}
+	// Preserve delivered legacy markers when an upgrade restores unchanged guidance.
+	const saved = runtime.get(run.id);
+	saved.ticketSync.receipts.find((r) =>
+		r.key.startsWith("questions:"),
+	).key = `questions:${saved.step}:${saved.answers.length}`;
+	runtime.save(saved);
+	await restart();
+	assert.deepEqual(context(), original);
+	assert.equal(assistance().length, 1);
 	guidance = "Use the restored test account to execute QA.";
 	await restart();
 	assert.notEqual(context().questionBatchId, original.questionBatchId);
 	assert.deepEqual(context().questions, original.questions);
+	assert.equal(assistance().length, 2);
+	assert.ok(assistance().at(-1).body.includes(guidance));
 	server = new FactoryServer(runtime, {
 		repositories: () => [],
 		sessions: () => [],
@@ -213,6 +259,7 @@ try {
 	server = undefined;
 	await restart();
 	assert.deepEqual(context(), updated);
+	assert.equal(assistance().length, 2);
 	server = new FactoryServer(runtime, {
 		repositories: () => [],
 		sessions: () => [],
@@ -227,6 +274,7 @@ try {
 		200,
 	);
 	await until(() => waiting() && runtime.get(run.id).answers.length === 1);
+	assert.equal(assistance().length, 3);
 	assert.notEqual(context().questionBatchId, updated.questionBatchId);
 	assert.equal((await answer(updated, "Duplicate old draft")).statusCode, 409);
 	assert.equal(
@@ -253,6 +301,9 @@ try {
 				productHead: execFileSync("git", ["rev-parse", "HEAD"], {
 					encoding: "utf8",
 				}).trim(),
+				trackerCalls,
+				assistance: assistance(),
+				ticketSync: runtime.get(run.id).ticketSync,
 				records,
 			},
 			null,
@@ -260,9 +311,10 @@ try {
 		),
 	);
 	console.log(
-		"PASS: unchanged QA waits retain identity; changed recommendations and later batches reject stale contextual answers; explicit answers alone resume QA.",
+		"PASS: unchanged and legacy QA waits avoid duplicate ticket comments; replacement batches notify once, reject stale answers and require explicit submission.",
 	);
 } finally {
 	await runtime.shutdown();
 	await server?.stop();
+	tracking.stop();
 }

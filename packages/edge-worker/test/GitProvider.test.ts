@@ -116,7 +116,8 @@ it("publishes the reported GitLab SSH repository without ever invoking gh", asyn
 				if (args[0] === "status") return "M code.ts";
 				if (args[0] === "rev-list") return "1";
 				if (args[0] === "diff") return "code.ts";
-				if (args[0] === "rev-parse") return "head";
+				if (args[0] === "rev-parse")
+					return args[1] === "HEAD" ? "head" : "base";
 				return "";
 			}
 			if (args[1]?.includes("state=opened")) return "[]";
@@ -135,6 +136,7 @@ it("publishes the reported GitLab SSH repository without ever invoking gh", asyn
 		url: "https://gitlab.com/team/subgroup/repo/-/merge_requests/17",
 		branch: "feature/change",
 		headSha: "head",
+		baseSha: "base",
 	});
 	expect(calls.some((c) => c[0] === "gh")).toBe(false);
 	expect(calls).toContainEqual(["git", "commit", "-m", "chore: change"]);

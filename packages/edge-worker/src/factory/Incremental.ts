@@ -102,7 +102,10 @@ export async function roleProgress(
 				.find((item) => item.step === key)?.output,
 			newHistory: context.step.inputs
 				? []
-				: context.run.history.slice(previousRevision?.historyLength ?? 0),
+				: (context.reviewBaseline
+						? context.run.history.slice(0, context.reviewBaseline.historyLength)
+						: context.run.history
+					).slice(previousRevision?.historyLength ?? 0),
 			currentRevision:
 				revisions.length === repositories.length
 					? {
@@ -173,7 +176,10 @@ export async function roleProgress(
 		uncertain: true,
 		newHistory: context.step.inputs
 			? []
-			: run.history.slice(previousRevision?.historyLength ?? 0),
+			: (context.reviewBaseline
+					? run.history.slice(0, context.reviewBaseline.historyLength)
+					: run.history
+				).slice(previousRevision?.historyLength ?? 0),
 	};
 	const git = async (args: string[]) =>
 		(

@@ -8,6 +8,7 @@ import { confirmedGroupedMerge } from "../src/factory/GroupedTools.js";
 import { dependencyHashes, roleProgress } from "../src/factory/Incremental.js";
 import {
 	deliveryRevisions,
+	repositoryRun,
 	repositoryScopes,
 } from "../src/factory/RepositoryScope.js";
 import {
@@ -15,6 +16,11 @@ import {
 	readReviewManifest,
 	readReviewPatch,
 } from "../src/factory/ReviewFiles.js";
+import {
+	type AggregateReview,
+	assertAggregateRevision,
+} from "../src/factory/SpecialistReview.js";
+import { specialistSteps } from "../src/factory/specialistSteps.js";
 import { WorkflowSchema } from "../src/factory/Workflow.js";
 import {
 	type ExecutionContext,
@@ -98,6 +104,130 @@ function fixture() {
 	};
 	return { directory, forge, tools, runtime, run, context, execute, approve };
 }
+
+it.each([
+	"unchanged",
+	"dirty",
+	"commit",
+])("specialist fanout binds every repository and rejects secondary changes: %s", async (change) => {
+	const { directory, forge, execute } = fixture();
+	await execute("draft-pr");
+	const workflow = WorkflowSchema.parse({
+		id: "specialist-group",
+		name: "Grouped specialist review",
+		allowedTriggers: ["manual"],
+		steps: [
+			...specialistSteps,
+			{
+				id: "review-gate",
+				name: "Aggregate review",
+				type: "tool",
+				tool: "review-gate",
+				review: {
+					inventory: "extract-requirements",
+					fanout: "specialist-review",
+				},
+			},
+		],
+	});
+	const runtime = new WorkflowRuntime(directory, {
+		agent: async (context) => {
+			if (context.step.reviewContract === "inventory-v1")
+				return {
+					schemaVersion: 1,
+					requirements: [
+						{
+							id: "R1",
+							criterion: "Update app and api",
+							classification: "active",
+							sources: [
+								{ source: "originalInput", reference: "/originalInput" },
+							],
+						},
+					],
+					decisions: [],
+					conflicts: [],
+					questions: [],
+					sourceReceipt: {
+						considered: [
+							{ source: "originalInput", reference: "/originalInput" },
+						],
+						unavailable: [],
+					},
+				};
+			expect(
+				context.reviewBaseline?.repositories?.map((r) => r.repositoryId),
+			).toEqual(["app", "api", "context"]);
+			if (context.step.id === "security-review" && change !== "unchanged") {
+				const api = forge.repositories[1]!;
+				writeFileSync(
+					join(api.workspace, "shared.txt"),
+					"Changed during review\n",
+				);
+				if (change === "commit") {
+					forge.git(api, "add", ".");
+					forge.git(api, "commit", "-qm", "unexpected reviewer change");
+				}
+			}
+			return {
+				summary: "Reviewed complete scope",
+				findings: [],
+				disagreements: [],
+				...(context.step.reviewContract === "coverage-v1"
+					? {
+							coverage: [
+								{
+									requirementId: "R1",
+									status: "met",
+									evidence: ["app and api commits"],
+									reason: "Both requested repos changed",
+								},
+							],
+						}
+					: {}),
+			};
+		},
+		script: async () => ({}),
+		tool: async () => {
+			throw new Error("Review aggregation belongs to the runtime");
+		},
+	});
+	const run = runtime.create({
+		id: "specialist-group",
+		repositoryId: "app",
+		repositories: forge.repositories,
+		workspace: directory,
+		workflow,
+		input: "Update app and api",
+		triggerOrigin: {
+			type: "manual",
+			workflowId: workflow.id,
+			at: new Date().toISOString(),
+		},
+	});
+	await runtime.launch(run);
+	if (change === "unchanged") {
+		expect(run.status).toBe("completed");
+		const api = forge.repositories[1]!;
+		const projected = repositoryRun(run, api);
+		const aggregate = projected.outputs["review-gate"] as AggregateReview;
+		expect(aggregate.reviewers).toHaveLength(6);
+		expect(() =>
+			assertAggregateRevision(
+				aggregate,
+				forge.git(api, "rev-parse", "HEAD"),
+				forge.git(api, "rev-parse", "origin/development"),
+			),
+		).not.toThrow();
+	} else {
+		expect(run.status).toBe("failed");
+		expect(run.error).toMatch(
+			/clean worktree|changed.*review|review.*invalidated/i,
+		);
+		expect(run.outputs["review-gate"]).toBeUndefined();
+	}
+	await runtime.shutdown();
+});
 
 it("recovers completion after cleanup only when every approved repository has confirmed merge", async () => {
 	const { forge, run, execute, approve, context } = fixture();

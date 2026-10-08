@@ -179,11 +179,34 @@ export function repositoryRun(
 			return value;
 		const record = value as Record<string, unknown>;
 		const revision = (
-			record.repositories as RepositoryRevision[] | undefined
+			record.repositories as
+				| (RepositoryRevision & { baseSha?: string })[]
+				| undefined
 		)?.find?.((item) => item.repositoryId === repository.id);
+		const baseline = record.baseline
+			? (project(record.baseline) as Record<string, unknown>)
+			: undefined;
 		return {
 			...record,
 			...(revision ? { headSha: revision.headSha, dirty: revision.dirty } : {}),
+			...(revision?.baseSha ? { baseSha: revision.baseSha } : {}),
+			...(baseline
+				? {
+						baseline,
+						...(Array.isArray(record.reviewers)
+							? {
+									reviewers: record.reviewers.map((reviewer) => ({
+										...reviewer,
+										stamp: {
+											...reviewer.stamp,
+											headSha: baseline.headSha,
+											baseSha: baseline.baseSha,
+										},
+									})),
+								}
+							: {}),
+					}
+				: {}),
 			...Object.fromEntries(
 				["addressedCommentIds", "addressedReviewIds"]
 					.filter((key) => Array.isArray(record[key]))
@@ -229,6 +252,10 @@ export function repositoryRun(
 				project(value),
 			]),
 		) as FactoryRun["roleRevisions"],
+		reviewRounds: run.reviewRounds?.map(
+			(round) =>
+				project(round) as NonNullable<FactoryRun["reviewRounds"]>[number],
+		),
 		humanDecisions: run.humanDecisions?.map((decision) => {
 			const approved = decision.repositories?.find(
 				(item) => item.repositoryId === repository.id,

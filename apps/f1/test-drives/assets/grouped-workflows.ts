@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EdgeWorker } from "../../../../packages/edge-worker/src/EdgeWorker.js";
 import { FactoryTools } from "../../../../packages/edge-worker/src/factory/FactoryTools.js";
+import { specialistSteps } from "../../../../packages/edge-worker/src/factory/specialistSteps.js";
 import { WorkflowSchema } from "../../../../packages/edge-worker/src/factory/Workflow.js";
 import { deliveryFixture } from "../../../../packages/edge-worker/test/fixtures/grouped-delivery.js";
 import { f1AgentHandlers } from "../../src/MockAgentRunner.js";
@@ -28,6 +29,24 @@ const mock = f1AgentHandlers(
 	JSON.stringify({ findings: [], summary: "Scripted review of app and api" }),
 )!;
 const roles: string[] = [];
+const inventory = {
+	schemaVersion: 1,
+	requirements: [
+		{
+			id: "R1",
+			criterion: "Change app and api within the grouped repository scope",
+			classification: "active",
+			sources: [{ source: "originalInput", reference: "/originalInput" }],
+		},
+	],
+	decisions: [],
+	conflicts: [],
+	sourceReceipt: {
+		considered: [{ source: "originalInput", reference: "/originalInput" }],
+		unavailable: [],
+	},
+	questions: [],
+};
 const worker = new EdgeWorker({
 	platform: "cli",
 	factoryHome: home,
@@ -47,7 +66,29 @@ const worker = new EdgeWorker({
 					assert(config.appendSystemPrompt.includes(`"name":"${name}"`));
 				roles.push(config.workingDirectory!);
 			}
-			return mock.createAgentRunner!(type, config);
+			const response = config.appendSystemPrompt?.includes(
+				"Extract scope independently of the implementation",
+			)
+				? inventory
+				: {
+						summary: "Scripted review of every grouped repository",
+						findings: [],
+						disagreements: [],
+						...(config.appendSystemPrompt?.includes("Business requirements")
+							? {
+									coverage: [
+										{
+											requirementId: "R1",
+											status: "met",
+											evidence: ["Scripted app and api commits"],
+											reason: "Both requested repositories changed",
+										},
+									],
+								}
+							: {}),
+					};
+			return f1AgentHandlers("mock", JSON.stringify(response))!
+				.createAgentRunner!(type, config);
 		},
 	},
 	repositories: forge.repositories.map((repo) => ({
@@ -113,18 +154,16 @@ const factory = WorkflowSchema.parse({
 			type: "tool",
 			tool: "draft-pr",
 		},
-		{
-			id: "code-review",
-			name: "Review the complete scope",
-			type: "agent",
-			prompt:
-				"Inspect every changed repository and return findings and summary as JSON",
-		},
+		...specialistSteps,
 		{
 			id: "review-gate",
 			name: "Code review gate",
 			type: "tool",
 			tool: "review-gate",
+			review: {
+				inventory: "extract-requirements",
+				fanout: "specialist-review",
+			},
 		},
 		{ id: "ci", name: "CI for all PRs", type: "tool", tool: "ci" },
 		{
@@ -267,7 +306,13 @@ try {
 	const run = await wait(assigned.session.sessionId, "waiting");
 	assert.equal(run.repositories?.length, 3);
 	assert.deepEqual(forge.publications, ["app", "api"]);
-	assert.equal(roles.length, 1);
+	assert.equal(roles.length, 7);
+	assert.equal(run.reviewRounds?.length, 1);
+	assert.equal(run.reviewRounds![0]!.repositories?.length, 3);
+	assert.equal(
+		(run.outputs["review-gate"] as { reviewers: unknown[] }).reviewers.length,
+		6,
+	);
 	assert.equal(run.reviewGate?.repositories?.length, 2);
 	assert.equal(
 		run.reviewGate?.repositories?.[0]?.headSha,

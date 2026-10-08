@@ -8,6 +8,7 @@ import {
 	type IAppServerClient,
 } from "./appServerClient.js";
 import { resolveCodexAppServerLaunch } from "./codexBinary.js";
+import { buildCodexThreadConfig } from "./threadConfig.js";
 import type { ResolvedCodexConfig } from "./types.js";
 
 const CLIENT_INFO = { name: "bobs-factory-codex-runner", version: "1.0.0" };
@@ -301,7 +302,19 @@ export class AppServerProcessManager {
 		signal?: AbortSignal,
 	): Promise<AppServerProcessLease> {
 		signal?.throwIfAborted();
-		const { command, args } = resolveCodexAppServerLaunch(config.codexPath);
+		// Codex account routing rebuilds config using the process's CLI layer.
+		// A thread-only profile definition disappears there while its selection
+		// survives, causing "failed to load workspace requirements" before inference.
+		// Define it at launch too; args fence differently permissioned processes.
+		const { command, args } = resolveCodexAppServerLaunch(
+			config.codexPath,
+			config.sandbox.kind === "profile"
+				? {
+						permissions: buildCodexThreadConfig(config).permissions!,
+						default_permissions: config.sandbox.profileId,
+					}
+				: {},
+		);
 		const launchOptions: LaunchOptions = {
 			command,
 			args,

@@ -22,7 +22,8 @@ The drive passed these assertions:
   Takeover and custom/nested launches retain the same complete scope.
 - Scripted implementation changes two repos; built-in publication creates two
   draft PRs and leaves the third repo as context. Git commits/pushes are real.
-- A mocked code-review role receives every repository, and CI/handoff inspect
+- A mocked requirement extractor and all six stock specialist reviewers receive
+  every repository and share frozen per-repository heads and bases. CI/handoff inspect
   both delivered revisions. The human gate contains both exact URLs/heads;
   client-supplied repository metadata cannot replace the server-owned approval.
 - Both merges must be confirmed before the workflow completes. Issue-session
@@ -45,3 +46,11 @@ revision safeguards with simulated provider responses, not live forge behavior,
 model reasoning, visual QA or native agent execution. The Takeover scenario
 checks scope admission and worktree inheritance; existing-PR branch handling
 retains its focused provider tests.
+
+After integrating `main` at `ec185ab3` (specialist review), the drive was updated
+and rerun successfully with the stock extraction/fanout contracts. Regression
+tests verify clean three-repository review, repository-specific aggregate
+provenance, and refusal to accept a review after a secondary repository receives
+uncommitted edits or a new commit. The full-prompt routing assertion retains both
+grouping and specialist capabilities. The other 218 affected checks pass; the
+initial missing prompt text was corrected and its five tests pass.

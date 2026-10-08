@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Share repository grouping across Factory, Takeover, Simple and custom workflows. Show one composer project for matching routing-label sets and publish, review and merge one PR/MR per changed repository, preserving partial delivery receipts and approval for exact revisions. ([#51](https://github.com/Attraccess/bobs-factory/pull/51))
+- Configurable specialist review with a versioned requirement inventory, complete acceptance coverage and revision-bound reviewer evidence. Recipes exposes each reviewer independently; QA and the human guide retain accepted skips, observations and disagreements. Nested workflows and subsequent fanout branches preserve review safeguards in their callers and guides, renamed gates retain QA coverage, and settled findings require fresh evidence even after intervening omissions. ([Taskbot #73](https://taskbot.apps.janjaap.de/p/bobs-factory/t/73), [#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Opt into per-device Web Push for new questions, review revisions, runs needing help and successful completions. Manage devices and send a real push test; preserve subscriptions across restart without replaying old attention, wait for scheduled and background work before completion alerts, and refresh protected run links before actions. ([Taskbot #69](https://taskbot.apps.janjaap.de/p/bobs-factory/t/69), [#35](https://github.com/Attraccess/bobs-factory/pull/35))
 
@@ -68,6 +69,22 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Preserve specialist review and cleanup safeguards when integrating Codex permission-profile registration at app-server launch. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Preserve specialist requirement coverage and reviewer cleanup checks when integrating provider-neutral PR tooling and opt-in Web Push. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Preserve frozen specialist review, requirement coverage and redacted execution results when integrating independent execution profiles and dedicated Settings pages. Wait for all concurrent reviewers to clean up temporary runner configuration before checking worktree cleanliness; remaining product edits still invalidate review. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Preserve specialist coverage and disagreement evidence when integrating review-guide scope classification, system maps and Decide feedback controls. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Preserve specialist role editing and exact-step saves when integrating dashboard input resets; unsaved edits reset while required review output validation remains enforced. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Preserve assistance recovery for specialist review when integrating feedback-loop safeguards: unchanged rejected fixes pause after reassessment and resume with explicit human direction. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Retain generated recommendations on requirement-extraction questions while enforcing specialist inventory validation and explicit human submission. Notify the originating ticket when restored questions or recommendations change, without duplicating unchanged waits. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Preserve resolved specialist disagreements, their rationale and supporting evidence in exported review guide Markdown. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Prevent recurring Codex `failed to load workspace requirements` errors by retaining generated permission profiles through native configuration reloads; isolate different grants while preserving existing conversations and workflow checkpoints. ([#50](https://github.com/Attraccess/bobs-factory/pull/50))
 
 - Recognize GitLab merged-results CI when it tests the current source and target revisions, without accepting stale checks or changing the human-approved source revision. ([#49](https://github.com/Attraccess/bobs-factory/pull/49))
 

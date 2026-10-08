@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { feedbackInstructionFingerprint } from "./FeedbackPolicy.js";
 import type { RoleRevision } from "./Incremental.js";
+import { aggregateForContext } from "./SpecialistReview.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 interface Finding {
@@ -38,7 +39,11 @@ function findingFingerprint(findings: Finding[]): string {
 export function factoryReviewFixContext(context: ExecutionContext) {
 	const gate = context.step.id === "visual-fix" ? "visual-gate" : "review-gate";
 	return {
-		findings: openFindings(context.run.outputs[gate]),
+		findings: openFindings(
+			context.step.id === "visual-fix"
+				? context.run.outputs[gate]
+				: (aggregateForContext(context) ?? context.run.outputs[gate]),
+		),
 		answers: context.run.answers ?? [],
 	};
 }
@@ -68,7 +73,11 @@ export function recordReviewFix(
 	const prefix = (context.run.step ?? context.step.id).replace(/[^/]+$/, "");
 	const source =
 		context.step.id === "visual-fix" ? "visual-review" : "code-review";
-	const started = context.run.roleRevisions?.[`${prefix}${source}`];
+	const aggregate =
+		context.step.id === "visual-fix" ? undefined : aggregateForContext(context);
+	const started = aggregate
+		? { headSha: aggregate.baseline.headSha, dirty: false }
+		: context.run.roleRevisions?.[`${prefix}${source}`];
 	return {
 		...(output as Record<string, unknown>),
 		reviewAssessment: {

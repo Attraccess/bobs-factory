@@ -34,6 +34,11 @@ import {
 } from "./Qa.js";
 import { runRepositories } from "./RepositoryScope.js";
 import { reviewRecoveryQuestions } from "./ReviewRecovery.js";
+import {
+	aggregateForContext,
+	assertAggregateRevision,
+	scopeContextDigest,
+} from "./SpecialistReview.js";
 import { inspectPullRequest } from "./Takeover.js";
 import { readPath } from "./Workflow.js";
 
@@ -97,6 +102,10 @@ function blockRevisionMismatch(
 export function reviewGuideMarkdown(value: unknown, headSha: string): string {
 	const guide = value as z.infer<typeof GuideSchema>;
 	const list = (items: string[]) => items.map((item) => `- ${item}`).join("\n");
+	const coverage = guide.requirementCoverage
+		? `\n\n<details><summary>Complete requirement coverage and specialist evidence</summary>\n\n${guide.requirementCoverage.assessments.map((a) => `- **${a.requirementId}: ${a.criterion}** (${a.status}): ${a.reason}; ${a.evidence.join("; ")}${a.decision ? `; Accepted by ${a.decision.acceptedBy}: ${a.decision.rationale} (${a.decision.source.reference})` : ""}`).join("\n")}\n\n${guide.requirementCoverage.reviewers.map((r) => `**${r.reviewer}:** ${r.summary}\n${r.findings.map((f) => `- ${r.reviewer}:${f.id} · ${f.rating} · ${f.status}: ${f.summary}; ${f.evidence}; ${f.reason ?? ""}`).join("\n")}\n${r.disagreements.join("\n")}\n${(r.disputeResolutions ?? []).map((d) => `- Resolved disagreement: ${d.disagreement}; Reason: ${d.reason}; Evidence: ${d.evidence}`).join("\n")}`).join("\n\n")}\n\n</details>`
+		: "";
+
 	if (guide.chapters?.length) {
 		const chapters = guide.chapters
 			.map(
@@ -104,9 +113,9 @@ export function reviewGuideMarkdown(value: unknown, headSha: string): string {
 					`### ${chapter.title}\n${chapter.summary}\n\n**Before:** ${chapter.before}\n\n**After:** ${chapter.after}\n\n${chapter.diagrams.map((diagram) => `**${diagram.title}:** ${diagram.steps.map((step) => step.label).join(" → ")}`).join("\n")}\n\n${list(chapter.reviewChecks)}\n\n<details><summary>Code and evidence</summary>\n\n${list(chapter.files.map((file) => `\`${file}\``))}\n\n${list(chapter.evidence)}\n\n</details>`,
 			)
 			.join("\n\n");
-		return `## ${guide.goal}\n${guide.summary}\n\n${guide.decision.status}: ${guide.decision.summary}\n\n${chapters}\n\n## Know before approving\n${list(guide.risks)}\n\n<details><summary>Verification evidence</summary>\n\n${list(guide.checks)}\n\n</details>\n\n## Human decision\n${list(guide.reviewInstructions)}\n\nRevision: ${headSha}\nOpen the factory review guide for the step-by-step walkthrough, diagrams and screenshots.\n\n<!-- generated-by-bobs-factory -->`;
+		return `## ${guide.goal}\n${guide.summary}\n\n${guide.decision.status}: ${guide.decision.summary}\n\n${chapters}${coverage}\n\n## Know before approving\n${list(guide.risks)}\n\n<details><summary>Verification evidence</summary>\n\n${list(guide.checks)}\n\n</details>\n\n## Human decision\n${list(guide.reviewInstructions)}\n\nRevision: ${headSha}\nOpen the factory review guide for the step-by-step walkthrough, diagrams and screenshots.\n\n<!-- generated-by-bobs-factory -->`;
 	}
-	return `## Goal\n${guide.goal}\n\n${guide.summary}\n\n## Decision\n${guide.decision.status}: ${guide.decision.summary}\n\n## Before and after\n${guide.behavior.map((item) => `### ${item.scenario}\nBefore: ${item.before}\n\nAfter: ${item.after}`).join("\n\n")}\n\n## Requirements\n${guide.requirements.map((item) => `- **${item.criterion}** (${item.status}): ${item.evidence.join("; ")}`).join("\n")}\n\n## Checks\n${list(guide.checks)}\n\n## Risks\n${list(guide.risks)}\n\n## Human review\n${list(guide.reviewInstructions)}\n\nRevision: ${headSha}\nScreenshots and complete decision/review history are available in the local factory dashboard.\n\n<!-- generated-by-bobs-factory -->`;
+	return `## Goal\n${guide.goal}\n\n${guide.summary}\n\n## Decision\n${guide.decision.status}: ${guide.decision.summary}\n\n## Before and after\n${guide.behavior.map((item) => `### ${item.scenario}\nBefore: ${item.before}\n\nAfter: ${item.after}`).join("\n\n")}\n\n## Requirements\n${guide.requirements.map((item) => `- **${item.criterion}** (${item.status}): ${item.evidence.join("; ")}`).join("\n")}\n\n${coverage}\n\n## Checks\n${list(guide.checks)}\n\n## Risks\n${list(guide.risks)}\n\n## Human review\n${list(guide.reviewInstructions)}\n\nRevision: ${headSha}\nScreenshots and complete decision/review history are available in the local factory dashboard.\n\n<!-- generated-by-bobs-factory -->`;
 }
 
 export function executeCommand(
@@ -319,6 +328,18 @@ export interface FactoryToolHooks {
 }
 export class FactoryTools {
 	constructor(private hooks: FactoryToolHooks) {}
+	private scopeChanged(context: ExecutionContext, frozen: unknown): boolean {
+		return (
+			scopeContextDigest(frozen) !==
+			scopeContextDigest(
+				context.currentScope?.() ?? {
+					...(context.input as Record<string, unknown>),
+					answers: context.run.answers,
+					humanDecisions: context.run.humanDecisions ?? [],
+				},
+			)
+		);
+	}
 	private async qaGate(
 		context: ExecutionContext,
 		command: (exe: string, args: string[]) => Promise<string>,
@@ -338,14 +359,22 @@ export class FactoryTools {
 			reviewHash = qaDigest(review);
 		const stamp = capture.testedRevision,
 			reviewed = review.qaReviewStamp;
-		const prefix = (run.step ?? context.step.id).replace(/[^/]+$/, "");
+		const prefix = (context.stepKey ?? run.step ?? context.step.id).replace(
+			/[^/]+$/,
+			"",
+		);
 		const provenance = ["capture", "visual-review"].every((id) => {
 			const revision = run.roleRevisions?.[`${prefix}${id}`];
 			return revision && !revision.dirty && revision.headSha === headSha;
 		});
 		const coverage = qaCoverage(scope, capture);
 		coverage.errors.push(
-			...qaRequirementIssues(scope, run.outputs, run.answers),
+			...qaRequirementIssues(
+				scope,
+				context.outputs ?? run.outputs,
+				run.answers,
+				aggregateForContext(context)?.baseline.inventory,
+			),
 		);
 		if (
 			dirty ||
@@ -665,6 +694,7 @@ export class FactoryTools {
 					url,
 					branch,
 					headSha: await command("git", ["rev-parse", "HEAD"]),
+					baseSha: await command("git", ["rev-parse", baseRef]),
 				};
 			}
 			case "review-gate":
@@ -725,8 +755,14 @@ export class FactoryTools {
 				return recovery({ approved: open.length === 0, findings: open });
 			}
 			case "review-after-fix": {
-				const prefix = (run.step ?? context.step.id).replace(/[^/]+$/, "");
-				const reviewed = run.roleRevisions?.[`${prefix}code-review`];
+				const prefix = (context.stepKey ?? run.step ?? context.step.id).replace(
+					/[^/]+$/,
+					"",
+				);
+				const aggregate = aggregateForContext(context);
+				const reviewed = aggregate
+					? { headSha: aggregate.baseline.headSha, dirty: false }
+					: run.roleRevisions?.[`${prefix}code-review`];
 				const headSha = await command("git", ["rev-parse", "HEAD"]);
 				const dirty = Boolean(await command("git", ["status", "--porcelain"]));
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
@@ -737,7 +773,8 @@ export class FactoryTools {
 				);
 				if (readiness.headSha !== headSha)
 					blockRevisionMismatch(readiness, headSha);
-				const previousBase = readPath(run.outputs, "ci.baseSha");
+				const previousBase =
+					aggregate?.baseline.baseSha ?? readPath(run.outputs, "ci.baseSha");
 				assessFeedback(context, readiness);
 				const feedback = readPath(run.outputs, "ci.blockers") as
 					| { kind: string; action?: string }[]
@@ -765,7 +802,14 @@ export class FactoryTools {
 					readiness.headSha !== headSha ||
 					!previousBase ||
 					previousBase !== readiness.baseSha ||
-					readPath(run.outputs, "review-gate.approved") !== true;
+					(aggregate?.approved ??
+						readPath(run.outputs, "review-gate.approved")) !== true ||
+					Boolean(
+						aggregate &&
+							(!aggregate.approved ||
+								(aggregate.baseline.context &&
+									this.scopeChanged(context, aggregate.baseline.context))),
+					);
 				context.log(
 					reviewRequired
 						? "Changed revision, substantive feedback or missing review provenance requires code review."
@@ -875,6 +919,31 @@ export class FactoryTools {
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
 				const snapshot = await inspectReadinessWithRetry(context, command, url);
 				assessFeedback(context, snapshot);
+				const aggregate = aggregateForContext(context);
+				if (aggregate) {
+					if (
+						aggregate.baseline.headSha !== headSha ||
+						aggregate.baseline.baseSha !== snapshot.baseSha ||
+						this.scopeChanged(context, aggregate.baseline.context)
+					) {
+						if (
+							context.step.branches.some(
+								(b) => b.when.path === "rework" && b.when.equals === true,
+							)
+						)
+							return {
+								rework: true,
+								headSha,
+								url,
+								reason:
+									"Revision or accepted scope changed after review; extract and review again before human approval",
+							};
+						throw new Error(
+							"Revision or accepted scope changed after review; configure a correction route through requirement extraction",
+						);
+					}
+					assertAggregateRevision(aggregate, headSha, snapshot.baseSha);
+				}
 				if (
 					snapshot.headSha !== headSha ||
 					readPath(run.outputs, "handoff.headSha") !== headSha
@@ -903,6 +972,25 @@ export class FactoryTools {
 					}
 					assessFeedback(context, snapshot);
 					reportReadiness(context, snapshot);
+					const aggregate = aggregateForContext(context);
+					if (
+						aggregate &&
+						(aggregate.baseline.baseSha !== snapshot.baseSha ||
+							this.scopeChanged(context, aggregate.baseline.context))
+					) {
+						delete run.reviewGate;
+						return {
+							...snapshot,
+							rework: true,
+							reason: "Base or accepted scope changed after specialist review",
+						};
+					}
+					if (aggregate)
+						assertAggregateRevision(
+							aggregate,
+							approved.headSha,
+							snapshot.baseSha,
+						);
 					if (
 						snapshot.headSha !== approved.headSha ||
 						(await command("git", ["rev-parse", "HEAD"])) !==
@@ -1014,6 +1102,31 @@ export class FactoryTools {
 						throw new Error(
 							`Merge readiness changed; handoff blocked: ${readiness.blockers.map((blocker) => blocker.message).join("; ")}`,
 						);
+					}
+					const aggregate = aggregateForContext(context);
+					if (aggregate) {
+						if (
+							aggregate.baseline.headSha !== headSha ||
+							aggregate.baseline.baseSha !== readiness.baseSha ||
+							this.scopeChanged(context, aggregate.baseline.context)
+						) {
+							if (
+								context.step.branches.some(
+									(b) => b.when.path === "fix" && b.when.equals === true,
+								)
+							)
+								return {
+									...readiness,
+									fix: true,
+									scopeReviewRequired: true,
+									reason:
+										"Accepted context changed after review; extract a new requirement baseline",
+								};
+							throw new Error(
+								"Accepted scope changed after specialist review; configure a correction route through requirement extraction",
+							);
+						}
+						assertAggregateRevision(aggregate, headSha, readiness.baseSha);
 					}
 					if (readiness.reviewReady) break;
 					// The provider may recalculate mergeability or start checks while the
