@@ -4,7 +4,7 @@ import type { GuideChapter, GuideFlow, GuideSystem } from "../FactoryResults";
 import { LazyImage } from "./media";
 import type { Annotate } from "./review";
 import { useReviewFeedback } from "./review-comments";
-import { mapConnections } from "./review-model";
+import { mapConnections, screenshotDevice } from "./review-model";
 import { Button, Modal } from "./ui";
 
 function wrapLabel(
@@ -42,7 +42,9 @@ export function SystemMap({
 		[after, setAfter] = useState(true),
 		id = useId().replace(/:/g, "");
 	const edges = mapConnections(system, before, after),
-		width = system.lanes.length * 260;
+		pitch = 176,
+		boxWidth = 124,
+		width = system.lanes.length * pitch;
 	const context = document.createElement("canvas").getContext("2d")!,
 		font = getComputedStyle(document.body).fontFamily;
 	const labelsFor = (
@@ -54,8 +56,79 @@ export function SystemMap({
 		context.font = `${weight} ${size}px ${font}`;
 		return wrapLabel(value, max, (text) => context.measureText(text).width);
 	};
-	const lanes = system.lanes.map((lane) => labelsFor(lane.name, 216, 12, 800)),
-		top = Math.max(52, ...lanes.map((lines) => 45 + (lines.length - 1) * 14));
+	const lanes = system.lanes.map((lane) =>
+		labelsFor(lane.name.toUpperCase(), pitch - 16, 10, 800),
+	);
+	const headingBottom = Math.max(
+		38,
+		...lanes.map((lines) => 30 + lines.length * 12),
+	);
+	const prepared = edges.map((edge) => {
+		const sourceLane = system.lanes.findIndex(
+				(l) => l.id === system.parts.find((p) => p.id === edge.source)?.laneId,
+			),
+			targetLane = system.lanes.findIndex(
+				(l) => l.id === system.parts.find((p) => p.id === edge.target)?.laneId,
+			),
+			adjacent = Math.abs(targetLane - sourceLane) === 1,
+			labelWidth =
+				sourceLane === targetLane
+					? pitch - boxWidth - 10
+					: adjacent
+						? pitch - boxWidth - 10
+						: Math.min(
+								220,
+								pitch * Math.max(1, Math.abs(targetLane - sourceLane)) - 24,
+							),
+			oldLines =
+				edge.kind === "changed" && edge.oldLabel
+					? labelsFor(edge.oldLabel, labelWidth, 10.5, 700)
+					: [],
+			label =
+				edge.kind === "changed"
+					? `${edge.oldLabel ?? ""} → ${edge.newLabel ?? ""}`
+					: (edge.label ?? ""),
+			labels =
+				edge.kind === "changed"
+					? [
+							...oldLines,
+							...labelsFor(`→ ${edge.newLabel ?? ""}`, labelWidth, 10.5, 700),
+						]
+					: labelsFor(label, labelWidth, 10.5, 700);
+		return {
+			adjacent,
+			sourceLane,
+			targetLane,
+			label,
+			labels,
+			labelWidth,
+			labelHeight: labels.length * 13,
+			oldCount: oldLines.length,
+		};
+	});
+	// Skipped-lane curves arch above the components. Allocate label space only
+	// where intervals collide; there is no routing strip beneath the boxes.
+	const tracks: { left: number; right: number; bottom: number }[] = [];
+	const arches = prepared.map((e, i) => {
+		if (e.adjacent) return 0;
+		if (!e.label) return headingBottom + 12 + (i % 3) * 8;
+		const center = ((e.sourceLane + e.targetLane + 1) * pitch) / 2,
+			left = center - e.labelWidth / 2,
+			right = center + e.labelWidth / 2;
+		let y = headingBottom + e.labelHeight / 2 + 10;
+		for (const track of tracks)
+			if (left < track.right && right > track.left)
+				y = Math.max(y, track.bottom + e.labelHeight / 2 + 10);
+		tracks.push({ left, right, bottom: y + e.labelHeight / 2 });
+		return y;
+	});
+	const top = Math.max(
+		headingBottom + 24,
+		...tracks.map((t) => t.bottom + 28),
+		...prepared
+			.filter((e) => e.adjacent)
+			.map((e) => headingBottom + e.labelHeight / 2 + 12),
+	);
 	const positions = new Map<
 		string,
 		{ x: number; y: number; lane: number; height: number; labels: string[] }
@@ -64,75 +137,82 @@ export function SystemMap({
 	system.lanes.forEach((lane, i) => {
 		let y = top;
 		for (const part of system.parts.filter((p) => p.laneId === lane.id)) {
-			const labels = labelsFor(part.label, 142, 13, 700),
-				height = Math.max(66, labels.length * 15 + 30);
-			positions.set(part.id, { x: i * 260 + 24, y, lane: i, height, labels });
-			bottom = Math.max(bottom, y + height + 20);
-			y += height + 34;
+			const labels = labelsFor(part.label, boxWidth - 16, 12.5, 600),
+				height = Math.max(40, labels.length * 15 + 24);
+			positions.set(part.id, { x: i * pitch + 26, y, lane: i, height, labels });
+			bottom = Math.max(bottom, y + height);
+			y += height + 22;
 		}
 	});
-	const tracks: { x: number; y: number; width: number; height: number }[] = [];
-	let lower = bottom;
-	const layout = edges.map((edge) => {
+	// Incoming and outgoing edges share the physical side of a box. Allocate
+	// ports together so a reverse connection cannot retrace the forward curve.
+	const port = (part: string, other: string, i: number, height: number) => {
+		const lane = positions.get(part)!.lane,
+			right = positions.get(other)!.lane >= lane;
+		const peers = edges.flatMap((e, j) => {
+			const peer =
+				e.source === part ? e.target : e.target === part ? e.source : undefined;
+			return peer && positions.get(peer)!.lane >= lane === right ? [j] : [];
+		});
+		return (height * (peers.indexOf(i) + 1)) / (peers.length + 1);
+	};
+	const labelTracks = tracks.map((t) => ({
+		...t,
+		top: headingBottom,
+	}));
+	const layout = edges.map((edge, i) => {
 		const source = positions.get(edge.source)!,
-			target = positions.get(edge.target)!;
-		const adjacent = target.lane === source.lane + 1;
-		const labelWidth = adjacent ? 72 : 220;
-		const label =
-			edge.kind === "removed"
-				? `✕ ${edge.label ?? "connection"}`
-				: edge.kind === "changed"
-					? `${edge.oldLabel ?? "unlabelled"} → ${edge.newLabel ?? "unlabelled"}`
-					: (edge.label ?? "");
-		const oldLines =
-				edge.kind === "changed"
-					? labelsFor(edge.oldLabel ?? "unlabelled", labelWidth, 12, 400)
-					: [],
-			labels =
-				edge.kind === "changed"
-					? [
-							...oldLines,
-							...labelsFor(
-								`→ ${edge.newLabel ?? "unlabelled"}`,
-								labelWidth,
-								12,
-								400,
-							),
-						]
-					: labelsFor(label, labelWidth, 12, 400),
-			labelHeight = Math.max(1, labels.length) * 15;
-		// Wide labels on same-lane connections need an inset at the map edges.
-		const x = Math.max(
-			labelWidth / 2 + 12,
-			Math.min(
-				width - labelWidth / 2 - 12,
-				adjacent ? source.x + 213 : (source.x + target.x) / 2 + 83,
+			target = positions.get(edge.target)!,
+			e = prepared[i]!,
+			forward = target.lane >= source.lane,
+			sx = source.x + (forward ? boxWidth : 0),
+			tx = target.x + (forward ? 0 : boxWidth),
+			sy = source.y + port(edge.source, edge.target, i, source.height),
+			ty = target.y + port(edge.target, edge.source, i, target.height),
+			x = Math.max(
+				e.labelWidth / 2 + 8,
+				Math.min(width - e.labelWidth / 2 - 8, (sx + tx) / 2),
 			),
-		);
-		const sourceMiddle = source.y + source.height / 2,
-			targetMiddle = target.y + target.height / 2;
-		// Keep the whole wrapped label below the lane headings, even when it
-		// is taller than the components it connects.
-		let y = adjacent
-			? Math.max((sourceMiddle + targetMiddle) / 2, top + labelHeight / 2 + 12)
-			: lower + labelHeight + 12;
-		while (
-			tracks.some(
-				(t) =>
-					Math.abs(t.x - x) < (t.width + labelWidth) / 2 + 12 &&
-					Math.abs(t.y - y) < (t.height + labelHeight) / 2 + 12,
-			)
-		)
-			y += labelHeight + 14;
-		tracks.push({ x, y, width: labelWidth, height: labelHeight });
-		if (!adjacent) lower = y + 26;
-		const path = adjacent
-			? `M${source.x + 166},${sourceMiddle} C${source.x + 194},${sourceMiddle} ${x - 20},${y} ${x},${y} C${x + 20},${y} ${target.x - 28},${targetMiddle} ${target.x},${targetMiddle}`
-			: `M${source.x + 83},${source.y + source.height} C${source.x + 83},${y + 12} ${source.x + 83},${y + 12} ${source.x + 83},${y + 12} L${target.x + 83},${y + 12} C${target.x + 83},${y + 12} ${target.x + 83},${y + 12} ${target.x + 83},${target.y + target.height}`;
-		return { path, x, y, labels, labelHeight, oldCount: oldLines.length };
+			bend = (forward ? 1 : -1) * Math.max(20, Math.abs(tx - sx) * 0.4);
+		let y = e.adjacent ? (sy + ty) / 2 : arches[i]!;
+		if (e.adjacent && e.label) {
+			const left = x - e.labelWidth / 2 - 4,
+				right = x + e.labelWidth / 2 + 4,
+				half = e.labelHeight / 2 + 4;
+			y = Math.max(y, headingBottom + half + 10);
+			// Sort vertically so shifting past one label also checks every label
+			// below it. The curve midpoint follows the label's allocated space.
+			for (const track of [...labelTracks].sort((a, b) => a.top - b.top)) {
+				if (
+					left < track.right &&
+					right > track.left &&
+					y - half < track.bottom + 6 &&
+					y + half > track.top - 6
+				)
+					y = track.bottom + half + 6;
+			}
+			labelTracks.push({ left, right, top: y - half, bottom: y + half });
+		}
+		const offset = (y - (sy + ty) / 2) / 0.75;
+		const sameSide = source.lane === system.lanes.length - 1 ? -1 : 1;
+		const loopX = source.x + (sameSide > 0 ? boxWidth : 0);
+		const path = e.adjacent
+			? `M${sx},${sy} C${sx + bend},${sy + offset} ${tx - bend},${ty + offset} ${tx},${ty}`
+			: source.lane === target.lane
+				? `M${loopX},${sy} C${loopX + sameSide * 24},${sy - 28} ${loopX + sameSide * 24},${ty + 28} ${loopX},${ty}`
+				: `M${sx},${sy} C${sx + bend},${y - 32} ${tx - bend},${y - 32} ${tx},${ty}`;
+		return {
+			...e,
+			path,
+			x: source.lane === target.lane ? loopX + sameSide * 22 : x,
+			y: source.lane === target.lane ? (sy + ty) / 2 : y,
+		};
 	});
 	const height =
-		Math.max(bottom, ...layout.map((l) => l.y + l.labelHeight / 2)) + 24;
+		Math.max(
+			bottom,
+			...layout.filter((l) => l.adjacent).map((l) => l.y + l.labelHeight / 2),
+		) + 24;
 
 	return (
 		<figure className="system-map">
@@ -163,13 +243,25 @@ export function SystemMap({
 				</div>
 			)}
 			<figcaption>
-				{before && after
-					? "＋ added · ✕ removed · ↔ changed"
-					: before
-						? "Before: old connections; new parts are ghosted"
-						: after
-							? "After: new connections; legacy parts are dimmed"
-							: "All components · no connections"}
+				{before && after ? (
+					<span className="map-legend">
+						<span>
+							<i className="legend-added" /> added
+						</span>
+						<span>
+							<i className="legend-removed" /> removed
+						</span>
+						<span>
+							<i className="legend-changed" /> changed
+						</span>
+					</span>
+				) : before ? (
+					"Before: old connections; new parts are ghosted"
+				) : after ? (
+					"After: new connections; legacy parts are dimmed"
+				) : (
+					"All components · no connections"
+				)}
 			</figcaption>
 			<section
 				className="map-scroll"
@@ -206,13 +298,13 @@ export function SystemMap({
 					{system.lanes.map((lane, i) => (
 						<text
 							key={lane.id}
-							x={i * 260 + 107}
+							x={i * pitch + pitch / 2}
 							y={24}
 							textAnchor="middle"
 							className="map-lane"
 						>
 							{lanes[i]!.map((line, j) => (
-								<tspan key={j} x={i * 260 + 107} dy={j ? 14 : 0}>
+								<tspan key={j} x={i * pitch + pitch / 2} dy={j ? 12 : 0}>
 									{line}
 								</tspan>
 							))}
@@ -223,12 +315,7 @@ export function SystemMap({
 							selected =
 								highlighted.includes(edge.source) &&
 								highlighted.includes(edge.target),
-							label =
-								edge.kind === "removed"
-									? `✕ ${edge.label ?? "connection"}`
-									: edge.kind === "changed"
-										? `${edge.oldLabel ?? "unlabelled"} → ${edge.newLabel ?? "unlabelled"}`
-										: edge.label;
+							label = routed.label;
 						return (
 							<g
 								key={`${edge.source}/${edge.target}`}
@@ -250,7 +337,7 @@ export function SystemMap({
 											<tspan
 												key={j}
 												x={routed.x}
-												dy={j ? 15 : 0}
+												dy={j ? 13 : 0}
 												className={
 													j < routed.oldCount ? "old-label" : undefined
 												}
@@ -278,20 +365,24 @@ export function SystemMap({
 								<rect
 									x={pos.x}
 									y={pos.y}
-									width={166}
+									width={boxWidth}
 									height={pos.height}
 									rx={12}
 								/>
-								<text x={pos.x + 83} y={pos.y + 32} textAnchor="middle">
+								<text
+									x={pos.x + boxWidth / 2}
+									y={pos.y + 26}
+									textAnchor="middle"
+								>
 									{labels.map((line, j) => (
-										<tspan key={j} x={pos.x + 83} dy={j ? 15 : 0}>
+										<tspan key={j} x={pos.x + boxWidth / 2} dy={j ? 13 : 0}>
 											{line}
 										</tspan>
 									))}
 								</text>
 								{part.status !== "unchanged" && (
 									<text
-										x={pos.x + 154}
+										x={pos.x + boxWidth - 8}
 										y={pos.y + 13}
 										textAnchor="end"
 										className="map-status"
@@ -318,7 +409,9 @@ export function SystemMap({
 					{edges.map((e) => (
 						<li key={`${e.source}/${e.target}`}>
 							{e.source} → {e.target}: {e.kind},{" "}
-							{e.kind === "changed" ? `${e.oldLabel} → ${e.newLabel}` : e.label}
+							{e.kind === "changed"
+								? `${e.oldLabel ?? ""} → ${e.newLabel ?? ""}`
+								: e.label}
 						</li>
 					))}
 				</ul>
@@ -420,10 +513,12 @@ export function Screens({
 	error,
 	loading,
 	strip = false,
+	onSelect,
 	annotate,
 	base = "",
 }: {
 	strip?: boolean;
+	onSelect?: (index: number) => void;
 	annotate?: Annotate;
 	base?: string;
 	refs: GuideChapter["screenshots"];
@@ -447,9 +542,8 @@ export function Screens({
 		src = shot
 			? `/api/runs/${encodeURIComponent(runId)}/screenshots/${shot.index}?v=${shot.imageSha256 ?? ""}`
 			: undefined;
-	const context = [ref.device, ref.language, ref.state]
-		.filter(Boolean)
-		.join(" · ");
+	const device = screenshotDevice(ref, shot);
+	const context = [device, ref.language, ref.state].filter(Boolean).join(" · ");
 	const move = (delta: number) =>
 		setIndex((i) => (i + delta + refs.length) % refs.length);
 	const picture = src ? (
@@ -501,10 +595,10 @@ export function Screens({
 				setTouch(undefined);
 			}}
 		>
-			{!strip && ref.device && <span className="device-tag">{ref.device}</span>}
+			{!strip && <span className="device-tag">{device}</span>}
 			{strip ? (
 				<div className="screenshot-strip">
-					{refs.map((ref, i) => {
+					{refs.slice(0, 8).map((ref, i) => {
 						const shot = inventory.find(
 							(s) => s.area === ref.area && s.state === ref.state,
 						);
@@ -513,10 +607,14 @@ export function Screens({
 								type="button"
 								key={`${ref.area}/${ref.state}/${i}`}
 								onClick={() => {
-									setIndex(i);
-									setOpen(true);
+									if (onSelect) onSelect(i);
+									else {
+										setIndex(i);
+										setOpen(true);
+									}
 								}}
-								aria-label={`Enlarge image: ${ref.caption}`}
+								aria-label={ref.caption}
+								title={ref.caption}
 							>
 								{shot ? (
 									<EvidenceImage
@@ -526,7 +624,9 @@ export function Screens({
 								) : (
 									<p>Screenshot unavailable</p>
 								)}
-								<small>{ref.caption}</small>
+								<span className="device-tag">
+									{screenshotDevice(ref, shot)}
+								</span>
 							</button>
 						);
 					})}
@@ -558,7 +658,8 @@ export function Screens({
 								type="button"
 								className="screen-open"
 								onClick={() => setOpen(true)}
-								aria-label={`Enlarge image: ${ref.caption}`}
+								aria-label={ref.caption}
+								title={ref.caption}
 							>
 								{picture}
 							</button>
@@ -675,11 +776,11 @@ export function ChapterVisual({
 						<details className="where-map">
 							<summary>
 								Where:{" "}
-								{parts
-									.map(
-										(id) => system.parts.find((p) => p.id === id)?.label ?? id,
-									)
-									.join(" · ")}
+								{parts.map((id) => (
+									<span className="where-chip" key={id}>
+										{system.parts.find((p) => p.id === id)?.label ?? id}
+									</span>
+								))}
 							</summary>
 							<SystemMap system={system} highlighted={parts} afterOnly />
 						</details>

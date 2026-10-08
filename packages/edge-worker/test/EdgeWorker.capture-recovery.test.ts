@@ -109,7 +109,7 @@ async function fixture() {
 	const runner = {
 		start: vi.fn(async () => {
 			input = JSON.parse(
-				readFileSync(config.mcpConfig["factory-context"].args[1], "utf8"),
+				readFileSync(config.mcpConfig["factory-context"].args.at(-1)!, "utf8"),
 			);
 			config.onMessage({
 				type: "system",
@@ -382,6 +382,35 @@ async function guideFixture() {
 		}).trim(),
 	};
 	const guide = {
+		scope: {
+			kind: "nonvisual",
+			rationale: "Nonvisual feature fixture",
+			files: ["other.txt"],
+		},
+		system: {
+			lanes: [
+				{ id: "input", name: "Input" },
+				{ id: "processing", name: "Processing" },
+				{ id: "output", name: "Output" },
+			],
+			parts: [
+				{ id: "input", label: "Input", laneId: "input", status: "unchanged" },
+				{
+					id: "feature",
+					label: "Feature",
+					laneId: "processing",
+					status: "changed",
+				},
+				{
+					id: "output",
+					label: "Output",
+					laneId: "output",
+					status: "unchanged",
+				},
+			],
+			before: [],
+			after: [],
+		},
 		tldr: "Complete guide overview",
 		goal: "Feature",
 		summary: "Feature",
@@ -403,6 +432,7 @@ async function guideFixture() {
 		reviewInstructions: ["Inspect"],
 		chapters: [
 			{
+				systemPartIds: ["feature"],
 				tldr: "Review the whole feature",
 				beforeShort: "Old behavior",
 				afterShort: "New behavior",
@@ -735,4 +765,24 @@ it("never retries a repeatedly silent or cancelled turn indefinitely", async () 
 	f.ctx.signal = cancelled.signal;
 	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow();
 	expect(f.runner.start).toHaveBeenCalledTimes(3);
+});
+
+it("corrects a missing nonvisual map through the same guide-only conversation", async () => {
+	const f = await guideFixture();
+	const { system: _, ...missing } = f.guide;
+	f.ctx.resumeAgent!.result!.output = missing;
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(output).toMatchObject(f.guide);
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	expect(
+		f.getInput().outputCorrection.issues.map((i: { path: string }) => i.path),
+	).toContain("/system");
+	expect(f.worker.buildAgentRunnerConfig.mock.calls[0][3]).toContain(
+		"scope:{kind:",
+	);
+	expect(f.worker.buildAgentRunnerConfig.mock.calls[0][3]).toContain(
+		"guide-only output correction",
+	);
+	expect(f.ctx.checkpointAgent).toHaveBeenCalled();
+	expect(f.runner.start).toHaveBeenCalledTimes(1);
 });

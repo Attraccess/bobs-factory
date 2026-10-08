@@ -48,6 +48,37 @@ export function validateGuideCoverage(
 	if (requirements.size !== guide.requirements.length)
 		throw new Error("Guide chapters omit acceptance criteria");
 	const scope = context.progress?.reviewScope;
+	if (guide.scope && scope) {
+		const declared = new Set(guide.scope.files);
+		if (
+			declared.size !== guide.scope.files.length ||
+			declared.size !== scope.files.length ||
+			scope.files.some((file) => !declared.has(file))
+		)
+			throw new OutputValidationError(value, [
+				{
+					path: "/scope/files",
+					message:
+						"Scope classification must account for every whole-PR changed file exactly once",
+					expected: scope.files,
+					actual: guide.scope.files,
+				},
+			]);
+	}
+	const visualScope = context.run.outputs["visual-scope"] as
+		| { nonVisualFiles?: string[] }
+		| undefined;
+	if (
+		guide.scope?.kind === "purely-visual" &&
+		visualScope?.nonVisualFiles?.some((file) => scope?.files.includes(file))
+	)
+		throw new OutputValidationError(value, [
+			{
+				path: "/scope/kind",
+				message:
+					"The accepted QA scope contains nonvisual changes; classify as nonvisual and supply a system map",
+			},
+		]);
 	if (!scope && context.step.prompt === stock.prompt && !context.step.inputs)
 		throw new Error(
 			"Whole-PR revision scope is unavailable; cannot produce a complete guide",

@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useRun } from "./client";
 import { FullReview, RunMeta } from "./focus";
 import { ReviewContextRow } from "./review-context-row";
+import { useReviewInput } from "./review-input";
 import { writeTextStored } from "./review-state";
 import { Button } from "./ui";
 
@@ -15,6 +16,7 @@ export function ReviewPage({
 	onSettled: (run: any) => void;
 	settling?: boolean;
 }) {
+	useReviewInput();
 	const { id } = useParams(),
 		query = useRun(id),
 		run = query.data,

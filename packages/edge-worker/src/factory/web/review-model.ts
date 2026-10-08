@@ -43,18 +43,68 @@ export function isTestFile(path: string) {
 		path,
 	);
 }
+/** Stable repository identity, separate from the human-facing name. */
 export function fileArea(path: string) {
 	const parts = path.split("/");
-	return parts.length > 2 && ["apps", "packages", "plugins"].includes(parts[0]!)
-		? parts.slice(0, 2).join("/")
-		: parts.length > 1
-			? parts[0]!
-			: "Repository root";
+	const plugin = parts.indexOf("plugins");
+	if (plugin >= 0 && parts.length > plugin + 2)
+		return parts.slice(0, plugin + 2).join("/");
+	if (
+		parts.length > 2 &&
+		["apps", "packages", "libs", "libraries"].includes(parts[0]!)
+	)
+		return parts.slice(0, 2).join("/");
+	return parts.length > 1 ? parts[0]! : "Repository root";
+}
+export function areaName(area: string) {
+	const parts = area.split("/"),
+		name = parts.at(-1)!;
+	const readable = name.replace(/[-_]/g, " ");
+	if (parts.includes("plugins")) return `Plugin · ${name}`;
+	if (parts[0] === "apps" && ["api", "backend"].includes(name)) return "API";
+	if (parts[0] === "apps" && ["web", "frontend"].includes(name))
+		return "Web app";
+	if (/^sdk[-_]|[-_]sdk$|plugins-backend/.test(name)) return `SDK · ${name}`;
+	if (name === "shared") return "Shared lib";
+	if (name === "docs") return "Docs";
+	if (["libs", "libraries"].includes(parts[0]!)) return `Library · ${readable}`;
+	if (parts[0] === "packages") return `Package · ${readable}`;
+	if (parts[0] === "apps") return `App · ${readable}`;
+	return readable.charAt(0).toUpperCase() + readable.slice(1);
 }
 export function areaColor(area: string) {
 	let hash = 0;
 	for (const c of area) hash = (Math.imul(hash, 31) + c.charCodeAt(0)) | 0;
-	return chapterColor((hash >>> 0) % 20);
+	return `var(--area-${(hash >>> 0) % 8})`;
+}
+export function screenshotDevice(
+	ref: { device?: string },
+	shot?: { context?: string; state?: string; caption?: string },
+) {
+	if (ref.device) return ref.device;
+	// Prefer precise accepted context/state; captions may describe several devices.
+	const context = [shot?.context, shot?.state, shot?.caption].find(
+		(value) =>
+			value &&
+			/\b(desktop|mobile|email|reader)\b|\b\d{2,5}\s*[×x]\s*\d{2,5}\b/i.test(
+				value,
+			),
+	);
+	if (!context) return "Device not recorded";
+	const dimensions = context.match(/\b(\d{2,5})\s*[×x]\s*(\d{2,5})\b/i);
+	const kinds = [
+		...new Set(
+			[...context.matchAll(/\b(desktop|mobile|email|reader)\b/gi)].map((m) =>
+				m[1]!.toLowerCase(),
+			),
+		),
+	];
+	const kind = kinds.length === 1 ? kinds[0] : undefined;
+	if (kind)
+		return `${kind.charAt(0).toUpperCase()}${kind.slice(1).toLowerCase()}${dimensions ? ` · ${dimensions[1]}×${dimensions[2]}` : ""}`;
+	return dimensions
+		? `${dimensions[1]}×${dimensions[2]} · Device not recorded`
+		: "Device not recorded";
 }
 export function fileTotals(files: ReviewFile[]) {
 	return {
@@ -182,7 +232,7 @@ export function parsePatch(patch: string): DiffLine[] {
 				old: old++,
 				next: next++,
 			});
-		else {
+		else if (inHunk) {
 			lines.push({ kind: "meta", text: line });
 		}
 	}
