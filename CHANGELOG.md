@@ -71,6 +71,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Start a fresh ticket run after settling previous stopped or failed runs, including older sessions. Live execution and background work still prevent competing launches. ([#23](https://github.com/Attraccess/bobs-factory/pull/23))
+
 - Preserve feature-video evidence and capability guidance when integrating grouped repositories and Codex context startup recovery. Validate recording sources and stream current media across every retained repository. Use provider-specific diff and file links in grouped review guides. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 
 - Preserve video validation and playback evidence alongside specialist requirement coverage when integrating review guides and saved stock recipes. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
