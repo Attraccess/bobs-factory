@@ -70,7 +70,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Require Codex Factory context tools before model work, preserve correction budgets when startup fails, and let explicit Retry recover exhausted output corrections without rerunning completed roles.
+- Require Codex Factory context tools before model work, preserve correction budgets when startup fails, and let explicit Retry recover exhausted output corrections without rerunning completed roles. ([#52](https://github.com/Attraccess/bobs-factory/pull/52))
 
 - Preserve specialist review and cleanup safeguards when integrating Codex permission-profile registration at app-server launch. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 

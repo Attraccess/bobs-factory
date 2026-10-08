@@ -2,8 +2,8 @@
 
 Date: 2026-10-08
 
-Candidate: `fix/codex-factory-context-readiness`, based on `60532a041a8d6eb7a49cd960bb0bb274c9a072b6`.
-The tested source commit is recorded below after committing the implementation.
+Tested source commit: `4b679dd7ef74ca038387f1a1fc473de7fe5b7526` on
+`fix/codex-factory-context-readiness`, based on `60532a041a8d6eb7a49cd960bb0bb274c9a072b6`.
 
 F1 applies to required MCP startup, native conversation recovery and persisted
 Factory output-correction budgets. The drive uses a fresh Git repository and
@@ -45,7 +45,7 @@ all three runs completed; each retained three prior history records
 ```
 
 Receipts, run snapshots and rendered activities are retained in
-`/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-codex-context-XlDUxU`.
+`/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-codex-context-4QhR6P`.
 The passing console log is `/tmp/bobs-factory-mcp-readiness-f1.log`.
 Early fixture runs exposed an isolated-home migration guard, a synchronous CLI
 call that blocked the embedded server, and a polling race before run creation.
