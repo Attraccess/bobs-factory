@@ -69,6 +69,8 @@ All notable changes to this project will be documented in this file.
 
 - Reconcile feature-video evidence with the current guide layout, form resets and independent execution profiles, preserving capability guidance, video styling and runtime validation. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 - Reject malformed caption timestamps, reversed intervals and out-of-order cues before accepting recorded audio evidence. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Save instance concurrency through public proxies without a false PWA update loop, and report blocked or unverified responses as recoverable connection errors. ([#45](https://github.com/Attraccess/bobs-factory/pull/45))
+
 - Reconcile execution profiles with fresh-input behavior and current review-guide requirements, cover the prepared Claude executable in cross-platform runner tests, and check background feedback delivery without a fragile timing limit. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
 - Keep the fixer’s existing conversation when answering assistance questions, including after a restart or a request for a simpler explanation. Process new replies without replaying the previous answer or completed steps. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))

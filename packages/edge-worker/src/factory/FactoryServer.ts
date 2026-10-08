@@ -446,8 +446,19 @@ export class FactoryServer {
 		});
 		this.app.put("/api/capacity", async (request) => {
 			if (!hooks.capacity) throw new Error("Instance capacity unavailable");
-			const { limit } = z
-				.object({ limit: z.number().int().positive() })
+			// Keep the old API field for local clients. Public proxies can mistake
+			// a numeric "limit" body for SQL, so the dashboard sends "concurrency".
+			const limit = z
+				.object({
+					concurrency: z.number().int().positive().optional(),
+					limit: z.number().int().positive().optional(),
+				})
+				.refine(
+					(body) =>
+						(body.concurrency !== undefined) !== (body.limit !== undefined),
+					"Specify either concurrency or limit",
+				)
+				.transform((body) => body.concurrency ?? body.limit!)
 				.parse(request.body);
 			await hooks.capacity.setLimit(limit);
 			return { capacity: await hooks.capacity.snapshot() };
