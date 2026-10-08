@@ -34,7 +34,12 @@ const snapshot = async (comments = [comment], extra = {}) => {
 	const receipt = await inspectMergeReadiness(
 		async (_exe, args) =>
 			args.includes("graphql")
-				? JSON.stringify(providerReceipt(extra))
+				? JSON.stringify(
+						providerReceipt({
+							url: "https://github.com/another-org/unrelated-project/pull/83",
+							...extra,
+						}),
+					)
 				: JSON.stringify([comments]),
 		"https://github.com/another-org/unrelated-project/pull/83",
 	);

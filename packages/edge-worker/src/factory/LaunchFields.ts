@@ -43,9 +43,9 @@ export const standardLaunchFields = [
 export const takeoverLaunchFields = [
 	{
 		name: "source",
-		label: "PR URL or ticket ID",
+		label: "Pull/merge request URL or ticket ID",
 		required: true,
-		placeholder: "https://github.com/… or ATT-123",
+		placeholder: "Pull/merge request URL or ATT-123",
 		description:
 			"Continue the work described by this source. Existing PRs become draft during factory review.",
 	},

@@ -320,6 +320,33 @@ export const LinearWorkspaceConfigSchema = z.object({
 /**
  * Configuration for a single repository/workspace pair
  */
+export const GitProviderConfigSchema = z.discriminatedUnion("type", [
+	z.object({ type: z.enum(["github", "gitlab"]) }).strict(),
+	z
+		.object({
+			type: z.literal("custom"),
+			command: z.string().min(1),
+			args: z.array(z.string()).default([]),
+			/** Provider-specific discussion/CI tooling guidance for factory roles. */
+			instructions: z.string().max(10000).optional(),
+			repositoryUrl: z
+				.string()
+				.url()
+				.refine((value) => {
+					const url = new URL(value);
+					return (
+						url.protocol === "https:" &&
+						!url.username &&
+						!url.password &&
+						!url.search &&
+						!url.hash
+					);
+				}, "Use a credential-free HTTPS repository URL"),
+		})
+		.strict(),
+]);
+export type GitProviderConfig = z.infer<typeof GitProviderConfigSchema>;
+
 export const RepositoryConfigSchema = z.object({
 	// Repository identification
 	id: z.string(),
@@ -330,6 +357,8 @@ export const RepositoryConfigSchema = z.object({
 	baseBranch: z.string(),
 	githubUrl: z.string().optional(),
 	gitlabUrl: z.string().optional(),
+	/** Factory review/CI/merge provider. Public hosts and existing URL fields auto-detect. */
+	gitProvider: GitProviderConfigSchema.optional(),
 
 	// Linear configuration (optional — repos may operate without Linear, e.g. via Slack or GitHub)
 	linearWorkspaceId: z.string().optional(),

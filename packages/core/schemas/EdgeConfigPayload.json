@@ -26,6 +26,51 @@
 					"gitlabUrl": {
 						"type": "string"
 					},
+					"gitProvider": {
+						"oneOf": [
+							{
+								"type": "object",
+								"properties": {
+									"type": {
+										"type": "string",
+										"enum": ["github", "gitlab"]
+									}
+								},
+								"required": ["type"],
+								"additionalProperties": false
+							},
+							{
+								"type": "object",
+								"properties": {
+									"type": {
+										"type": "string",
+										"const": "custom"
+									},
+									"command": {
+										"type": "string",
+										"minLength": 1
+									},
+									"args": {
+										"default": [],
+										"type": "array",
+										"items": {
+											"type": "string"
+										}
+									},
+									"instructions": {
+										"type": "string",
+										"maxLength": 10000
+									},
+									"repositoryUrl": {
+										"type": "string",
+										"format": "uri"
+									}
+								},
+								"required": ["type", "command", "args", "repositoryUrl"],
+								"additionalProperties": false
+							}
+						]
+					},
 					"linearWorkspaceId": {
 						"type": "string"
 					},

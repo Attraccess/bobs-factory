@@ -6,6 +6,32 @@ import {
 } from "../src/factory/web/review-context.js";
 
 const url = "https://github.com/owner/repo/pull/42";
+it("offers GitLab subgroup and enterprise GitHub review links and checkout commands", () => {
+	const gitlab = reviewContext({
+		outputs: {
+			"draft-pr": {
+				url: "https://gitlab.example/group/subgroup/repo/-/merge_requests/17",
+				branch: "feature/change",
+			},
+		},
+	});
+	expect(gitlab.pr).toEqual({
+		url: "https://gitlab.example/group/subgroup/repo/-/merge_requests/17",
+		label: "MR !17",
+	});
+	expect(gitlab.branchUrl).toBe(
+		"https://gitlab.example/group/subgroup/repo/-/tree/feature%2Fchange",
+	);
+	expect(gitlab.commands[0]?.command).toBe(
+		"glab mr checkout 17 --repo 'https://gitlab.example/group/subgroup/repo'",
+	);
+	const enterprise = reviewContext({
+		reviewGate: { url: "https://github.example/team/repo/pull/4" },
+	});
+	expect(enterprise.commands[0]?.command).toBe(
+		"gh pr checkout 4 --repo 'https://github.example/team/repo'",
+	);
+});
 const ticketReference = {
 	provider: "native",
 	platform: "linear",
