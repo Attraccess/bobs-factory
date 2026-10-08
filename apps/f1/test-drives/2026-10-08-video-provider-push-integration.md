@@ -81,3 +81,23 @@ or user browser was changed.
 The inherited `http_ece` license has a trailing blank line flagged by
 `git diff --check`; its verified upstream bytes and pinned hash are preserved.
 The remaining integration diff passes the whitespace check.
+
+## Final base integration
+
+Main advanced again to `236afd2a` while GitHub was processing the push of signed
+merge commit `149e373d`. The incoming GitLab merged-results fix and both
+changelog entries are retained. It recognizes a temporary pipeline commit only
+when its parents identify the current source and target revisions.
+
+The integrated simulated-agent replay was adapted to this pipeline shape.
+Current merged-results evidence passed through the video workflow; a stale
+target stayed pending. Draft status, required reviewer approval, accepted
+provider, video provenance and recovery checks remained enforced. Provider and
+readiness tests were rerun for this delta; the commit hook rebuilt and type
+checked the final candidate. Earlier browser/application evidence remains
+applicable because their code did not change in this second integration.
+
+The final replay and test logs use the `ci-video-provider-merged-results-`
+prefix. The source-mode fixture and saved JSON receipts use the
+`ci-provider-video-` prefix in the evidence directory. This remains scripted
+GitLab evidence, without live forge API or real-agent claims.
