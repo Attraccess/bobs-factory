@@ -67,6 +67,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Restore binary builds after Web Push integration by including the verified upstream `http_ece` license notice. ([#47](https://github.com/Attraccess/bobs-factory/pull/47))
+
 - Publish and review Factory runs through the selected Git provider instead of assuming GitHub. Support GitLab and self-managed hosts, expose a custom adapter contract for other forges, and retain provider selection, completed implementation and approved revisions through retries and merge recovery. ([#46](https://github.com/Attraccess/bobs-factory/pull/46))
 
 - Save instance concurrency through public proxies without a false PWA update loop, and report blocked or unverified responses as recoverable connection errors. ([#45](https://github.com/Attraccess/bobs-factory/pull/45))
