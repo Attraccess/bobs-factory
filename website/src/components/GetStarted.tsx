@@ -1,65 +1,47 @@
-import { motion, useInView } from "motion/react";
-import { useEffect, useRef, useState } from "react";
 import { Bob } from "./Bob";
 import { CopyCommand } from "./CopyCommand";
 import { Reveal, SectionTitle } from "./ui";
 
 export const REPO = "https://github.com/jappyjan/bobs-factory";
+export const CLONE_COMMAND = `git clone ${REPO}.git`;
 
-const lines = [
-	{ cmd: "# Download a verified macOS or Linux binary release" },
-	{ cmd: "./install-binary.sh ARCHIVE.tar.gz ARCHIVE.manifest.json ~/.local" },
-	{
-		cmd: "bobs-factory --repo ~/code/pancake-palace --agent claude",
-		out: "Bob's Factory: http://127.0.0.1:3457\nRepository: ~/code/pancake-palace\nState: ~/.bobs-factory",
-	},
+const setupCommands = `# Sign in to GitHub and your coding agent
+gh auth login
+codex login
+
+# Clone and install Bob's Factory
+${CLONE_COMMAND}
+cd bobs-factory
+pnpm install --frozen-lockfile
+
+# Replace this path with your existing project
+pnpm factory --repo ~/code/my-project --agent codex`;
+
+const enrollmentCommand = "bun run scripts/factory.ts factory-auth";
+
+const tools = [
+	{ name: "Git", href: "https://git-scm.com/downloads" },
+	{ name: "Node 22+", href: "https://nodejs.org/en/download" },
+	{ name: "pnpm 10.33.1", href: "https://pnpm.io/installation" },
+	{ name: "Bun 1.4.2", href: "https://bun.sh/docs/installation" },
+	{ name: "GitHub CLI", href: "https://cli.github.com/" },
+	{ name: "Codex CLI", href: "https://developers.openai.com/codex/cli/" },
 ];
 
 function Terminal() {
-	const ref = useRef<HTMLDivElement>(null);
-	const inView = useInView(ref, { once: true, margin: "-120px" });
-	const [typed, setTyped] = useState(0);
-	const total = lines.reduce((sum, line) => sum + line.cmd.length, 0);
-	useEffect(() => {
-		if (!inView || typed >= total) return;
-		const timer = setTimeout(() => setTyped((value) => value + 2), 22);
-		return () => clearTimeout(timer);
-	}, [inView, typed, total]);
-	let budget = typed;
 	return (
-		<div
-			ref={ref}
-			className="rounded-[26px] border border-white/10 bg-night p-6 font-mono text-[13px] leading-relaxed shadow-[0_40px_90px_-30px_#2b2346aa] sm:text-sm"
-		>
-			<div className="mb-5 flex gap-1.5">
+		<div className="rounded-[26px] border border-white/10 bg-night p-6 font-mono text-[13px] leading-relaxed shadow-[0_40px_90px_-30px_#2b2346aa] sm:text-sm">
+			<div aria-hidden className="mb-5 flex gap-1.5">
 				<span className="size-3 rounded-full bg-[#ff5d73]" />
 				<span className="size-3 rounded-full bg-[#ffd23f]" />
 				<span className="size-3 rounded-full bg-[#3ddc97]" />
 			</div>
-			{lines.map((line, index) => {
-				const shown = line.cmd.slice(0, Math.max(0, budget));
-				const done = budget >= line.cmd.length;
-				budget -= line.cmd.length;
-				if (!shown) return null;
-				return (
-					<div key={index} className="mb-3">
-						<div className="break-all text-white">
-							<span className="text-r4">❯ </span>
-							{shown}
-							{!done && <span className="blink-caret" />}
-						</div>
-						{done && line.out && (
-							<motion.pre
-								initial={{ opacity: 0 }}
-								animate={{ opacity: 1 }}
-								className="whitespace-pre-wrap text-white/50"
-							>
-								{line.out}
-							</motion.pre>
-						)}
-					</div>
-				);
-			})}
+			<pre className="whitespace-pre-wrap text-white [overflow-wrap:anywhere]">
+				<code>{setupCommands}</code>
+			</pre>
+			<div className="mt-6 flex justify-end">
+				<CopyCommand command={setupCommands} label="Copy setup commands" dark />
+			</div>
 		</div>
 	);
 }
@@ -82,13 +64,59 @@ export function GetStarted() {
 							</>
 						}
 					>
-						Install a verified binary for macOS or Linux. You'll need Git, the
-						GitHub CLI and an authenticated agent CLI. Your repository needs an{" "}
-						<code className="font-mono text-base">origin</code> you can push to.
-						The factory bundles its runtime. Then open the dashboard and tell
-						Bob what to build. Binary releases are being validated; use the docs
-						for current availability.
+						Run Bob from a checkout on macOS or Linux. Binary releases are still
+						being validated; the steps here work today.
 					</SectionTitle>
+					<ol className="mt-8 space-y-6 text-base leading-relaxed text-ink-2">
+						<li>
+							<h3 className="font-bold text-ink">1. Prepare your tools</h3>
+							<p className="mt-1">
+								Install{" "}
+								{tools.map((tool, index) => (
+									<span key={tool.name}>
+										{index > 0 && (index === tools.length - 1 ? " and " : ", ")}
+										<a
+											href={tool.href}
+											className="underline underline-offset-4"
+										>
+											{tool.name}
+										</a>
+									</span>
+								))}
+								. The commands use Codex; another prepared agent can be selected
+								with <code>--agent</code>.
+							</p>
+						</li>
+						<li>
+							<h3 className="font-bold text-ink">
+								2. Clone, install and start
+							</h3>
+							<p className="mt-1">
+								Run the commands in order. Replace{" "}
+								<code>~/code/my-project</code> with your project's existing Git
+								checkout. It needs a checked-out branch and an{" "}
+								<code>origin</code> you can push to. Leave Bob running in this
+								terminal.
+							</p>
+						</li>
+						<li>
+							<h3 className="font-bold text-ink">
+								3. Open and unlock the dashboard
+							</h3>
+							<p className="mt-1">
+								Open{" "}
+								<a
+									href="http://localhost:3457"
+									className="underline underline-offset-4"
+								>
+									localhost:3457
+								</a>
+								. Generate a setup code in a second terminal, enter it in the
+								setup screen and create your passkey. Then select a workflow and
+								tell Bob what to build.
+							</p>
+						</li>
+					</ol>
 					<Reveal delay={0.1} className="mt-8 flex flex-wrap gap-3">
 						<a
 							href={REPO}
@@ -104,15 +132,30 @@ export function GetStarted() {
 						</a>
 					</Reveal>
 				</div>
-				<Reveal delay={0.15} className="relative min-w-0">
+				<div className="relative min-w-0">
 					<div className="absolute -right-2 -top-[92px] z-10">
 						<Bob mood="happy" size={96} />
 					</div>
 					<Terminal />
-					<div className="mt-4 flex justify-center">
-						<CopyCommand command="bobs-factory --repo . --agent codex" />
+					<div className="mt-6 rounded-2xl border border-line bg-white/70 p-5">
+						<h3 className="mb-3 font-bold text-ink">In a second terminal</h3>
+						<p className="mb-3 text-sm leading-relaxed text-ink-2">
+							From the same <code>bobs-factory</code> checkout, while Bob is
+							running:
+						</p>
+						<CopyCommand command={enrollmentCommand} />
+						<p className="mt-3 text-sm leading-relaxed text-ink-2">
+							Keep the code private. It expires in ten minutes. See{" "}
+							<a
+								href={`${REPO}/blob/main/docs/FACTORY.md#passkey-access-and-first-setup`}
+								className="underline underline-offset-4"
+							>
+								passkey setup and recovery
+							</a>
+							.
+						</p>
 					</div>
-				</Reveal>
+				</div>
 			</div>
 		</section>
 	);

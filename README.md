@@ -75,12 +75,31 @@ There are no old command aliases or implicit old-home fallback.
 
 ## Develop from a checkout
 
+On macOS or Linux, prepare Git, Node 22+, pnpm 10.33.1, Bun 1.4.2, the GitHub
+CLI and your selected coding-agent CLI. This example uses Codex. Authenticate
+your tools, then clone and start Bob from its own checkout:
+
 ```sh
-git clone https://github.com/jappyjan/bobs-factory
+gh auth login
+codex login
+git clone https://github.com/jappyjan/bobs-factory.git
 cd bobs-factory
 pnpm install --frozen-lockfile
 pnpm factory --repo ~/code/my-project --agent codex
 ```
+
+Replace `~/code/my-project` with your existing Git project, with a checked-out
+branch and a writable `origin`. Leave the server running. In a second terminal,
+from the same Bob’s Factory checkout, generate a passkey setup code:
+
+```sh
+bun run scripts/factory.ts factory-auth
+```
+
+Open http://localhost:3457, enter the single-use code and create a passkey. Keep
+the code private; it expires in ten minutes. Then select a workflow and start
+a run. See [passkey setup and recovery](docs/FACTORY.md#passkey-access-and-first-setup)
+for other state directories and remote access.
 
 Development/builds use the repository pnpm version and Bun 1.4.2. See
 [distribution tooling](docs/distribution/README.md) for build, validation,
