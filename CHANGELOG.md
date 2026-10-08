@@ -65,6 +65,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Publish and review Factory runs through the selected Git provider instead of assuming GitHub. Support GitLab and self-managed hosts, expose a custom adapter contract for other forges, and retain provider selection, completed implementation and approved revisions through retries and merge recovery. ([#46](https://github.com/Attraccess/bobs-factory/pull/46))
+
 - Save instance concurrency through public proxies without a false PWA update loop, and report blocked or unverified responses as recoverable connection errors. ([#45](https://github.com/Attraccess/bobs-factory/pull/45))
 
 - Reconcile execution profiles with fresh-input behavior and current review-guide requirements, cover the prepared Claude executable in cross-platform runner tests, and check background feedback delivery without a fragile timing limit. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))

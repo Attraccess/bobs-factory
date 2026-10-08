@@ -1,6 +1,7 @@
 # Factory Git provider publication and recovery
 
 **Date:** 2026-10-08
+**PR:** [#46](https://github.com/Attraccess/bobs-factory/pull/46)
 **Candidate:** `fix/provider-neutral-factory`, based on
 `eebe4d14897a2654784b16847ca8a64e11f2d129`, with the provider-interface working diff.
 **Goal:** Validate GitLab and custom-adapter Factory delivery without GitHub CLI,
