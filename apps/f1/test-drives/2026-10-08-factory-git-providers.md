@@ -62,7 +62,7 @@ PASS GitLab recovery: deleted worktree, approved SHA, retained history, provider
 
 Local driver, log and command/run receipts are in
 `node_modules/.cache/f1-provider-drive.ts`, `f1-provider-drive.log` and
-`f1-provider-receipt.json`. The receipt reports `results: passed` and run IDs
+`f1-provider-receipt.json`. The first drive reported `results: passed` and run IDs
 `manual-c8b8f74a-be00-4732-82e8-0343b927f0e0`,
 `manual-0246c0ff-08d2-4423-84f6-e88b8724577f`, `session-1` and `merge-recovery`.
 The temporary fixture root was removed after shutdown.
@@ -73,6 +73,21 @@ Worker tests passed 1,521 with one existing skip; execution-profile tests passed
 tests additionally cover comment pagination, unavailable approvals, revision/CI
 mismatches, merge blockers, fork/cross-repository rejection, malformed custom
 receipts and merge recovery at a different SHA.
+
+## Integration with current main
+
+Main advanced to `b10a289f` (opt-in Web Push) before publication finished. Both
+capability-reference conflicts were resolved by retaining provider guidance and
+the incoming notification contract, including the complete prompt assertion.
+Incoming EdgeWorker push setup/shutdown hooks remained intact.
+
+On the integrated candidate, frozen installation and `pnpm audit` passed with
+no known vulnerabilities. The worker suite passed 1,547 tests with one existing
+skip, again excluding the native execution-profile file covered above. The same
+F1 drive passed all four scenarios after integration. Additional receipts are
+`node_modules/.cache/provider-worker-merge.log`, `f1-provider-drive-merge.log`
+and `f1-provider-merge-receipt.json`. Build and typecheck were required again by
+the merge commit hook.
 
 ## Limits
 

@@ -213,7 +213,8 @@ async function refreshFactoryData() {
 		}),
 	]);
 	// Restored routes must validate their current run/gate before any actions are enabled.
-	const id = /^#\/runs\/([^/]+)$/.exec(location.hash)?.[1];
+	const refreshedRoute = location.hash;
+	const id = /^#\/runs\/([^/]+)(?:\/review)?$/.exec(refreshedRoute)?.[1];
 	if (id)
 		await client
 			.fetchQuery({
@@ -223,6 +224,7 @@ async function refreshFactoryData() {
 			})
 			.catch((error) => {
 				if (error.message !== "Run not found") throw error;
+				client.setQueryData(["run", decodeURIComponent(id)], null);
 			});
 	await client.invalidateQueries(
 		{
@@ -231,6 +233,7 @@ async function refreshFactoryData() {
 		},
 		{ throwOnError: true },
 	);
+	if (location.hash !== refreshedRoute) return refreshFactoryData();
 	authoritativeReady();
 }
 export function useConfig() {
