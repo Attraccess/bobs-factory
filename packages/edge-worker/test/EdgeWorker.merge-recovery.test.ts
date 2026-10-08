@@ -74,6 +74,52 @@ async function fixture() {
 }
 
 it.each([
+	"approved",
+	"different",
+])("recovers GitLab merge evidence only at the approved revision (%s)", async (head) => {
+	const { runtime, run } = await fixture();
+	run.gitProvider = {
+		type: "gitlab",
+		repositoryUrl: "https://gitlab.example/team/repo",
+	};
+	run.outputs["draft-pr"] = {
+		url: "https://gitlab.example/team/repo/-/merge_requests/7",
+	};
+	const command = vi
+		.spyOn(tools, "executeCommand")
+		.mockImplementation(async (_ctx, exe, args) => {
+			expect(exe).toBe("glab");
+			expect(args[1]).toBe("projects/team%2Frepo/merge_requests/7");
+			expect(args).toContain("gitlab.example");
+			return JSON.stringify({
+				web_url: "https://gitlab.example/team/repo/-/merge_requests/7",
+				iid: 7,
+				title: "Change",
+				description: "",
+				source_branch: "feature",
+				target_branch: "main",
+				sha: head,
+				state: "merged",
+				draft: false,
+				source_project_id: 1,
+				target_project_id: 1,
+			});
+		});
+	run.status = "running";
+	await runtime.launch(run);
+	expect(command).toHaveBeenCalledOnce();
+	expect(run.status).toBe(head === "approved" ? "completed" : "failed");
+	if (head === "approved")
+		expect(run.outputs.merge).toEqual({
+			merged: true,
+			headSha: "approved",
+			url: "https://gitlab.example/team/repo/-/merge_requests/7",
+		});
+	else expect(run.outputs.merge).toBeUndefined();
+	await runtime.shutdown();
+});
+
+it.each([
 	["MERGED", "approved", "completed"],
 	["MERGED", "another-revision", "failed"],
 	["OPEN", "approved", "failed"],

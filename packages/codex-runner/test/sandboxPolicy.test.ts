@@ -50,6 +50,74 @@ describe("resolveCodexSandbox", () => {
 		});
 	});
 
+	it("uses explicit metadata grants for autonomous Git in workspace-write mode", () => {
+		expect(
+			resolveCodexSandbox({
+				mode: "workspace-write",
+				workingDirectory: "/worktrees/issue",
+				writableRoots: ["/repo"],
+				gitMetadataRoots: ["/repo/.git/worktrees/issue", "/repo/.git"],
+				networkAccess: true,
+			}),
+		).toEqual({
+			kind: "profile",
+			profileId: BOBS_FACTORY_SANDBOX_PROFILE_ID,
+			extends: ":workspace",
+			workspaceRoots: ["/repo"],
+			networkAccess: true,
+			filesystem: {
+				":root": "read",
+				":minimal": "read",
+				":workspace_roots": {
+					".": "write",
+					".git": "read",
+					".codex": "read",
+					".agents": "read",
+					".aws": "read",
+				},
+				":tmpdir": "write",
+				":slash_tmp": "write",
+				"/repo": "write",
+				"/repo/.git/worktrees/issue": "write",
+				"/repo/.git": "write",
+			},
+		});
+	});
+
+	it("keeps reads restricted when adding Git metadata writes to the egress sandbox", () => {
+		const sandbox = resolveCodexSandbox({
+			mode: "workspace-write",
+			workingDirectory: "/worktrees/issue",
+			writableRoots: [],
+			gitMetadataRoots: ["/repo/.git/worktrees/issue", "/repo/.git"],
+			networkAccess: false,
+			sandboxSettings: { allowRead: ["/repo"] },
+		});
+		expect(sandbox).toEqual({
+			kind: "profile",
+			profileId: BOBS_FACTORY_SANDBOX_PROFILE_ID,
+			extends: ":workspace",
+			workspaceRoots: [],
+			networkAccess: false,
+			filesystem: {
+				":root": "deny",
+				":minimal": "read",
+				":workspace_roots": {
+					".": "write",
+					".git": "read",
+					".codex": "read",
+					".agents": "read",
+					".aws": "read",
+				},
+				":tmpdir": "write",
+				":slash_tmp": "write",
+				"/repo/.git/worktrees/issue": "write",
+				"/repo/.git": "write",
+				"/repo": "read",
+			},
+		});
+	});
+
 	it.each([
 		"read-only",
 		"danger-full-access",
@@ -59,6 +127,7 @@ describe("resolveCodexSandbox", () => {
 				mode,
 				workingDirectory: "/repo/a",
 				writableRoots: ["/repo/out"],
+				gitMetadataRoots: ["/repo/a/.git"],
 				networkAccess: true,
 				sandboxSettings: { allowRead: ["/repo/a"], allowWrite: ["/repo/out"] },
 			}),

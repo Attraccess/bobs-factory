@@ -7,6 +7,7 @@ import type {
 	CodexConfigValue,
 	CodexRunnerConfig,
 } from "../types.js";
+import { resolveGitMetadataDirectories } from "./gitMetadata.js";
 import { buildCodexMcpServersConfig } from "./mcpConfigTranslator.js";
 import { resolveCodexSandbox } from "./sandboxPolicy.js";
 
@@ -38,13 +39,34 @@ export class CodexConfigBuilder {
 		const webSearchMode =
 			this.config.webSearchMode ??
 			(this.config.includeWebSearch ? "live" : undefined);
+		const mode = this.config.sandbox || "workspace-write";
+		const writableRoots = this.getAdditionalDirectories();
+		const gitMetadataRoots =
+			mode === "workspace-write"
+				? resolveGitMetadataDirectories(
+						[
+							...(this.config.workingDirectory
+								? [this.config.workingDirectory]
+								: []),
+							...(this.config.additionalDirectories ?? []),
+							...writableRoots,
+						],
+						this.config.childEnvironment
+							? {
+									...this.config.childEnvironment,
+									...this.config.additionalEnv,
+								}
+							: undefined,
+					)
+				: [];
 
 		return {
 			model: this.config.model,
 			sandbox: resolveCodexSandbox({
-				mode: this.config.sandbox || "workspace-write",
+				mode,
 				workingDirectory: this.config.workingDirectory,
-				writableRoots: this.getAdditionalDirectories(),
+				writableRoots,
+				gitMetadataRoots,
 				networkAccess: this.resolveNetworkAccess(),
 				sandboxSettings: this.config.sandboxSettings,
 			}),

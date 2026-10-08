@@ -333,6 +333,12 @@ export class AppServerCodexBackend
 		if (sandbox.kind === "profile") {
 			base.permissions = {
 				[sandbox.profileId]: {
+					...(sandbox.extends ? { extends: sandbox.extends } : {}),
+					...(sandbox.workspaceRoots?.length && {
+						workspace_roots: Object.fromEntries(
+							sandbox.workspaceRoots.map((root) => [root, true]),
+						),
+					}),
 					filesystem: { ...sandbox.filesystem },
 					network: { enabled: sandbox.networkAccess },
 				},

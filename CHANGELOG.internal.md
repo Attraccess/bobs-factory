@@ -11,6 +11,18 @@ This changelog documents internal development changes, refactors, tooling update
 ### Fixed
 
 - Fix video evidence CI validation and base integration by formatting styles, installing media test tools and preserving both video and refinement recommendation guidance in the full prompt. Keep video-contract validation enforced through question-result normalization and preserve video finalization alongside feedback and review recovery. Integrate passkey access, renamed Bob’s Factory packages, compact review history and CI revision recovery without weakening video media restrictions. Keep context snapshot isolation checks compatible with both source and binary launch arguments. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+
+- Integrate Web Push with independent execution profiles, retaining intentional-stop metadata, protected device APIs and both capability descriptions. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
+- Reconcile Web Push with the Bob’s Factory fork and current CI recovery, using the renamed home and environment settings while retaining subscriptions, passkey protection and transition bookkeeping. Preserve the original decision identity through question rephrasing and nested workflow restart. Make context snapshot checks work with packaged launch arguments and allow the full-history fixture to finish under suite load. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
+- Integrate Web Push with Factory passkey authentication, protecting device management and refreshed notification destinations after sign-in, while retaining opt-out and deferred device cleanup across session loss. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
+- Integrate Web Push with Codex startup checkpoint recovery while retaining both user-facing fix entries. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
+- Integrate Web Push with the current question guidance, preserving both changelog entries and the saved review-fix instruction path. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+- Integrate Web Push with the current Factory base, retaining configured public/trusted proxy access, refinement guidance and both PWA regression suites. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+- Update the routing prompt test fixture for the accepted Web Push capability description, retaining complete prompt assertions and restoring CI. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Integrate execution profiles with the Bob’s Factory fork, passkey Settings, compact context and PR revision recovery; retain runner artifact restoration and isolated Cursor workers in binaries. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
 - Initialize reflection support before bundled certificate imports; verify renamed passkey commands, protected runtime recovery and packaged macOS startup while integrating main. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
@@ -26,6 +38,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Added
 
+- Record authenticated HTTPS Web Push QA through an isolated `zrok2` tunnel, including proxy guards, device controls, refreshed notification destinations and loss of access; retain explicit native-delivery and production-deployment limitations. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Add a reproducible mocked F1 follow-up for refinement recommendation submission and existing-session replies, retaining the disputed native-only QA coverage as an explicit limitation. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))

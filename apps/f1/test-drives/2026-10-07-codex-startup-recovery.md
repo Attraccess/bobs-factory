@@ -1,7 +1,9 @@
 # Codex startup checkpoint recovery
 
-**Date:** 2026-10-07  
-**Base commit:** `b317ea9e`, with the startup/checkpoint fix in the working tree  
+**Date:** 2026-10-07
+
+**Base commit:** `b317ea9e`, with the startup/checkpoint fix in the working tree
+
 **Behavior:** failed startup must not invent a resumable Codex conversation;
 explicit Retry can remove a proven legacy startup checkpoint while retaining
 completed workflow work and established conversations.

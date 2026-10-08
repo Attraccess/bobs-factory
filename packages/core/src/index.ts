@@ -304,6 +304,10 @@ export {
 } from "./capacity-state.js";
 export type { JsonObject } from "./config-schemas.js";
 export {
+	type GitProviderConfig,
+	GitProviderConfigSchema,
+} from "./config-schemas.js";
+export {
 	executionEnvironment,
 	executionScope,
 	spawnExecution,

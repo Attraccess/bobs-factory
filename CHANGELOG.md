@@ -15,6 +15,8 @@ All notable changes to this project will be documented in this file.
 
 - Capture authentic feature demonstrations for Factory review guides and the inspector, with lazy playback, transcripts, validated revision evidence and safe seeking. Changed QA scenarios require fresh recordings, and expired recordings from every capture round are cleaned up across restarts. Keep optional recording failures visible and preserve screenshots and explicit human approval. ([Taskbot #31](https://taskbot.apps.janjaap.de/p/bobs-factory/t/31), [#33](https://github.com/Attraccess/bobs-factory/pull/33))
 
+- Opt into per-device Web Push for new questions, review revisions, runs needing help and successful completions. Manage devices and send a real push test; preserve subscriptions across restart without replaying old attention, wait for scheduled and background work before completion alerts, and refresh protected run links before actions. ([Taskbot #69](https://taskbot.apps.janjaap.de/p/bobs-factory/t/69), [#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
 - Select execution identities and tool profiles independently from dedicated Settings pages, separate from workflow Recipes, machine capacity and run titles. Preserve the active Settings page and unsaved capacity/title settings through app updates. Configure repository/factory defaults, preview selected accounts and MCP tools, and retain accepted bindings through workflow roles and recovery. Private runner environments use explicit credential references; eligible Claude/Codex Share profiles can reuse a selected native login. Preserve effective shared Git attribution/signing, validate the selected model before setup, clean interrupted runner artifacts, and reject undeclared native Codex notification commands before setup. Validate the actual prepared agent tools in binary installations and retain Cursor SDK/Node paths in private environments. ([Taskbot #57](https://taskbot.apps.janjaap.de/p/bobs-factory/t/57), [#30](https://github.com/Attraccess/bobs-factory/pull/30))
 - Refinement questions now offer generated recommendations selected by default, with a separate custom answer field and explicit submission before work resumes. ([Taskbot #83](https://taskbot.apps.janjaap.de/p/bobs-factory/t/83))
 - Review Guide headers now link to the PR, branch and originating ticket, with simple GitHub CLI and Git checkout commands that copy on click, visible copy confirmation and manual copying when clipboard access fails. ([#28](https://github.com/Attraccess/bobs-factory/pull/28))
@@ -67,8 +69,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Reconcile feature-video evidence with the current guide layout, form resets and independent execution profiles, preserving capability guidance, video styling and runtime validation. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Reconcile feature-video evidence with the current guide layout, form resets, independent execution profiles, Web Push and Git provider support, preserving capability guidance, video styling and runtime validation. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 - Reject malformed caption timestamps, reversed intervals and out-of-order cues before accepting recorded audio evidence. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+
+- Allow autonomous Codex runs to fetch and commit in Git worktrees by granting writes to their linked and shared Git metadata, while retaining protected agent settings, filesystem read restrictions, and explicit read-only modes. ([#48](https://github.com/Attraccess/bobs-factory/pull/48))
+
+- Restore binary builds after Web Push integration by including the verified upstream `http_ece` license notice. ([#47](https://github.com/Attraccess/bobs-factory/pull/47))
+
+- Publish and review Factory runs through the selected Git provider instead of assuming GitHub. Support GitLab and self-managed hosts, expose a custom adapter contract for other forges, and retain provider selection, completed implementation and approved revisions through retries and merge recovery. ([#46](https://github.com/Attraccess/bobs-factory/pull/46))
+
 - Save instance concurrency through public proxies without a false PWA update loop, and report blocked or unverified responses as recoverable connection errors. ([#45](https://github.com/Attraccess/bobs-factory/pull/45))
 
 - Reconcile execution profiles with fresh-input behavior and current review-guide requirements, cover the prepared Claude executable in cross-platform runner tests, and check background feedback delivery without a fragile timing limit. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
@@ -77,6 +86,7 @@ All notable changes to this project will be documented in this file.
 
 - Preserve independent composer execution choices across reloads and updates, and avoid diagnostic DNS stalls when previewing Claude execution profiles. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 - Update the routing prompt test to cover the current review-guide requirements and restore CI validation ([#44](https://github.com/Attraccess/bobs-factory/pull/44)).
+- Restore notification device removal and deferred cleanup after reconnect, use the served app icon for notification images, and avoid duplicate alerts when a pending question is rephrased. Discard unsent device-label edits when Notifications closes, matching the current form behavior. Retain Web Push guidance alongside current review-guide requirements and independent execution profiles after base synchronization. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Recover PR/worktree revision mismatches through the configured CI fixer; preserve both revisions and wait for assistance when synchronization makes no progress, keeping old CI from approving newer work. ([#43](https://github.com/Attraccess/bobs-factory/pull/43))
 
 - Reconcile compact Factory review history with the binary fork, retaining original evidence, explicit answers and explanation revision records across restart. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
@@ -106,7 +116,6 @@ All notable changes to this project will be documented in this file.
 - Retry Codex startup failures without saving nonexistent conversations, and recover older invalid capture checkpoints while preserving completed work, evidence and review allowances. ([#40](https://github.com/Attraccess/bobs-factory/pull/40))
 
 - Make Bob’s questions, progress messages and review summaries easier to follow: lead with the decision or outcome, explain choices in everyday words, and keep internal test IDs in technical details. Saved review-fix workflows now receive the same question guidance as clarification. ([#39](https://github.com/Attraccess/bobs-factory/pull/39))
-
 - Resume older paused runs with the exact PR comments needing assessment, instead of asking operators to restore missing internal feedback context. ([#38](https://github.com/Attraccess/bobs-factory/pull/38))
 - Honor explicit decisions to ignore or resume PR comment providers across edits and restarts, correct missed assessments within the existing step, and pause CI or code/visual review fixes that need assistance before exhausting review attempts. Unresolved findings remain blocking, and changed code still receives fresh review. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
 - Preserve pending QA question drafts across restarts when questions and recommendations are unchanged; changed assistance still requires reviewing the new batch. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))

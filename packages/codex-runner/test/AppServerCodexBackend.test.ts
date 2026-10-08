@@ -456,25 +456,32 @@ describe("AppServerCodexBackend", () => {
 		expect(params.config?.sandbox_workspace_write).toBeUndefined();
 	});
 
-	it("serializes a profile sandbox to thread/start permissions + config.permissions (not sandbox)", async () => {
+	it.each([
+		"thread/start",
+		"thread/resume",
+	])("serializes a profile sandbox to %s permissions + config.permissions (not sandbox)", async (method) => {
 		const { backend, client } = makeBackend();
 		await backend.open({
 			...baseConfig,
 			codexPath: "/bin/true",
+			...(method === "thread/resume" ? { resumeSessionId: "saved" } : {}),
 			sandbox: {
 				kind: "profile",
 				profileId: "cyrus-sandbox",
+				extends: ":workspace",
+				workspaceRoots: ["/repo/extra"],
 				networkAccess: false,
 				filesystem: {
 					":minimal": "read",
-					":workspace_roots": "write",
+					":workspace_roots": { ".": "write", ".codex": "read" },
+					"/repo/.git": "write",
 					":tmpdir": "write",
 					":slash_tmp": "write",
 					"/usr/lib": "read",
 				},
 			},
 		});
-		const params = client.lastRequest("thread/start")?.params as {
+		const params = client.lastRequest(method)?.params as {
 			sandbox?: string;
 			permissions?: string;
 			config?: Record<string, unknown>;
@@ -485,9 +492,12 @@ describe("AppServerCodexBackend", () => {
 		expect(params.config?.sandbox_workspace_write).toBeUndefined();
 		expect(params.config?.permissions).toEqual({
 			"cyrus-sandbox": {
+				extends: ":workspace",
+				workspace_roots: { "/repo/extra": true },
 				filesystem: {
 					":minimal": "read",
-					":workspace_roots": "write",
+					":workspace_roots": { ".": "write", ".codex": "read" },
+					"/repo/.git": "write",
 					":tmpdir": "write",
 					":slash_tmp": "write",
 					"/usr/lib": "read",
