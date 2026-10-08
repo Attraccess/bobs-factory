@@ -13,8 +13,9 @@ Install a verified macOS/Linux binary and prepare Git, `gh` and your selected
 agent CLI. Authenticate the agent and GitHub CLI. The repository needs a checked-out
 base branch and writable origin for delivery. The factory needs no separate Node,
 npm or Bun. See [binary distribution](distribution/README.md) for availability.
-Until a verified release is published, follow the complete
-[checkout setup](../README.md#develop-from-a-checkout).
+Verified preview binaries are available from native CI. Follow the complete
+[binary installation](../README.md#install-and-start) for downloads, verification,
+PATH setup and first-passkey enrollment.
 
 ```sh
 bobs-factory --repo /absolute/path/to/repo --agent codex --model gpt-6.1-sol

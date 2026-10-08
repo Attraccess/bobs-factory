@@ -1,5 +1,12 @@
 # Binary distribution
 
+For installation, use the [prebuilt binary instructions](../../README.md#install-and-start).
+Preview `0.2.73` from commit `beb6ed76305946fcfab38fa978cb7e3b4e83f6dc` passed
+native installer/runtime smoke on all four targets in
+[CI run 37810552203](https://github.com/jappyjan/bobs-factory/actions/runs/37810552203).
+These are downloadable Actions artifacts, requiring GitHub sign-in; stable
+release publication is pending. The build commands below are for contributors.
+
 The artifact contract is `bobs-factory-VERSION-TARGET.tar.gz` with a matching
 `.manifest.json`: schema version, product, exact version, commit, target, byte size
 and SHA-256. `build.json` inside adds tooling, executable hash and resource digest.
@@ -80,12 +87,14 @@ The archive's runtime dependency inventory excludes them.
 
 ## Installation and manual replacement
 
-Download an exact version's archive, matching manifest and `install-binary.sh`
-from the same trusted project release. The SHA-256 manifest verifies downloaded
+Download an exact version's archive and matching manifest from a trusted project
+release or successful immutable CI run. Retrieve `install-binary.sh` from the same
+source commit; the main README pins all three to the verified preview. The SHA-256
+manifest verifies downloaded
 bytes, not publisher identity; trust the release source as well. Run:
 
 ```sh
-./install-binary.sh ARCHIVE.tar.gz ARCHIVE.manifest.json ~/.local
+sh install-binary.sh ARCHIVE.tar.gz ARCHIVE.manifest.json ~/.local
 export PATH="$HOME/.local/bin:$PATH"
 bobs-factory --version
 ```
