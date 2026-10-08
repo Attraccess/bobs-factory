@@ -1,8 +1,8 @@
-# Cyrus Configuration File
+# Bob’s Factory Configuration File
 
-Cyrus stores configuration in `~/.cyrus/config.json`. This file is created automatically during initial setup and can be edited manually to customize behavior.
+Bob’s Factory stores configuration in `~/.bobs-factory/config.json`. This file is created automatically during initial setup and can be edited manually to customize behavior.
 
-Editing this manually only applies to those running the fully end-to-end self-hosted. Those who are paying for Cyrus, management of config.json is automated.
+Editing this manually only applies to those running the fully end-to-end self-hosted. Those who are paying for Bob’s Factory, management of config.json is automated.
 
 ---
 
@@ -52,19 +52,19 @@ Learn more about MCP: https://code.claude.com/docs/en/mcp
 
 ### `opencode` (object)
 
-OpenCode sessions run with Cyrus-managed inline runtime config for generated MCP servers and permission rules. By default, Cyrus otherwise inherits the parent process environment for CLI config, state, and cache paths, matching the behavior of other agent providers and allowing tools such as `gh` and `glab` to use your normal terminal authentication. You can opt into dedicated Cyrus-managed OpenCode state globally or per repository with `opencode.stateScope`.
+OpenCode sessions run with Bob’s Factory-managed inline runtime config for generated MCP servers and permission rules. By default, Bob’s Factory otherwise inherits the parent process environment for CLI config, state, and cache paths, matching the behavior of other agent providers and allowing tools such as `gh` and `glab` to use your normal terminal authentication. You can opt into dedicated Bob’s Factory-managed OpenCode state globally or per repository with `opencode.stateScope`.
 
 Use `opencode.config` when an OpenCode session needs OpenCode-native runtime configuration such as plugins, instructions, formatters, providers, themes, or other OpenCode config keys. It can be configured globally or per repository.
 
-Cyrus does not automatically import your existing global OpenCode config or plugin list into agent sessions. Copy only the OpenCode-native settings you want Cyrus sessions to use into `opencode.config`; Cyrus then merges those explicit settings with its generated MCP and permission rules.
+Bob’s Factory does not automatically import your existing global OpenCode config or plugin list into agent sessions. Copy only the OpenCode-native settings you want Bob’s Factory sessions to use into `opencode.config`; Bob’s Factory then merges those explicit settings with its generated MCP and permission rules.
 
 Use `opencode.stateScope` to control how OpenCode-launched CLI tools store config/state/cache:
 
-- `inherit` (default): do not override `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, or `OPENCODE_CONFIG_DIR`; CLI tools inherit the same storage your Cyrus process has.
-- `shared`: use one dedicated Cyrus OpenCode state root for all OpenCode sessions: `~/.cyrus/opencode-state/shared/`.
-- `repository`: use one dedicated Cyrus OpenCode state root per configured repository: `~/.cyrus/opencode-state/repositories/<repository-id>/`.
+- `inherit` (default): do not override `XDG_CONFIG_HOME`, `XDG_STATE_HOME`, `XDG_CACHE_HOME`, or `OPENCODE_CONFIG_DIR`; CLI tools inherit the same storage your Bob’s Factory process has.
+- `shared`: use one dedicated Bob’s Factory OpenCode state root for all OpenCode sessions: `~/.bobs-factory/opencode-state/shared/`.
+- `repository`: use one dedicated Bob’s Factory OpenCode state root per configured repository: `~/.bobs-factory/opencode-state/repositories/<repository-id>/`.
 
-`repository` settings override global settings. Cyrus always keeps `OPENCODE_CONFIG_CONTENT` for generated MCP and permission rules regardless of state scope.
+`repository` settings override global settings. Bob’s Factory always keeps `OPENCODE_CONFIG_CONTENT` for generated MCP and permission rules regardless of state scope.
 
 **Global OpenCode config example:**
 
@@ -110,26 +110,26 @@ Use `opencode.stateScope` to control how OpenCode-launched CLI tools store confi
 }
 ```
 
-Within the Cyrus-generated inline OpenCode config, values are merged in this order:
+Within the Bob’s Factory-generated inline OpenCode config, values are merged in this order:
 
 1. Global `opencode.config`
 2. Repository `opencode.config`
-3. Cyrus-generated MCP configuration
-4. Cyrus-generated permission configuration
+3. Bob’s Factory-generated MCP configuration
+4. Bob’s Factory-generated permission configuration
 
 Merge behavior:
 
 - Objects deep-merge.
 - Arrays replace earlier arrays instead of concatenating.
 - Repository values override global values for the same non-object key.
-- Cyrus-generated MCP servers win over user-provided MCP servers with the same name.
-- Cyrus-generated permissions replace user-provided OpenCode permissions because they are Cyrus safety controls.
+- Bob’s Factory-generated MCP servers win over user-provided MCP servers with the same name.
+- Bob’s Factory-generated permissions replace user-provided OpenCode permissions because they are Bob’s Factory safety controls.
 
-This describes Cyrus's inline config merge order, not OpenCode's complete config-loading precedence. OpenCode applies Cyrus's inline config after project config, so the managed inline config can still override OpenCode settings that were loaded earlier.
+This describes Bob’s Factory's inline config merge order, not OpenCode's complete config-loading precedence. OpenCode applies Bob’s Factory's inline config after project config, so the managed inline config can still override OpenCode settings that were loaded earlier.
 
-This explicit merge path is intentional: it keeps Cyrus-launched OpenCode sessions predictable and reviewable while still allowing opt-in OpenCode plugins, instructions, and provider/runtime settings.
+This explicit merge path is intentional: it keeps Bob’s Factory-launched OpenCode sessions predictable and reviewable while still allowing opt-in OpenCode plugins, instructions, and provider/runtime settings.
 
-For MCP servers that should work across runners, prefer `mcpConfigPath`. Cyrus reads those MCP server definitions and translates them for Claude, OpenCode, and other supported runners. Use `opencode.config` for OpenCode-native runtime config that only applies to OpenCode.
+For MCP servers that should work across runners, prefer `mcpConfigPath`. Bob’s Factory reads those MCP server definitions and translates them for Claude, OpenCode, and other supported runners. Use `opencode.config` for OpenCode-native runtime config that only applies to OpenCode.
 
 **OpenCode MCP OAuth authentication:**
 
@@ -139,9 +139,9 @@ Some OpenCode MCP servers require an interactive OAuth setup step, such as:
 opencode mcp auth sentry
 ```
 
-Cyrus leaves OpenCode's data home unchanged, so OAuth credentials created by the OpenCode CLI remain available to Cyrus-launched OpenCode sessions. The MCP server name must match between the authentication command and the Cyrus config.
+Bob’s Factory leaves OpenCode's data home unchanged, so OAuth credentials created by the OpenCode CLI remain available to Bob’s Factory-launched OpenCode sessions. The MCP server name must match between the authentication command and the Bob’s Factory config.
 
-If the MCP server is only defined in Cyrus `opencode.config` and not in your normal global OpenCode config, create a temporary OpenCode config file with the same server definition and authenticate through it:
+If the MCP server is only defined in Bob’s Factory `opencode.config` and not in your normal global OpenCode config, create a temporary OpenCode config file with the same server definition and authenticate through it:
 
 ```json
 {
@@ -162,23 +162,23 @@ Then run:
 OPENCODE_CONFIG=/path/to/opencode-auth-config.json opencode mcp auth sentry
 ```
 
-After authentication, keep the same MCP server name (`sentry` in this example) in Cyrus `opencode.config.mcp` or `mcpConfigPath`. OpenCode stores the OAuth credentials in its data home, while Cyrus supplies the runtime MCP config for agent sessions.
+After authentication, keep the same MCP server name (`sentry` in this example) in Bob’s Factory `opencode.config.mcp` or `mcpConfigPath`. OpenCode stores the OAuth credentials in its data home, while Bob’s Factory supplies the runtime MCP config for agent sessions.
 
 **Authenticating other CLI tools for OpenCode sessions:**
 
-With the default `opencode.stateScope: "inherit"`, OpenCode-launched tools use the same CLI auth storage as the Cyrus process, so authenticate them normally before starting Cyrus, for example:
+With the default `opencode.stateScope: "inherit"`, OpenCode-launched tools use the same CLI auth storage as the Bob’s Factory process, so authenticate them normally before starting Bob’s Factory, for example:
 
 ```bash
 glab auth login
 ```
 
-If you set `opencode.stateScope` to `shared` or `repository`, CLIs that store auth under XDG paths, such as `glab`, will use the dedicated Cyrus root instead. To pre-authenticate one of these tools exactly where the agent will look, run the CLI with the matching environment shape.
+If you set `opencode.stateScope` to `shared` or `repository`, CLIs that store auth under XDG paths, such as `glab`, will use the dedicated Bob’s Factory root instead. To pre-authenticate one of these tools exactly where the agent will look, run the CLI with the matching environment shape.
 
 For `shared`:
 
 ```bash
-CYRUS_HOME="${CYRUS_HOME:-$HOME/.cyrus}"
-STATE_ROOT="$CYRUS_HOME/opencode-state/shared"
+BOBS_FACTORY_HOME="${BOBS_FACTORY_HOME:-$HOME/.bobs-factory}"
+STATE_ROOT="$BOBS_FACTORY_HOME/opencode-state/shared"
 
 mkdir -p "$STATE_ROOT/opencode-config" "$STATE_ROOT/state" "$STATE_ROOT/cache" "$STATE_ROOT/config"
 
@@ -189,11 +189,11 @@ XDG_CONFIG_HOME="$STATE_ROOT/config" \
 glab auth login
 ```
 
-For `repository`, replace `shared` with `repositories/<repository-id>`, for example `~/.cyrus/opencode-state/repositories/main-app/`. Credentials written this way persist in the configured Cyrus OpenCode state root and are available to later OpenCode sessions using the same scope.
+For `repository`, replace `shared` with `repositories/<repository-id>`, for example `~/.bobs-factory/opencode-state/repositories/main-app/`. Credentials written this way persist in the configured Bob’s Factory OpenCode state root and are available to later OpenCode sessions using the same scope.
 
 ### `teamKeys` (array of strings)
 
-Routes Linear issues from specific teams to this repository. When specified, only issues from matching teams trigger Cyrus.
+Routes Linear issues from specific teams to this repository. When specified, only issues from matching teams trigger Bob’s Factory.
 
 Example: `["CEE", "FRONT", "BACK"]` - Only process issues from teams CEE, FRONT, and BACK
 
@@ -211,11 +211,18 @@ Routes Linear issues with specific labels to this repository. This is useful whe
 
 Example: `["backend", "api"]` - Only process issues that have the "backend" or "api" label
 
+A shared label selects every matching repository in every workflow. To expose a
+single `niotix` project containing multiple repositories, put `niotix` first and
+give all members the same nonempty label set, for example
+`["niotix", "niota-api", "niota-apidocs", "niotix-gitops", "nx-dev", "nx-helm", "gitops"]`.
+Each of these labels then selects the whole scope. Config remains a flat
+`repositories` array; `projectKeys` continues to mean external tracker projects.
+
 ---
 
 ## Routing Priority Order
 
-When multiple routing configurations are present, Cyrus evaluates them in the following priority order:
+When multiple routing configurations are present, Bob’s Factory evaluates them in the following priority order:
 
 1. **`routingLabels`** (highest priority) - Label-based routing
 2. **`projectKeys`** (medium priority) - Project-based routing
@@ -285,7 +292,7 @@ Note: Linear MCP tools (`mcp__linear`) are always included automatically. Slack 
 
 ## User Access Control
 
-Control which Linear users can delegate issues to Cyrus. Supports both global configuration and per-repository overrides.
+Control which Linear users can delegate issues to Bob’s Factory. Supports both global configuration and per-repository overrides.
 
 ### `userAccessControl` (object)
 
@@ -360,7 +367,7 @@ Some CLI tools need to create sockets, caches, or state outside the session
 worktree. List those directories explicitly to grant access in Claude, Codex,
 and Cursor sessions. This applies to issue and chat sessions and does not require
 enabling the network egress proxy (`sandbox.enabled`). No extra directories are
-granted by default, and Cyrus does not automatically allow any tool's directory.
+granted by default, and Bob’s Factory does not automatically allow any tool's directory.
 
 ```json
 {
@@ -373,8 +380,8 @@ granted by default, and Cyrus does not automatically allow any tool's directory.
 }
 ```
 
-`~/` expands to the Cyrus user's home directory. Absolute paths are used directly;
-relative paths resolve against the Cyrus process's working directory, not an issue
+`~/` expands to the Bob’s Factory user's home directory. Absolute paths are used directly;
+relative paths resolve against the Bob’s Factory process's working directory, not an issue
 worktree. Writable directories are also readable. Choose the narrow directory
 each tool needs rather than the entire home directory.
 
@@ -460,9 +467,9 @@ When `networkPolicy.allow` is specified (or expanded from a preset), all domains
 
 ### CA Certificate Trust
 
-The egress proxy generates a CA certificate at `~/.cyrus/certs/cyrus-egress-ca.pem` for TLS interception of domains with transform rules. This cert is stable across restarts — once trusted, it stays trusted.
+The egress proxy generates a CA certificate at `~/.bobs-factory/certs/cyrus-egress-ca.pem` for TLS interception of domains with transform rules. This cert is stable across restarts — once trusted, it stays trusted.
 
-**Automatic (per-session, when `systemWideCert: false`):** Cyrus sets the following env vars automatically for every agent session:
+**Automatic (per-session, when `systemWideCert: false`):** Bob’s Factory sets the following env vars automatically for every agent session:
 
 | Env Var | Covers |
 |---------|--------|
@@ -476,7 +483,7 @@ The egress proxy generates a CA certificate at `~/.cyrus/certs/cyrus-egress-ca.p
 | `AWS_CA_BUNDLE` | AWS CLI, boto3 |
 | `DENO_CERT` | Deno |
 
-If `NODE_EXTRA_CA_CERTS` is already set in the host environment (e.g., corporate proxy), Cyrus merges both certs into a combined bundle.
+If `NODE_EXTRA_CA_CERTS` is already set in the host environment (e.g., corporate proxy), Bob’s Factory merges both certs into a combined bundle.
 
 **Not covered by env vars (require system-wide trust):**
 
@@ -490,10 +497,10 @@ For these tools, system-wide trust is required.
 
 ```bash
 # macOS
-sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.cyrus/certs/cyrus-egress-ca.pem
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.bobs-factory/certs/cyrus-egress-ca.pem
 
 # Linux
-sudo cp ~/.cyrus/certs/cyrus-egress-ca.pem /usr/local/share/ca-certificates/cyrus-egress-ca.crt
+sudo cp ~/.bobs-factory/certs/cyrus-egress-ca.pem /usr/local/share/ca-certificates/cyrus-egress-ca.crt
 sudo update-ca-certificates
 ```
 
@@ -508,7 +515,7 @@ Then update config.json:
 }
 ```
 
-On startup, Cyrus checks whether the cert is trusted system-wide (macOS keychain or Linux CA certificates) and logs the result:
+On startup, Bob’s Factory checks whether the cert is trusted system-wide (macOS keychain or Linux CA certificates) and logs the result:
 
 ```
 🛡️  CA certificate is trusted system-wide ✓
@@ -519,7 +526,7 @@ or, if not yet trusted:
 
 ```
 [WARN] 🛡️  CA certificate is NOT trusted in the macOS System keychain. To trust (requires sudo):
-[WARN] 🛡️  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.cyrus/certs/cyrus-egress-ca.pem
+[WARN] 🛡️  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.bobs-factory/certs/cyrus-egress-ca.pem
 ```
 
 ---
@@ -558,9 +565,9 @@ Path to a script that runs for all repositories when creating new worktrees. See
 
 Controls Codex command execution for issue and chat sessions. Accepted values:
 
-- `workspace-write` (default): retain the existing sandbox and Cyrus filesystem profile when configured.
+- `workspace-write` (default): retain the existing sandbox and Bob’s Factory filesystem profile when configured.
 - `read-only`: use Codex's native read-only sandbox.
-- `danger-full-access`: use Codex's native unrestricted mode. Every command in the session can access host files and network; Cyrus filesystem grants and egress sandbox restrictions do not constrain this mode.
+- `danger-full-access`: use Codex's native unrestricted mode. Every command in the session can access host files and network; Bob’s Factory filesystem grants and egress sandbox restrictions do not constrain this mode.
 
 ```json
 {
@@ -578,7 +585,7 @@ profile and uses the corresponding native Codex mode.
 
 ## Tool Configuration Priority
 
-When determining allowed tools, Cyrus follows this priority order:
+When determining allowed tools, Bob’s Factory follows this priority order:
 
 1. Repository-specific prompt configuration (`labelPrompts.debugger.allowedTools`)
 2. Global prompt defaults (`promptDefaults.debugger.allowedTools`)
@@ -641,4 +648,4 @@ Each repository configuration includes these required fields:
 - `isActive` - Whether the repository is active
 - `linearWorkspaceId` - Linear workspace UUID (references a key in `linearWorkspaces`)
 
-These fields are managed automatically during setup. For self-hosted instances, use the `cyrus self-auth-linear` and `cyrus self-add-repo` commands.
+These fields are managed automatically during setup. For self-hosted instances, use the `bobs-factory self-auth-linear` and `bobs-factory self-add-repo` commands.

@@ -1,11 +1,70 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
 import {
 	reviewContext,
+	reviewDeliveries,
+	reviewDiffUrl,
+	reviewFileTarget,
+	reviewFileUrl,
 	shellQuote,
 } from "../src/factory/web/review-context.js";
 
 const url = "https://github.com/owner/repo/pull/42";
+it("links grouped files to their own PR using the repository-relative filename", () => {
+	const run = {
+		outputs: {
+			"draft-pr": {
+				deliveries: [
+					{
+						repositoryId: "app",
+						name: "app",
+						output: { url, headSha: "app-head" },
+					},
+					{
+						repositoryId: "api",
+						name: "api",
+						output: {
+							url: "https://gitlab.com/team/api/-/merge_requests/2",
+							headSha: "api-head",
+						},
+					},
+				],
+			},
+		},
+	};
+	expect(reviewDeliveries(run)).toHaveLength(2);
+	expect(reviewFileTarget(run, "api/shared.ts")).toEqual({
+		url: "https://gitlab.com/team/api/-/merge_requests/2",
+		path: "shared.ts",
+	});
+});
+it("offers GitLab subgroup and enterprise GitHub review links and checkout commands", () => {
+	const gitlab = reviewContext({
+		outputs: {
+			"draft-pr": {
+				url: "https://gitlab.example/group/subgroup/repo/-/merge_requests/17",
+				branch: "feature/change",
+			},
+		},
+	});
+	expect(gitlab.pr).toEqual({
+		url: "https://gitlab.example/group/subgroup/repo/-/merge_requests/17",
+		label: "MR !17",
+	});
+	expect(gitlab.branchUrl).toBe(
+		"https://gitlab.example/group/subgroup/repo/-/tree/feature%2Fchange",
+	);
+	expect(gitlab.commands[0]?.command).toBe(
+		"glab mr checkout 17 --repo 'https://gitlab.example/group/subgroup/repo'",
+	);
+	const enterprise = reviewContext({
+		reviewGate: { url: "https://github.example/team/repo/pull/4" },
+	});
+	expect(enterprise.commands[0]?.command).toBe(
+		"gh pr checkout 4 --repo 'https://github.example/team/repo'",
+	);
+});
 const ticketReference = {
 	provider: "native",
 	platform: "linear",
@@ -194,4 +253,41 @@ it("encodes unusual valid branch names and quotes them as exactly one shell argu
 			reviewContext({ outputs: { "draft-pr": { branch: malformed } } })
 				.commands,
 		).toEqual([]);
+});
+
+it("uses supported GitLab and GitHub diff and file destinations, including grouped filenames", async () => {
+	const mr = "https://gitlab.example/group/subgroup/api/-/merge_requests/17";
+	const run = {
+		reviewGate: {
+			repositories: [
+				{ repositoryId: "app", name: "app", url, headSha: "app-head" },
+				{ repositoryId: "api", name: "api", url: mr, headSha: "api-head" },
+			],
+		},
+	};
+	const sha1 = createHash("sha1").update("shared.txt").digest("hex");
+	const sha256 = createHash("sha256").update("shared.txt").digest("hex");
+	expect(reviewDiffUrl(mr)).toBe(`${mr}/diffs`);
+	expect(reviewDiffUrl(`${url}/`)).toBe(`${url}/files`);
+	const api = reviewFileTarget(run, "api/shared.txt"),
+		app = reviewFileTarget(run, "app/shared.txt");
+	expect(await reviewFileUrl(api.url, api.path)).toBe(
+		`${mr}/diffs?file=${sha1}#diff-content-${sha1}`,
+	);
+	expect(await reviewFileUrl(app.url, app.path)).toBe(
+		`${url}/files#diff-${sha256}`,
+	);
+	expect(await reviewFileUrl(url, "shared.txt")).toBe(
+		`${url}/files#diff-${sha256}`,
+	);
+	for (const malformed of [
+		undefined,
+		"javascript:alert(1)",
+		"https://user:secret@gitlab.example/a/-/merge_requests/17",
+	])
+		expect(await reviewFileUrl(malformed, "shared.txt")).toBeUndefined();
+	// Custom forges keep their published destination; unsupported routes are never invented.
+	expect(
+		await reviewFileUrl("https://forge.example/reviews/17", "shared.txt"),
+	).toBe("https://forge.example/reviews/17");
 });

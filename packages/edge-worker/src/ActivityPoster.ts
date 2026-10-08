@@ -4,7 +4,7 @@ import type {
 	ILogger,
 	RepoSetupHookEvent,
 	RepositoryConfig,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 export class ActivityPoster {
 	private issueTrackers: Map<string, IIssueTrackerService>;
@@ -139,7 +139,7 @@ export class ActivityPoster {
 			? `**Routing** (${methodDisplay})`
 			: "**Routing**";
 
-		const body = `${header}\n${repoLines.join("\n")}`;
+		const body = `${header}\n${repoLines.join("\n")}${repoLines.length > 1 ? "\n\nThis repository scope applies to every workflow. Factory reviews and publishes one PR/MR per changed repository, with approval bound to all delivery revisions." : ""}`;
 
 		await this.postActivityDirect(
 			issueTracker,
@@ -231,7 +231,7 @@ export class ActivityPoster {
 			return null;
 		}
 
-		return "The setup script does not run with sudo privileges. Keep `cyrus-setup.sh` to repo-local setup. For hosted Cyrus, add required npm or apt packages in the Cyrus Dashboard at Settings > Packages (`/settings/packages`); for self-hosted Cyrus, preinstall privileged dependencies in the runtime or host.";
+		return "The setup script does not run with sudo privileges. Keep `bobs-factory-setup.sh` to repo-local setup. For hosted Bob’s Factory, add required npm or apt packages in the Bob’s Factory Dashboard at Settings > Packages (`/settings/packages`); for self-hosted Bob’s Factory, preinstall privileged dependencies in the runtime or host.";
 	}
 
 	private looksLikeSudoFailure(output: string): boolean {

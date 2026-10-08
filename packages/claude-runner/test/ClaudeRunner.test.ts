@@ -6,6 +6,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 	query: vi.fn(),
 }));
 
+vi.mock("../src/executable.js", () => ({
+	resolveClaudeExecutable: vi.fn(() => "/prepared/claude"),
+}));
+
 // Mock file system operations
 vi.mock("fs", () => ({
 	mkdirSync: vi.fn(),
@@ -33,7 +37,7 @@ describe("ClaudeRunner", () => {
 
 	const defaultConfig: ClaudeRunnerConfig = {
 		workingDirectory: "/tmp/test",
-		cyrusHome: "/tmp/test-cyrus-home",
+		factoryHome: "/tmp/test-home",
 	};
 
 	beforeEach(() => {
@@ -193,6 +197,7 @@ describe("ClaudeRunner", () => {
 					fallbackModel: "sonnet",
 					abortController: expect.any(AbortController),
 					cwd: "/tmp/test",
+					pathToClaudeCodeExecutable: "/prepared/claude",
 					systemPrompt: { type: "preset", preset: "claude_code" },
 					settingSources: ["user", "project", "local"],
 					env: expect.objectContaining({
@@ -255,6 +260,7 @@ describe("ClaudeRunner", () => {
 					fallbackModel: "sonnet",
 					abortController: expect.any(AbortController),
 					cwd: "/tmp/test",
+					pathToClaudeCodeExecutable: "/prepared/claude",
 					systemPrompt: { type: "preset", preset: "claude_code" },
 					settingSources: ["user", "project", "local"],
 					env: expect.objectContaining({
@@ -294,6 +300,7 @@ describe("ClaudeRunner", () => {
 					fallbackModel: "sonnet",
 					abortController: expect.any(AbortController),
 					cwd: "/tmp/test",
+					pathToClaudeCodeExecutable: "/prepared/claude",
 					systemPrompt: "You are a helpful assistant",
 					settingSources: ["user", "project", "local"],
 					env: expect.objectContaining({

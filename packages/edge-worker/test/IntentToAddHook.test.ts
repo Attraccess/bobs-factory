@@ -5,8 +5,8 @@ import { join } from "node:path";
 import type {
 	HookCallbackMatcher,
 	PostToolUseHookInput,
-} from "cyrus-claude-runner";
-import type { ILogger } from "cyrus-core";
+} from "bobs-factory-claude-runner";
+import type { ILogger } from "bobs-factory-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	applyIntentToAdd,

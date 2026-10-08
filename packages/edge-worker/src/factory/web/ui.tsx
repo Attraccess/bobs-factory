@@ -140,7 +140,9 @@ export function Modal({
 	children,
 	className = "",
 	onKeyDown,
+	headerControls,
 }: {
+	headerControls?: ReactNode;
 	open: boolean;
 	onOpenChange: (value: boolean) => void;
 	title: ReactNode;
@@ -176,6 +178,7 @@ export function Modal({
 								{description ?? "Details"}
 							</Dialog.Description>
 						</div>
+						{headerControls}
 						{(pwa.waiting || pwa.status === "mismatch") && (
 							<Button
 								busy={pwa.updating}

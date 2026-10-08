@@ -20,7 +20,7 @@ This folder is its own pnpm workspace root; it does not touch the monorepo lockf
 ## Regenerating product assets
 
 ```sh
-pnpm --dir .. install && pnpm --dir .. --filter 'cyrus-edge-worker...' build  # once
+pnpm --dir .. install && pnpm --dir .. --filter 'bobs-factory-edge-worker...' build  # once
 node demo/prepare.mjs   # screenshots of the mock "Pancake Palace" app (QA evidence)
 bun demo/server.ts      # real factory on http://127.0.0.1:3700 with seeded runs
 # wait ~60 s so the live "checkout" run is mid-implementation, then:

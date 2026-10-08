@@ -2,7 +2,7 @@ import {
 	CodexEventMapper,
 	CodexRunner,
 	type MapperContext,
-} from "cyrus-codex-runner";
+} from "bobs-factory-codex-runner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager";
 import type { IActivitySink } from "../src/sinks/IActivitySink";

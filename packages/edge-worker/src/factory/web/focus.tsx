@@ -15,15 +15,28 @@ import {
 	workingLabel,
 } from "./client";
 import { activitiesOf } from "./conversation";
-import { DraftNotice } from "./pwa-ui";
-import { revisionOf, useRestorableState } from "./restoration";
+import { useCurrentForm, useFormState } from "./form-state";
+import {
+	type AnswerDraft,
+	answerChoice,
+	type Recommendation,
+	resolveAnswers,
+	serializeAnswers,
+} from "./question-answers";
+import { revisionOf } from "./restoration";
 import { GuidedReview } from "./review";
 import {
 	type FeedbackController,
 	useFeedbackController,
 	useReviewFeedback,
 } from "./review-comments";
-import { feedbackKey, hasFeedback, serializeFeedback } from "./review-feedback";
+import { reviewDiffUrl } from "./review-context";
+import {
+	emptyFeedback,
+	feedbackKey,
+	hasFeedback,
+	serializeFeedback,
+} from "./review-feedback";
 import { guideMatchesGate, reviewRevision, signature } from "./review-state";
 import { Bob, Button, ConfirmStop, External, Markdown, useToast } from "./ui";
 export const labels: Record<string, string> = {
@@ -32,7 +45,11 @@ export const labels: Record<string, string> = {
 	review: "🎁 Ready to review",
 };
 export function RunMeta({ run, config }: { run: any; config: any }) {
-	const repo = config.repositories.find((r: any) => r.id === run.repositoryId),
+	const repo = config.repositories.find(
+			(r: any) =>
+				r.id === run.repositoryId ||
+				r.repositoryIds?.includes(run.repositoryId),
+		),
 		workflow = workflowOf(run, config);
 	return (
 		<span className="run-meta">
@@ -152,45 +169,58 @@ export function RunOrigin({ run }: { run: any }) {
 		</section>
 	);
 }
-function QuickReplies({ question }: { question: string }) {
-	const versions = question.match(/\b\d+\.\d+(?:\.\d+)?\b/g);
-	if (versions && new Set(versions).size === 2) return [...new Set(versions)];
-	const match = question.match(
-		/(?:on|for|use|choose|prefer|keep|include)\s+([^?]{2,35}?)\s+or\s+([^?]{2,35})\?/i,
-	);
-	return match ? [match[1]!, match[2]!] : [];
-}
 export function QuestionForm({ run }: { run: any }) {
-	const toast = useToast(),
-		action = useAction(),
-		[answers, setAnswers, staleAnswers] = useRestorableState<
-			Record<number, string>
-		>(
-			`answers/${run.id}`,
-			{},
-			revisionOf([run.questions, run.step, run.status]),
-		);
-	const questions = run.questions ?? [];
+	const toast = useToast();
+	const questions: string[] = run.questions ?? [];
+	const recommendations: Recommendation[] = run.questionRecommendations ?? [];
+	const context = revisionOf([
+		run.id,
+		run.questionBatchId,
+		questions,
+		recommendations,
+		run.step,
+		run.status,
+	]);
+	const action = useAction(`answers/${run.id}`, context);
+	const [draft, setDraft] = useFormState<AnswerDraft>(context, {});
+	const fields = useRef<Record<number, HTMLTextAreaElement | null>>({});
+	const submitting = useRef(false);
+	const focusCustom = useRef<number | undefined>(undefined);
+	useEffect(() => {
+		if (focusCustom.current === undefined) return;
+		fields.current[focusCustom.current]?.focus();
+		focusCustom.current = undefined;
+	});
+	const answers = resolveAnswers(questions, recommendations, draft);
+	const incomplete =
+		!questions.length || answers.some((answer) => !answer.trim());
 	const submit = async () => {
 		if (
+			submitting.current ||
 			action.isPending ||
-			staleAnswers ||
-			questions.some((_: string, i: number) => !answers[i]?.trim())
+			action.isBlocked ||
+			incomplete
 		)
 			return;
+		submitting.current = true;
 		try {
 			await action.mutateAsync({
 				path: `/api/runs/${run.id}/answer`,
 				body: {
-					context: { questions, step: run.step },
-					answer: questions
-						.map((q: string, i: number) => `${i + 1}. ${q}\n${answers[i]}`)
-						.join("\n\n"),
+					context: {
+						questions,
+						step: run.step,
+						questionBatchId: run.questionBatchId,
+					},
+					answer: serializeAnswers(questions, answers),
 				},
 			});
-			toast({ text: "Answer sent — Bob is back at it" });
+			setDraft({});
+			toast({ text: "Reply sent" });
 		} catch {
-			/* error stays visible */
+			/* error stays visible; draft is retained */
+		} finally {
+			submitting.current = false;
 		}
 	};
 	return (
@@ -207,46 +237,91 @@ export function QuestionForm({ run }: { run: any }) {
 				}
 			}}
 		>
-			<DraftNotice conflict={staleAnswers} draftKey={`answers/${run.id}`} />
 			<fieldset disabled={action.isPending}>
 				<legend className="sr-only">
 					Answers to Bob's clarification questions
 				</legend>
-				{questions.map((q: string, i: number) => (
-					<div className="question" key={`${i}/${q}`}>
-						<div className="question-heading">
-							<Bob mood="alert" size={32} />
-							<div id={`question-${run.id}-${i}`} className="question-content">
-								<Markdown>{q}</Markdown>
+				{questions.map((q, i) => {
+					const recommendation = recommendations.find(
+						(item) => item.questionIndex === i,
+					);
+					const choice = answerChoice(draft[i], recommendation);
+					const custom = !recommendation || choice.mode === "custom";
+					const select = (mode: "custom" | "recommendation") => {
+						if (mode === "custom") focusCustom.current = i;
+						setDraft({ ...draft, [i]: { ...choice, mode } });
+					};
+					return (
+						<div className="question" key={`${i}/${q}`}>
+							<div className="question-heading">
+								<Bob mood="alert" size={32} />
+								<div
+									id={`question-${run.id}-${i}`}
+									className="question-content"
+								>
+									<Markdown>{q}</Markdown>
+								</div>
 							</div>
-						</div>
-						<div className="answer-controls">
-							<div className="quick-replies">
-								{QuickReplies({ question: q }).map((value) => (
-									<button
-										type="button"
-										aria-pressed={answers[i] === value}
-										key={value}
-										onClick={() => setAnswers({ ...answers, [i]: value })}
-									>
-										{value}
-									</button>
-								))}
-							</div>
-							<textarea
-								id={`answer-${run.id}-${i}`}
+							<fieldset
+								className="answer-controls"
 								aria-labelledby={`question-${run.id}-${i}`}
-								required
-								rows={2}
-								placeholder="Type your answer…"
-								value={answers[i] ?? ""}
-								onChange={(e) =>
-									setAnswers({ ...answers, [i]: e.target.value })
-								}
-							/>
+							>
+								<legend className="sr-only">
+									Choose an answer for question {i + 1}
+								</legend>
+								{recommendation && (
+									<>
+										<div className="answer-modes">
+											<label>
+												<input
+													type="radio"
+													name={`answer-mode-${run.id}-${i}`}
+													checked={!custom}
+													onChange={() => select("recommendation")}
+												/>
+												Use recommendation
+											</label>
+											<label>
+												<input
+													type="radio"
+													name={`answer-mode-${run.id}-${i}`}
+													checked={custom}
+													onChange={() => select("custom")}
+												/>
+												Custom answer
+											</label>
+										</div>
+										<div className="answer-recommendation">
+											<Markdown>{recommendation.answer}</Markdown>
+											<div className="recommendation-reason">
+												<Markdown>{recommendation.reason}</Markdown>
+											</div>
+										</div>
+									</>
+								)}
+								{custom && (
+									<textarea
+										ref={(el) => {
+											fields.current[i] = el;
+										}}
+										id={`answer-${run.id}-${i}`}
+										aria-labelledby={`question-${run.id}-${i}`}
+										required
+										rows={2}
+										placeholder="Type your answer…"
+										value={choice.custom}
+										onChange={(e) =>
+											setDraft({
+												...draft,
+												[i]: { mode: "custom", custom: e.target.value },
+											})
+										}
+									/>
+								)}
+							</fieldset>
 						</div>
-					</div>
-				))}
+					);
+				})}
 			</fieldset>
 			{action.error && (
 				<p className="error" role="alert">
@@ -257,11 +332,7 @@ export function QuestionForm({ run }: { run: any }) {
 				type="submit"
 				requiresConnection
 				busy={action.isPending}
-				disabled={
-					staleAnswers ||
-					!questions.length ||
-					questions.some((_: string, i: number) => !answers[i]?.trim())
-				}
+				disabled={incomplete}
 			>
 				Send answers <kbd>⌘⏎</kbd>
 			</Button>
@@ -339,8 +410,7 @@ export function FullReview({
 			{updated && (
 				<p className="notice" role="status">
 					This review has been updated. Review the current guide and revision
-					before deciding. Earlier feedback drafts stay with their original
-					review.
+					before deciding. Unsent feedback has been discarded.
 				</p>
 			)}
 			<GuidedReview
@@ -397,9 +467,13 @@ function ReviewDecisions({
 }: DecisionProps & { controller: FeedbackController }) {
 	const toast = useToast(),
 		navigate = useNavigate(),
-		action = useAction(),
-		[validationError, setValidationError] = useState("");
-	const { draft, update, busy, staleFeedback, draftKey } = controller;
+		action = useAction(`review/${run.id}`, controller.context),
+		[validationError, setValidationError] = useFormState(
+			controller.context,
+			"",
+		);
+	const isCurrent = useCurrentForm(controller.context);
+	const { draft, update, busy } = controller;
 	const feedback = draft.feedback,
 		feedbackOpen = draft.open;
 	const setFeedback = (feedback: string) => update((d) => ({ ...d, feedback }));
@@ -410,14 +484,7 @@ function ReviewDecisions({
 		matching = !waiting || (run.status === "waiting" && guideMatchesGate(run)),
 		url = run.outputs?.["draft-pr"]?.url ?? gate?.url;
 	const reject = async () => {
-		if (
-			!hasFeedback(draft) ||
-			staleFeedback ||
-			busy ||
-			action.isPending ||
-			!matching
-		)
-			return;
+		if (!hasFeedback(draft) || busy || action.isPending || !matching) return;
 		let feedback: string;
 		try {
 			feedback = serializeFeedback(
@@ -452,13 +519,13 @@ function ReviewDecisions({
 					path: `/api/runs/${run.id}/messages`,
 					body: { text: feedback },
 				});
-				navigate(`/runs/${run.id}`);
+				if (isCurrent()) navigate(`/runs/${run.id}`);
 			} else {
 				const next = await action.mutateAsync({
 					path: `/api/runs/${run.id}/followup`,
 					body: { feedback },
 				});
-				navigate(`/runs/${next.id}`);
+				if (isCurrent()) navigate(`/runs/${next.id}`);
 			}
 			toast({ text: "Feedback sent — Bob is on it" });
 			controller.clear(draft);
@@ -470,7 +537,6 @@ function ReviewDecisions({
 	};
 	return (
 		<>
-			<DraftNotice conflict={staleFeedback} draftKey={draftKey} />
 			{waiting && !matching && (
 				<p className="notice" role="status">
 					The pending revision changed. Decisions are unavailable until its
@@ -512,7 +578,7 @@ function ReviewDecisions({
 							type="submit"
 							busy={busy || action.isPending}
 							requiresConnection
-							disabled={!hasFeedback(draft) || staleFeedback || !matching}
+							disabled={!hasFeedback(draft) || !matching}
 						>
 							Submit feedback to Bob
 						</Button>
@@ -531,7 +597,10 @@ function ReviewDecisions({
 							<Button
 								variant="ghost"
 								disabled={busy}
-								onClick={() => setFeedbackOpen(false)}
+								onClick={() => {
+									update(emptyFeedback);
+									setValidationError("");
+								}}
 							>
 								Cancel
 							</Button>
@@ -613,7 +682,7 @@ function ReviewDecisions({
 						</Button>
 					)}
 					{url && (
-						<External className="button secondary" href={`${url}/files`}>
+						<External className="button secondary" href={reviewDiffUrl(url)}>
 							Open diff ↗
 						</External>
 					)}
@@ -641,8 +710,8 @@ function ReviewDecisions({
 
 			{waiting && (
 				<small className="muted">
-					Approval applies to {gate.headSha.slice(0, 8)}. Settles after GitHub
-					confirms the merge.
+					Approval applies to {gate.headSha.slice(0, 8)}. Settles after the Git
+					provider confirms the merge.
 				</small>
 			)}
 			{action.error && (
@@ -713,7 +782,7 @@ export function FocusCard({
 								{icons[run.step?.split("/").at(-1)] ?? "⚙️"}{" "}
 								{stepsOf(run, config).find((s) => s.key === run.step)?.name ??
 									run.step ??
-									"Cyrus session"}
+									"Bob’s Factory session"}
 							</strong>
 							<Markdown>
 								{run.error ?? "The run stopped before finishing."}
@@ -780,7 +849,7 @@ export function Progress({ run, config }: { run: any; config: any }) {
 			aria-label={
 				steps.length
 					? `${visited.size} of ${steps.length} steps completed`
-					: "Cyrus session working"
+					: "Bob’s Factory session working"
 			}
 		>
 			{(steps.length ? steps : [{ key: "simple" }]).map((step) => (
@@ -834,7 +903,7 @@ export function WorkingRow({
 				<strong>{run.title}</strong>
 				<span className={`step-chip ${phase(stepId)}`}>
 					{workingLabel(data)} · {icons[stepId] ?? "⚙️"}{" "}
-					{step?.name ?? run.step ?? "Cyrus session"}
+					{step?.name ?? run.step ?? "Bob’s Factory session"}
 					{/fix/.test(stepId) && " · fixing"}
 					{visits > 1 && ` · ↺${visits}`}
 				</span>

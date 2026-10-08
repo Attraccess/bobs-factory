@@ -31,15 +31,15 @@ export const UserIdentifierSchema = z.union([
 export const UserAccessControlConfigSchema = z.object({
 	/**
 	 * Users allowed to delegate issues.
-	 * If specified, ONLY these users can trigger Cyrus sessions.
-	 * Empty array means no one is allowed (effectively disables Cyrus).
+	 * If specified, ONLY these users can trigger Bob’s Factory sessions.
+	 * Empty array means no one is allowed (effectively disables Bob’s Factory).
 	 * Omitting this field means everyone is allowed (unless blocked).
 	 */
 	allowedUsers: z.array(UserIdentifierSchema).optional(),
 
 	/**
 	 * Users blocked from delegating issues.
-	 * These users cannot trigger Cyrus sessions.
+	 * These users cannot trigger Bob’s Factory sessions.
 	 * Takes precedence over allowedUsers.
 	 */
 	blockedUsers: z.array(UserIdentifierSchema).optional(),
@@ -261,7 +261,7 @@ export const SandboxConfigSchema = z.object({
 	/**
 	 * Extra directories agent tools may write outside their session workspace.
 	 * Applies independently of the network egress proxy's enabled setting.
-	 * Supports absolute paths, ~ expansion, and paths relative to the Cyrus cwd.
+	 * Supports absolute paths, ~ expansion, and paths relative to the Bob’s Factory cwd.
 	 */
 	additionalWritableDirectories: z.array(z.string().trim().min(1)).optional(),
 
@@ -320,6 +320,33 @@ export const LinearWorkspaceConfigSchema = z.object({
 /**
  * Configuration for a single repository/workspace pair
  */
+export const GitProviderConfigSchema = z.discriminatedUnion("type", [
+	z.object({ type: z.enum(["github", "gitlab"]) }).strict(),
+	z
+		.object({
+			type: z.literal("custom"),
+			command: z.string().min(1),
+			args: z.array(z.string()).default([]),
+			/** Provider-specific discussion/CI tooling guidance for factory roles. */
+			instructions: z.string().max(10000).optional(),
+			repositoryUrl: z
+				.string()
+				.url()
+				.refine((value) => {
+					const url = new URL(value);
+					return (
+						url.protocol === "https:" &&
+						!url.username &&
+						!url.password &&
+						!url.search &&
+						!url.hash
+					);
+				}, "Use a credential-free HTTPS repository URL"),
+		})
+		.strict(),
+]);
+export type GitProviderConfig = z.infer<typeof GitProviderConfigSchema>;
+
 export const RepositoryConfigSchema = z.object({
 	// Repository identification
 	id: z.string(),
@@ -330,6 +357,8 @@ export const RepositoryConfigSchema = z.object({
 	baseBranch: z.string(),
 	githubUrl: z.string().optional(),
 	gitlabUrl: z.string().optional(),
+	/** Factory review/CI/merge provider. Public hosts and existing URL fields auto-detect. */
+	gitProvider: GitProviderConfigSchema.optional(),
 
 	// Linear configuration (optional — repos may operate without Linear, e.g. via Slack or GitHub)
 	linearWorkspaceId: z.string().optional(),
@@ -368,7 +397,7 @@ export const RepositoryConfigSchema = z.object({
 });
 
 /**
- * Edge configuration - the serializable configuration stored in ~/.cyrus/config.json
+ * Edge configuration - the serializable configuration stored in ~/.bobs-factory/config.json
  *
  * This schema defines all settings that can be persisted to disk.
  * It contains global settings that apply across all repositories,
@@ -472,7 +501,7 @@ export const EdgeConfigSchema = z.object({
 	/**
 	 * Allowed tools for Slack @mention chat sessions. When set, overrides the
 	 * built-in read-only chat tool set used by ToolPermissionResolver. The
-	 * workspace MCP tool prefixes (mcp__linear, mcp__cyrus-tools, etc.) are
+	 * workspace MCP tool prefixes (mcp__linear, mcp__bobs-factory-tools, etc.) are
 	 * still appended automatically.
 	 */
 	slackAllowedTools: z.array(z.string()).optional(),
@@ -491,7 +520,7 @@ export const EdgeConfigSchema = z.object({
 	 * `repository.mcpConfigPath` is not consulted here — only this list
 	 * determines which custom `.mcp.json` files load for Slack. When
 	 * omitted/empty, no custom files load (native MCP servers — Linear,
-	 * Cyrus tools, Slack MCP, Cyrus docs — still run as usual).
+	 * Bob’s Factory tools, Slack MCP, Bob’s Factory docs — still run as usual).
 	 *
 	 * The per-platform lists let cyrus-hosted route custom MCP server
 	 * availability per surface — e.g. expose `slack-mcp-server` only on
@@ -534,7 +563,7 @@ export const EdgeConfigSchema = z.object({
 	githubMcpConfigs: z.array(z.string()).optional(),
 
 	/**
-	 * Restrict Claude sessions to MCP servers explicitly supplied by Cyrus.
+	 * Restrict Claude sessions to MCP servers explicitly supplied by Bob’s Factory.
 	 * When false, Claude Code may also load servers from project/user settings,
 	 * plugins, and authenticated claude.ai connectors. Defaults to true when
 	 * omitted.
@@ -569,11 +598,11 @@ export const EdgeConfigSchema = z.object({
 		),
 
 	/**
-	 * Whether Cyrus follows along with all subsequent replies in a Slack thread
+	 * Whether Bob’s Factory follows along with all subsequent replies in a Slack thread
 	 * it has been @mentioned in (treating each reply as a follow-up prompt).
-	 * When false, Cyrus only responds to explicit @mentions. Defaults to true if
+	 * When false, Bob’s Factory only responds to explicit @mentions. Defaults to true if
 	 * not specified. Can also be force-disabled at runtime via the
-	 * `CYRUS_SLACK_THREAD_FOLLOWING_DISABLED` environment variable.
+	 * `BOBS_FACTORY_SLACK_THREAD_FOLLOWING_DISABLED` environment variable.
 	 */
 	slackThreadFollowing: z.boolean().optional(),
 

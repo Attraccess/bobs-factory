@@ -4,8 +4,13 @@ import {
 	filterReview,
 	QaCaptureSchema,
 } from "./FactoryTools.js";
+import { FeedbackPolicySchema } from "./FeedbackPolicy.js";
 
 import { QaScopeFieldsSchema, scopeIssues } from "./Qa.js";
+import {
+	normalizeQuestionResult,
+	QuestionRecommendationSchema,
+} from "./Questions.js";
 
 const text = z.string().min(1);
 export const VisualScopeSchema = z
@@ -115,7 +120,58 @@ export const QaScopeSchema = VisualScopeSchema.and(
 	for (const message of scopeIssues(scope))
 		context.addIssue({ code: "custom", message });
 });
+export const RequirementCoverageSchema = z.object({
+	inventoryVersion: z.number().int(),
+	inventoryDigest: text,
+	headSha: text,
+	baseSha: text,
+	assessments: z.array(
+		z.object({
+			requirementId: text,
+			criterion: text,
+			status: z.enum(["met", "not_met", "deliberately_skipped"]),
+			evidence: z.array(text),
+			reason: text,
+			decision: z
+				.object({
+					id: text,
+					acceptedBy: text,
+					rationale: text,
+					source: z.object({ source: text, reference: text }),
+				})
+				.optional(),
+		}),
+	),
+	reviewers: z.array(
+		z.object({
+			reviewer: text,
+			summary: text,
+			findings: z.array(
+				z.object({
+					id: text,
+					rating: z.number(),
+					summary: text,
+					evidence: text,
+					status: text,
+					reason: text.optional(),
+				}),
+			),
+			disagreements: z.array(text),
+			disputeResolutions: z
+				.array(z.object({ disagreement: text, reason: text, evidence: text }))
+				.optional(),
+		}),
+	),
+});
+export const GuideScopeSchema = z.object({
+	kind: z.enum(["purely-visual", "nonvisual"]),
+	rationale: short(600),
+	files: z.array(text),
+});
 export const GuideSchema = z.object({
+	// Optional only when reading historical artifacts.
+	scope: GuideScopeSchema.optional(),
+	requirementCoverage: RequirementCoverageSchema.optional(),
 	tldr: short(90).optional(),
 	system: SystemSchema.optional(),
 	reviewFiles: ReviewFilesReferenceSchema.optional(),
@@ -139,6 +195,15 @@ export const GuideSchema = z.object({
 				after: text.max(600),
 				requirementIndexes: z.array(z.number().int().nonnegative()).min(1),
 				files: z.array(text),
+				videos: z
+					.array(
+						z.object({
+							taskId: text,
+							sha256: z.string().regex(/^[a-f0-9]{64}$/),
+						}),
+					)
+					.max(3)
+					.optional(),
 				screenshots: z.array(
 					z.object({
 						area: text,
@@ -179,6 +244,7 @@ export const GuideSchema = z.object({
 	requirements: z
 		.array(
 			z.object({
+				requirementId: text.optional(),
 				criterion: text,
 				status: z.enum(["supported", "gap", "unverified", "waived"]),
 				evidence: z.array(text).min(1),
@@ -192,6 +258,7 @@ export const GuideSchema = z.object({
 });
 /** Reading remains additive; all newly authored guides require the compact contract. */
 export const GeneratedGuideSchema = GuideSchema.extend({
+	scope: GuideScopeSchema,
 	tldr: short(90),
 	decision: GuideSchema.shape.decision.extend({ summaryShort: short(160) }),
 	chapters: z
@@ -211,6 +278,24 @@ export const GeneratedGuideSchema = GuideSchema.extend({
 	};
 	unique(guide.chapters, ["chapters"]);
 	const system = guide.system;
+	if (guide.scope.kind === "nonvisual" && !system)
+		fail(
+			["system"],
+			"Nonvisual and mixed guides require a system map of the whole PR",
+		);
+	if (system && (system.lanes.length < 3 || system.lanes.length > 6))
+		fail(
+			["system", "lanes"],
+			"New maps require 3–6 meaningful lanes; historical maps remain readable",
+		);
+	if (
+		guide.scope.kind === "purely-visual" &&
+		guide.chapters.some((c) => c.flow || c.diagrams.length)
+	)
+		fail(
+			["scope", "kind"],
+			"Logic chapters require nonvisual scope and a system map",
+		);
 	const partIds = system
 		? unique(system.parts, ["system", "parts"])
 		: new Set<string>();
@@ -237,6 +322,15 @@ export const GeneratedGuideSchema = GuideSchema.extend({
 		}
 	}
 	guide.chapters.forEach((chapter, i) => {
+		if (
+			guide.scope.kind === "nonvisual" &&
+			(chapter.files.length || chapter.flow || chapter.diagrams.length) &&
+			!chapter.systemPartIds?.length
+		)
+			fail(
+				["chapters", i, "systemPartIds"],
+				"Link this changed chapter to the system parts it touches",
+			);
 		const seen = new Set<string>();
 		chapter.systemPartIds?.forEach((id, j) => {
 			if (!partIds.has(id) || seen.has(id))
@@ -250,16 +344,22 @@ export const GeneratedGuideSchema = GuideSchema.extend({
 });
 export type Guide = z.infer<typeof GuideSchema>;
 export type GuideChapter = NonNullable<Guide["chapters"]>[number];
-export function validateFactoryResult(
+function parseFactoryResult(
 	step: string,
 	output: unknown,
 	qaContract?: "qa-v1",
+	videoContract?: "video-v1",
 ): unknown {
+	if (videoContract && ["visual-scope", "capture"].includes(step))
+		z.object({ videoContract: z.literal(videoContract) }).parse(output);
 	switch (step) {
 		case "clarify":
 			return z
 				.object({
 					questions: z.array(text),
+					questionRecommendations: z
+						.array(QuestionRecommendationSchema)
+						.optional(),
 					decisions: z.array(
 						z.object({ question: text, answer: text, reason: text }),
 					),
@@ -284,6 +384,9 @@ export function validateFactoryResult(
 					summary: text,
 					checks: z.array(text),
 					questions: z.array(text),
+					questionRecommendations: z
+						.array(QuestionRecommendationSchema)
+						.optional(),
 				})
 				.refine(
 					(result) =>
@@ -315,11 +418,34 @@ export function validateFactoryResult(
 				: CaptureSchema.parse(output);
 		case "guide":
 			return GuideSchema.parse(output);
+		case "ci-fix":
+			return z
+				.object({
+					questions: z.array(text).optional(),
+					addressedCommentIds: z.array(text).optional(),
+					addressedReviewIds: z.array(text).optional(),
+					reviewRequired: z.boolean().optional(),
+					feedbackPolicies: z.array(FeedbackPolicySchema).optional(),
+					commentAssessments: z
+						.array(
+							z.object({
+								id: text,
+								bodySha256: z.string().regex(/^[a-f0-9]{64}$/),
+							}),
+						)
+						.optional(),
+				})
+				.passthrough()
+				.parse(output);
 		case "code-fix":
 		case "visual-fix":
 			return z
 				.object({
 					summary: text,
+					questions: z.array(text).optional(),
+					questionRecommendations: z
+						.array(QuestionRecommendationSchema)
+						.optional(),
 					dispositions: z.array(
 						z.object({
 							id: text,
@@ -332,4 +458,16 @@ export function validateFactoryResult(
 		default:
 			return output;
 	}
+}
+
+export function validateFactoryResult(
+	step: string,
+	output: unknown,
+	qaContract?: "qa-v1",
+	videoContract?: "video-v1",
+): unknown {
+	const result = parseFactoryResult(step, output, qaContract, videoContract);
+	return result && typeof result === "object" && "questions" in result
+		? normalizeQuestionResult(result)
+		: result;
 }

@@ -16,9 +16,12 @@ import { legacyScreenshotSteps } from "../src/factory/legacyScreenshotSteps.js";
 import { validateWorkflows, type Workflow } from "../src/factory/Workflow.js";
 import {
 	type ExecutionContext,
+	type FactoryRun,
+	type GraphCheckpoint,
 	type RuntimeHooks,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { legacyReviewWorkflows } from "./fixtures/legacy-review.js";
 
 const homes: string[] = [];
 afterEach(() => {
@@ -50,6 +53,37 @@ const agent = (id: string, extra = {}) => ({
 	prompt: "Do the task",
 	...extra,
 });
+function failedCodexStartup(
+	run: FactoryRun,
+	key: string,
+	frame: GraphCheckpoint,
+) {
+	const startup = {
+		type: "result",
+		is_error: true,
+		session_id: "synthetic-startup-id",
+		errors: ["initialize timed out after 60000ms"],
+	};
+	const missing = {
+		...startup,
+		errors: [
+			"thread/resume failed: no rollout found for thread id synthetic-startup-id",
+		],
+	};
+	run.status = "failed";
+	run.step = key;
+	run.error = `Agent step failed: ${JSON.stringify(missing)}`;
+	frame.active = {
+		phase: "executing",
+		agent: { runner: "codex", sessionId: startup.session_id },
+	};
+	run.events.push({
+		at: run.createdAt,
+		step: key,
+		source: "agent",
+		message: JSON.stringify(startup),
+	});
+}
 function start(runtime: WorkflowRuntime, definition: Workflow) {
 	return runtime.create({
 		triggerOrigin: {
@@ -345,12 +379,12 @@ describe("workflow runtime", () => {
 	});
 
 	it("upgrades the legacy visual reviewer with a real newline while retaining its model", () => {
-		const saved = structuredClone(defaultWorkflows);
+		const saved = legacyReviewWorkflows();
 		const shared = saved.find(
 			(definition) => definition.id === "factory-pipeline",
 		)!;
 		const reviewer = shared.steps.find((step) => step.id === "visual-review")!;
-		reviewer.prompt = `${shared.steps.find((step) => step.id === "code-review")!.prompt}\nThis is a VISUAL review: open and inspect the actual screenshots, checking each requested area/state against the plan. Include areas with missing/unavailable capture evidence as rating 3 findings. Never approve missing screenshots.`;
+		reviewer.prompt = `${legacyScreenshotSteps.find((step) => step.id === "visual-review")!.prompt!.split("\n")[0]}\nThis is a VISUAL review: open and inspect the actual screenshots, checking each requested area/state against the plan. Include areas with missing/unavailable capture evidence as rating 3 findings. Never approve missing screenshots.`;
 		reviewer.model = "custom-review-model";
 		const upgraded = validateWorkflows(upgradeWorkflows(saved))
 			.find((definition) => definition.id === "factory-pipeline")!
@@ -513,6 +547,141 @@ describe("workflow runtime", () => {
 			answer: "Use Codex",
 		});
 		expect(run.history).toHaveLength(2);
+	});
+	it.each([
+		true,
+		false,
+	])("keeps explanation requests outside answers and blocked work (askQuestions=%s)", async (askQuestions) => {
+		const calls: string[] = [];
+		const downstream = vi.fn(async () => ({}));
+		const { runtime } = create({
+			script: downstream,
+			agent: async (context) => {
+				calls.push(context.step.id);
+				if (context.step.id === "question-explanation") {
+					expect(context.step).toMatchObject({
+						runner: "codex",
+						model: "test-model",
+					});
+					expect(context.input).toMatchObject({
+						request:
+							"Please explain this more simply. I have not chosen an option or authorized paid tests.",
+						answers: [],
+					});
+					return {
+						questions: ["Use simulated tests or authorize paid tests?"],
+						approved: true,
+					};
+				}
+				return context.run.answers.length
+					? { questions: [] }
+					: { questions: ["Which tests?"] };
+			},
+		});
+		const run = start(
+			runtime,
+			workflow([
+				agent("visual-fix", {
+					askQuestions,
+					runner: "codex",
+					model: "test-model",
+				}),
+				{ id: "receipt", name: "Receipt", type: "script", script: "unused" },
+			]),
+		);
+		const done = runtime.launch(run);
+		await vi.waitFor(() => expect(run.status).toBe("waiting"));
+		runtime.answer(
+			run.id,
+			"Please explain this more simply. I have not chosen an option or authorized paid tests.",
+		);
+		await vi.waitFor(() =>
+			expect(run.questions).toEqual([
+				"Use simulated tests or authorize paid tests?",
+			]),
+		);
+		expect(run.status).toBe("waiting");
+		expect(run.answers).toEqual([]);
+		expect(run.questionRequests).toHaveLength(1);
+		expect(run.checkpoint?.active?.phase).toBe("waiting");
+		expect(run.outputs["visual-fix"]).toEqual({ questions: ["Which tests?"] });
+		expect(calls).toEqual(["visual-fix", "question-explanation"]);
+		expect(downstream).not.toHaveBeenCalled();
+		runtime.answer(run.id, "Use simulated tests");
+		await done;
+		expect(run.answers).toHaveLength(1);
+		expect(run.answers[0]).toMatchObject({
+			questions: ["Use simulated tests or authorize paid tests?"],
+			answer: "Use simulated tests",
+		});
+		expect(calls).toEqual(["visual-fix", "question-explanation", "visual-fix"]);
+		expect(downstream).toHaveBeenCalledTimes(1);
+	});
+	it("restores rephrased questions and their batch without notifying or accepting the explanation again", async () => {
+		const question = vi.fn(async () => {});
+		const execute = vi.fn(async (context: ExecutionContext) =>
+			context.step.id === "question-explanation"
+				? { questions: ["Clearer pending decision?"] }
+				: { questions: context.run.answers.length ? [] : ["Decision?"] },
+		);
+		const { runtime, home } = create({ agent: execute, question });
+		const run = start(
+			runtime,
+			workflow([agent("clarify", { askQuestions: true })]),
+		);
+		const first = runtime.launch(run);
+		await vi.waitFor(() => expect(run.status).toBe("waiting"));
+		runtime.answer(run.id, "Rephrase this please", "explanation");
+		await vi.waitFor(() =>
+			expect(run.questions).toEqual(["Clearer pending decision?"]),
+		);
+		const batch = run.questionBatchId;
+		await runtime.shutdown();
+		await first;
+		const restarted = new WorkflowRuntime(home, {
+			agent: execute,
+			script: async () => ({}),
+			tool: async () => ({}),
+			question,
+		});
+		const restored = restarted.get(run.id);
+		const second = restarted.launch(restored);
+		await vi.waitFor(() => expect(restored.status).toBe("waiting"));
+		expect(restored.questions).toEqual(["Clearer pending decision?"]);
+		expect(restored.questionBatchId).toBe(batch);
+		expect(restored.answers).toEqual([]);
+		expect(restored.questionRequests).toHaveLength(1);
+		expect(question).toHaveBeenCalledTimes(2);
+		expect(execute).toHaveBeenCalledTimes(2);
+		restarted.answer(run.id, "Proceed");
+		await second;
+		expect(restored.status).toBe("completed");
+		expect(restored.answers).toHaveLength(1);
+	});
+	it("refuses an explanation that drops the decision and never starts downstream work", async () => {
+		const downstream = vi.fn(async () => ({}));
+		const { runtime } = create({
+			agent: async (context) => ({
+				questions:
+					context.step.id === "question-explanation" ? [] : ["Decision?"],
+			}),
+			script: downstream,
+		});
+		const run = start(
+			runtime,
+			workflow([
+				agent("clarify", { askQuestions: true }),
+				{ id: "receipt", name: "Receipt", type: "script", script: "unused" },
+			]),
+		);
+		const done = runtime.launch(run);
+		await vi.waitFor(() => expect(run.status).toBe("waiting"));
+		runtime.answer(run.id, "Please explain");
+		await done;
+		expect(run.status).toBe("failed");
+		expect(run.error).toContain("preserve every pending decision");
+		expect(run.answers).toEqual([]);
+		expect(downstream).not.toHaveBeenCalled();
 	});
 	it("terminates a waiting run and never starts downstream work", async () => {
 		const execute = vi.fn(async () => ({ questions: ["Question"] }));
@@ -1003,7 +1172,12 @@ it.each([
 ])("restores unanswered questions without reasking, and waits for a human (legacy=%s)", async (legacy) => {
 	const question = vi.fn(async () => {});
 	const { runtime, home } = create({
-		agent: async () => ({ questions: ["Which provider?"] }),
+		agent: async () => ({
+			questions: ["Which provider?"],
+			questionRecommendations: [
+				{ questionIndex: 0, answer: "Codex", reason: "Existing runner" },
+			],
+		}),
 		question,
 	});
 	const run = start(
@@ -1017,8 +1191,12 @@ it.each([
 	await vi.waitFor(() => expect(question).toHaveBeenCalledTimes(1));
 	await runtime.shutdown();
 	expect(run.status).toBe("waiting");
+	const batch = run.questionBatchId;
+	expect(batch).toEqual(expect.any(String));
+	expect(run.answers).toEqual([]);
 	if (legacy) {
 		delete run.checkpoint;
+		delete run.questionBatchId;
 		runtime.save(run);
 	}
 	const agentHook = vi.fn(async (context: ExecutionContext) => {
@@ -1033,6 +1211,13 @@ it.each([
 		),
 	);
 	expect(restarted.get(run.id).status).toBe("waiting");
+	expect(restarted.get(run.id).questionRecommendations).toEqual([
+		{ questionIndex: 0, answer: "Codex", reason: "Existing runner" },
+	]);
+	if (!legacy) expect(restarted.get(run.id).questionBatchId).toBe(batch);
+	const restoredBatch = restarted.get(run.id).questionBatchId;
+	expect(restarted.get(run.id).questionBatchId).toBe(restoredBatch);
+	expect(restarted.get(run.id).answers).toEqual([]);
 	expect(question).toHaveBeenCalledTimes(1);
 	expect(agentHook).not.toHaveBeenCalled();
 	restarted.answer(run.id, "Codex");
@@ -1044,6 +1229,8 @@ it.each([
 		"implement",
 	]);
 	expect(restarted.get(run.id).history).toHaveLength(3);
+	expect(restarted.get(run.id).questionRecommendations).toBeUndefined();
+	expect(restarted.get(run.id).questionBatchId).toBeUndefined();
 });
 it("keeps an accepted answer across a crash before the clarifier continues", async () => {
 	const { runtime, home } = create({
@@ -1350,8 +1537,299 @@ it("grants a bounded persisted retry budget only to the exhausted nested step", 
 	expect(restored.iterationLimit).toBeUndefined();
 });
 
+it.each([
+	"workflow",
+	"fanout",
+])("explicit Retry reopens only an exhausted %s correction and retains its evidence", async (type) => {
+	let recovered = false;
+	const calls: ExecutionContext[] = [];
+	const hooks = {
+		agent: async (ctx: ExecutionContext) => {
+			calls.push(ctx);
+			expect(ctx.resumeAgent?.sessionId).toBe("saved-guide-thread");
+			expect(ctx.resumeAgent?.rejected).toMatchObject({
+				attempts: 0,
+				exhausted: false,
+				output: { chapters: [], requirements: [] },
+				issues: [{ path: "/chapters", message: "Missing chapters" }],
+			});
+			if (!recovered) {
+				ctx.checkpointAgent?.({
+					...ctx.resumeAgent!,
+					rejected: {
+						...ctx.resumeAgent!.rejected!,
+						attempts: 2,
+						exhausted: true,
+					},
+				});
+				throw new Error("Output correction exhausted");
+			}
+			return { summary: "Guide recovered" };
+		},
+		script: async () => ({}),
+		tool: async () => ({}),
+	};
+	const { runtime, home } = create(hooks);
+	const child = { ...workflow([agent("guide", { next: "end" })]), id: "child" };
+	runtime.updateWorkflows([...defaultWorkflows, child]);
+	const parent = workflow(
+		[
+			{
+				id: "pipeline",
+				name: "Pipeline",
+				type,
+				...(type === "workflow"
+					? { workflow: "child" }
+					: { groups: [[agent("guide", { next: "end" })]] }),
+			},
+		],
+		[child],
+	);
+	const run = start(runtime, parent);
+	run.status = "failed";
+	run.outputs.implementation = { summary: "Accepted implementation" };
+	run.history.push({
+		step: "implementation",
+		at: run.createdAt,
+		output: run.outputs.implementation,
+	});
+	const retained = structuredClone(run.history);
+	run.checkpoint = {
+		current: "pipeline",
+		visits: { pipeline: 1 },
+		active: {
+			phase: "executing",
+			children: [
+				{
+					current: "guide",
+					visits: { guide: 1 },
+					...(type === "fanout"
+						? { outputs: structuredClone(run.outputs) }
+						: {}),
+					active: {
+						phase: "executing",
+						agent: {
+							runner: "codex",
+							sessionId: "saved-guide-thread",
+							rejected: {
+								attempts: 2,
+								exhausted: true,
+								output: { chapters: [], requirements: [] },
+								issues: [{ path: "/chapters", message: "Missing chapters" }],
+								revision: {
+									headSha: "unchanged",
+									dirty: false,
+									historyLength: 1,
+									at: run.createdAt,
+								},
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+	runtime.save(run);
+	const restarted = new WorkflowRuntime(home, hooks);
+	const restored = restarted.get(run.id);
+	restarted.retry(run.id);
+	await vi.waitFor(() => expect(restored.status).toBe("failed"));
+	expect(calls).toHaveLength(1);
+	// Automatic restart cannot replenish an exhausted budget.
+	const again = new WorkflowRuntime(home, {
+		...hooks,
+		agent: async (ctx) => {
+			expect(ctx.resumeAgent?.rejected?.exhausted).toBe(true);
+			throw new Error("Output correction exhausted");
+		},
+	});
+	again.resumeAll();
+	expect(again.get(run.id).status).toBe("failed");
+	recovered = true;
+	restarted.retry(run.id);
+	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	expect(calls).toHaveLength(2);
+	expect(restored.history.slice(0, retained.length)).toEqual(retained);
+	expect(restored.outputs.implementation).toEqual(run.outputs.implementation);
+});
+
+it.each([
+	"workflow",
+	"fanout",
+])("repairs a saved Codex startup ID in a %s leaf without replaying completed work", async (type) => {
+	const calls: ExecutionContext[] = [];
+	const hooks = {
+		agent: async (ctx: ExecutionContext) => {
+			calls.push(ctx);
+			expect(ctx.resumeAgent).toBeUndefined();
+			expect(ctx.run.checkpoint?.active?.children?.[0]?.visits.capture).toBe(4);
+			ctx.checkpointAgent?.({ runner: "codex", sessionId: "confirmed-thread" });
+			return { summary: "Fresh role completed" };
+		},
+		script: async () => ({}),
+		tool: async () => ({}),
+	};
+	const { runtime, home } = create(hooks);
+	const child = {
+		...workflow([agent("capture", { next: "end" })]),
+		id: "child",
+	};
+	runtime.updateWorkflows([...defaultWorkflows, child]);
+	const parent = workflow(
+		[
+			agent("implemented"),
+			{
+				id: "pipeline",
+				name: "Pipeline",
+				type,
+				...(type === "workflow"
+					? { workflow: "child" }
+					: { groups: [[agent("capture", { next: "end" })]] }),
+			},
+		],
+		[child],
+	);
+	const run = start(runtime, parent);
+	const leaf: GraphCheckpoint = { current: "capture", visits: { capture: 4 } };
+	run.checkpoint = {
+		current: "pipeline",
+		visits: { implemented: 1, pipeline: 1 },
+		active: { phase: "executing", children: [leaf] },
+	};
+	const key = type === "workflow" ? "pipeline/capture" : "pipeline/0/capture";
+	failedCodexStartup(run, key, leaf);
+	run.outputs.implemented = { summary: "Keep the implementation" };
+	run.outputs.evidence = { screenshots: ["accepted.png"] };
+	if (type === "fanout") leaf.outputs = structuredClone(run.outputs);
+	run.history.push({
+		step: "implemented",
+		output: run.outputs.implemented,
+		at: run.createdAt,
+	});
+	run.answers.push({
+		questions: ["Which fixture?"],
+		answer: "Saved fixture",
+		at: run.createdAt,
+	});
+	const retained = structuredClone({
+		outputs: run.outputs,
+		history: run.history,
+		answers: run.answers,
+	});
+	runtime.save(run);
+	const restarted = new WorkflowRuntime(home, hooks);
+	const restored = restarted.retry(run.id);
+	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	expect(calls.map((ctx) => ctx.stepKey)).toEqual([key]);
+	expect(restored.history.slice(0, retained.history.length)).toEqual(
+		retained.history,
+	);
+	expect(restored.outputs).toMatchObject(retained.outputs);
+	expect(restored.answers).toEqual(retained.answers);
+	expect(
+		restored.events.some((event) =>
+			event.message.includes("Removed invalid Codex startup checkpoint"),
+		),
+	).toBe(true);
+	expect(new WorkflowRuntime(home, hooks).get(run.id).status).toBe("completed");
+});
+
+it.each([
+	"missing startup receipt",
+	"different role",
+	"completed visit",
+	"different thread",
+	"ordinary timeout",
+	"assistant activity",
+	"tool result",
+	"successful turn",
+	"failed turn",
+	"unknown activity",
+	"saved output",
+	"saved correction",
+	"other provider",
+	"truncated activity",
+])("keeps Codex checkpoints when recovery is unsafe: %s", async (condition) => {
+	let resumed: ExecutionContext["resumeAgent"];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			resumed = structuredClone(ctx.resumeAgent);
+			return {};
+		},
+	});
+	const run = start(runtime, workflow([agent("capture")]));
+	run.checkpoint = { current: "capture", visits: { capture: 1 } };
+	failedCodexStartup(run, "capture", run.checkpoint);
+	const saved = run.checkpoint.active!.agent!;
+	if (condition === "missing startup receipt") run.events = [];
+	if (condition === "different role") run.events[0]!.step = "other/capture";
+	if (condition === "completed visit")
+		run.history.push({
+			step: "capture",
+			output: {},
+			at: new Date(Date.parse(run.createdAt) + 1).toISOString(),
+		});
+	if (condition === "different thread") saved.sessionId = "real-thread";
+	if (condition === "ordinary timeout")
+		run.error = "initialize timed out after 60000ms";
+	if (condition === "other provider") saved.runner = "claude";
+	if (["failed turn", "unknown activity"].includes(condition))
+		run.events.push({
+			at: run.createdAt,
+			step: "capture",
+			source: "agent",
+			message: JSON.stringify({
+				type: condition === "failed turn" ? "result" : "unexpected",
+				session_id: saved.sessionId,
+				is_error: true,
+				errors: ["fixture turn failed after thread creation"],
+			}),
+		});
+	if (condition === "truncated activity")
+		run.events.push({
+			at: run.createdAt,
+			step: "capture",
+			source: "agent",
+			message: "...truncated tool activity",
+		});
+	if (
+		["assistant activity", "tool result", "successful turn"].includes(condition)
+	)
+		run.events.push({
+			at: run.createdAt,
+			step: "capture",
+			source: "agent",
+			message: JSON.stringify({
+				type:
+					condition === "successful turn"
+						? "result"
+						: condition === "tool result"
+							? "user"
+							: "assistant",
+				session_id: saved.sessionId,
+				is_error: false,
+			}),
+		});
+	if (condition === "saved output")
+		saved.result = {
+			output: { summary: "Keep" },
+			revision: { headSha: "head", dirty: false, historyLength: 0, at: "" },
+		};
+	if (condition === "saved correction")
+		saved.rejected = { output: { summary: "Keep" }, issues: [], attempts: 1 };
+	const prior = structuredClone(saved);
+	runtime.retry(run.id);
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(resumed).toEqual(prior);
+	expect(
+		run.events.some((event) =>
+			event.message.includes("Removed invalid Codex startup checkpoint"),
+		),
+	).toBe(false);
+});
+
 it("upgrades only stock CI routing, retaining customized models and routes", () => {
-	const definitions = structuredClone(defaultWorkflows);
+	const definitions = legacyReviewWorkflows();
 	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
 	shared.steps = shared.steps.filter((x) => x.id !== "after-ci-fix");
 	const fix = shared.steps.find((x) => x.id === "ci-fix")!;
@@ -1378,7 +1856,7 @@ it("upgrades only stock CI routing, retaining customized models and routes", () 
 });
 
 it("upgrades handoff into the existing CI fix route without replacing custom routes", () => {
-	const definitions = structuredClone(defaultWorkflows);
+	const definitions = legacyReviewWorkflows();
 	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
 	const handoff = shared.steps.find((x) => x.id === "handoff")!;
 	handoff.branches = [];
@@ -1546,7 +2024,7 @@ it.each([
 });
 
 it("upgrades stock coordination limits without changing agent/custom limits", () => {
-	const definitions = structuredClone(defaultWorkflows);
+	const definitions = legacyReviewWorkflows();
 	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
 	const gate = shared.steps.find((x) => x.id === "review-gate")!;
 	gate.maxVisits = 8;
@@ -2049,7 +2527,7 @@ it.each([
 });
 
 it("upgrades a coherent screenshot recipe to QA atomically, keeps custom behavior and frozen run definitions", async () => {
-	const saved = structuredClone(defaultWorkflows);
+	const saved = legacyReviewWorkflows();
 	const pipeline = saved.find((w) => w.id === "factory-pipeline")!;
 	for (const legacy of legacyScreenshotSteps)
 		pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =
@@ -2108,6 +2586,7 @@ it("upgrades a coherent screenshot recipe to QA atomically, keeps custom behavio
 });
 
 it("retries blocked nonvisual QA after restart and waits again without waiving criteria", async () => {
+	const question = vi.fn();
 	const tool = vi.fn(async (ctx: ExecutionContext) =>
 		ctx.run.answers.length < 2
 			? {
@@ -2115,6 +2594,14 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 					qaBlocked: true,
 					questions: [
 						"CLI fixture account is unavailable. Restore access, then explain how QA can run the required save check.",
+					],
+					questionRecommendations: [
+						{
+							questionIndex: 0,
+							answer:
+								"Restore the fixture account and retry the required check.",
+							reason: "Missing access prevents the required QA check.",
+						},
 					],
 				}
 			: { approved: true },
@@ -2126,7 +2613,7 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 			);
 		return { qaContract: "qa-v1", results: [] };
 	});
-	const { home, runtime } = create({ tool, agent: agentHook });
+	const { home, runtime } = create({ tool, agent: agentHook, question });
 	const definition = workflow([
 		agent("capture", {
 			inputs: ["visual-scope"],
@@ -2149,18 +2636,30 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 	await vi.waitFor(() => expect(run.status).toBe("waiting"));
 	const prefix = structuredClone(run.history);
 	const frozen = structuredClone(run.workflow);
+	const batch = run.questionBatchId;
+	const recommendations = structuredClone(run.questionRecommendations);
 	await runtime.shutdown();
 	await execution;
 	const restored = new WorkflowRuntime(home, {
 		tool,
 		agent: agentHook,
 		script: async () => ({}),
+		question,
 	});
 	const same = restored.get(run.id);
 	restored.resumeAll();
-	await vi.waitFor(() => expect(same.status).toBe("waiting"));
+	await vi.waitFor(() => {
+		expect(tool).toHaveBeenCalledTimes(2);
+		expect(same.events.at(-1)?.message).toBe(same.questions.join("\n"));
+		expect(same.status).toBe("waiting");
+	});
 	expect(same.history).toEqual(prefix);
 	expect(same.workflow).toEqual(frozen);
+	expect(same.questionBatchId).toBe(batch);
+	expect(same.questionRecommendations).toEqual(recommendations);
+	expect(same.answers).toEqual([]);
+	expect(question).toHaveBeenCalledTimes(1);
+	expect(agentHook).toHaveBeenCalledTimes(2);
 	restored.answer(same.id, "Access still unavailable; please approve anyway");
 	await vi.waitFor(() =>
 		expect(
@@ -2171,6 +2670,7 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 		approved: false,
 		qaBlocked: true,
 	});
+	expect(same.questionBatchId).not.toBe(batch);
 	restored.answer(
 		same.id,
 		"Account restored; execute CLI save with fixture 42",
@@ -2181,6 +2681,173 @@ it("retries blocked nonvisual QA after restart and waits again without waiving c
 		agentHook.mock.calls.filter(([c]) => c.step.id === "capture"),
 	).toHaveLength(3);
 	await restored.shutdown();
+});
+
+it.each([
+	"question",
+	"answer",
+	"reason",
+	"removed",
+] as const)("replaces a restored QA question batch when its %s changes", async (changed) => {
+	const output = {
+		approved: false,
+		qaBlocked: true,
+		questions: ["Restore the fixture account, then explain how QA can run."],
+		questionRecommendations: [
+			{ questionIndex: 0, answer: "Restore access", reason: "QA needs access" },
+		],
+	};
+	const tool = vi.fn(async () => structuredClone(output));
+	const question = vi.fn();
+	const { home, runtime } = create({ tool, question });
+	const run = start(
+		runtime,
+		workflow([
+			agent("capture", { next: "visual-review" }),
+			agent("visual-review", { next: "visual-gate" }),
+			{
+				id: "visual-gate",
+				name: "QA gate",
+				type: "tool",
+				tool: "visual-gate",
+				qaContract: "qa-v1",
+				next: "end",
+			},
+		]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const batch = run.questionBatchId;
+	await runtime.shutdown();
+	await execution;
+	if (changed === "question") output.questions[0] = "Which account is ready?";
+	else if (changed === "removed") output.questionRecommendations = [];
+	else output.questionRecommendations[0]![changed] = "Updated guidance";
+	const agentHook = vi.fn(async () => ({}));
+	const restarted = reload(home, { tool, question, agent: agentHook });
+	const restored = restarted.get(run.id);
+	restarted.resumeAll();
+	await vi.waitFor(() => expect(question).toHaveBeenCalledTimes(2));
+	expect(restored.status).toBe("waiting");
+	expect(restored.questionBatchId).not.toBe(batch);
+	expect(restored.questions).toEqual(output.questions);
+	expect(restored.questionRecommendations).toEqual(
+		output.questionRecommendations,
+	);
+	expect(restored.answers).toEqual([]);
+	expect(agentHook).not.toHaveBeenCalled();
+	await restarted.shutdown();
+});
+
+it.each([
+	"unchanged",
+	"question",
+	"answer",
+	"reason",
+	"removed",
+	"legacy",
+	"pending",
+] as const)("restores a rephrased review question only when its source is unchanged (%s)", async (changed) => {
+	const output = {
+		approved: false,
+		reviewBlocked: true,
+		findings: [{ id: "fixture", status: "open" }],
+		questions: ["Restore deployment access?"],
+		questionRecommendations: [
+			{ questionIndex: 0, answer: "Restore access", reason: "QA needs access" },
+		],
+	};
+	const tool = vi.fn(async () => structuredClone(output));
+	const execute = vi.fn(async (ctx: ExecutionContext) =>
+		ctx.step.id === "question-explanation"
+			? {
+					questions: ["Can you restore deployment access?"],
+					questionRecommendations: output.questionRecommendations,
+				}
+			: {},
+	);
+	const question = vi.fn();
+	const { home, runtime } = create({ tool, agent: execute, question });
+	const run = start(
+		runtime,
+		workflow([
+			agent("visual-review"),
+			{
+				id: "visual-gate",
+				name: "Gate",
+				type: "tool",
+				tool: "visual-gate",
+				qaContract: "qa-v1",
+				next: "end",
+				branches: [
+					{ when: { path: "approved", equals: false }, next: "visual-fix" },
+				],
+			},
+			agent("visual-fix", { next: "end" }),
+		]),
+	);
+	const first = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	runtime.answer(run.id, "Please explain", "explanation");
+	await vi.waitFor(() => {
+		expect(run.status).toBe("waiting");
+		expect(run.questions).toEqual(["Can you restore deployment access?"]);
+	});
+	const batch = run.questionBatchId;
+	await runtime.shutdown();
+	await first;
+	if (changed === "question")
+		output.questions = ["Which deployment account is available?"];
+	else if (changed === "removed") output.questionRecommendations = [];
+	else if (changed === "answer" || changed === "reason")
+		output.questionRecommendations[0]![changed] = "Updated guidance";
+	const restarted = reload(home, { tool, agent: execute, question });
+	const restored = restarted.get(run.id);
+	if (changed === "legacy") {
+		delete restored.checkpoint!.active!.questionDisplay!.source;
+	}
+	if (changed === "pending") {
+		const state = restored.checkpoint!.active!;
+		state.questionExplanation = {
+			source: state.questionDisplay!.source,
+			questions: state.questionDisplay!.questions,
+			text: "Please explain again",
+		};
+		state.questionDisplay = undefined;
+		output.questions = ["Which deployment account is available?"];
+	}
+	const second = restarted.launch(restored);
+	await vi.waitFor(() => {
+		expect(tool).toHaveBeenCalledTimes(2);
+		expect(restored.status).toBe("waiting");
+	});
+	if (changed === "unchanged") {
+		expect(restored.questions).toEqual(["Can you restore deployment access?"]);
+		expect(restored.questionBatchId).toBe(batch);
+		expect(question).toHaveBeenCalledTimes(2);
+	} else {
+		expect(restored.questions).toEqual(output.questions);
+		expect(restored.questionRecommendations).toEqual(
+			output.questionRecommendations,
+		);
+		expect(restored.questionBatchId).not.toBe(batch);
+		expect(restored.checkpoint!.active!.questionDisplay).toBeUndefined();
+		expect(question).toHaveBeenCalledTimes(3);
+	}
+	expect(restored.answers).toEqual([]);
+	expect(execute.mock.calls.map(([ctx]) => ctx.step.id)).toEqual([
+		"visual-review",
+		"question-explanation",
+	]);
+	restarted.answer(run.id, "Use the available deployment account", "answer");
+	await second;
+	expect(restored.answers[0]!.questions).toEqual(
+		changed === "unchanged"
+			? ["Can you restore deployment access?"]
+			: output.questions,
+	);
+	expect(restored.status).toBe("completed");
+	await restarted.shutdown();
 });
 
 it("upgrades the original stock end-at-handoff recipe with QA and its human checkpoint together", () => {
@@ -2215,7 +2882,7 @@ it("preserves a screenshot recipe with customized result handling or nonvisual r
 			step.branches = [];
 		},
 	]) {
-		const saved = structuredClone(defaultWorkflows),
+		const saved = legacyReviewWorkflows(),
 			pipeline = saved.find((w) => w.id === "factory-pipeline")!;
 		for (const legacy of legacyScreenshotSteps)
 			pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =
@@ -2231,4 +2898,452 @@ it("preserves a screenshot recipe with customized result handling or nonvisual r
 			updated.steps.find((s) => s.id === "capture")!.qaContract,
 		).toBeUndefined();
 	}
+});
+
+it("assigns new identities to repeated question batches and labels ticket suggestions", async () => {
+	const track = vi.fn<NonNullable<RuntimeHooks["track"]>>(async () => {});
+	const recommendation = {
+		questionIndex: 0,
+		answer: "Wait",
+		reason: "Approval needed",
+	};
+	const { runtime } = create({
+		agent: async () => ({
+			questions: ["Proceed?"],
+			questionRecommendations: [recommendation],
+		}),
+		track,
+	});
+	const run = start(
+		runtime,
+		workflow([agent("clarify", { askQuestions: true })]),
+	);
+	run.ticketReference = {
+		provider: "taskbot",
+		instance: "https://taskbot.test",
+		project: "test",
+		id: 1,
+		url: "https://taskbot.test/1",
+		server: "taskbot",
+	};
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const batch = run.questionBatchId;
+	expect(run.answers).toEqual([]);
+	expect(track.mock.calls.at(-1)?.[1].body).toContain("Suggested answer: Wait");
+	expect(track.mock.calls.at(-1)?.[1].body).toContain(
+		"explicit reply or Send answers",
+	);
+	runtime.answer(run.id, "Wait");
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(run.questionBatchId).not.toBe(batch);
+	expect(run.answers).toHaveLength(1);
+	runtime.stop(run.id);
+});
+
+it("recovers saved QA waits into the fixer while retaining completed roles and human merge approval", async () => {
+	const called: string[] = [];
+	const { home, runtime } = create({
+		agent: async (ctx) => {
+			called.push(ctx.step.id);
+			return {};
+		},
+		tool: async () => ({
+			approved: false,
+			qaBlocked: true,
+			questions: ["access"],
+			findings: [{ id: "defect", rating: 3, status: "open" }],
+		}),
+	});
+	const definition = workflow([
+		agent("capture", { next: "visual-review" }),
+		agent("visual-review", { next: "visual-gate" }),
+		{
+			id: "visual-gate",
+			name: "Gate",
+			type: "tool",
+			tool: "visual-gate",
+			qaContract: "qa-v1",
+			branches: [
+				{ when: { path: "approved", equals: false }, next: "visual-fix" },
+			],
+			next: "end",
+		},
+		agent("visual-fix", { next: "end" }),
+	]);
+	const run = start(runtime, definition);
+	run.status = "waiting";
+	run.questions = ["Invalid QA reference"];
+	run.checkpoint = {
+		current: "visual-gate",
+		visits: { capture: 1, "visual-review": 1, "visual-gate": 1 },
+		active: { phase: "waiting" },
+	};
+	run.outputs["visual-gate"] = {
+		approved: false,
+		qaBlocked: true,
+		questions: run.questions,
+	};
+	const originalHistory = structuredClone(run.history);
+	runtime.save(run);
+	await runtime.shutdown();
+	const restored = new WorkflowRuntime(home, {
+		agent: async (ctx) => {
+			called.push(ctx.step.id);
+			return {};
+		},
+		tool: async () => ({
+			approved: false,
+			findings: [{ id: "defect", rating: 3, status: "open" }],
+		}),
+		script: async () => ({}),
+	});
+	restored.resumeAll();
+	await vi.waitFor(() => expect(restored.get(run.id).status).toBe("completed"));
+	expect(called).toEqual(["visual-fix"]);
+	expect(restored.get(run.id).questions).toEqual([]);
+	expect(restored.get(run.id).history.slice(0, originalHistory.length)).toEqual(
+		originalHistory,
+	);
+	expect(restored.get(run.id).humanDecisions ?? []).toEqual([]);
+	await restored.shutdown();
+});
+
+it("retries invalid QA receipts without human input, retaining bounded visits", async () => {
+	let gates = 0;
+	const calls: string[] = [];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			return {};
+		},
+		tool: async () =>
+			++gates === 1
+				? {
+						approved: false,
+						qaRetry: true,
+						evidenceIssues: ["unknown requirement reference"],
+					}
+				: { approved: true },
+	});
+	const run = start(
+		runtime,
+		workflow([
+			agent("capture", { next: "visual-review" }),
+			agent("visual-review", { next: "visual-gate" }),
+			{
+				id: "visual-gate",
+				name: "Gate",
+				type: "tool",
+				tool: "visual-gate",
+				next: "end",
+			},
+		]),
+	);
+	await runtime.launch(run);
+	expect(run.status).toBe("completed");
+	expect(calls).toEqual([
+		"capture",
+		"visual-review",
+		"capture",
+		"visual-review",
+	]);
+	expect(run.answers).toEqual([]);
+	await runtime.shutdown();
+});
+
+it.each([
+	"ci-fix",
+	"code-fix",
+	"visual-fix",
+])("waits for structured assistance from %s despite frozen askQuestions=false", async (fixer) => {
+	const calls: string[] = [];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			return {
+				questions: ctx.run.answers.length ? [] : ["Restore external access"],
+			};
+		},
+	});
+	const run = start(
+		runtime,
+		workflow([agent(fixer, { askQuestions: false, next: "end" })]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(calls).toEqual([fixer]);
+	runtime.answer(run.id, "External access restored");
+	await execution;
+	expect(calls).toEqual([fixer, fixer]);
+	expect(run.status).toBe("completed");
+	await runtime.shutdown();
+});
+
+it.each([
+	"clarify",
+	"ci-fix",
+	"code-fix",
+	"visual-fix",
+])("resumes %s's conversation after restart, explanation and an explicit answer", async (fixer) => {
+	const conversation = {
+		runner: "codex" as const,
+		sessionId: "assistance-thread",
+	};
+	const calls: string[] = [];
+	const resumes: ExecutionContext["resumeAgent"][] = [];
+	const hooks: Partial<RuntimeHooks> = {
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			if (ctx.step.id === "completed") return {};
+			resumes.push(structuredClone(ctx.resumeAgent));
+			if (ctx.step.id === "receipt") return { completed: true };
+			if (ctx.step.id === "question-explanation")
+				return {
+					questions: ["Should I retry with the restored test account?"],
+				};
+			const output = {
+				questions: ctx.run.answers.length === 0 ? ["Restore test access?"] : [],
+			};
+			ctx.checkpointAgent?.({
+				...conversation,
+				idleRetries: 1,
+				result: {
+					output,
+					revision: {
+						headSha: "unchanged",
+						dirty: false,
+						historyLength: 0,
+						at: ctx.run.createdAt,
+					},
+				},
+			});
+			return output;
+		},
+	};
+	const { runtime, home } = create(hooks);
+	const run = start(
+		runtime,
+		workflow([
+			agent("completed"),
+			agent(fixer, { askQuestions: fixer === "clarify", maxVisits: 3 }),
+			agent("receipt", { next: "end" }),
+		]),
+	);
+	void runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	await runtime.shutdown();
+	const restarted = reload(home, hooks);
+	restarted.resumeAll();
+	const recovered = restarted.get(run.id);
+	await vi.waitFor(() =>
+		expect(restarted.pendingAnswers.has(run.id)).toBe(true),
+	);
+	expect(calls).toEqual(["completed", fixer]);
+	restarted.answer(run.id, "Please explain. I have not decided.");
+	await vi.waitFor(() =>
+		expect(recovered.questions).toEqual([
+			"Should I retry with the restored test account?",
+		]),
+	);
+	expect(recovered.status).toBe("waiting");
+	expect(recovered.outputs.receipt).toBeUndefined();
+	expect(resumes).toEqual([undefined, undefined]);
+	expect(recovered.answers).toEqual([]);
+	expect(recovered.checkpoint.active?.agent?.sessionId).toBe(
+		conversation.sessionId,
+	);
+	restarted.answer(run.id, "Use the restored test account.");
+	await vi.waitFor(() => expect(recovered.status).toBe("completed"));
+	expect(calls).toEqual([
+		"completed",
+		fixer,
+		"question-explanation",
+		fixer,
+		"receipt",
+	]);
+	expect(resumes).toEqual([undefined, undefined, conversation, undefined]);
+	expect(recovered.checkpoint.visits[fixer]).toBe(2);
+	expect(recovered.answers).toHaveLength(1);
+	await restarted.shutdown();
+});
+
+it.each([
+	"review-gate",
+	"visual-gate",
+])("%s assistance resumes its configured fixer without replaying review or approving findings", async (gate) => {
+	const calls: string[] = [];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			return {};
+		},
+		tool: async () => ({
+			approved: false,
+			reviewBlocked: true,
+			findings: [{ id: "blocked" }],
+			questions: ["Restore deployment access"],
+		}),
+	});
+	const run = start(
+		runtime,
+		workflow([
+			agent("review"),
+			{
+				id: "gate",
+				name: "Gate",
+				type: "tool",
+				tool: gate,
+				next: "end",
+				branches: [
+					{ when: { path: "approved", equals: false }, next: "custom-fixer" },
+				],
+			},
+			agent("custom-fixer", { next: "end" }),
+		]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(calls).toEqual(["review"]);
+	expect(run.outputs.gate).toMatchObject({ approved: false });
+	runtime.answer(run.id, "Deployment restored");
+	await execution;
+	expect(calls).toEqual(["review", "custom-fixer"]);
+	expect(run.status).toBe("completed");
+	await runtime.shutdown();
+});
+
+it.each([
+	false,
+	true,
+])("restores visual-review assistance without invalidating unchanged drafts (changed=%s)", async (changed) => {
+	const output = {
+		approved: false,
+		reviewBlocked: true,
+		findings: [{ id: "blocked", status: "open" }],
+		questions: ["Restore deployment access"],
+	};
+	const tool = vi.fn(async () => structuredClone(output));
+	const question = vi.fn();
+	const agentHook = vi.fn(async (_ctx: ExecutionContext) => ({}));
+	const { home, runtime } = create({ tool, question, agent: agentHook });
+	const run = start(
+		runtime,
+		workflow([
+			agent("visual-review"),
+			{
+				id: "visual-gate",
+				name: "Visual gate",
+				type: "tool",
+				tool: "visual-gate",
+				qaContract: "qa-v1",
+				next: "end",
+				branches: [
+					{ when: { path: "approved", equals: false }, next: "visual-fix" },
+				],
+			},
+			agent("visual-fix", { next: "end" }),
+		]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(question).toHaveBeenCalledTimes(1));
+	const batch = run.questionBatchId;
+	const history = structuredClone(run.history);
+	const frozen = structuredClone(run.workflow);
+	await runtime.shutdown();
+	await execution;
+	if (changed) output.questions = ["Which deployment account is available?"];
+	const restarted = reload(home, { tool, question, agent: agentHook });
+	const restored = restarted.get(run.id);
+	restarted.resumeAll();
+	await vi.waitFor(() => {
+		expect(tool).toHaveBeenCalledTimes(2);
+		expect(restored.status).toBe("waiting");
+		expect(restored.events.at(-1)?.message).toBe(output.questions.join("\n"));
+	});
+	if (changed) expect(restored.questionBatchId).not.toBe(batch);
+	else expect(restored.questionBatchId).toBe(batch);
+	expect(question).toHaveBeenCalledTimes(changed ? 2 : 1);
+	expect(restored.questions).toEqual(output.questions);
+	expect(restored.history).toEqual(history);
+	expect(restored.workflow).toEqual(frozen);
+	expect(restored.answers).toEqual([]);
+	expect(agentHook).toHaveBeenCalledTimes(1);
+	restarted.answer(restored.id, "Deployment access restored");
+	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	expect(agentHook.mock.calls.map(([ctx]) => ctx.step.id)).toEqual([
+		"visual-review",
+		"visual-fix",
+	]);
+	expect(restored.outputs["visual-gate"]).toEqual(output);
+	expect(restored.answers[0]?.questions).toEqual(output.questions);
+	expect(restored.humanDecisions ?? []).toEqual([]);
+	await restarted.shutdown();
+});
+
+it.each([
+	"ci-fix",
+	"code-fix",
+	"visual-fix",
+])("does not create an unsafe parallel assistance checkpoint from %s", async (fixer) => {
+	const question = vi.fn();
+	const { runtime } = create({
+		question,
+		agent: async () => ({ questions: ["Restore access"] }),
+	});
+	const run = start(
+		runtime,
+		workflow([
+			{
+				id: "parallel",
+				name: "Parallel",
+				type: "fanout",
+				groups: [[agent(fixer, { askQuestions: false, next: "end" })]],
+				next: "end",
+			},
+		]),
+	);
+	await runtime.launch(run);
+	expect(run.status).toBe("failed");
+	expect(run.error).toBe("Human checkpoints belong outside fanout branches");
+	expect(question).not.toHaveBeenCalled();
+	await runtime.shutdown();
+});
+
+it("waits for CI assistance and retries the existing fixer after an answer without replaying implementation", async () => {
+	const calls: string[] = [];
+	const { runtime } = create({
+		agent: async (ctx) => {
+			calls.push(ctx.step.id);
+			return {};
+		},
+		tool: async (ctx) =>
+			ctx.run.answers.length
+				? { reviewRequired: false }
+				: {
+						reviewRequired: false,
+						questions: ["Restore the build infrastructure"],
+					},
+	});
+	const run = start(
+		runtime,
+		workflow([
+			agent("ci-fix", { next: "after-ci-fix" }),
+			{
+				id: "after-ci-fix",
+				name: "After fix",
+				type: "tool",
+				tool: "review-after-fix",
+				next: "end",
+			},
+		]),
+	);
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	expect(calls).toEqual(["ci-fix"]);
+	runtime.answer(run.id, "Build infrastructure restored");
+	await execution;
+	expect(calls).toEqual(["ci-fix", "ci-fix"]);
+	expect(run.status).toBe("completed");
+	await runtime.shutdown();
 });

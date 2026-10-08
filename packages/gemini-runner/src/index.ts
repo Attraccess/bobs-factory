@@ -1,16 +1,16 @@
 /**
- * @module cyrus-gemini-runner
+ * @module bobs-factory-gemini-runner
  *
- * Gemini CLI integration for Cyrus agent framework.
+ * Gemini CLI integration for Bob’s Factory agent framework.
  * Provides a provider-agnostic wrapper around the Gemini CLI that implements
  * the IAgentRunner interface, allowing seamless switching between Claude and Gemini.
  *
  * @example
  * ```typescript
- * import { GeminiRunner } from 'cyrus-gemini-runner';
+ * import { GeminiRunner } from 'bobs-factory-gemini-runner';
  *
  * const runner = new GeminiRunner({
- *   cyrusHome: '/home/user/.cyrus',
+ *   factoryHome: '/home/user/.bobs-factory',
  *   workingDirectory: '/path/to/repo',
  *   model: 'gemini-2.5-flash',
  *   autoApprove: true
@@ -144,7 +144,7 @@ export type {
 	// Tool result types
 	ListDirectoryToolResult,
 	ListDirectoryToolUseEvent,
-	// Re-export McpServerConfig from cyrus-core for convenience
+	// Re-export McpServerConfig from bobs-factory-core for convenience
 	McpServerConfig,
 	ReadFileParameters,
 	ReadFileToolResult,

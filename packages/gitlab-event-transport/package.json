@@ -1,5 +1,5 @@
 {
-	"name": "cyrus-gitlab-event-transport",
+	"name": "bobs-factory-gitlab-event-transport",
 	"version": "0.2.73",
 	"description": "GitLab event transport for receiving and verifying forwarded GitLab webhooks",
 	"repository": {
@@ -21,7 +21,7 @@
 		"test:run": "vitest run --passWithNoTests"
 	},
 	"dependencies": {
-		"cyrus-core": "workspace:*",
+		"bobs-factory-core": "workspace:*",
 		"fastify": "^5.12.5"
 	},
 	"devDependencies": {
@@ -29,7 +29,6 @@
 		"@typescript/native-preview": "7.0.0-dev.20260707.2",
 		"vitest": "^4.1.11"
 	},
-	"publishConfig": {
-		"access": "public"
-	}
+	"private": true,
+	"license": "Apache-2.0"
 }

@@ -4,11 +4,69 @@ This changelog documents internal development changes, refactors, tooling update
 
 ## [Unreleased]
 
+### Changed
+
+- Prepare private workspace packages, embedded runtime assets, binary candidate verification and migration preservation checks for Taskbot #38. Retire upstream npm publication; retain historical tooling. Load user-prepared Cursor through a separate Node process with native ID, MCP, stream and cancellation regression checks; exclude its SDK/native sidecars from archives. Validate referenced MCP configuration before migration, preserve frozen workflow history while updating executable tool names, and share environment-file ownership between bootstrap and reload. Cover visual-review assistance batch recovery with regression tests and a simulated-agent F1 restart drive. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+### Fixed
+
+- Fix video evidence CI validation and base integration by formatting styles, installing media test tools and preserving both video and refinement recommendation guidance in the full prompt. Keep video-contract validation enforced through question-result normalization and preserve video finalization alongside feedback and review recovery. Integrate passkey access, renamed Bob’s Factory packages, compact review history and CI revision recovery without weakening video media restrictions. Keep context snapshot isolation checks compatible with both source and binary launch arguments. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Integrate specialist review with compact review history and the Bob’s Factory fork. Retain complete coverage in exported guides, question explanations, and batch-specific ticket notifications across restart. Keep snapshot fixtures compatible with binary arguments and authenticate restart-harness requests using isolated test sessions. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Preserve specialist extraction regression coverage while integrating legacy feedback recovery and shared question guidance from main. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Correct Recipes focus-recovery QA to open the reviewer dialog through trusted pointer or keyboard interaction and compare focus with the exact opening button after Escape. Retain reproducible browser receipts for desktop and narrow layouts. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Integrate specialist review with refinement recommendations and wait for capacity initialization in persistence test fixtures before cleanup. Cover assistance-batch notification and restart deduplication through the durable outbox and mocked F1 tracking. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Integrate Web Push with independent execution profiles, retaining intentional-stop metadata, protected device APIs and both capability descriptions. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
+- Reconcile Web Push with the Bob’s Factory fork and current CI recovery, using the renamed home and environment settings while retaining subscriptions, passkey protection and transition bookkeeping. Preserve the original decision identity through question rephrasing and nested workflow restart. Make context snapshot checks work with packaged launch arguments and allow the full-history fixture to finish under suite load. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
+- Integrate Web Push with Factory passkey authentication, protecting device management and refreshed notification destinations after sign-in, while retaining opt-out and deferred device cleanup across session loss. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
+- Integrate Web Push with Codex startup checkpoint recovery while retaining both user-facing fix entries. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
+- Integrate Web Push with the current question guidance, preserving both changelog entries and the saved review-fix instruction path. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+- Integrate Web Push with the current Factory base, retaining configured public/trusted proxy access, refinement guidance and both PWA regression suites. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+- Update the routing prompt test fixture for the accepted Web Push capability description, retaining complete prompt assertions and restoring CI. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+- Integrate execution profiles with the Bob’s Factory fork, passkey Settings, compact context and PR revision recovery; retain runner artifact restoration and isolated Cursor workers in binaries. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
+- Initialize reflection support before bundled certificate imports; verify renamed passkey commands, protected runtime recovery and packaged macOS startup while integrating main. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+
+- Cover Codex cancellation during configuration, initialization, thread setup and delayed turn startup; close failed initialization and await shared cleanup. Retain cancellation handlers for late notifications and timed-out start requests until thread completion or process exit, without reviving stopped runners or interrupting other threads. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
+- Correct the selected signed-out passkey update screenshot to 1280×900 and retain explicit viewport, build and protected-access receipts for QA reassessment. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
+
+- Await capacity initialization before cleaning up persistence, merge-recovery and workflow-trigger test homes, avoiding intermittent background-write cleanup failures. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
+- Preserve refinement recommendation metadata when review fixers request assistance, retaining both recovery and question-restart contracts during main integration. ([#37](https://github.com/Attraccess/bobs-factory/pull/37))
+- Integrate refinement recommendations with the latest workflow recovery changes, retaining recommendation validation and bounded retry regression coverage. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
+
+- Update the complete routing-prompt expectation for refinement recommendations so CI validates the current capability guidance. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
+
 ### Added
+
+- Record authenticated HTTPS Web Push QA through an isolated `zrok2` tunnel, including proxy guards, device controls, refreshed notification destinations and loss of access; retain explicit native-delivery and production-deployment limitations. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+- Add a reproducible mocked F1 follow-up for refinement recommendation submission and existing-session replies, retaining the disputed native-only QA coverage as an explicit limitation. ([#31](https://github.com/Attraccess/bobs-factory/pull/31))
 
 - Marketing website in `website/` with screenshots and recordings captured from the real factory runtime and UI running a scripted demo, published to GitHub Pages from `main` by a GitHub Actions workflow. ([#29](https://github.com/Attraccess/bobs-factory/pull/29))
 
 ### Changed
+
+- Integrate specialist review with passkey-protected Factory access, retain the complete launch guidance, and load authenticated test browser state in Recipes focus QA. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Integrate Codex startup recovery with specialist review and retain focused coverage of retry, restart, requirement validation and approval safeguards. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Integrate specialist review with current QA recovery and instance-capacity behavior; retain inventory validation across nested workflows and refresh the complete routing-prompt expectation. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Integrate Codex startup checkpoint recovery and shared question guidance with execution profiles; retain established conversations and independent execution settings. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
+- Integrate feedback recovery with execution profiles while preserving constructor cleanup synchronization and both changelog histories. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
+- Merge current workflow recovery, refinement recommendations and instance capacity into execution profiles; retain dedicated Settings pages and both answer/execution update drafts. Wait for coordinator initialization before removing persistence-test homes and give mocked multi-package release scenarios a bounded 30-second budget. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
+- Integrate execution profiles with machine capacity and the current Recipes UI; preserve selected environments, cancellable setup and redaction while retaining lease provenance and both settings editors. Update direct-MCP regression checks for Legacy and selected complete child environments. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+- Integrate passkey access with refinement recommendations, preserving explicit answer submission, protected drafts and both capability references. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
+
+- Restore CI coverage for authenticated Factory review drafts and the complete passkey-aware routing prompt; integrate capacity/recovery updates while preserving passkey gates and the public-origin compatibility setting; format the authentication CSS for the repository-wide Biome gate. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Run F1 agents as deterministic mocks by default, including Factory roles, chat sessions, and background titles; require an explicit live-mode opt-in for provider usage.
 
@@ -26,6 +84,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 
 ### Added
+- Add versioned execution snapshots, scoped Git/provider/hook/MCP environments, runner source/version checks, Cursor IPC isolation and recoverable project artifact leases. Add revision-safe profile APIs and runtime/UI coverage. Live runner API and GitLab tests were waived by the operator. ([Taskbot #57](https://taskbot.apps.janjaap.de/p/bobs-factory/t/57))
 - Added workflow/API/MCP regression coverage and a scoped F1 factory lifecycle drive; corrected CLI activity-sink lookup and cancellation of queued factory runners. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Documented native Codex command exceptions and the distinction between runner sandbox modes, egress-proxy settings, and writable directories. ([#1521](https://github.com/cyrusagents/cyrus/pull/1521))
 

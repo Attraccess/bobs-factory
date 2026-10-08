@@ -4,13 +4,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { formatActivities } from "./activity.js";
 import { Structure } from "./artifacts";
 import { api, useAction } from "./client";
-import { DraftNotice } from "./pwa-ui";
+import { useFormState } from "./form-state";
 import {
 	collectRestoration,
-	rememberDraft,
-	restoredDraft,
+	rememberView,
+	restoredView,
 	revisionOf,
-	useRestorableState,
 } from "./restoration";
 import { mergePage } from "./transcript";
 import { Button, Markdown } from "./ui";
@@ -32,7 +31,7 @@ const reading = new Map<
 function stateFor(id: string) {
 	let state = reading.get(id);
 	if (!state) {
-		const saved = restoredDraft<any>(`reading/${id}`);
+		const saved = restoredView<any>(`reading/${id}`);
 		state = {
 			top: 0,
 			following: saved?.following ?? true,
@@ -48,7 +47,7 @@ function stateFor(id: string) {
 }
 collectRestoration(() => {
 	for (const [id, state] of reading)
-		rememberDraft(`reading/${id}`, {
+		rememberView(`reading/${id}`, {
 			following: state.following,
 			expanded: [...state.expanded],
 			groups: [...state.groups],
@@ -261,24 +260,23 @@ export function RunConversation({ run, step }: { run: any; step?: string }) {
 			{error && <p role="alert">{error}</p>}
 			{run.chat?.enabled &&
 				(!step || !run.chat.step || run.chat.step === step) && (
-					<ChatComposer run={run} />
+					<ChatComposer
+						key={`${run.id}/${step ?? "all"}/${run.chat?.step ?? ""}`}
+						run={run}
+					/>
 				)}
 		</>
 	);
 }
 
 function ChatComposer({ run }: { run: any }) {
-	const [text, setText, staleChat] = useRestorableState(
-		`chat/${run.id}`,
-		"",
-		revisionOf([run.chat?.step]),
-	);
-	const [notice, setNotice] = useState("");
-	const action = useAction();
+	const context = revisionOf([run.id, run.chat?.step]);
+	const [text, setText] = useFormState(context, "");
+	const [notice, setNotice] = useFormState(context, "");
+	const action = useAction(`chat/${run.id}`, context);
 	const cache = useQueryClient();
 	const send = async () => {
-		if (!text.trim() || !run.chat.available || action.isPending || staleChat)
-			return;
+		if (!text.trim() || !run.chat.available || action.isPending) return;
 		const submittedText = text;
 		setNotice("");
 		try {
@@ -307,7 +305,6 @@ function ChatComposer({ run }: { run: any }) {
 				void send();
 			}}
 		>
-			<DraftNotice conflict={staleChat} draftKey={`chat/${run.id}`} />
 			<label htmlFor={`chat-${run.id}`}>Message Bob</label>
 			<textarea
 				id={`chat-${run.id}`}
@@ -339,7 +336,7 @@ function ChatComposer({ run }: { run: any }) {
 					type="submit"
 					requiresConnection
 					busy={action.isPending}
-					disabled={!text.trim() || !run.chat.available || staleChat}
+					disabled={!text.trim() || !run.chat.available}
 				>
 					Send message
 				</Button>
@@ -552,7 +549,10 @@ export function Conversation({
 										className={`bubble ${item.type === "user" ? "user" : item.status === "error" ? "error" : item.type === "system" ? "system" : "assistant"}`}
 									>
 										<small>
-											{item.type === "user" ? "You" : (item.title ?? "Bob")} ·{" "}
+											{item.type === "user"
+												? "You"
+												: (item.title ?? "Bob’s Factory")}{" "}
+											·{" "}
 											{new Date(item.at).toLocaleTimeString(undefined, {
 												hour: "2-digit",
 												minute: "2-digit",

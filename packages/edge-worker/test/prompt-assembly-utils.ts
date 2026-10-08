@@ -4,11 +4,11 @@
  * Provides a human-readable DSL for testing EdgeWorker.assemblePrompt() method.
  */
 
-import type { RepositoryConfig } from "cyrus-core";
+import type { RepositoryConfig } from "bobs-factory-core";
 import { expect } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import type { EdgeWorkerConfig } from "../src/types.js";
-import { TEST_CYRUS_HOME } from "./test-dirs.js";
+import { TEST_BOBS_FACTORY_HOME } from "./test-dirs.js";
 
 /** Minimal tracker responses used by prompt assembly; never calls Linear. */
 function createMockIssueTracker() {
@@ -56,7 +56,7 @@ export function createTestWorker(
 	}
 
 	const config: EdgeWorkerConfig = {
-		cyrusHome: TEST_CYRUS_HOME,
+		factoryHome: TEST_BOBS_FACTORY_HOME,
 		claudeDefaultModel: "sonnet",
 		repositories,
 		linearWorkspaces,

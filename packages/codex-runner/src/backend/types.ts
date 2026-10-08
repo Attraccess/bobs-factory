@@ -66,7 +66,7 @@ export interface NormalizedUsage {
 
 /**
  * Backend-neutral lifecycle/stream event. Both backends emit this; the mapper
- * turns it into Cyrus `SDKMessage`s.
+ * turns it into Bob’s Factory `SDKMessage`s.
  */
 export type NormalizedCodexEvent =
 	| { kind: "thread-started"; threadId: string }
@@ -88,15 +88,15 @@ export type CodexFileSystemAccess = "read" | "write" | "deny";
 /**
  * Resolved per-thread sandbox decision.
  * - `workspace-mode`: the coarse Codex sandbox mode (broad reads, writes limited
- *   to cwd + `writableRoots` + tmp). The default when there are no explicit Cyrus
+ *   to cwd + `writableRoots` + tmp). The default when there are no explicit Bob’s Factory
  *   sandbox settings — sent via `thread/start.sandbox` + `config.sandbox_workspace_write`.
- * - `profile`: a granular per-thread permission profile (restricted reads) derived
- *   from Cyrus sandbox settings. `filesystem` is a flattened map of path →
+ * - `profile`: a granular per-thread permission profile derived from Git metadata
+ *   grants and/or Bob’s Factory sandbox settings. `filesystem` is a flattened map of path →
  *   read/write/deny, where keys are either absolute paths or Codex special-path
  *   tokens (`:minimal` = platform defaults, `:workspace_roots` = cwd/worktree,
  *   `:tmpdir`, `:slash_tmp`). Sent via `thread/start.permissions` (the profile id)
- *   + `config.permissions.<id>` (the profile body); the profile persists per-thread
- *   and cannot be combined with `thread/start.sandbox`.
+ *   + `config.permissions.<id>` (the profile body), also registered at app-server
+ *   launch so native config reloads retain it. Cannot combine with `thread/start.sandbox`.
  */
 export type ResolvedCodexSandbox =
 	| {
@@ -108,7 +108,12 @@ export type ResolvedCodexSandbox =
 	| {
 			kind: "profile";
 			profileId: string;
-			filesystem: Record<string, CodexFileSystemAccess>;
+			extends?: ":workspace";
+			workspaceRoots?: string[];
+			filesystem: Record<
+				string,
+				CodexFileSystemAccess | Record<string, CodexFileSystemAccess>
+			>;
 			networkAccess: boolean;
 	  };
 

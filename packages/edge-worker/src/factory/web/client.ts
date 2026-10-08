@@ -1,11 +1,20 @@
 import { fetchEventSource } from "@microsoft/fetch-event-source";
 import {
 	QueryClient,
+	useIsMutating,
 	useMutation,
 	useQuery,
 	useQueryClient,
 } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import {
+	accessGeneration,
+	accessRequired,
+	accessSignal,
+	accessState,
+	onAccessLost,
+} from "./auth-state";
+import { useFormState } from "./form-state";
 import {
 	authoritativeReady,
 	beginWrite,
@@ -18,8 +27,16 @@ import {
 } from "./pwa";
 export const client = new QueryClient({
 	defaultOptions: {
-		queries: { retry: 2, refetchOnWindowFocus: true, staleTime: 1000 },
+		queries: {
+			retry: (count) => accessState().status === "authenticated" && count < 2,
+			refetchOnWindowFocus: true,
+			staleTime: 1000,
+		},
 	},
+});
+onAccessLost(() => {
+	void client.cancelQueries();
+	client.clear();
 });
 export function useLiveUpdates() {
 	const cache = useQueryClient();
@@ -52,7 +69,11 @@ export function useLiveUpdates() {
 				throw new Error("Live connection closed");
 			},
 			onerror(cause) {
-				if (pwaState().status === "mismatch") throw cause; // Await an explicit update; do not accumulate rejected SSE streams.
+				if (
+					accessState().status !== "authenticated" ||
+					pwaState().status === "mismatch"
+				)
+					throw cause; // Await an explicit update; do not accumulate rejected SSE streams.
 				disconnected();
 				if (!controller.signal.aborted)
 					setError(
@@ -73,6 +94,10 @@ export function useLiveUpdates() {
 }
 export async function validateLiveConnection(response: Response) {
 	try {
+		if (response.status === 401) {
+			accessRequired("Your session expired. Sign in again.");
+			throw new Error("Sign in required");
+		}
 		if (
 			!response.ok ||
 			!response.headers.get("content-type")?.includes("text/event-stream")
@@ -89,6 +114,10 @@ export async function api<T = any>(
 	path: string,
 	options: RequestInit = {},
 ): Promise<T> {
+	const epoch = accessGeneration();
+	const authSignal = accessSignal();
+	if (accessState().status !== "authenticated")
+		throw new Error("Sign in required");
 	const write = !["GET", "HEAD"].includes(
 		(options.method ?? "GET").toUpperCase(),
 	);
@@ -96,7 +125,12 @@ export async function api<T = any>(
 	// Bind the write to the configuration shown when it began, before async checks.
 	const configRevision =
 		write &&
-		["/api/workflows", "/api/title-settings", "/api/runs"].includes(path)
+		[
+			"/api/workflows",
+			"/api/title-settings",
+			"/api/execution-profiles",
+			"/api/runs",
+		].includes(path)
 			? client.getQueryData<any>(["config"])?.configRevision
 			: undefined;
 	try {
@@ -106,6 +140,9 @@ export async function api<T = any>(
 			);
 		const response = await fetch(path, {
 			...options,
+			signal: options.signal
+				? AbortSignal.any([options.signal, authSignal])
+				: authSignal,
 			cache: "no-store",
 			headers: {
 				"Content-Type": "application/json",
@@ -115,11 +152,27 @@ export async function api<T = any>(
 				"X-Factory-Build": uiBuild,
 			},
 		});
-		if (response.headers.get("X-Factory-Build") !== uiBuild) {
-			versionMismatch(response.headers.get("X-Factory-Build") ?? undefined);
+		if (response.status === 401) {
+			accessRequired("Your session expired. Sign in again.");
+			throw new Error("Sign in required");
+		}
+		if (epoch !== accessGeneration()) throw new Error("Session changed");
+		const responseBuild = response.headers.get("X-Factory-Build");
+		if (!responseBuild) {
+			const message =
+				response.status === 403
+					? "Factory request was blocked (HTTP 403). Check the public connection and reconnect."
+					: "Factory response could not be verified. Check the public connection and reconnect.";
+			disconnected(message);
+			await response.body?.cancel();
+			throw new Error(message);
+		}
+		if (responseBuild !== uiBuild) {
+			versionMismatch(responseBuild);
 			throw new Error("Factory version changed. Update before continuing.");
 		}
 		const body = await response.json();
+		if (epoch !== accessGeneration()) throw new Error("Session changed");
 		if (!response.ok) {
 			if (response.status >= 500) disconnected();
 			throw new Error(body.error ?? `Request failed (${response.status})`);
@@ -134,6 +187,7 @@ export async function api<T = any>(
 }
 let refreshing: Promise<void> | undefined;
 export function refreshFactory() {
+	if (accessState().status !== "authenticated") return Promise.resolve();
 	refreshing ??= refreshFactoryData().finally(() => {
 		refreshing = undefined;
 	});
@@ -159,7 +213,8 @@ async function refreshFactoryData() {
 		}),
 	]);
 	// Restored routes must validate their current run/gate before any actions are enabled.
-	const id = /^#\/runs\/([^/]+)$/.exec(location.hash)?.[1];
+	const refreshedRoute = location.hash;
+	const id = /^#\/runs\/([^/]+)(?:\/review)?$/.exec(refreshedRoute)?.[1];
 	if (id)
 		await client
 			.fetchQuery({
@@ -169,6 +224,7 @@ async function refreshFactoryData() {
 			})
 			.catch((error) => {
 				if (error.message !== "Run not found") throw error;
+				client.setQueryData(["run", decodeURIComponent(id)], null);
 			});
 	await client.invalidateQueries(
 		{
@@ -177,6 +233,7 @@ async function refreshFactoryData() {
 		},
 		{ throwOnError: true },
 	);
+	if (location.hash !== refreshedRoute) return refreshFactoryData();
 	authoritativeReady();
 }
 export function useConfig() {
@@ -199,10 +256,14 @@ export function useRun(id?: string) {
 			api(`/api/runs/${encodeURIComponent(id!)}?view=dashboard`, { signal }),
 	});
 }
-export function useAction() {
+const pendingActions = new Set<string>();
+export function useAction(scope?: string, context?: string) {
 	const cache = useQueryClient();
 	const connection = usePwa();
+	const [formContext] = useFormState(context ?? "", () => ({}));
+	const pendingCount = useIsMutating({ mutationKey: ["action", scope] });
 	const mutation = useMutation({
+		mutationKey: ["action", scope],
 		mutationFn: ({
 			path,
 			body = {},
@@ -211,6 +272,7 @@ export function useAction() {
 			path: string;
 			body?: any;
 			method?: string;
+			formContext?: object;
 		}) => api(path, { method, body: JSON.stringify(body) }),
 		onSuccess: async (data, { path, method = "POST" }) => {
 			if (
@@ -234,6 +296,20 @@ export function useAction() {
 	});
 	return {
 		...mutation,
+		error:
+			mutation.variables?.formContext === formContext ? mutation.error : null,
+		isPending: mutation.isPending || (scope !== undefined && pendingCount > 0),
+		mutateAsync: async (...args: Parameters<typeof mutation.mutateAsync>) => {
+			if (scope && pendingActions.has(scope))
+				throw new Error("This request is already pending.");
+			if (scope) pendingActions.add(scope);
+			try {
+				const [request, options] = args;
+				return await mutation.mutateAsync({ ...request, formContext }, options);
+			} finally {
+				if (scope) pendingActions.delete(scope);
+			}
+		},
 		isBlocked: connection.status !== "ready" || connection.updating,
 	};
 }
@@ -348,7 +424,7 @@ export function workflowOf(run: any, config: any) {
 		? run.workflow
 		: (config?.workflows?.find((item: any) => item.id === run.workflow) ?? {
 				id: "simple",
-				name: "Simple / Cyrus",
+				name: "Simple / Bob’s Factory",
 			});
 }
 export function settleReason(
@@ -430,7 +506,8 @@ export function artifactsOf(
 			name,
 			value,
 			title:
-				!(value as any)?.qaContract &&
+				(value as any)?.stamp?.reviewer ??
+				(!(value as any)?.qaContract &&
 				["capture", "visual-scope", "visual-review", "visual-gate"].includes(
 					name,
 				)
@@ -442,7 +519,7 @@ export function artifactsOf(
 								"visual-gate": "Visual gate",
 							} as Record<string, string>
 						)[name]!
-					: (friendly[name] ?? name),
+					: (friendly[name] ?? name)),
 		}));
 }
 export function screenshotUrl(run: any, index: number, artifact = "capture") {

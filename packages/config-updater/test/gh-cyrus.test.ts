@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 /**
  * Behavioral tests for scripts/gh-cyrus.cjs — the per-invocation gh token
- * resolver. The real script is spawned with CYRUS_GH_REAL_BIN pointing at a
+ * resolver. The real script is spawned with BOBS_FACTORY_GH_REAL_BIN pointing at a
  * stub that prints the GH_TOKEN / GITHUB_TOKEN it received, so assertions
  * observe exactly what env the real gh would see.
  */
@@ -14,14 +14,14 @@ const SCRIPT = join(__dirname, "..", "scripts", "gh-cyrus.cjs");
 
 describe("gh-cyrus per-invocation token resolution", () => {
 	let dir: string;
-	let cyrusHome: string;
+	let factoryHome: string;
 	let stubGh: string;
 
 	function saveTokens(
 		tokens: Array<{ organization: string | null; token: string }>,
 	): void {
 		writeFileSync(
-			join(cyrusHome, "github-tokens.json"),
+			join(factoryHome, "github-tokens.json"),
 			JSON.stringify({
 				version: 1,
 				updatedAt: new Date().toISOString(),
@@ -56,11 +56,11 @@ describe("gh-cyrus per-invocation token resolution", () => {
 			encoding: "utf8",
 			env: {
 				...process.env,
-				CYRUS_HOME: cyrusHome,
-				CYRUS_GH_REAL_BIN: stubGh,
+				BOBS_FACTORY_HOME: factoryHome,
+				BOBS_FACTORY_GH_REAL_BIN: stubGh,
 				GITHUB_TOKEN: "customer_github_token",
 				GH_TOKEN: "customer_gh_token",
-				CYRUS_GH_TOKEN: undefined,
+				BOBS_FACTORY_GH_TOKEN: undefined,
 				...opts.env,
 			} as NodeJS.ProcessEnv,
 		});
@@ -69,8 +69,8 @@ describe("gh-cyrus per-invocation token resolution", () => {
 
 	beforeEach(() => {
 		dir = mkdtempSync(join(tmpdir(), "gh-cyrus-test-"));
-		cyrusHome = join(dir, ".cyrus");
-		mkdirSync(cyrusHome, { recursive: true });
+		factoryHome = join(dir, ".bobs-factory");
+		mkdirSync(factoryHome, { recursive: true });
 		stubGh = join(dir, "stub-gh.sh");
 		writeFileSync(
 			stubGh,
@@ -148,7 +148,7 @@ exit 0
 		]) {
 			const result = runGhCyrus(args, {
 				cwd,
-				env: { CYRUS_GH_TOKEN: "ghs_org_a" },
+				env: { BOBS_FACTORY_GH_TOKEN: "ghs_org_a" },
 			});
 			expect(result.stdout, args.join(" ")).toContain("GH_TOKEN=ghs_org_b");
 			expect(result.stdout).toContain(`ARGS=${args.join(" ")}`);
@@ -211,14 +211,14 @@ exit 0
 		);
 	});
 
-	it("falls back to CYRUS_GH_TOKEN outside a repo", () => {
+	it("falls back to BOBS_FACTORY_GH_TOKEN outside a repo", () => {
 		saveTokens([
 			{ organization: "OrgA", token: "ghs_org_a" },
 			{ organization: "OrgB", token: "ghs_org_b" },
 		]);
 
 		const { stdout } = runGhCyrus(["api", "/user"], {
-			env: { CYRUS_GH_TOKEN: "ghs_session_token" },
+			env: { BOBS_FACTORY_GH_TOKEN: "ghs_session_token" },
 		});
 
 		expect(stdout).toContain("GH_TOKEN=ghs_session_token");
@@ -238,7 +238,7 @@ exit 0
 			{ organization: "OrgB", token: "ghs_org_b" },
 		]);
 
-		// Two tokens, no repo context, no CYRUS_GH_TOKEN → no resolution;
+		// Two tokens, no repo context, no BOBS_FACTORY_GH_TOKEN → no resolution;
 		// gh would use its own stored auth (hosts.yml).
 		const { stdout } = runGhCyrus(["api", "/user"]);
 
@@ -267,7 +267,7 @@ exit 0
 		expect(passthrough.status).toBe(0);
 
 		const failing = runGhCyrus(["pr", "view"], {
-			env: { CYRUS_GH_REAL_BIN: failingStub },
+			env: { BOBS_FACTORY_GH_REAL_BIN: failingStub },
 		});
 		expect(failing.status).toBe(42);
 	});

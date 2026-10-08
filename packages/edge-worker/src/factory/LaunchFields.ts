@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { agentSettings } from "./AgentSettings.js";
+import { ExecutionSelectionSchema } from "./ExecutionProfiles.js";
 import { TakeoverSourceSchema } from "./Takeover.js";
 import type { Workflow } from "./Workflow.js";
 
@@ -42,9 +43,9 @@ export const standardLaunchFields = [
 export const takeoverLaunchFields = [
 	{
 		name: "source",
-		label: "PR URL or ticket ID",
+		label: "Pull/merge request URL or ticket ID",
 		required: true,
-		placeholder: "https://github.com/… or ATT-123",
+		placeholder: "Pull/merge request URL or ATT-123",
 		description:
 			"Continue the work described by this source. Existing PRs become draft during factory review.",
 	},
@@ -78,11 +79,21 @@ export function getLaunchFields(
 	).filter((field) => field.name !== "title");
 }
 export const LaunchRequestSchema = z.object({
+	execution: ExecutionSelectionSchema.optional(),
 	title: z.string().trim().max(300).optional(),
 	prompt: z.string().trim().max(100000).optional(),
 	source: z.string().trim().max(1000).optional(),
 	inputs: z.record(z.string(), z.string().max(100000)).default({}),
 	repositoryId: z.string().min(1),
+	repositoryIds: z
+		.array(z.string().min(1))
+		.min(1)
+		.max(50)
+		.refine(
+			(ids) => new Set(ids).size === ids.length,
+			"Repository scope contains duplicates",
+		)
+		.optional(),
 	workflow: z.string().min(1),
 	...agentSettings,
 });

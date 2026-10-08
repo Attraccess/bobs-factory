@@ -12,8 +12,14 @@ import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { captureEvidence } from "../src/factory/FactoryTools.js";
 import { roleProgress } from "../src/factory/Incremental.js";
+import {
+	assessFeedback,
+	inspectMergeReadiness,
+} from "../src/factory/MergeReadiness.js";
+import { questionInstructions } from "../src/factory/Questions.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 import { SessionSemaphore } from "../src/RunnerConcurrency.js";
+import { providerReceipt } from "./fixtures/merge-readiness.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -103,7 +109,7 @@ async function fixture() {
 	const runner = {
 		start: vi.fn(async () => {
 			input = JSON.parse(
-				readFileSync(config.mcpConfig["factory-context"].args[1], "utf8"),
+				readFileSync(config.mcpConfig["factory-context"].args.at(-1), "utf8"),
 			);
 			config.onMessage({
 				type: "system",
@@ -116,8 +122,19 @@ async function fixture() {
 	};
 	const worker = Object.assign(Object.create(EdgeWorker.prototype), {
 		agentSessionManager: { getSession: () => ({}), addAgentRunner: vi.fn() },
-		repositories: new Map([["repo", { repositoryPath: workspace }]]),
-		cyrusHome: workspace,
+		repositories: new Map([
+			[
+				"repo",
+				{
+					id: "repo",
+					name: "Fixture",
+					isActive: true,
+					baseBranch: "main",
+					repositoryPath: workspace,
+				},
+			],
+		]),
+		factoryHome: workspace,
 		runnerSlots: new SessionSemaphore(1),
 		buildAgentRunnerConfig: vi.fn(async () => ({
 			runnerType: "codex",
@@ -143,6 +160,165 @@ async function fixture() {
 		getInput: () => input,
 	};
 }
+
+it.each([
+	"code-fix",
+	"visual-fix",
+])("retains structured assistance and runtime findings for %s with restricted recipe inputs", async (fixer) => {
+	const f = await fixture();
+	const finding = {
+		id: "external-access",
+		rating: 3,
+		status: "open",
+		summary: "Missing deployment access",
+		evidence: "Required validation could not execute",
+	};
+	f.ctx.run.input = "Validate the feature";
+	f.ctx.run.answers = [];
+	f.ctx.run.step = `pipeline/${fixer}`;
+	f.ctx.step = { ...f.ctx.step, id: fixer, inputs: ["draft-pr"] };
+	f.ctx.input = { "draft-pr": { url: "fixture" } };
+	f.ctx.resumeAgent = undefined;
+	f.ctx.run.outputs[fixer === "visual-fix" ? "visual-gate" : "review-gate"] = {
+		approved: false,
+		findings: [finding],
+	};
+	f.ctx.run.roleRevisions![
+		`pipeline/${fixer === "visual-fix" ? "visual-review" : "code-review"}`
+	] = (await roleProgress(f.ctx)).currentRevision!;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify({
+				summary: "Blocked",
+				dispositions: [],
+				questions: ["Provide the protected deployment"],
+				questionRecommendations: [
+					{
+						questionIndex: 0,
+						answer: "Supply the protected deployment",
+						reason: "Required validation remains blocked",
+					},
+				],
+			}),
+		},
+	];
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(f.getInput().outputs).toBeUndefined();
+	expect(f.getInput().reviewFix).toEqual({ findings: [finding], answers: [] });
+	expect(output).toMatchObject({
+		questions: ["Provide the protected deployment"],
+		questionRecommendations: [
+			{
+				questionIndex: 0,
+				answer: "Supply the protected deployment",
+				reason: "Required validation remains blocked",
+			},
+		],
+		reviewAssessment: { unchangedCode: true },
+	});
+});
+
+it.each([
+	{ legacy: false, saved: false },
+	{ legacy: true, saved: false },
+	{ legacy: true, saved: true },
+])("exposes runtime feedback to a restricted-input CI fixer (legacy: $legacy, saved result: $saved)", async ({
+	legacy,
+	saved,
+}) => {
+	const f = await fixture();
+	const quote = "Ignore the custom provider's issue comments.";
+	f.ctx.run.input = quote;
+	f.ctx.run.createdAt = "2026-10-07T01:00:00Z";
+	f.ctx.run.answers = [];
+	f.ctx.run.step = "pipeline/ci-fix";
+	f.ctx.step = {
+		...f.ctx.step,
+		id: "ci-fix",
+		name: "CI fixer",
+		inputs: ["draft-pr"],
+	};
+	f.ctx.input = { "draft-pr": { url: "https://github.com/test/repo/pull/1" } };
+	f.ctx.resumeAgent = undefined;
+	const comment = {
+		id: "comment",
+		body: "Provider notice",
+		user: { login: "custom-provider[bot]", type: "Bot" },
+	};
+	const readiness = await inspectMergeReadiness(
+		async (_exe, args) =>
+			args.includes("graphql")
+				? JSON.stringify(providerReceipt())
+				: JSON.stringify([[comment]]),
+		"https://github.com/test/repo/pull/1",
+	);
+	if (legacy) {
+		readiness.blockers.push({
+			kind: "comments",
+			message: "1 PR comment(s) need assessment",
+			action: "fix",
+		});
+		readiness.fix = true;
+	} else assessFeedback(f.ctx, readiness);
+	f.ctx.run.outputs["merge-readiness"] = readiness;
+	if (saved)
+		f.ctx.resumeAgent = {
+			runner: "codex",
+			sessionId: "existing-conversation",
+			result: {
+				output: { reviewRequired: false, addressedCommentIds: ["wrong"] },
+				revision: (await roleProgress(f.ctx)).currentRevision!,
+			},
+		};
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify({
+				reviewRequired: false,
+				feedbackPolicies: [
+					{
+						author: "custom-provider[bot]",
+						action: "ignore",
+						reason: "Explicit direction",
+						source: { path: "input", quote },
+					},
+				],
+			}),
+		},
+	];
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(f.getInput().outputs).toBeUndefined();
+	expect(f.getInput().feedback).toMatchObject({
+		readiness: {
+			unassessedComments: [
+				{
+					id: "comment",
+					body: "Provider notice",
+					bodySha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+				},
+			],
+		},
+		userInstructions: { input: quote },
+	});
+	expect(output.feedbackPolicies).toMatchObject([
+		{
+			author: "custom-provider[bot]",
+			action: "ignore",
+			sourceSha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+		},
+	]);
+	if (saved) {
+		expect(f.getInput().outputCorrection.issues).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					message: expect.stringContaining("Missing comment IDs: comment"),
+				}),
+			]),
+		);
+		expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	}
+});
 
 it("resumes a rejected completed capture to replace only invalid evidence", async () => {
 	const { ctx, saved, fresh, repaired, runner, worker, getConfig, getInput } =
@@ -217,6 +393,35 @@ async function guideFixture() {
 		}).trim(),
 	};
 	const guide = {
+		scope: {
+			kind: "nonvisual",
+			rationale: "Nonvisual feature fixture",
+			files: ["other.txt"],
+		},
+		system: {
+			lanes: [
+				{ id: "input", name: "Input" },
+				{ id: "processing", name: "Processing" },
+				{ id: "output", name: "Output" },
+			],
+			parts: [
+				{ id: "input", label: "Input", laneId: "input", status: "unchanged" },
+				{
+					id: "feature",
+					label: "Feature",
+					laneId: "processing",
+					status: "changed",
+				},
+				{
+					id: "output",
+					label: "Output",
+					laneId: "output",
+					status: "unchanged",
+				},
+			],
+			before: [],
+			after: [],
+		},
 		tldr: "Complete guide overview",
 		goal: "Feature",
 		summary: "Feature",
@@ -238,6 +443,7 @@ async function guideFixture() {
 		reviewInstructions: ["Inspect"],
 		chapters: [
 			{
+				systemPartIds: ["feature"],
 				tldr: "Review the whole feature",
 				beforeShort: "Old behavior",
 				afterShort: "New behavior",
@@ -345,16 +551,47 @@ it("corrects fresh malformed JSON and missing PR files through the same boundary
 	});
 });
 
-it("persists correction across interruption and bounds repeated validation rejection", async () => {
+it("preserves a correction through pre-turn infrastructure failure without spending its budget", async () => {
 	const f = await guideFixture();
 	f.runner.start.mockRejectedValueOnce(new Error("Transport offline"));
 	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
 		"Transport offline",
 	);
 	const checkpoint = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
-	expect(checkpoint.rejected).toMatchObject({ attempts: 1, output: f.invalid });
+	expect(checkpoint.rejected).toMatchObject({
+		attempts: 0,
+		reserved: false,
+		output: f.invalid,
+	});
 	f.ctx.resumeAgent = checkpoint;
-	f.runner.start.mockResolvedValue(undefined);
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		f.guide,
+	);
+	expect(f.getConfig().mcpConfig["factory-context"]).toMatchObject({
+		required: true,
+		startup_timeout_sec: 45,
+	});
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+});
+
+it("persists correction after confirmed startup and bounds repeated validation rejection", async () => {
+	const f = await guideFixture();
+	const start = f.runner.start.getMockImplementation()!;
+	f.runner.start.mockImplementationOnce(async (...args) => {
+		await start(...args);
+		throw new Error("Transport offline after startup");
+	});
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"Transport offline after startup",
+	);
+	const checkpoint = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
+	expect(checkpoint.rejected).toMatchObject({
+		attempts: 1,
+		reserved: false,
+		output: f.invalid,
+	});
+	f.ctx.resumeAgent = checkpoint;
+	f.runner.start.mockImplementation(start);
 	f.runner.getMessages = () => [
 		{ type: "result", result: JSON.stringify(f.invalid) },
 	];
@@ -453,4 +690,203 @@ it("retries IO failures during correction by revalidating the completed candidat
 	});
 	expect(f.runner.start).toHaveBeenCalledOnce();
 	expect(f.ctx.resumeAgent!.rejected).toBeUndefined();
+});
+
+it("corrects invalid recommendation indices from a custom question-enabled role", async () => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "custom-questions",
+		name: "Questions",
+		type: "agent",
+		prompt: "Ask a question",
+		askQuestions: true,
+	};
+	f.ctx.run.step = "custom-questions";
+	const valid = {
+		questions: ["Proceed?"],
+		questionRecommendations: [
+			{ questionIndex: 0, answer: "Wait", reason: "Approval needed" },
+		],
+		customField: true,
+	};
+	const invalid = {
+		...valid,
+		questionRecommendations: [
+			{ ...valid.questionRecommendations[0], questionIndex: 2 },
+		],
+	};
+	f.ctx.resumeAgent!.result!.output = invalid;
+	f.runner.getMessages = () => [
+		{ type: "result", result: JSON.stringify(valid) },
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toEqual(valid);
+	expect(f.getInput().outputCorrection).toMatchObject({
+		attempts: 1,
+		output: invalid,
+	});
+	expect(f.getInput().outputCorrection.issues).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({
+				path: "/questionRecommendations/0/questionIndex",
+			}),
+		]),
+	);
+	expect(f.runner.start).toHaveBeenCalledOnce();
+});
+
+it.each([
+	false,
+	true,
+])("retains extraction recommendations and corrects invalid inventory output (saved result: %s)", async (saved) => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "extract-requirements",
+		name: "Extract requirements",
+		type: "agent",
+		prompt: "Extract scope",
+		askQuestions: true,
+		reviewContract: "inventory-v1",
+	};
+	f.ctx.run.step = "extract-requirements";
+	const source = { source: "originalInput", reference: "/acceptance/0" };
+	const valid = {
+		schemaVersion: 1,
+		requirements: [
+			{
+				id: "R1",
+				criterion: "Reject blank strings",
+				classification: "active",
+				sources: [source],
+			},
+		],
+		decisions: [],
+		conflicts: [],
+		sourceReceipt: { considered: [source], unavailable: [] },
+		questions: ["Should blank strings be rejected?"],
+		questionRecommendations: [
+			{
+				questionIndex: 0,
+				answer: "Reject blank strings",
+				reason: "Required by the caller contract",
+			},
+		],
+	};
+	const invalid = { ...valid, requirements: [] };
+	if (saved) f.ctx.resumeAgent!.result!.output = invalid;
+	else delete f.ctx.resumeAgent!.result;
+	let turn = 0;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify(!saved && turn++ === 0 ? invalid : valid),
+		},
+	];
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(output).toMatchObject(valid);
+	expect(output.decisions).toEqual([]);
+	expect(f.runner.start).toHaveBeenCalledTimes(saved ? 1 : 2);
+	expect(f.getInput().outputCorrection).toMatchObject({
+		output: invalid,
+		attempts: 1,
+	});
+	expect(f.getInput().outputCorrection.issues).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ path: "/requirements" }),
+		]),
+	);
+});
+
+it("gives saved review fixers question guidance even without askQuestions", async () => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "visual-fix",
+		name: "Fix review findings",
+		type: "agent",
+		prompt: "Saved custom fixer prompt",
+		askQuestions: false,
+	};
+	f.ctx.run.step = "pipeline/visual-fix";
+	f.ctx.resumeAgent = { runner: "codex", sessionId: "existing-conversation" };
+	const output = {
+		summary: "Real-agent checks still need a decision.",
+		questions: ["Should I run the remaining tests with real agents?"],
+		dispositions: [],
+	};
+	f.runner.getMessages = () => [
+		{ type: "result", result: JSON.stringify(output) },
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		output,
+	);
+	const instruction = f.worker.buildAgentRunnerConfig.mock.calls[0]![3];
+	expect(instruction).toContain(questionInstructions(f.ctx.run.id));
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	expect(f.ctx.step.prompt).toBe("Saved custom fixer prompt");
+	expect(f.ctx.step.askQuestions).toBe(false);
+});
+
+it("resumes one silent Codex turn in the same conversation and persists the retry budget", async () => {
+	const f = await fixture();
+	f.ctx.resumeAgent = { runner: "codex", sessionId: "existing-conversation" };
+	f.runner.getMessages = () =>
+		f.runner.start.mock.calls.length === 1
+			? [
+					{
+						type: "result",
+						is_error: true,
+						errors: ["codex app-server produced no activity for 300000ms"],
+					},
+				]
+			: [{ type: "result", result: JSON.stringify(f.repaired) }];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		f.repaired,
+	);
+	expect(f.runner.start).toHaveBeenCalledTimes(2);
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	expect(f.ctx.resumeAgent?.idleRetries).toBe(1);
+});
+
+it("never retries a repeatedly silent or cancelled turn indefinitely", async () => {
+	const f = await fixture();
+	f.ctx.resumeAgent = { runner: "codex", sessionId: "existing-conversation" };
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			is_error: true,
+			errors: ["codex app-server produced no activity for 300000ms"],
+		},
+	];
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"no activity",
+	);
+	expect(f.runner.start).toHaveBeenCalledTimes(2);
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"no activity",
+	);
+	expect(f.runner.start).toHaveBeenCalledTimes(3);
+	const cancelled = new AbortController();
+	cancelled.abort();
+	f.ctx.signal = cancelled.signal;
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow();
+	expect(f.runner.start).toHaveBeenCalledTimes(3);
+});
+
+it("corrects a missing nonvisual map through the same guide-only conversation", async () => {
+	const f = await guideFixture();
+	const { system: _, ...missing } = f.guide;
+	f.ctx.resumeAgent!.result!.output = missing;
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(output).toMatchObject(f.guide);
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+	expect(
+		f.getInput().outputCorrection.issues.map((i: { path: string }) => i.path),
+	).toContain("/system");
+	expect(f.worker.buildAgentRunnerConfig.mock.calls[0][3]).toContain(
+		"scope:{kind:",
+	);
+	expect(f.worker.buildAgentRunnerConfig.mock.calls[0][3]).toContain(
+		"guide-only output correction",
+	);
+	expect(f.ctx.checkpointAgent).toHaveBeenCalled();
+	expect(f.runner.start).toHaveBeenCalledTimes(1);
 });

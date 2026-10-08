@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { CodexConfigOverrides } from "../types.js";
+import { waitWithAbort } from "./abort.js";
 import type { AppServerClientFactory } from "./appServerClient.js";
 import {
 	type AppServerNotification,
@@ -11,6 +11,7 @@ import {
 	type AppServerThreadHandler,
 	defaultAppServerProcessManager,
 } from "./appServerProcess.js";
+import { buildCodexThreadConfig } from "./threadConfig.js";
 import type {
 	CodexBackend,
 	CodexUserInput,
@@ -39,9 +40,14 @@ export class AppServerCodexBackend
 	readonly supportsSteer = true;
 
 	private appServer: AppServerProcessLease | null = null;
+	private readonly cancellation = new AbortController();
+	private closePromise: Promise<void> | null = null;
 	private threadId: string | null = null;
 	private activeTurnId: string | null = null;
 	private turnActive = false;
+	/** A failed start request does not prove that remote execution stopped. */
+	private remoteTurnPending = false;
+	private interruptCancelledTurn: ((turnId: string) => void) | null = null;
 	private lastUsage: NormalizedUsage = {
 		input_tokens: 0,
 		output_tokens: 0,
@@ -95,13 +101,22 @@ export class AppServerCodexBackend
 
 	async open(config: ResolvedCodexConfig): Promise<{ threadId: string }> {
 		this.outputSchema = config.outputSchema;
-		const appServer = await this.processManager.acquire(config);
+		const signal = this.cancellation.signal;
+		signal.throwIfAborted();
+		const appServer = await this.processManager.acquire(config, signal);
 		this.appServer = appServer;
 
 		try {
-			const threadId = config.resumeSessionId
-				? await this.resumeThread(config)
-				: await this.startThread(config);
+			signal.throwIfAborted();
+			const threadId = await waitWithAbort(
+				config.resumeSessionId
+					? this.resumeThread(config)
+					: this.startThread(config),
+				signal,
+			);
+			signal.throwIfAborted();
+			await this.checkRequiredMcpTools(config, threadId, signal);
+			signal.throwIfAborted();
 
 			this.threadId = threadId;
 			appServer.registerThread(threadId, this.threadHandler);
@@ -123,32 +138,36 @@ export class AppServerCodexBackend
 			this.turnReject = reject;
 		});
 		this.turnActive = true;
+		this.remoteTurnPending = true;
+		this.activeTurnId = null;
 		this.armIdleWatchdog();
 
+		const appServer = this.appServer;
+		const threadId = this.threadId;
+		const signal = this.cancellation.signal;
+		const started = appServer.request<TurnStartResult>("turn/start", {
+			threadId,
+			input: this.toProtocolInput(input),
+			...(this.outputSchema !== undefined
+				? { outputSchema: this.outputSchema }
+				: {}),
+		});
+		const request = started.then((result) => {
+			const turnId = result?.turn?.id;
+			if (signal.aborted) {
+				if (turnId) this.interruptCancelledTurn?.(turnId);
+				return;
+			}
+			if (this.turnActive) this.activeTurnId = turnId ?? this.activeTurnId;
+		});
 		try {
-			const result = await this.appServer.request<TurnStartResult>(
-				"turn/start",
-				{
-					threadId: this.threadId,
-					input: this.toProtocolInput(input),
-					...(this.outputSchema !== undefined
-						? { outputSchema: this.outputSchema }
-						: {}),
-				},
-			);
-			this.activeTurnId = result?.turn?.id ?? this.activeTurnId;
-			// NOTE: the turn is not steerable the instant turn/start returns — the
-			// server only accepts turn/steer once it has emitted the `turn/started`
-			// notification. The runner is signalled to flush buffered follow-ups
-			// from that notification handler, not here.
+			// Observe both promises immediately: close can settle the turn while
+			// turn/start is still pending on a shared connection.
+			await Promise.all([waitWithAbort(request, signal), turnPromise]);
 		} catch (error) {
-			this.turnActive = false;
-			this.turnResolve = null;
-			this.turnReject = null;
+			this.settleTurn();
 			throw error;
 		}
-
-		await turnPromise;
 	}
 
 	async steer(input: CodexUserInput[]): Promise<void> {
@@ -187,25 +206,133 @@ export class AppServerCodexBackend
 	}
 
 	async close(): Promise<void> {
+		this.cancellation.abort(new Error("app-server backend closed"));
+		if (!this.closePromise) this.closePromise = this.releaseProcess();
+		await this.closePromise;
+	}
+
+	private async releaseProcess(): Promise<void> {
 		const appServer = this.appServer;
 		const threadId = this.threadId;
 		const turnId = this.activeTurnId;
 		this.appServer = null;
 		this.threadId = null;
 		this.activeTurnId = null;
-		if (appServer && threadId && turnId) {
-			void appServer
-				.request("turn/interrupt", { threadId, turnId })
-				.catch(() => undefined);
-		}
 		if (appServer && threadId) {
 			appServer.unregisterThread(threadId, this.threadHandler);
+			if (this.remoteTurnPending) {
+				this.interruptCancelledTurn = this.watchCancelledTurn(
+					appServer,
+					threadId,
+				);
+				if (turnId) this.interruptCancelledTurn(turnId);
+			}
 		}
 		this.settleTurn(new Error("app-server backend closed"));
 		await appServer?.release();
 	}
 
+	/**
+	 * Retain only cancellation handling until this thread finishes or the process
+	 * exits. Releasing our lease must not discard a late turn/started, even when
+	 * turn/start rejected or timed out. The other threads keep their own leases.
+	 */
+	private watchCancelledTurn(
+		appServer: AppServerProcessLease,
+		threadId: string,
+	): (turnId: string) => void {
+		let finished = false;
+		const interrupted = new Set<string>();
+		const interrupt = (turnId: string) => {
+			if (finished || interrupted.has(turnId)) return;
+			interrupted.add(turnId);
+			void appServer
+				.request("turn/interrupt", { threadId, turnId })
+				.catch(() => interrupted.delete(turnId));
+		};
+		const finish = () => {
+			finished = true;
+			appServer.unregisterThread(threadId, handler);
+		};
+		const handler: AppServerThreadHandler = {
+			onNotification: (method, params) => {
+				if (method === "turn/completed") finish();
+				if (method === "turn/started") {
+					const turnId = (params as TurnStartResult | undefined)?.turn?.id;
+					if (turnId) interrupt(turnId);
+				}
+			},
+			onProcessGone: finish,
+			onProcessError: () => {},
+		};
+		appServer.registerThread(threadId, handler);
+		return interrupt;
+	}
+
 	// ---- Thread setup -------------------------------------------------------
+
+	private async checkRequiredMcpTools(
+		config: ResolvedCodexConfig,
+		threadId: string,
+		signal: AbortSignal,
+	): Promise<void> {
+		const servers = config.configOverrides?.mcp_servers;
+		if (!servers || typeof servers !== "object" || Array.isArray(servers))
+			return;
+		for (const [name, server] of Object.entries(servers)) {
+			if (
+				!server ||
+				typeof server !== "object" ||
+				Array.isArray(server) ||
+				server.required !== true ||
+				server.enabled === false
+			)
+				continue;
+			try {
+				// Required servers finish initialization during start/resume. Verify
+				// the same thread's catalog before a turn can freeze its tool set.
+				const status = await waitWithAbort(
+					this.appServer!.request<{
+						data: {
+							name: string;
+							runtimeStatus?: string | null;
+							toolsError?: string | null;
+							tools: Record<string, { name: string }>;
+						}[];
+					}>("mcpServerStatus/list", {
+						threadId,
+						serverName: name,
+						detail: "toolsAndAuthOnly",
+					}),
+					signal,
+				);
+				const entry = status.data?.find((item) => item.name === name);
+				if (
+					!entry ||
+					entry.toolsError ||
+					(entry.runtimeStatus && entry.runtimeStatus !== "connected")
+				)
+					throw new Error(
+						`tool discovery is unavailable (${entry?.runtimeStatus ?? "missing server"})`,
+					);
+				const names = new Set(
+					Object.values(entry.tools ?? {}).map((tool) => tool.name),
+				);
+				const missing = Array.isArray(server.enabled_tools)
+					? server.enabled_tools.filter(
+							(tool) => typeof tool === "string" && !names.has(tool),
+						)
+					: [];
+				if (missing.length)
+					throw new Error(`missing tools: ${missing.join(", ")}`);
+			} catch (error) {
+				signal.throwIfAborted();
+				throw new Error(
+					`Required MCP server '${name}' is unavailable before model work: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
+	}
 
 	private async startThread(config: ResolvedCodexConfig): Promise<string> {
 		const result = await this.appServer?.request<ThreadStartResult>(
@@ -249,42 +376,8 @@ export class AppServerCodexBackend
 			...(config.developerInstructions
 				? { developerInstructions: config.developerInstructions }
 				: {}),
-			config: this.buildThreadConfig(config),
+			config: buildCodexThreadConfig(config),
 		};
-	}
-
-	/**
-	 * Build the free-form Codex `config` for thread/start. The app-server has no
-	 * `--add-dir` flag, so:
-	 * - `workspace-mode`: writable roots + network ride on `sandbox_workspace_write`
-	 *   (only meaningful in workspace-write mode; omitted otherwise).
-	 * - `profile`: the granular permission profile body is registered under
-	 *   `permissions.<id>` and selected via the `permissions` thread param.
-	 * MCP servers etc. ride along in configOverrides.
-	 */
-	private buildThreadConfig(config: ResolvedCodexConfig): CodexConfigOverrides {
-		const base: CodexConfigOverrides = config.configOverrides
-			? { ...config.configOverrides }
-			: {};
-		const sandbox = config.sandbox;
-
-		if (sandbox.kind === "profile") {
-			base.permissions = {
-				[sandbox.profileId]: {
-					filesystem: { ...sandbox.filesystem },
-					network: { enabled: sandbox.networkAccess },
-				},
-			};
-		} else if (sandbox.mode === "workspace-write") {
-			base.sandbox_workspace_write = {
-				network_access: sandbox.networkAccess,
-				...(sandbox.writableRoots.length > 0
-					? { writable_roots: [...sandbox.writableRoots] }
-					: {}),
-			};
-		}
-
-		return base;
 	}
 
 	private toProtocolInput(input: CodexUserInput[]): unknown[] {
@@ -345,6 +438,7 @@ export class AppServerCodexBackend
 			error?: { message?: string } | null;
 		};
 		this.turnActive = false;
+		this.remoteTurnPending = false;
 		this.activeTurnId = null;
 
 		if (turn.status === "failed") {
@@ -371,6 +465,7 @@ export class AppServerCodexBackend
 	}
 
 	private onProcessGone(): void {
+		this.remoteTurnPending = false;
 		if (this.turnActive) {
 			this.emit("event", {
 				kind: "turn-failed",

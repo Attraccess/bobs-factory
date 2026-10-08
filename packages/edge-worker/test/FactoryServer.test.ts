@@ -1,6 +1,7 @@
 import {
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
@@ -9,11 +10,16 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
+import webPush from "web-push";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
-import { FactoryServer } from "../src/factory/FactoryServer.js";
+import { FactoryPush } from "../src/factory/FactoryPush.js";
+import { FactoryServer as ProtectedFactoryServer } from "../src/factory/FactoryServer.js";
 import type { ResolvedLaunchRequest } from "../src/factory/LaunchFields.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
+import { FactoryServer } from "./fixtures/authenticated-factory.js";
+import { factoryHttp } from "./fixtures/factory-http.js";
+import { authenticator } from "./fixtures/webauthn.js";
 
 it("serves question images only from the requested run, rejecting traversal, external symlinks and non-images", async () => {
 	const home = mkdtempSync(join(tmpdir(), "factory-question-images-"));
@@ -307,6 +313,22 @@ it("starts, displays, answers and terminates runs through the local API", async 
 		});
 		expect(staleAnswer.statusCode).toBe(409);
 		expect(runtime.get(id).answers).toHaveLength(0);
+		const staleBatch = await server.app.inject({
+			method: "POST",
+			url: `/api/runs/${id}/answer`,
+			headers,
+			payload: {
+				answer: "Old batch",
+				context: {
+					questions: detail.json().questions,
+					step: detail.json().step,
+					questionBatchId: "previous-batch",
+				},
+			},
+		});
+		expect(staleBatch.statusCode).toBe(409);
+		expect(runtime.get(id).answers).toHaveLength(0);
+
 		expect(
 			(
 				await server.app.inject({
@@ -317,6 +339,7 @@ it("starts, displays, answers and terminates runs through the local API", async 
 						answer: "Codex",
 						context: {
 							questions: detail.json().questions,
+							questionBatchId: detail.json().questionBatchId,
 							step: detail.json().step,
 						},
 					},
@@ -644,9 +667,13 @@ it("streams coalesced changes, reconnects with a fresh snapshot, and closes subs
 	try {
 		await server.start(0);
 		const address = server.app.server.address() as { port: number };
-		const response = await fetch(
+		const response = await factoryHttp(
 			`http://localhost:${address.port}/api/events`,
-			{ signal: controller.signal },
+			{
+				host: "localhost",
+				cookie: "factory-local-session=route-fixture-session",
+			},
+			controller.signal,
 		);
 		expect(response.headers.get("content-type")).toBe("text/event-stream");
 		const reader = response.body!.getReader();
@@ -1338,6 +1365,8 @@ it("rejects title saves overtaken during body parsing and simultaneous saves", a
 					method: "PUT",
 					headers: {
 						...headers,
+						cookie: "factory-local-session=route-fixture-session",
+						origin: "http://localhost",
 						"x-factory-config": originalRevision,
 						"x-test-delayed": "1",
 						"content-type": "application/json",
@@ -1436,18 +1465,33 @@ it("protects and validates machine settings, exposing durable cross-worker polic
 				})
 			).statusCode,
 		).toBe(403);
-		for (const limit of [0, -1, 1.5, "2"]) {
+		for (const payload of [
+			...[0, -1, 1.5, "2"].flatMap((value) => [
+				{ limit: value },
+				{ concurrency: value },
+			]),
+			{},
+			{ limit: 2, concurrency: 3 },
+		]) {
 			expect(
 				(
 					await server.app.inject({
 						method: "PUT",
 						url: "/api/capacity",
 						headers,
-						payload: { limit },
+						payload,
 					})
 				).statusCode,
 			).toBe(400);
 		}
+		const concurrency = await server.app.inject({
+			method: "PUT",
+			url: "/api/capacity",
+			headers,
+			payload: { concurrency: 3 },
+		});
+		expect(concurrency.statusCode).toBe(200);
+		expect((await other.snapshot()).limit).toBe(3);
 		const saved = await server.app.inject({
 			method: "PUT",
 			url: "/api/capacity",
@@ -1483,5 +1527,236 @@ it("protects and validates machine settings, exposing durable cross-worker polic
 		await capacity.shutdown();
 		await other.shutdown();
 		rmSync(home, { recursive: true, force: true });
+	}
+});
+
+it.each([
+	"trusted",
+	"public",
+] as const)("protects and redacts push device APIs with the exact configured HTTPS origin (%s)", async (proxy) => {
+	vi.stubEnv(
+		"BOBS_FACTORY_FACTORY_PUBLIC_ORIGIN",
+		proxy === "public" ? "https://factory.example.ts.net" : "",
+	);
+	vi.stubEnv(
+		"BOBS_FACTORY_FACTORY_ORIGIN",
+		proxy === "trusted" ? "https://factory.example.ts.net" : "",
+	);
+	if (proxy === "public") delete process.env.BOBS_FACTORY_FACTORY_ORIGIN;
+	const home = mkdtempSync(join(tmpdir(), "factory-push-api-"));
+	const sender = vi.fn(async () => {}),
+		push = new FactoryPush(home, sender, Date.now, "mailto:test@example.com");
+	const runtime = new WorkflowRuntime(home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const server = new ProtectedFactoryServer(runtime, {
+		push,
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("unused");
+		},
+		stop: () => {},
+	});
+	const key = webPush.generateVAPIDKeys().publicKey;
+	const payload = {
+		label: "phone",
+		subscription: {
+			endpoint: "https://web.push.apple.com/private-subscription",
+			keys: { p256dh: key, auth: Buffer.alloc(16, 1).toString("base64url") },
+		},
+	};
+	const headers = {
+		host: "factory.example.ts.net",
+		origin: "https://factory.example.ts.net",
+		"x-factory-request": "1",
+	};
+	try {
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers: { ...headers, host: "evil.test" },
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers: { ...headers, origin: "https://evil.test" },
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers: { host: headers.host, origin: headers.origin },
+					payload,
+				})
+			).statusCode,
+		).toBe(403);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers: { ...headers, "x-factory-build": "old" },
+					payload,
+				})
+			).statusCode,
+		).toBe(409);
+		for (const url of ["/api/push", "/api/push/devices"]) {
+			expect((await server.app.inject({ url, headers })).statusCode).toBe(401);
+		}
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers,
+					payload,
+				})
+			).statusCode,
+		).toBe(401);
+		expect(push.status().devices).toEqual([]);
+		const keyFixture = authenticator();
+		const grant = JSON.parse(readFileSync(server.auth.grantPath, "utf8")).token;
+		const options = await server.app.inject({
+			method: "POST",
+			url: "/api/auth/register/options",
+			headers,
+			payload: { grant },
+		});
+		expect(options.statusCode).toBe(200);
+		const verified = await server.app.inject({
+			method: "POST",
+			url: "/api/auth/register/verify",
+			headers: {
+				...headers,
+				cookie: String(options.headers["set-cookie"]).split(";")[0],
+			},
+			payload: {
+				transaction: options.json().transaction,
+				response: keyFixture.register(
+					options.json().options.challenge,
+					headers.origin,
+				),
+			},
+		});
+		expect(verified.statusCode).toBe(200);
+		const authenticatedHeaders = {
+			...headers,
+			cookie: String(verified.headers["set-cookie"]).split(";")[0],
+		};
+		const registration = await server.app.inject({
+			method: "POST",
+			url: "/api/push/devices",
+			headers: authenticatedHeaders,
+			payload,
+		});
+		expect(registration.statusCode).toBe(200);
+		const { id } = registration.json();
+		const status = await server.app.inject({
+			url: "/api/push",
+			headers: authenticatedHeaders,
+		});
+		expect(status.headers["cache-control"]).toBe("no-store");
+		expect(status.body).not.toMatch(
+			/private-subscription|privateKey|p256dh|auth"/,
+		);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: `/api/push/devices/${id}/test`,
+					headers: authenticatedHeaders,
+					payload: {},
+				})
+			).json().accepted,
+		).toBe(true);
+		expect(
+			(
+				await server.app.inject({
+					method: "PATCH",
+					url: `/api/push/devices/${id}`,
+					headers: authenticatedHeaders,
+					payload: { enabled: false },
+				})
+			).statusCode,
+		).toBe(200);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: `/api/push/devices/${id}/test`,
+					headers: authenticatedHeaders,
+					payload: {},
+				})
+			).statusCode,
+		).toBe(409);
+		expect(
+			(
+				await server.app.inject({
+					method: "DELETE",
+					url: `/api/push/devices/${id}`,
+					headers: authenticatedHeaders,
+				})
+			).statusCode,
+		).toBe(200);
+		expect(push.status().devices).toEqual([]);
+		expect(
+			(
+				await server.app.inject({
+					method: "POST",
+					url: "/api/push/devices",
+					headers: authenticatedHeaders,
+					payload: {
+						...payload,
+						subscription: {
+							...payload.subscription,
+							endpoint: "https://127.0.0.1/private",
+						},
+					},
+				})
+			).statusCode,
+		).toBe(400);
+		server.auth.logout(
+			authenticatedHeaders.cookie.split("=")[1],
+			headers.origin,
+		);
+		for (const [method, url, payload] of [
+			["GET", "/api/push", undefined],
+			["POST", "/api/push/devices", {}],
+			["PATCH", `/api/push/devices/${id}`, { enabled: true }],
+			["DELETE", `/api/push/devices/${id}`, undefined],
+			["POST", `/api/push/devices/${id}/test`, {}],
+		] as const) {
+			expect(
+				(
+					await server.app.inject({
+						method,
+						url,
+						headers: authenticatedHeaders,
+						payload,
+					})
+				).statusCode,
+			).toBe(401);
+		}
+	} finally {
+		await push.stop();
+		await runtime.shutdown();
+		await server.stop();
+		rmSync(home, { recursive: true, force: true });
+		vi.unstubAllEnvs();
 	}
 });

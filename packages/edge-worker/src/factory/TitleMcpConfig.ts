@@ -1,12 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { normalizeMcpHttpTransport } from "cyrus-claude-runner";
+import { normalizeMcpHttpTransport } from "bobs-factory-claude-runner";
 import type {
 	AgentRunnerConfig,
 	ILogger,
 	McpServerConfig,
 	RunnerType,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 // Not every provider supports a per-server cwd. Launch stdio servers through
 // the host runtime so relative commands, arguments and data reads keep the same
@@ -33,7 +33,9 @@ export function titleMcpConfig(
 		...(runner === "cursor" ? [".cursor", "mcp.json"] : [".mcp.json"]),
 	);
 	const paths = [
-		...(existsSync(projectPath) ? [projectPath] : []),
+		...(!config.childEnvironment && existsSync(projectPath)
+			? [projectPath]
+			: []),
 		...(config.mcpConfigPath
 			? Array.isArray(config.mcpConfigPath)
 				? config.mcpConfigPath
@@ -73,13 +75,15 @@ export function titleMcpConfig(
 				{
 					...transport,
 					command: process.execPath,
-					args: [
-						"-e",
-						stdioLauncher,
-						cwd,
-						server.command,
-						...(server.args ?? []),
-					],
+					args: process.env.BOBS_FACTORY_INTERNAL_EXECUTABLE
+						? ["internal", "stdio", cwd, server.command, ...(server.args ?? [])]
+						: [
+								"-e",
+								stdioLauncher,
+								cwd,
+								server.command,
+								...(server.args ?? []),
+							],
 				},
 			];
 		}),

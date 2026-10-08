@@ -3,6 +3,8 @@ import {
 	defaultWorkflows,
 	upgradeWorkflows,
 } from "../src/factory/defaultWorkflows.js";
+import { GuideSchema } from "../src/factory/FactoryResults.js";
+import { reviewGuideMarkdown } from "../src/factory/FactoryTools.js";
 import { validateGuideCoverage } from "../src/factory/Guide.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 
@@ -54,6 +56,52 @@ function fixture() {
 	};
 	return { context, guide };
 }
+it.each([
+	true,
+	false,
+])("exports resolved specialist disputes with attribution in Markdown (chapters: %s)", (withChapters) => {
+	const { guide } = fixture();
+	const value = GuideSchema.parse({
+		...guide,
+		chapters: withChapters ? guide.chapters : undefined,
+		requirementCoverage: {
+			inventoryVersion: 1,
+			inventoryDigest: "inventory-digest",
+			headSha: "reviewed-head",
+			baseSha: "reviewed-base",
+			assessments: [],
+			reviewers: [
+				{
+					reviewer: "business",
+					summary: "Accepted caller contract verified",
+					findings: [],
+					disagreements: [],
+					disputeResolutions: [
+						{
+							disagreement: "Strict validation conflicts with permissive input",
+							reason: "Accepted caller contract requires strict validation",
+							evidence: "Blank-input and return-value assertions passed",
+						},
+					],
+				},
+				{
+					reviewer: "architecture",
+					summary: "Legacy receipt without resolutions",
+					findings: [],
+					disagreements: ["Unresolved interface concern"],
+				},
+			],
+		},
+	});
+	const markdown = reviewGuideMarkdown(value, "reviewed-head");
+	expect(markdown).toContain(
+		"**business:** Accepted caller contract verified\n\n\n- Resolved disagreement: Strict validation conflicts with permissive input; Reason: Accepted caller contract requires strict validation; Evidence: Blank-input and return-value assertions passed",
+	);
+	expect(markdown).toContain(
+		"**architecture:** Legacy receipt without resolutions\n\nUnresolved interface concern",
+	);
+	expect(markdown).toContain("Revision: reviewed-head");
+});
 it("rejects a last-iteration-only guide, missing requirements and fabricated screenshot references", () => {
 	const { context, guide } = fixture();
 	expect(() => validateGuideCoverage(context, guide)).not.toThrow();
@@ -138,6 +186,11 @@ it("requires compact fields for every new guide regardless of version or frozen 
 		);
 	const compact = {
 		...guide,
+		scope: {
+			kind: "purely-visual",
+			rationale: "Only presentation in this schema fixture",
+			files: ["feature.ts", "last-fix.ts"],
+		},
 		tldr: "Counters measure each resource",
 		decision: { ...guide.decision, summaryShort: "Review the counters" },
 		chapters: guide.chapters.map((c) => ({
@@ -158,13 +211,22 @@ it("requires compact fields for every new guide regardless of version or frozen 
 		}).success,
 	).toBe(false);
 	const system = {
-		lanes: [{ id: "app", name: "Application" }],
-		parts: [{ id: "counter", label: "Counter", laneId: "app", status: "new" }],
+		lanes: [
+			{ id: "app", name: "Application" },
+			{ id: "input", name: "Input" },
+			{ id: "store", name: "Storage" },
+		],
+		parts: [
+			{ id: "counter", label: "Counter", laneId: "app", status: "new" },
+			{ id: "input", label: "Input", laneId: "input", status: "unchanged" },
+			{ id: "store", label: "Storage", laneId: "store", status: "changed" },
+		],
 		before: [],
 		after: [],
 	};
 	const mapped = {
 		...compact,
+		scope: { ...compact.scope, kind: "nonvisual" },
 		system,
 		chapters: [{ ...compact.chapters[0], systemPartIds: ["counter"] }],
 	};
@@ -211,4 +273,61 @@ it("upgrades the saved QA guide to compact content without changing operator set
 		qaContract: "qa-v1",
 	});
 	expect(upgradeWorkflows(migrated)).toEqual(migrated);
+});
+
+it("rejects absent nonvisual maps and links with actionable paths, but reads historical maps", async () => {
+	const { GeneratedGuideSchema, GuideSchema } = await import(
+		"../src/factory/FactoryResults.js"
+	);
+	const { guide, context } = fixture();
+	const authored = {
+		...guide,
+		scope: {
+			kind: "nonvisual",
+			rationale: "Counter storage and UI",
+			files: context.progress!.reviewScope!.files,
+		},
+		tldr: "Named counters",
+		decision: { ...guide.decision, summaryShort: "Review counters" },
+		chapters: guide.chapters.map((c) => ({
+			...c,
+			tldr: "Store named counters",
+			beforeShort: "Energy only",
+			afterShort: "Any resource",
+			risk: { level: "low", text: "Check storage" },
+			keyChecks: [{ do: "Create one", expect: "It persists" }],
+		})),
+	};
+	const absent = GeneratedGuideSchema.safeParse(authored);
+	expect(absent.success).toBe(false);
+	if (!absent.success)
+		expect(absent.error.issues.map((i) => i.path)).toEqual(
+			expect.arrayContaining([["system"], ["chapters", 0, "systemPartIds"]]),
+		);
+	expect(GuideSchema.safeParse(authored).success).toBe(true);
+	expect(() =>
+		validateGuideCoverage(context, {
+			...authored,
+			scope: { ...authored.scope, files: ["feature.ts"] },
+		}),
+	).toThrow("every whole-PR changed file");
+	context.run.outputs["visual-scope"] = { nonVisualFiles: ["feature.ts"] };
+	expect(() =>
+		validateGuideCoverage(context, {
+			...authored,
+			scope: { ...authored.scope, kind: "purely-visual" },
+		}),
+	).toThrow("nonvisual changes");
+	const historic = {
+		...guide,
+		system: {
+			lanes: [{ id: "one", name: "Old layout" }],
+			parts: [
+				{ id: "one", label: "Old part", laneId: "one", status: "changed" },
+			],
+			before: [],
+			after: [],
+		},
+	};
+	expect(GuideSchema.safeParse(historic).success).toBe(true);
 });

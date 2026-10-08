@@ -1,7 +1,7 @@
 {
-	"name": "cyrus-opencode-runner",
+	"name": "bobs-factory-opencode-runner",
 	"version": "0.2.73",
-	"description": "OpenCode CLI process wrapper for Cyrus",
+	"description": "OpenCode CLI process wrapper for Bob’s Factory",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/jappyjan/bobs-factory.git",
@@ -21,15 +21,14 @@
 		"typecheck": "tsgo --noEmit"
 	},
 	"dependencies": {
-		"cyrus-core": "workspace:*",
-		"cyrus-simple-agent-runner": "workspace:*"
+		"bobs-factory-core": "workspace:*",
+		"bobs-factory-simple-agent-runner": "workspace:*"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",
 		"@typescript/native-preview": "7.0.0-dev.20260707.2",
 		"vitest": "^4.1.11"
 	},
-	"publishConfig": {
-		"access": "public"
-	}
+	"private": true,
+	"license": "Apache-2.0"
 }

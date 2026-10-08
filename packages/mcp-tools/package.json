@@ -1,7 +1,7 @@
 {
-	"name": "cyrus-mcp-tools",
+	"name": "bobs-factory-mcp-tools",
 	"version": "0.2.73",
-	"description": "Runner-neutral MCP tool servers for Cyrus",
+	"description": "Runner-neutral MCP tool servers for Bob’s Factory",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/jappyjan/bobs-factory.git",
@@ -33,7 +33,6 @@
 		"@typescript/native-preview": "7.0.0-dev.20260707.2",
 		"vitest": "^4.1.11"
 	},
-	"publishConfig": {
-		"access": "public"
-	}
+	"private": true,
+	"license": "Apache-2.0"
 }

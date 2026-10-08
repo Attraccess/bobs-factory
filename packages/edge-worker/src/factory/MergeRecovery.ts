@@ -4,7 +4,7 @@ import type { FactoryRun, GraphCheckpoint } from "./WorkflowRuntime.js";
 /** Locate a merge candidate; the confirmed receipt must validate its terminal route. */
 export function pendingMergeConfirmation(
 	run: FactoryRun,
-	output?: NonNullable<ReturnType<typeof confirmedMerge>>,
+	output?: unknown,
 ):
 	| { checkpoint: GraphCheckpoint; step: WorkflowStep; key: string }
 	| undefined {

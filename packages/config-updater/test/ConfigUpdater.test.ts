@@ -43,16 +43,12 @@ describe("ConfigUpdater auth", () => {
 
 	it("re-reads the api key from the getter on every request", async () => {
 		let currentKey = "first-key";
-		const updater = new ConfigUpdater(
-			fastify,
-			"/tmp/cyrus-home",
-			() => currentKey,
-		);
+		const updater = new ConfigUpdater(fastify, "/tmp/home", () => currentKey);
 		updater.register();
 
 		const withFirst = await fastify.inject({
 			method: "POST",
-			url: "/api/update/cyrus-config",
+			url: "/api/update/bobs-factory-config",
 			headers: { authorization: "Bearer first-key" },
 			payload: { repositories: [] },
 		});
@@ -62,7 +58,7 @@ describe("ConfigUpdater auth", () => {
 
 		const withOld = await fastify.inject({
 			method: "POST",
-			url: "/api/update/cyrus-config",
+			url: "/api/update/bobs-factory-config",
 			headers: { authorization: "Bearer first-key" },
 			payload: { repositories: [] },
 		});
@@ -70,7 +66,7 @@ describe("ConfigUpdater auth", () => {
 
 		const withRotated = await fastify.inject({
 			method: "POST",
-			url: "/api/update/cyrus-config",
+			url: "/api/update/bobs-factory-config",
 			headers: { authorization: "Bearer rotated-key" },
 			payload: { repositories: [] },
 		});
@@ -78,12 +74,12 @@ describe("ConfigUpdater auth", () => {
 	});
 
 	it("rejects requests when the getter returns an empty string", async () => {
-		const updater = new ConfigUpdater(fastify, "/tmp/cyrus-home", () => "");
+		const updater = new ConfigUpdater(fastify, "/tmp/home", () => "");
 		updater.register();
 
 		const withEmpty = await fastify.inject({
 			method: "POST",
-			url: "/api/update/cyrus-config",
+			url: "/api/update/bobs-factory-config",
 			headers: { authorization: "Bearer anything" },
 			payload: { repositories: [] },
 		});
@@ -91,7 +87,7 @@ describe("ConfigUpdater auth", () => {
 
 		const withBearerEmpty = await fastify.inject({
 			method: "POST",
-			url: "/api/update/cyrus-config",
+			url: "/api/update/bobs-factory-config",
 			headers: { authorization: "Bearer " },
 			payload: { repositories: [] },
 		});
@@ -100,11 +96,7 @@ describe("ConfigUpdater auth", () => {
 
 	it("enforces auth on DELETE and GET routes too", async () => {
 		let currentKey = "k1";
-		const updater = new ConfigUpdater(
-			fastify,
-			"/tmp/cyrus-home",
-			() => currentKey,
-		);
+		const updater = new ConfigUpdater(fastify, "/tmp/home", () => currentKey);
 		updater.register();
 
 		const delOk = await fastify.inject({

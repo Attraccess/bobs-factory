@@ -1,9 +1,11 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { passiveTools } from "../CapacityPolicy";
+import type { ExecutionSelection } from "../ExecutionProfiles";
 import { useAction, useConfig } from "./client";
-import { DraftNotice } from "./pwa-ui";
-import { forgetDraft, revisionOf, useRestorableState } from "./restoration";
+import { ExecutionSelectors } from "./execution";
+import { useCurrentForm, useFormState } from "./form-state";
+import { revisionOf } from "./restoration";
 import { Button, Modal, useToast } from "./ui";
 
 const triggerOptions = [
@@ -188,45 +190,44 @@ export function Composer({
 	onStarted: (id: string) => void;
 }) {
 	const toast = useToast(),
-		navigate = useNavigate(),
-		action = useAction();
-	const [workflowId, setWorkflow] = useRestorableState(
-			"composer/workflow",
+		navigate = useNavigate();
+	const launchConfig = revisionOf([
+		config.repositories,
+		config.workflows,
+		config.defaultWorkflow,
+		config.defaultRunner,
+		config.reasoningLevels,
+		config.serviceTierRunners,
+		config.executionProfiles,
+	]);
+	const [workflowId, setWorkflow] = useFormState(
+			launchConfig,
 			config.defaultWorkflow,
 		),
-		[repo, setRepo] = useRestorableState(
-			"composer/repository",
+		[repo, setRepo] = useFormState(
+			launchConfig,
 			config.repositories[0]?.id ?? "",
-		),
-		[values, setValues, staleLaunch] = useRestorableState<
-			Record<string, string>
-		>(
-			"composer/inputs",
-			{},
-			revisionOf([config.repositories, config.workflows]),
-		),
-		[settings, setSettings] = useRestorableState("composer/settings", {}),
-		[agentOpen, setAgentOpen] = useRestorableState(
-			"composer/agent-panel",
-			false,
 		);
+	const inputContext = `${launchConfig}/${repo}/${workflowId}`;
+	const action = useAction("launch", inputContext);
+	const isCurrent = useCurrentForm(inputContext);
+	const [values, setValues] = useFormState<Record<string, string>>(
+			inputContext,
+			{},
+		),
+		[settings, setSettings] = useFormState(inputContext, {}),
+		[execution, setExecution] = useFormState<ExecutionSelection>(
+			inputContext,
+			{},
+		),
+		[agentOpen, setAgentOpen] = useFormState(inputContext, false);
 	const workflows = config.workflows.filter((w: any) =>
 			w.allowedTriggers.includes("manual"),
 		),
 		workflow = workflows.find((w: any) => w.id === workflowId),
 		fields = workflow?.launchFields ?? [];
-	const previousDefault = useRef(config.defaultWorkflow);
-	useEffect(() => {
-		if (config.defaultWorkflow !== previousDefault.current) {
-			const oldDefault = previousDefault.current;
-			setWorkflow((current: string) =>
-				current === oldDefault ? config.defaultWorkflow : current,
-			);
-			previousDefault.current = config.defaultWorkflow;
-		}
-	}, [config.defaultWorkflow, setWorkflow]);
 	const submit = async () => {
-		if (action.isPending || !workflow || staleLaunch) return;
+		if (action.isPending || !workflow) return;
 		try {
 			const inputs = Object.fromEntries(
 				fields.map((f: any) => [
@@ -238,12 +239,19 @@ export function Composer({
 				path: "/api/runs",
 				body: {
 					repositoryId: repo,
+					repositoryIds: config.repositories.find(
+						(item: any) => item.id === repo,
+					)?.repositoryIds,
 					workflow: workflow.id,
 					inputs,
 					...settings,
+					execution,
 				},
 			});
-			setValues({});
+			if (!isCurrent()) return;
+			setValues((current) =>
+				JSON.stringify(current) === JSON.stringify(values) ? {} : current,
+			);
 			onStarted(run.id);
 			toast({
 				text: "Bob's on it 🌈",
@@ -256,7 +264,6 @@ export function Composer({
 	};
 	return (
 		<section aria-label="Start a run">
-			<DraftNotice conflict={staleLaunch} draftKey="composer/inputs" />
 			<form
 				className="composer"
 				onSubmit={(e) => {
@@ -313,6 +320,16 @@ export function Composer({
 						</div>
 					</details>
 				)}
+				<ExecutionSelectors
+					key={inputContext}
+					config={config}
+					repositoryId={repo}
+					workflow={workflow?.id}
+					model={(settings as any).model}
+					value={execution}
+					onChange={setExecution}
+					runner={(settings as any).runner}
+				/>
 				{agentOpen && (
 					<AgentSettings
 						config={config}
@@ -396,7 +413,6 @@ export function Composer({
 							requiresConnection
 							busy={action.isPending}
 							disabled={
-								staleLaunch ||
 								!workflow ||
 								!repo ||
 								(fields[0]?.required &&
@@ -426,81 +442,16 @@ export function Composer({
 }
 function ownRoles(
 	steps: any[],
-	path: number[] = [],
-): { step: any; path: number[] }[] {
+	path: (string | number)[] = [],
+): { step: any; path: (string | number)[] }[] {
 	return steps.flatMap((step, i) =>
 		step.type === "agent"
 			? [{ step, path: [...path, i] }]
 			: step.type === "fanout"
 				? (step.groups ?? []).flatMap((group: any[], j: number) =>
-						ownRoles(group, [...path, i, j]),
+						ownRoles(group, [...path, i, "groups", j]),
 					)
 				: [],
-	);
-}
-function MachineCapacitySettings({ config }: { config: any }) {
-	const capacity = config.capacity;
-	const action = useAction();
-	const draftKey = "recipe/machine-capacity";
-	const [draft, setDraft, stale] = useRestorableState<
-		{ limit: string } | undefined
-	>(draftKey, undefined, revisionOf(capacity?.limit));
-	const limit = draft?.limit ?? String(capacity?.limit ?? 4);
-	if (!capacity) return null;
-	return (
-		<section className="recipe" aria-labelledby="machine-capacity">
-			<h2 id="machine-capacity">Instance capacity</h2>
-			<DraftNotice conflict={stale} draftKey={draftKey} />
-			<p>
-				One pool for this Cyrus instance's agents and intensive workflow steps.
-				Default: {capacity.defaultLimit} slots.
-			</p>
-			<p role="status">
-				Instance limit: {capacity.limit}{" "}
-				{capacity.limit === 1 ? "slot" : "slots"}. {capacity.active} executing ·{" "}
-				{capacity.stopping} stopping · {capacity.queued} waiting for capacity
-			</p>
-			{capacity.error && <p role="alert">{capacity.error}</p>}
-			{capacity.conflict && <p role="alert">{capacity.conflict}</p>}
-			<form
-				onSubmit={async (event) => {
-					event.preventDefault();
-					if (stale || action.isPending) return;
-					try {
-						await action.mutateAsync({
-							path: "/api/capacity",
-							method: "PUT",
-							body: { limit: Number(limit) },
-						});
-						setDraft(undefined);
-						forgetDraft(draftKey);
-					} catch {}
-				}}
-			>
-				<label>
-					Instance slot limit{" "}
-					<input
-						type="number"
-						min="1"
-						step="1"
-						required
-						disabled={action.isPending}
-						value={limit}
-						onChange={(event) => {
-							setDraft({ limit: event.target.value });
-						}}
-					/>
-				</label>
-				<Button
-					type="submit"
-					requiresConnection
-					disabled={draft === undefined || stale || action.isPending}
-				>
-					Save instance limit
-				</Button>
-				{action.error && <p role="alert">{action.error.message}</p>}
-			</form>
-		</section>
 	);
 }
 function CapacityClassification({
@@ -569,80 +520,26 @@ function CapacityClassification({
 		</div>
 	);
 }
-function RunTitleSettings({ config }: { config: any }) {
-	const draftKey = "recipe/title-settings";
-	const [draft, setDraft, stale] = useRestorableState<
-		{ value: any } | undefined
-	>(draftKey, undefined, revisionOf(config.titleGeneration ?? {}));
-	const value = draft?.value ?? config.titleGeneration ?? {};
-	const dirty = draft !== undefined;
-	const action = useAction(),
-		toast = useToast();
-	return (
-		<section className="recipe" aria-labelledby="run-title-settings">
-			<h2 id="run-title-settings">Run titles</h2>
-			<DraftNotice conflict={stale} draftKey={draftKey} />
-			<p>
-				Choose a fast, inexpensive agent to name all new runs. Runs start with
-				their ID while titles generate in the background. These settings are
-				independent of execution agents.
-			</p>
-			<AgentSettings
-				config={config}
-				value={value}
-				label="Global default"
-				modelPlaceholder="Provider global default"
-				onChange={(next) => {
-					setDraft({ value: next });
-				}}
-			/>
-			<Button
-				requiresConnection
-				disabled={!dirty || stale || action.isPending}
-				onClick={() =>
-					!stale &&
-					void action
-						.mutateAsync({
-							path: "/api/title-settings",
-							method: "PUT",
-							body: value,
-						})
-						.then(() => {
-							setDraft(undefined);
-							forgetDraft(draftKey);
-							toast({ text: "Run title settings saved" });
-						})
-						.catch(() => {})
-				}
-			>
-				Save title settings
-			</Button>
-			{action.error && <p role="alert">{action.error.message}</p>}
-		</section>
-	);
-}
-
 export function Recipes() {
 	const configQuery = useConfig(),
-		toast = useToast(),
-		action = useAction();
-	const [editing, setEditing] = useRestorableState<any>(
-			"recipe/editing",
-			undefined,
-		),
-		[json, setJson, staleJson] = useRestorableState(
-			"recipe/modal-json",
-			"",
-			configQuery.data ? revisionOf(configQuery.data.workflows) : undefined,
-		),
-		[role, setRole, staleRole] = useRestorableState<any>(
-			"recipe/role",
-			undefined,
-			configQuery.data ? revisionOf(configQuery.data.workflows) : undefined,
-		),
-		[error, setError] = useState(""),
-		[permissionTarget, setPermissionTarget] = useState<string>();
+		toast = useToast();
 	const config = configQuery.data;
+	const definitions = revisionOf(config?.workflows);
+	const [editing, setEditing] = useFormState<any>(definitions, undefined),
+		[json, setJson] = useFormState(definitions, ""),
+		[role, setRole] = useFormState<any>(definitions, undefined),
+		[error, setError] = useFormState(
+			`${definitions}/${editing?.id ?? "closed"}/${role?.stepId ?? "closed"}`,
+			"",
+		),
+		[permissionTarget, setPermissionTarget] = useFormState<string | undefined>(
+			definitions,
+			undefined,
+		);
+	const modalContext = `${definitions}/${editing?.id ?? "closed"}/${role?.workflowId ?? ""}/${role?.stepId ?? "closed"}`;
+	const action = useAction("workflows", modalContext);
+	const isCurrent = useCurrentForm(modalContext);
+
 	async function save(
 		definitions: any[],
 		defaultWorkflow = config.defaultWorkflow,
@@ -664,17 +561,15 @@ export function Recipes() {
 	return (
 		<>
 			<h1>Recipes</h1>
-			<DraftNotice conflict={staleJson} draftKey="recipe/modal-json" />
-			<DraftNotice conflict={staleRole} draftKey="recipe/role" />
 			<p className="intro">
 				How Bob cooks each kind of run. Tune the agent per step; the default
 				recipe is used when nothing else matches. Launch methods apply to new
 				runs; existing runs retain their definitions.
 			</p>
-			<div className="recipe-settings">
-				<MachineCapacitySettings config={config} />
-				<RunTitleSettings config={config} />
-			</div>
+			<p className="muted">
+				Factory-wide profiles, defaults, capacity and run titles are in{" "}
+				<Link to="/settings">Settings</Link>.
+			</p>
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (
 					<article className="recipe" key={workflow.id}>
@@ -815,7 +710,7 @@ export function Recipes() {
 							<section>
 								<small>METHOD</small>
 								<div className="recipe-method">
-									{workflow.steps.map((step: any) => (
+									{workflow.steps.map((step: any, stepIndex: number) => (
 										<div key={step.id}>
 											<span>
 												{step.type === "workflow"
@@ -832,6 +727,7 @@ export function Recipes() {
 														setRole({
 															workflowId: workflow.id,
 															stepId: step.id,
+															path: [stepIndex],
 															value: structuredClone(step),
 														})
 													}
@@ -846,7 +742,7 @@ export function Recipes() {
 												</small>
 											)}
 											{step.type === "fanout" &&
-												ownRoles([step]).map(({ step: child }) => (
+												ownRoles([step]).map(({ step: child, path }) => (
 													<Button
 														key={child.id}
 														variant="agent-pill"
@@ -854,6 +750,7 @@ export function Recipes() {
 															setRole({
 																workflowId: workflow.id,
 																stepId: child.id,
+																path: [stepIndex, ...path.slice(1)],
 																value: structuredClone(child),
 															})
 														}
@@ -879,10 +776,10 @@ export function Recipes() {
 								await save(definitions);
 							}}
 						/>
-						<details data-restore={`recipe-${workflow.id}`}>
-							<summary>Edit as JSON</summary>
+						<RecipeDetails workflow={workflow}>
 							<RecipeEditor
 								workflow={workflow}
+								pending={action.isPending}
 								onSave={async (value: any) => {
 									const definitions = config.workflows.map((w: any) =>
 										w.id === workflow.id ? value : w,
@@ -892,7 +789,7 @@ export function Recipes() {
 									return ok;
 								}}
 							/>
-						</details>
+						</RecipeDetails>
 					</article>
 				))}
 			</div>
@@ -932,6 +829,7 @@ export function Recipes() {
 				onOpenChange={(o) => {
 					if (!o) {
 						setEditing(undefined);
+						setJson("");
 						setError("");
 					}
 				}}
@@ -942,7 +840,7 @@ export function Recipes() {
 					onSubmit={(e) => {
 						e.preventDefault();
 						try {
-							if (staleJson) return;
+							if (action.isPending) return;
 							const value = JSON.parse(json),
 								exists = config.workflows.some((w: any) => w.id === editing.id);
 							void save(
@@ -952,7 +850,7 @@ export function Recipes() {
 										)
 									: [...config.workflows, value],
 							).then((ok) => {
-								if (ok) {
+								if (ok && isCurrent()) {
 									setEditing(undefined);
 									setJson("");
 									toast({ text: "Recipe saved" });
@@ -963,7 +861,6 @@ export function Recipes() {
 						}
 					}}
 				>
-					<DraftNotice conflict={staleJson} draftKey="recipe/modal-json" />
 					<label>
 						Icon
 						<input
@@ -1002,7 +899,7 @@ export function Recipes() {
 					<Button
 						type="submit"
 						requiresConnection
-						disabled={staleJson}
+						disabled={action.isPending}
 						busy={action.isPending}
 					>
 						Save recipe
@@ -1018,7 +915,6 @@ export function Recipes() {
 				description="Only this workflow owns these settings. Parents use the shared recipe's configuration."
 			>
 				<div className="modal-body">
-					<DraftNotice conflict={staleRole} draftKey="recipe/role" />
 					{role && (
 						<AgentSettings
 							config={config}
@@ -1026,28 +922,85 @@ export function Recipes() {
 							onChange={(value) => setRole({ ...role, value })}
 						/>
 					)}
+					{role && (
+						<>
+							<label>
+								Role prompt
+								<textarea
+									value={role.value.prompt ?? ""}
+									onChange={(e) =>
+										setRole({
+											...role,
+											value: { ...role.value, prompt: e.target.value },
+										})
+									}
+									rows={8}
+								/>
+							</label>
+							<label>
+								Output contract
+								<select
+									value={role.value.reviewContract ?? ""}
+									onChange={(e) =>
+										setRole({
+											...role,
+											value: {
+												...role.value,
+												reviewContract: e.target.value || undefined,
+											},
+										})
+									}
+								>
+									<option value="">Legacy / custom output</option>
+									<option value="inventory-v1">Requirement inventory</option>
+									<option value="specialist-v1">Specialist findings</option>
+									<option value="coverage-v1">
+										Findings and complete requirement coverage
+									</option>
+								</select>
+							</label>
+							<label>
+								<input
+									type="checkbox"
+									checked={role.value.json !== false}
+									onChange={(e) =>
+										setRole({
+											...role,
+											value: { ...role.value, json: e.target.checked },
+										})
+									}
+								/>{" "}
+								Structured JSON output
+							</label>
+							{role.value.reviewContract && (
+								<p className="muted">
+									Review contracts require structured JSON. Replace the coverage
+									supplier before removing it. Add or remove reviewers in the
+									recipe JSON; up to eight fanout groups.
+								</p>
+							)}
+						</>
+					)}
+					{action.error && (
+						<p className="error" role="alert">
+							{action.error.message}
+						</p>
+					)}
 					<Button
 						requiresConnection
-						disabled={staleRole}
+						disabled={action.isPending}
 						busy={action.isPending}
 						onClick={() => {
-							if (staleRole) return;
-							const replace = (steps: any[]): any[] =>
-								steps.map((s) =>
-									s.id === role.stepId
-										? role.value
-										: s.groups
-											? { ...s, groups: s.groups.map(replace) }
-											: s,
-								);
-							void save(
-								config.workflows.map((w: any) =>
-									w.id === role.workflowId
-										? { ...w, steps: replace(w.steps) }
-										: w,
-								),
-							).then((ok) => {
-								if (ok) {
+							if (action.isPending || !role?.path) return;
+							const definitions = structuredClone(config.workflows);
+							const workflow = definitions.find(
+								(w: any) => w.id === role.workflowId,
+							);
+							let node = workflow.steps;
+							for (const part of role.path.slice(0, -1)) node = node[part];
+							node[role.path.at(-1)] = role.value;
+							void save(definitions).then((ok) => {
+								if (ok && isCurrent()) {
 									setRole(undefined);
 									toast({ text: "Step settings saved" });
 								}
@@ -1061,60 +1014,55 @@ export function Recipes() {
 		</>
 	);
 }
+function RecipeDetails({
+	workflow,
+	children,
+}: {
+	workflow: any;
+	children: React.ReactNode;
+}) {
+	const [open, setOpen] = useFormState(revisionOf(workflow), false);
+	return (
+		<details
+			open={open}
+			onToggle={(event) => setOpen(event.currentTarget.open)}
+		>
+			<summary>Edit as JSON</summary>
+			{open ? children : null}
+		</details>
+	);
+}
 function RecipeEditor({
 	workflow,
 	onSave,
+	pending,
 }: {
 	workflow: any;
 	onSave: (v: any) => Promise<boolean>;
+	pending: boolean;
 }) {
-	const [text, setText, stale] = useRestorableState(
-			`recipe/json/${workflow.id}`,
+	const context = revisionOf(workflow);
+	const [text, setText] = useFormState(
+			context,
 			JSON.stringify(workflow, null, 2),
-			revisionOf(workflow),
 		),
-		[error, setError] = useState(""),
-		[busy, setBusy] = useState(false);
-	const previous = useRef(workflow);
-	useEffect(() => {
-		const saved = previous.current;
-		setText((current) => {
-			try {
-				const draft = JSON.parse(current);
-				for (const key of ["allowedTriggers", "steps"]) {
-					if (
-						!stale &&
-						JSON.stringify(draft[key]) === JSON.stringify(saved[key])
-					)
-						draft[key] = workflow[key];
-				}
-				return JSON.stringify(draft, null, 2);
-			} catch {
-				return current;
-			}
-		});
-		previous.current = workflow;
-	}, [workflow, stale, setText]);
+		[error, setError] = useFormState(context, ""),
+		[busy, setBusy] = useFormState(context, false);
 	return (
 		<form
 			onSubmit={(e) => {
 				e.preventDefault();
 				try {
-					if (stale) return;
+					if (busy || pending) return;
 					const value = JSON.parse(text);
 					setBusy(true);
-					void onSave(value)
-						.then((ok) => {
-							if (ok) forgetDraft(`recipe/json/${workflow.id}`);
-						})
-						.finally(() => setBusy(false));
+					void onSave(value).finally(() => setBusy(false));
 					setError("");
 				} catch (err) {
 					setError((err as Error).message);
 				}
 			}}
 		>
-			<DraftNotice conflict={stale} draftKey={`recipe/json/${workflow.id}`} />
 			<label className="sr-only" htmlFor={`json-${workflow.id}`}>
 				Workflow JSON for {workflow.name}
 			</label>
@@ -1126,7 +1074,12 @@ function RecipeEditor({
 				onChange={(e) => setText(e.target.value)}
 			/>
 			<p role="alert">{error}</p>
-			<Button type="submit" requiresConnection disabled={stale} busy={busy}>
+			<Button
+				type="submit"
+				requiresConnection
+				disabled={pending || busy}
+				busy={pending || busy}
+			>
 				Save
 			</Button>
 		</form>

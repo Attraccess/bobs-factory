@@ -1,4 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
@@ -8,6 +8,12 @@ import { z } from "zod";
 import type { MachineCapacity } from "../MachineCapacity.js";
 import { activityMarkers, activityPage } from "./ActivityPage.js";
 import { reasoningLevels, serviceTierRunners } from "./AgentSettings.js";
+import { ExecutionSelectionSchema } from "./ExecutionProfiles.js";
+import {
+	type FactoryAccess,
+	FactoryAuth,
+	factoryAccess,
+} from "./FactoryAuth.js";
 import { CaptureSchema, verifiedScreenshot } from "./FactoryTools.js";
 import { factoryWebAssets } from "./FactoryWebAssets.js";
 import {
@@ -22,23 +28,38 @@ import {
 	resolveGuideSnapshot,
 } from "./ReviewFiles.js";
 import type { ChatState } from "./SessionChat.js";
+import type { VideoCapture } from "./Video.js";
+import { registerVideoRoutes } from "./VideoServer.js";
 import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	push?: import("./FactoryPush.js").FactoryPush;
+	previewExecution?(
+		repositoryId: string,
+		selection: import("./ExecutionProfiles.js").ExecutionSelection,
+		runner?: string,
+		workflow?: string,
+		model?: string,
+	): Promise<unknown>;
 	capacity?: MachineCapacity;
 	chat?(id: string): ChatState;
 	message?(id: string, text: string, messageId?: string): void | Promise<void>;
 	defaultRunner?(): string;
 	subscribe?(listener: (id: string) => void): () => void;
-	repositories(): { id: string; name: string }[];
+	repositories(): {
+		id: string;
+		name: string;
+		repositoryIds?: string[];
+		members?: { id: string; name: string }[];
+	}[];
 	sessions(): {
-		triggerOrigin?: import("cyrus-core").WorkflowTriggerOrigin;
+		triggerOrigin?: import("bobs-factory-core").WorkflowTriggerOrigin;
 		id: string;
 		title: string;
 		status: string;
 		createdAt: string;
-		titleGeneration?: import("cyrus-core").RunTitleJob;
+		titleGeneration?: import("bobs-factory-core").RunTitleJob;
 		workspace: string;
 		repositoryId?: string;
 	}[];
@@ -52,8 +73,25 @@ interface ServerHooks {
 export class FactoryServer {
 	readonly app: FastifyInstance;
 	private streams = new Set<ServerResponse>();
-	constructor(runtime: WorkflowRuntime, hooks: ServerHooks) {
+	readonly auth: FactoryAuth;
+	private streamSessions = new Map<
+		ServerResponse,
+		{ token: string; origin: string }
+	>();
+	constructor(
+		runtime: WorkflowRuntime,
+		hooks: ServerHooks,
+		access: FactoryAccess = factoryAccess(
+			Number(process.env.BOBS_FACTORY_FACTORY_PORT ?? 3457),
+			process.env.BOBS_FACTORY_FACTORY_ORIGIN ??
+				process.env.BOBS_FACTORY_FACTORY_PUBLIC_ORIGIN,
+			Number(process.env.BOBS_FACTORY_FACTORY_SESSION_HOURS ?? 12),
+		),
+	) {
+		const shell = factoryWebAssets();
+		this.auth = new FactoryAuth(runtime.directory, access);
 		this.app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
+		registerVideoRoutes(this.app, runtime);
 		this.app.setErrorHandler((error, _request, reply) =>
 			reply.code(error instanceof z.ZodError ? 400 : 409).send({
 				error:
@@ -64,6 +102,10 @@ export class FactoryServer {
 							: "Request failed",
 			}),
 		);
+		const unsubscribeAuth = this.auth.subscribe(() => {
+			for (const [stream, session] of this.streamSessions)
+				if (!this.auth.session(session.token, session.origin)) stream.end();
+		});
 		const pendingIds = new Set<string>();
 		let configChanged = false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -78,7 +120,11 @@ export class FactoryServer {
 				pendingIds.clear();
 				configChanged = false;
 				for (const stream of this.streams) {
-					if (stream.destroyed) this.streams.delete(stream);
+					const session = this.streamSessions.get(stream);
+					if (!session || !this.auth.session(session.token, session.origin))
+						stream.end();
+					else if (stream.destroyed || stream.writableEnded)
+						this.streams.delete(stream);
 					else if (!stream.write(data)) stream.destroy(); // Slow readers reconnect and refresh, never queue unlimited events.
 				}
 			}, 500);
@@ -89,6 +135,8 @@ export class FactoryServer {
 		const unsubscribeRuntime = runtime.subscribe(broadcast);
 		const unsubscribeSessions = hooks.subscribe?.((id) => broadcast({ id }));
 		this.app.addHook("preClose", async () => {
+			unsubscribeAuth();
+			this.auth.close();
 			unsubscribeRuntime();
 			unsubscribeCapacity?.();
 			unsubscribeSessions?.();
@@ -96,7 +144,6 @@ export class FactoryServer {
 			for (const stream of this.streams) stream.end();
 			this.streams.clear();
 		});
-		const shell = factoryWebAssets();
 		const configRevision = () =>
 			createHash("sha256")
 				.update(
@@ -104,15 +151,14 @@ export class FactoryServer {
 						runtime.listWorkflows(),
 						runtime.getDefaultWorkflow(),
 						runtime.getTitleSettings(),
+						runtime.executionProfiles.read(),
 					]),
 				)
 				.digest("hex");
 		const checkConfigRevision = (request: FastifyRequest) => {
 			const config = request.headers["x-factory-config"];
 			if (config !== undefined && config !== configRevision())
-				throw new Error(
-					"Recipe settings changed. Refresh and review your draft before sending.",
-				);
+				throw new Error("Recipe settings changed. Refresh before sending.");
 		};
 		this.app.addHook("onSend", async (request, reply) => {
 			if (request.url.startsWith("/api/")) {
@@ -120,31 +166,58 @@ export class FactoryServer {
 				reply.header("X-Factory-Build", shell.build);
 			}
 		});
-		// Keep the listener on loopback; optionally admit one explicitly configured UI tunnel.
-		const publicUrl = process.env.CYRUS_FACTORY_PUBLIC_ORIGIN
-			? new URL(process.env.CYRUS_FACTORY_PUBLIC_ORIGIN)
-			: undefined;
+		const originFor = (request: FastifyRequest) =>
+			access.origins.find(
+				(origin) => new URL(origin).host === request.headers.host,
+			);
+		const cookieName = (origin: string) =>
+			origin.startsWith("https:")
+				? "__Host-factory-session"
+				: "factory-local-session";
+		const cookie = (request: FastifyRequest, name: string) =>
+			request.headers.cookie
+				?.split(";")
+				.map((c) => c.trim())
+				.find((c) => c.startsWith(`${name}=`))
+				?.slice(name.length + 1);
+		const tokenFor = (request: FastifyRequest) =>
+			cookie(request, cookieName(originFor(request)!));
+		const setCookie = (
+			reply: import("fastify").FastifyReply,
+			origin: string,
+			token: string,
+			expires: number,
+		) =>
+			reply.header(
+				"Set-Cookie",
+				`${cookieName(origin)}=${token}; Path=/; HttpOnly; SameSite=Strict; ${origin.startsWith("https:") ? "Secure; " : ""}Expires=${new Date(expires).toUTCString()}`,
+			);
+		const publicPaths = new Set([
+			"/api/version",
+			"/api/auth/status",
+			"/api/auth/login/options",
+			"/api/auth/login/verify",
+			"/api/auth/register/options",
+			"/api/auth/register/verify",
+			...shell.assets.map((asset) => asset.path),
+		]);
 		this.app.addHook("onRequest", async (request, reply) => {
-			const host = request.headers.host ?? "";
-			const isPublicHost = publicUrl !== undefined && host === publicUrl.host;
-			if (
-				!isPublicHost &&
-				!/^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/.test(host)
-			)
-				return reply.code(403).send({ error: "Local UI only" });
+			this.auth.checkRecovery();
+			const origin = originFor(request);
+			if (!origin)
+				return reply.code(403).send({ error: "Invalid Factory authority" });
+			if (request.headers.origin && request.headers.origin !== origin)
+				return reply.code(403).send({ error: "Invalid origin" });
 			if (!["GET", "HEAD"].includes(request.method)) {
-				const origin = request.headers.origin;
-				if (
-					origin &&
-					origin !== (isPublicHost ? publicUrl?.origin : `http://${host}`)
-				)
-					return reply.code(403).send({ error: "Invalid origin" });
+				if (request.headers.origin !== origin)
+					return reply
+						.code(403)
+						.send({ error: "Exact Factory origin required" });
 				if (request.headers["x-factory-request"] !== "1")
 					return reply
 						.code(403)
 						.send({ error: "Factory request header required" });
 				const version = request.headers["x-factory-build"];
-				// Header-less local automation remains compatible; the versioned UI always sends it.
 				if (version !== undefined && version !== shell.build)
 					return reply.code(409).send({
 						error:
@@ -152,10 +225,119 @@ export class FactoryServer {
 						code: "FACTORY_VERSION_MISMATCH",
 					});
 			}
+			if (
+				!publicPaths.has(request.url.split("?")[0]!) &&
+				!this.auth.session(tokenFor(request), origin)
+			)
+				return reply.code(401).send({
+					error: "Sign in with a passkey",
+					code: "FACTORY_AUTH_REQUIRED",
+				});
 		});
+		this.app.addHook("preHandler", async (request, reply) => {
+			if (
+				!publicPaths.has(request.url.split("?")[0]!) &&
+				!this.auth.session(tokenFor(request), originFor(request)!)
+			)
+				return reply.code(401).send({
+					error: "Sign in with a passkey",
+					code: "FACTORY_AUTH_REQUIRED",
+				});
+		});
+		// Never let an individual media handler override sensitive response policy.
+		this.app.addHook("onSend", async (request, reply) => {
+			if (
+				!shell.assets.some((asset) => asset.path === request.url.split("?")[0])
+			)
+				reply.header("Cache-Control", "no-store");
+		});
+		this.app.get("/api/auth/status", (request) => {
+			const origin = originFor(request)!;
+			const session = this.auth.session(tokenFor(request), origin);
+			return {
+				authenticated: Boolean(session),
+				expires: session?.expires,
+				setupRequired: !this.auth.store.state.credentials.some(
+					(c) => c.origin === origin,
+				),
+				origin,
+			};
+		});
+		for (const purpose of ["login", "register"] as const) {
+			this.app.post(`/api/auth/${purpose}/options`, async (request, reply) => {
+				const body = z
+					.object({
+						grant: z.string().max(100).optional(),
+						label: z.string().max(80).optional(),
+					})
+					.parse(request.body);
+				const binding = randomBytes(32).toString("base64url");
+				const origin = originFor(request)!;
+				const result = await this.auth.options(
+					purpose,
+					origin,
+					binding,
+					tokenFor(request),
+					body.grant,
+					body.label,
+				);
+				reply.header(
+					"Set-Cookie",
+					`factory-transaction=${binding}; Path=/; HttpOnly; SameSite=Strict; ${origin.startsWith("https:") ? "Secure; " : ""}Max-Age=300`,
+				);
+				return result;
+			});
+			this.app.post(`/api/auth/${purpose}/verify`, async (request, reply) => {
+				const body = z
+					.object({ transaction: z.string().max(100), response: z.any() })
+					.parse(request.body);
+				const origin = originFor(request)!;
+				const previous = tokenFor(request);
+				const result = await this.auth.verify(
+					purpose,
+					body.transaction,
+					origin,
+					cookie(request, "factory-transaction") ?? "",
+					body.response,
+				);
+				this.auth.logout(previous, origin);
+				setCookie(reply, origin, result.token, result.expires);
+				return { authenticated: true, expires: result.expires };
+			});
+		}
+		this.app.post("/api/auth/logout", (request, reply) => {
+			const origin = originFor(request)!;
+			this.auth.logout(tokenFor(request), origin);
+			setCookie(reply, origin, "", 0);
+			return { authenticated: false };
+		});
+		this.app.get("/api/auth/credentials", (request) =>
+			this.auth.credentials(tokenFor(request), originFor(request)!),
+		);
+		this.app.delete<{ Params: { id: string } }>(
+			"/api/auth/credentials/:id",
+			(request) => {
+				this.auth.remove(
+					tokenFor(request),
+					originFor(request)!,
+					request.params.id,
+				);
+				return { removed: true };
+			},
+		);
 		for (const asset of shell.assets) {
-			this.app.get(asset.path, (_request, reply) =>
-				reply
+			this.app.get(asset.path, (request, reply) => {
+				const url = new URL(originFor(request)!);
+				if (
+					asset.path === "/" &&
+					url.protocol === "http:" &&
+					url.hostname === "127.0.0.1"
+				) {
+					const local = `http://localhost${url.port ? `:${url.port}` : ""}`;
+					if (access.origins.includes(local))
+						return reply.header("Cache-Control", "no-store").redirect(local);
+				}
+				return reply
 					.header(
 						"Cache-Control",
 						asset.immutable
@@ -165,14 +347,48 @@ export class FactoryServer {
 					.header("X-Factory-Build", shell.build)
 					.header("X-Content-Type-Options", "nosniff")
 					.type(asset.type)
-					.send(asset.bytes),
-			);
+					.send(asset.bytes);
+			});
 		}
+		this.app.get(
+			"/api/push",
+			() =>
+				hooks.push?.status() ?? {
+					available: false,
+					diagnostic: "Push unavailable",
+					devices: [],
+				},
+		);
+		this.app.post("/api/push/devices", { bodyLimit: 8192 }, (request) => {
+			if (!hooks.push) throw new Error("Push unavailable");
+			return hooks.push.register(request.body);
+		});
+		this.app.patch("/api/push/devices/:id", { bodyLimit: 1024 }, (request) => {
+			if (!hooks.push) throw new Error("Push unavailable");
+			const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+			return hooks.push.update(id, request.body);
+		});
+		this.app.delete("/api/push/devices/:id", (request) => {
+			if (!hooks.push) throw new Error("Push unavailable");
+			const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+			return hooks.push.remove(id);
+		});
+		this.app.post(
+			"/api/push/devices/:id/test",
+			{ bodyLimit: 1024 },
+			async (request) => {
+				if (!hooks.push) throw new Error("Push unavailable");
+				const { id } = z
+					.object({ id: z.string().uuid() })
+					.parse(request.params);
+				return hooks.push.test(id);
+			},
+		);
 		this.app.get("/api/version", () => ({
 			build: shell.build,
 			protocol: shell.protocol,
 		}));
-		this.app.get("/api/events", (_request, reply) => {
+		this.app.get("/api/events", (request, reply) => {
 			reply.hijack();
 			const stream = reply.raw;
 			stream.writeHead(200, {
@@ -183,19 +399,38 @@ export class FactoryServer {
 				"X-Accel-Buffering": "no",
 			});
 			this.streams.add(stream);
-			stream.write("event: ready\ndata: {}\n\n");
-			const heartbeat = setInterval(
-				() => stream.write(": heartbeat\n\n"),
-				15000,
+			const origin = originFor(request)!,
+				token = tokenFor(request)!;
+			const session = this.auth.session(token, origin)!;
+			this.streamSessions.set(stream, { token, origin });
+			const expiry = setTimeout(
+				() => stream.end(),
+				Math.max(0, session.expires - Date.now()),
 			);
+			stream.write("event: ready\ndata: {}\n\n");
+			const heartbeat = setInterval(() => {
+				if (!this.auth.session(token, origin)) stream.end();
+				else stream.write(": heartbeat\n\n");
+			}, 15000);
 			stream.on("close", () => {
 				clearInterval(heartbeat);
+				clearTimeout(expiry);
+				this.streamSessions.delete(stream);
 				this.streams.delete(stream);
 			});
 		});
 		this.app.get("/api/config", async () => ({
 			capacity: await hooks.capacity?.snapshot(),
 			configRevision: configRevision(),
+			executionProfiles: runtime.executionProfiles.read(),
+			executionConsumers: [...runtime.runs.values()]
+				.filter((run) => run.executionSnapshot)
+				.map((run) => ({
+					id: run.id,
+					status: run.status,
+					identity: run.executionSnapshot?.identity?.id,
+					tools: run.executionSnapshot?.tools?.id,
+				})),
 			repositories: hooks.repositories(),
 			workflows: runtime.listWorkflows().map((workflow) => ({
 				...workflow,
@@ -207,10 +442,63 @@ export class FactoryServer {
 			reasoningLevels,
 			serviceTierRunners,
 		}));
+		this.app.put("/api/execution-profiles", (request) => {
+			checkConfigRevision(request);
+			const body = z
+				.object({
+					profiles: z.unknown(),
+					expectedRevision: z.number().int().nonnegative(),
+				})
+				.parse(request.body);
+			return runtime.updateExecutionProfiles(
+				body.profiles,
+				body.expectedRevision,
+			);
+		});
+		this.app.post("/api/execution-preview", async (request) => {
+			const body = z
+				.object({
+					repositoryId: z.string(),
+					selection: ExecutionSelectionSchema,
+					workflow: z.string().optional(),
+					model: z.string().optional(),
+					runner: z
+						.enum(["claude", "codex", "gemini", "cursor", "opencode"])
+						.optional(),
+				})
+				.parse(request.body);
+			const snapshot = runtime.executionProfiles.select(
+				body.repositoryId,
+				body.selection,
+			);
+			return hooks.previewExecution
+				? hooks.previewExecution(
+						body.repositoryId,
+						body.selection,
+						body.runner,
+						body.workflow,
+						body.model,
+					)
+				: {
+						snapshot,
+						validation: "Execution validation is unavailable on this server",
+					};
+		});
 		this.app.put("/api/capacity", async (request) => {
 			if (!hooks.capacity) throw new Error("Instance capacity unavailable");
-			const { limit } = z
-				.object({ limit: z.number().int().positive() })
+			// Keep the old API field for local clients. Public proxies can mistake
+			// a numeric "limit" body for SQL, so the dashboard sends "concurrency".
+			const limit = z
+				.object({
+					concurrency: z.number().int().positive().optional(),
+					limit: z.number().int().positive().optional(),
+				})
+				.refine(
+					(body) =>
+						(body.concurrency !== undefined) !== (body.limit !== undefined),
+					"Specify either concurrency or limit",
+				)
+				.transform((body) => body.concurrency ?? body.limit!)
 				.parse(request.body);
 			await hooks.capacity.setLimit(limit);
 			return { capacity: await hooks.capacity.snapshot() };
@@ -630,12 +918,14 @@ export class FactoryServer {
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/answer",
 			(request) => {
-				const { answer, context } = z
+				const { answer, context, kind } = z
 					.object({
 						answer: z.string().trim().min(1).max(100000),
+						kind: z.enum(["answer", "explanation"]).optional(),
 						context: z
 							.object({
 								questions: z.array(z.string()),
+								questionBatchId: z.string().optional(),
 								step: z.string().optional(),
 							})
 							.optional(),
@@ -645,12 +935,14 @@ export class FactoryServer {
 				if (
 					context &&
 					(context.step !== run.step ||
+						(context.questionBatchId !== undefined &&
+							context.questionBatchId !== run.questionBatchId) ||
 						!isDeepStrictEqual(context.questions, run.questions))
 				)
 					throw new Error(
-						"The question or step changed. Refresh and review your draft before answering.",
+						"The question or step changed. Refresh before answering.",
 					);
-				runtime.answer(request.params.id, answer);
+				runtime.answer(request.params.id, answer, kind);
 				return { accepted: true };
 			},
 		);
@@ -664,16 +956,38 @@ export class FactoryServer {
 								area: string;
 								state: string;
 								caption: string;
+								context?: string;
 								imageSha256?: string;
 							}[];
 					  }
 					| undefined;
 				return {
+					videos: (
+						(run.outputs.capture as VideoCapture | undefined)?.videos ?? []
+					)
+						.filter((v) => v.validation)
+						.map((v) => ({
+							taskId: v.taskId,
+							caption: v.caption,
+							transcript: v.transcript,
+							duration: v.validation!.duration,
+							mime: v.validation!.mime,
+							codecs: v.validation!.codecs,
+							revision: v.validation!.captureRevision,
+							validatedRevision: v.validation!.validatedRevision,
+							sha256: v.validation!.sha256,
+							captions: Boolean(v.validation!.captions),
+							available: existsSync(v.path) && existsSync(v.posterPath),
+						})),
+					videoUnavailable:
+						(run.outputs.capture as VideoCapture | undefined)
+							?.videoUnavailable ?? [],
 					screenshots: (capture?.screenshots ?? []).map(
-						({ area, state, caption, imageSha256 }, index) => ({
+						({ area, state, caption, context, imageSha256 }, index) => ({
 							area,
 							state,
 							caption,
+							context,
 							imageSha256,
 							index,
 						}),
@@ -747,7 +1061,12 @@ export class FactoryServer {
 	async start(port: number): Promise<void> {
 		if (!Number.isInteger(port) || port < 0 || port > 65535)
 			throw new Error("Invalid factory UI port");
-		await this.app.listen({ port, host: "127.0.0.1" });
+		try {
+			await this.app.listen({ port, host: "127.0.0.1" });
+		} catch (error) {
+			await this.app.close();
+			throw error;
+		}
 	}
 	async stop(): Promise<void> {
 		await this.app.close();

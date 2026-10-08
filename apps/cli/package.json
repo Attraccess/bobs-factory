@@ -1,11 +1,11 @@
 {
-	"name": "cyrus-ai",
+	"name": "bobs-factory",
 	"version": "0.2.73",
 	"description": "AI-powered Linear issue automation using Claude",
 	"main": "dist/src/app.js",
 	"types": "dist/src/app.d.ts",
 	"bin": {
-		"cyrus": "./dist/src/app.js"
+		"bobs-factory": "./dist/src/app.js"
 	},
 	"type": "module",
 	"scripts": {
@@ -15,16 +15,12 @@
 		"test": "vitest run",
 		"test:run": "vitest run --passWithNoTests",
 		"test:watch": "vitest",
-		"typecheck": "tsgo --noEmit",
-		"prepublishOnly": "cd ../.. && pnpm build"
+		"typecheck": "tsgo --noEmit"
 	},
 	"files": [
 		"dist",
 		"README.md"
 	],
-	"publishConfig": {
-		"access": "public"
-	},
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/jappyjan/bobs-factory.git",
@@ -38,17 +34,19 @@
 		"cli"
 	],
 	"author": "",
-	"license": "MIT",
+	"license": "Apache-2.0",
 	"dependencies": {
 		"@linear/sdk": "^64.0.0",
 		"@sentry/node": "^10.65.0",
+		"bobs-factory-claude-runner": "workspace:*",
+		"bobs-factory-cloudflare-tunnel-client": "workspace:*",
+		"bobs-factory-config-updater": "workspace:*",
+		"bobs-factory-core": "workspace:*",
+		"bobs-factory-cursor-runner": "workspace:*",
+		"bobs-factory-edge-worker": "workspace:*",
+		"bobs-factory-mcp-tools": "workspace:*",
+		"bobs-factory-slack-event-transport": "workspace:*",
 		"commander": "^14.0.2",
-		"cyrus-claude-runner": "workspace:*",
-		"cyrus-cloudflare-tunnel-client": "workspace:*",
-		"cyrus-config-updater": "workspace:*",
-		"cyrus-core": "workspace:*",
-		"cyrus-edge-worker": "workspace:*",
-		"cyrus-slack-event-transport": "workspace:*",
 		"dotenv": "^16.5.0",
 		"express": "^5.2.1",
 		"fastify": "^5.12.5",
@@ -56,13 +54,14 @@
 		"fs-extra": "^11.3.0",
 		"node-fetch": "^2.7.0",
 		"open": "^10.0.0",
-		"zod": "^4.3.5"
+		"zod": "^4.3.5",
+		"reflect-metadata": "^0.2.2"
 	},
 	"devDependencies": {
 		"@types/node": "^20.0.0",
-		"@vitest/ui": "^4.1.11",
-		"nodemon": "^3.1.14",
 		"@typescript/native-preview": "7.0.0-dev.20260707.2",
+		"@vitest/ui": "^4.1.11",
 		"vitest": "^4.1.11"
-	}
+	},
+	"private": true
 }

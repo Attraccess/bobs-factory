@@ -5,7 +5,7 @@ import type {
 	SDKMessage,
 	SDKResultMessage,
 	SDKUserMessage,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import type {
 	NormalizedCodexEvent,
 	NormalizedCodexItem,
@@ -268,7 +268,7 @@ function createResultUsage(parsed: NormalizedUsage): SDKResultMessage["usage"] {
 }
 
 /**
- * Translates backend-neutral {@link NormalizedCodexEvent}s into Cyrus
+ * Translates backend-neutral {@link NormalizedCodexEvent}s into Bob’s Factory
  * `SDKMessage`s and accumulates the session message list. Single responsibility:
  * event → message mapping. Knows nothing about transports or session lifecycle.
  */
@@ -350,14 +350,11 @@ export class CodexEventMapper {
 	}
 
 	/**
-	 * Build and emit the terminal result message (and init, if a turn never
-	 * started). Returns the full message list for the runner's `complete` event.
+	 * Build and emit the terminal result message. Only thread-started emits init:
+	 * failing before thread creation or resume cannot establish a conversation.
+	 * Returns the full message list for the runner's `complete` event.
 	 */
 	finalize(opts: { caughtError?: unknown; wasStopped: boolean }): SDKMessage[] {
-		if (!this.hasInitMessage) {
-			this.emitSystemInitMessage(this.ctx.getSessionId());
-		}
-
 		if (opts.caughtError && !opts.wasStopped) {
 			this.errorMessages.push(normalizeError(opts.caughtError));
 		}

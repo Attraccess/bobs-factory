@@ -1,6 +1,76 @@
+import { pullRequestReference } from "../GitProviderReference.js";
+
 type RecordValue = Record<string, unknown>;
 export type ReviewLink = { url: string; label: string };
 export type CheckoutCommand = { label: string; command: string; help: string };
+
+export function reviewDeliveries(value: unknown) {
+	const run = record(value),
+		gate = record(run.reviewGate);
+	const draft = record(record(run.outputs)["draft-pr"]);
+	const entries = Array.isArray(gate.repositories)
+		? gate.repositories
+		: Array.isArray(draft.deliveries)
+			? draft.deliveries.map((value) => ({
+					...record(value),
+					...record(record(value).output),
+				}))
+			: [];
+	return entries.flatMap((value) => {
+		const item = record(value),
+			url = webUrl(item.url);
+		return url &&
+			typeof item.repositoryId === "string" &&
+			typeof item.name === "string" &&
+			typeof item.headSha === "string"
+			? [
+					{
+						repositoryId: item.repositoryId,
+						name: item.name,
+						url,
+						headSha: item.headSha,
+					},
+				]
+			: [];
+	});
+}
+
+export function reviewFileTarget(run: unknown, path: string) {
+	const deliveries = reviewDeliveries(run);
+	const delivery = deliveries.find((item) => path.startsWith(`${item.name}/`));
+	return {
+		path: delivery ? path.slice(delivery.name.length + 1) : path,
+		url: delivery?.url ?? reviewContext(run).pr?.url,
+	};
+}
+
+/** Build only supported forge destinations from credential-free review metadata. */
+export function reviewDiffUrl(url: string | undefined): string | undefined {
+	const reference = pullRequestReference(url);
+	if (!reference) return webUrl(url);
+	return `${reference.requestUrl.replace(/\/$/, "")}/${reference.type === "gitlab" ? "diffs" : "files"}`;
+}
+
+export async function reviewFileUrl(
+	url: string | undefined,
+	path: string,
+): Promise<string | undefined> {
+	const reference = pullRequestReference(url),
+		diff = reviewDiffUrl(url);
+	if (!reference || !diff) return diff;
+	const algorithm = reference.type === "gitlab" ? "SHA-1" : "SHA-256";
+	const bytes = await crypto.subtle.digest(
+		algorithm,
+		new TextEncoder().encode(path),
+	);
+	const hash = [...new Uint8Array(bytes)]
+		.map((n) => n.toString(16).padStart(2, "0"))
+		.join("");
+	// GitLab selects the file by SHA-1 and uses its diff-content ID for scrolling.
+	return reference.type === "gitlab"
+		? `${diff}?file=${hash}#diff-content-${hash}`
+		: `${diff}#diff-${hash}`;
+}
 
 function record(value: unknown): RecordValue {
 	return value && typeof value === "object" && !Array.isArray(value)
@@ -115,24 +185,35 @@ export function reviewContext(value: unknown) {
 		return new URL(url).hostname !== "github.com" || Boolean(githubPr(url));
 	});
 	const github = githubPr(prUrl);
+	const forge = pullRequestReference(prUrl);
 	const branch = [draft.branch, source.headRefName, existing.branch]
 		.map(branchName)
 		.find(Boolean);
-	const repositoryUrl = github
-		? `https://github.com/${github[1]}/${github[2]}`
-		: undefined;
+	const repositoryUrl = forge?.url;
 	const branchUrl =
 		repositoryUrl &&
 		branch &&
 		source.isCrossRepository !== true &&
 		draft.isCrossRepository !== true
-			? `${repositoryUrl}/tree/${encodeURIComponent(branch)}`
+			? `${repositoryUrl}${forge?.type === "gitlab" ? "/-/tree/" : "/tree/"}${encodeURIComponent(branch)}`
 			: undefined;
 	const commands: CheckoutCommand[] = [];
 	if (github && prUrl)
 		commands.push({
 			label: "GitHub CLI",
 			command: `gh pr checkout ${github[3]}`,
+			help: "Run in a local clone with GitHub CLI installed.",
+		});
+	if (forge?.type === "gitlab")
+		commands.push({
+			label: "GitLab CLI",
+			command: `glab mr checkout ${forge.number} --repo ${shellQuote(forge.url)}`,
+			help: "Run in a local clone with GitLab CLI installed.",
+		});
+	if (forge?.type === "github" && !github)
+		commands.push({
+			label: "GitHub CLI",
+			command: `gh pr checkout ${forge.number} --repo ${shellQuote(forge.url)}`,
 			help: "Run in a local clone with GitHub CLI installed.",
 		});
 	if (branch)
@@ -143,7 +224,12 @@ export function reviewContext(value: unknown) {
 		});
 	return {
 		pr: prUrl
-			? { url: prUrl, label: github ? `PR #${github[3]}` : "Pull request" }
+			? {
+					url: prUrl,
+					label: forge
+						? `${forge.type === "gitlab" ? "MR !" : "PR #"}${forge.number}`
+						: "Pull request",
+				}
 			: undefined,
 		branch,
 		branchUrl,

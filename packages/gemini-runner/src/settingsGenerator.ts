@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { McpServerConfig } from "cyrus-core";
+import { type McpServerConfig, ProjectArtifactLease } from "bobs-factory-core";
 import type { GeminiMcpServerConfig } from "./types.js";
 
 interface GeminiSettingsPaths {
@@ -47,6 +47,7 @@ interface GeminiSettings {
  * Options for generating Gemini settings
  */
 export interface GeminiSettingsOptions {
+	ordinarySettings?: Record<string, unknown>;
 	maxSessionTurns?: number;
 	mcpServers?: Record<string, GeminiMcpServerConfig>;
 	allowMCPServers?: string[];
@@ -54,7 +55,7 @@ export interface GeminiSettingsOptions {
 }
 
 /**
- * Convert McpServerConfig (cyrus-core format) to GeminiMcpServerConfig (Gemini CLI format)
+ * Convert McpServerConfig (bobs-factory-core format) to GeminiMcpServerConfig (Gemini CLI format)
  * Gemini MCP config reference:
  * - https://geminicli.com/docs/cli/tutorials/mcp-setup/#how-to-configure-gemini-cli
  * - https://github.com/google-gemini/gemini-cli/blob/main/docs/get-started/configuration.md
@@ -68,7 +69,7 @@ export interface GeminiSettingsOptions {
  * This function maps to Gemini CLI's format which uses `httpUrl` for HTTP transport.
  *
  * @param serverName - Name of the MCP server (for logging)
- * @param config - McpServerConfig from cyrus-core
+ * @param config - McpServerConfig from bobs-factory-core
  * @returns GeminiMcpServerConfig or null if conversion not possible
  */
 export function convertToGeminiMcpConfig(
@@ -243,6 +244,7 @@ export function autoDetectMcpConfig(
  */
 function generateSettings(options: GeminiSettingsOptions): GeminiSettings {
 	const settings: GeminiSettings = {
+		...options.ordinarySettings,
 		general: {
 			previewFeatures: true,
 		},
@@ -362,7 +364,24 @@ export function writeGeminiSettings(
 export function setupGeminiSettings(
 	options: GeminiSettingsOptions,
 	projectRoot?: string,
+	leaseDirectory?: string,
+	existingLease?: ProjectArtifactLease,
 ): () => void {
+	if (projectRoot) {
+		const lease =
+			existingLease ??
+			new ProjectArtifactLease(projectRoot, "gemini", leaseDirectory);
+		try {
+			lease.write(
+				".gemini/settings.json",
+				JSON.stringify(generateSettings(options), null, 2),
+			);
+		} catch (error) {
+			lease.release();
+			throw error;
+		}
+		return () => lease.release();
+	}
 	const hadBackup = backupGeminiSettings(projectRoot);
 
 	// Write settings

@@ -1,6 +1,15 @@
+import { feedbackPolicyInstructions } from "./FeedbackPolicy.js";
+import { guideMapInstructions } from "./GuideAuthoring.js";
 import { takeoverLaunchFields } from "./LaunchFields.js";
 import { legacyScreenshotSteps } from "./legacyScreenshotSteps.js";
 import { QA_CONTRACT } from "./Qa.js";
+import { reviewFixInstructions } from "./ReviewRecovery.js";
+import {
+	inventoryGuideInstructions,
+	inventoryQaInstructions,
+	specialistSteps,
+} from "./specialistSteps.js";
+import { videoPrompts } from "./videoPrompts.js";
 import { validateWorkflows, type WorkflowStep } from "./Workflow.js";
 
 const agent = (id: string, name: string, prompt: string, extra = {}) => ({
@@ -22,19 +31,19 @@ const back = (path: string, next: string) => [
 	{ when: { path, equals: false }, next },
 ];
 
-const review = `Review the current diff against the accepted plan. You receive ALL historical review rounds and fixer responses. Use stable finding IDs; do not reopen resolved findings without fresh evidence. A fixer may reject a complaint with evidence; assess that evidence and either accept or reject the rejection with reasoning. Return {"findings":[{"id":"stable-id","rating":2,"summary":"...","evidence":"file:line and concrete failure","status":"open"}],"summary":"..."}. Ratings: 1 nitpick, 2 should fix, 3 must fix. Include unresolved rating 2/3 findings from earlier rounds. Return no findings only when all consequential complaints are resolved or their rejections accepted. Do not modify code.`;
-const fix = `Fix all open rating 2/3 findings. You receive ALL past findings and fixer dispositions; avoid alternating fixes or reopening settled issues without evidence. You may reject a complaint with concrete evidence. Return {"dispositions":[{"id":"finding-id","status":"fixed or rejected","reason":"..."}],"summary":"..."}. Run relevant checks, commit and push changes to the same draft PR. Do not merge or mark the PR ready.`;
+const review = `Review the current diff against the accepted plan. Use /contextMemory/reviewLedger and /contextMemory/reviewRounds for ALL distinct historical review findings and fixer responses when available; original rounds remain accessible through source references. Read old output details only when relevant evidence is needed. Use stable finding IDs; do not reopen resolved findings without fresh evidence. A fixer may reject a complaint with evidence; assess that evidence and either accept or reject the rejection with reasoning. Return {"findings":[{"id":"stable-id","rating":2,"summary":"...","evidence":"file:line and concrete failure","status":"open"}],"summary":"..."}. Ratings: 1 nitpick, 2 should fix, 3 must fix. Include unresolved rating 2/3 findings from earlier rounds. Return no findings only when all consequential complaints are resolved or their rejections accepted. Do not modify code.`;
+const fix = `Fix all open rating 2/3 findings. Use /contextMemory/reviewLedger and /contextMemory/reviewRounds for ALL distinct past findings and fixer dispositions when available, reading original source references only when needed; avoid alternating fixes or reopening settled issues without evidence. You may reject a complaint with concrete evidence. Return {"dispositions":[{"id":"finding-id","status":"fixed or rejected","reason":"..."}],"summary":"...","questions":[]}. Run relevant checks, commit and push changes to the same draft PR. Do not merge or mark the PR ready.\n${reviewFixInstructions}`;
 
-const ciAssessmentInstructions = ` Set reviewRequired=false ONLY when every newly assessed comment is informational or already accepted with unchanged requirements; otherwise true, including any rejected complaint, new requirement or unresolved disagreement. Return reviewRequired alongside the other fields. The runtime independently verifies code/base revisions before skipping review.`;
+const ciAssessmentInstructions = ` Set reviewRequired=false ONLY when every newly assessed comment is informational, explicitly ignored by the user, or already accepted with unchanged requirements; otherwise true, including any rejected complaint, new requirement or unresolved disagreement. Return reviewRequired alongside the other fields. The runtime independently verifies code/base revisions before skipping review.\n${feedbackPolicyInstructions}`;
 
 const definitions = [
 	{
 		id: "simple",
 		allowedTriggers: ["manual", "ticket-assignment"],
 		icon: "⚡",
-		name: "Simple / Cyrus",
+		name: "Simple / Bob’s Factory",
 		description:
-			"The existing Cyrus run, with its original prompts, skills and runner lifecycle.",
+			"The existing Bob’s Factory run, with its original prompts, skills and runner lifecycle.",
 		labels: ["workflow:simple"],
 		chat: true,
 		steps: [],
@@ -45,13 +54,13 @@ const definitions = [
 		icon: "🏭",
 		name: "Software factory",
 		description:
-			"Clarify → plan → implement → draft PR → review → CI → QA and screenshot review → human guide.",
+			"Clarify → plan → implement → draft PR → requirements → specialist review → CI → QA and screenshot review → human guide.",
 		labels: ["workflow:factory", "factory"],
 		steps: [
 			agent(
 				"clarify",
 				"Clarify requirements",
-				`Read the input, all comments, metadata, assets and previous answers. Determine whether you fully understand the requirements. Ask only questions that materially affect implementation. If the input says backlog only, planning only, or do not implement yet, and no later user instruction explicitly authorizes implementation, ask whether to proceed with implementation now or retain that restriction before returning empty questions. Do not infer authorization from answers about feature scope. Do not assume answers or implement anything. Return {"questions":["..."],"decisions":[{"question":"...","answer":"...","reason":"..."}],"requirements":["..."]}. Empty questions means everything is understood. Preserve all answered decisions across rounds.`,
+				`Read the input, all comments, metadata, assets and previous answers. Determine whether you fully understand the requirements. Ask only questions that materially affect implementation. If the input says backlog only, planning only, or do not implement yet, and no later user instruction explicitly authorizes implementation, ask whether to proceed with implementation now or retain that restriction before returning empty questions. Do not infer authorization from answers about feature scope. Do not assume answers or implement anything. Return {"questions":["..."],"questionRecommendations":[{"questionIndex":0,"answer":"recommended answer","reason":"evidence-based explanation"}],"decisions":[{"question":"...","answer":"...","reason":"..."}],"requirements":["..."]}. Empty questions means everything is understood. Preserve all answered decisions across rounds.`,
 				{ askQuestions: true },
 			),
 			tool("decisions", "Record decisions", "record-decisions"),
@@ -115,7 +124,7 @@ Open the actual selected screenshots. Return acceptedScreenshots:[{area,state,im
 			agent(
 				"ci-fix",
 				"Fix CI failures",
-				`Diagnose and fix CI failures, merge conflicts, stale branches and actionable PR review comments in the supplied merge-readiness receipt and full history. Fetch the base before resolving conflicts. For each supplied unresolved review thread, address it or post an evidence-backed response before resolving it using gh api graphql resolveReviewThread. Do not dismiss reviews or bypass rules. Required reviewer approvals must wait for the reviewer; do not impersonate one. Assess every supplied new PR comment. Act on requested corrections or document why a comment is informational. Record its ID in addressedCommentIds after assessment, and include disposition/reason in the summary. Add <!-- generated-by-cyrus --> to any PR reply you write. Retain all discussion and report addressed comment/thread IDs. Run relevant checks, commit and push to the same draft PR. Return {"summary":"...","checks":["..."],"addressedReviewIds":["review IDs"],"addressedCommentIds":["comment IDs"]}. Do not merge or mark ready.` +
+				`Diagnose and fix CI failures, merge conflicts, stale branches and actionable PR review comments in the supplied merge-readiness receipt and full history. Fetch the base before resolving conflicts. For each supplied unresolved review thread, address it or post an evidence-backed response before resolving it using the selected Git provider (GitHub: gh api graphql resolveReviewThread; GitLab: glab api PUT the MR discussion with resolved=true; custom: the configured adapter). Do not dismiss reviews or bypass rules. Required reviewer approvals must wait for the reviewer; do not impersonate one. Assess every supplied new PR comment. Act on requested corrections or document why a comment is informational. Record its ID in addressedCommentIds after assessment, and include disposition/reason in the summary. Add <!-- generated-by-bobs-factory --> to any PR reply you write. Retain all discussion and report addressed comment/thread IDs. Run relevant checks, commit and push to the same draft PR. Return {"summary":"...","checks":["..."],"addressedReviewIds":["review IDs"],"addressedCommentIds":["comment IDs"]}. Do not merge or mark ready.` +
 					ciAssessmentInstructions,
 				{ next: "after-ci-fix" },
 			),
@@ -145,7 +154,8 @@ Return {"goal":"user goal, at most 30 words","summary":"whole-PR outcome, at mos
 Produce a small set of cohesive chapters (usually 4-10), one changed thing per chapter. Each requirement must be assigned to at least one chapter using zero-based requirementIndexes. Account for all changed files in chapter files, including tests/migrations/docs and inherited takeover work; supporting files may share a chapter. Use exact relative paths, no globs. Use real cumulative screenshots attached to their relevant chapter, not arbitrary first images or local Markdown image URLs. Keep the whole accepted inventory discoverable, but choose only the useful captures for each chapter. Explain nonvisual processing with a short flow diagram where it helps (e.g. input -> captured terms -> billing -> receipt); diagrams describe the product, not the factory pipeline. No decorative diagrams or invented evidence. Use everyday words; IDs, SHAs, long code descriptions and raw receipts belong in expandable evidence. Disclose fixture/hardware limitations and rejected scope complaints clearly.
 On repeats, update affected chapters and retain unchanged feature chapters, requirements and evidence. A short revision summary may supplement a complete previous guide ONLY when a previous guide was actually human-reviewed and the actual change is a verified typo/documentation-only correction of at most 10 lines with no behavior, visual, dependency or configuration change. Never replace full feature coverage with the revision delta. Set revisionSummary=true and previousHeadSha only for that case, and put its short delta in revisionNote while summary still describes the entire feature. Require fresh explicit human approval of the current revision. Do not modify product code, recapture screenshots, rerun implementation or merge. Human-only merge blockers are remaining human actions, not unsupported implementation requirements.
 Every new guide MUST also include purpose-written compact content: tldr (nonblank, <=90 characters); decision.summaryShort (<=160 characters); every chapter has tldr (<=70), beforeShort and afterShort (<=50 each), risk:{level:"low"|"medium"|"high",text:<=70 characters}, keyChecks:[{do:<=60 characters,expect:<=60 characters}] (1-3 pairs). Do not truncate long prose to produce these fields. Missing fields block publication and require guide-only output correction even with an older accepted prompt. Keep full explanations in the existing fields for expandable detail.
-Optional chapter flow:{title,steps:[{label,detail}]} has 2-8 stages (label <=60, detail <=300 characters), and systemPartIds references optional whole-guide system:{lanes:[{id,name}],parts:[{id,label,laneId,status:"new"|"changed"|"unchanged"|"legacy"}],before:[{source,target,label?,weak?}],after:[{source,target,label?,weak?}]}. IDs are stable and unique. Connection identity is its directed source/target pair; combine multiple labels for one pair. Lanes/part labels <=60, connection labels <=50 characters; use 1-3 word labels. Screenshot references may include device:"Desktop"|"Mobile"|"Email"|"Reader" and language only when known from accepted evidence. Do not author reviewFiles; the runtime binds the exact whole-PR snapshot.
+${guideMapInstructions}
+Optional chapter flow:{title,steps:[{label,detail}]} has 2-8 stages (label <=60, detail <=300 characters), and systemPartIds references whole-guide system:{lanes:[{id,name}],parts:[{id,label,laneId,status:"new"|"changed"|"unchanged"|"legacy"}],before:[{source,target,label?,weak?}],after:[{source,target,label?,weak?}]}. IDs are stable and unique. Connection identity is its directed source/target pair; combine multiple labels for one pair. Lanes/part labels <=60, connection labels <=50 characters; use 1-3 word labels. Screenshot references may include device:"Desktop"|"Mobile"|"Email"|"Reader" and language only when known from accepted evidence. Do not author reviewFiles; the runtime binds the exact whole-PR snapshot.
 `,
 				{ next: "handoff", qaContract: QA_CONTRACT },
 			),
@@ -178,12 +188,69 @@ Optional chapter flow:{title,steps:[{label,detail}]} has 2-8 stages (label <=60,
 ];
 
 const pipeline = definitions[1]!;
+const previousVideoPrompts = new Map<string, string>();
+for (const step of pipeline.steps) {
+	if (
+		![
+			"visual-scope",
+			"capture",
+			"visual-review",
+			"visual-gate",
+			"guide",
+			"handoff",
+		].includes(step.id)
+	)
+		continue;
+	Object.assign(step, { videoContract: "video-v1" });
+	if ("prompt" in step) {
+		previousVideoPrompts.set(step.id, step.prompt);
+		step.prompt += videoPrompts[step.id] ?? "";
+	}
+}
+
 const planStep = pipeline.steps.find((step) => step.id === "plan")!;
 if (!("prompt" in planStep)) throw new Error("Stock planner unavailable");
 const previousPlanPrompt = planStep.prompt;
 const ticketPlanInstructions =
 	" Include the verified originating ticket reference, tracker instance/workspace/project and URL, runtime tracking ownership, coding Done-after-confirmed-merge rule, and any synchronization gaps in the self-contained plan. Roles supply summaries and blockers; the tracking service owns lifecycle comments, status and PR links.";
 planStep.prompt += ticketPlanInstructions;
+// Kept for conservative saved-recipe detection and legacy runtime regression fixtures.
+export const legacyReviewSteps = structuredClone(pipeline.steps);
+function installSpecialists(steps: Record<string, any>[]) {
+	const index = steps.findIndex((s) => s.id === "code-review");
+	steps.splice(index, 1, ...structuredClone(specialistSteps));
+	for (const step of steps) {
+		if (step.next === "code-review") step.next = "extract-requirements";
+		for (const branch of step.branches ?? [])
+			if (branch.next === "code-review") branch.next = "extract-requirements";
+		if (step.id === "review-gate") {
+			step.name = "Aggregate specialist findings and coverage";
+			step.review = {
+				inventory: "extract-requirements",
+				fanout: "specialist-review",
+			};
+		}
+		if (step.tool === "human-review")
+			step.branches = [
+				...(step.branches ?? []),
+				{
+					when: { path: "rework", equals: true },
+					next: "extract-requirements",
+				},
+			];
+		if (
+			step.id === "visual-scope" &&
+			!step.prompt.includes(inventoryQaInstructions)
+		)
+			step.prompt += inventoryQaInstructions;
+		if (
+			step.id === "guide" &&
+			!step.prompt.includes(inventoryGuideInstructions)
+		)
+			step.prompt += inventoryGuideInstructions;
+	}
+}
+installSpecialists(pipeline.steps);
 export const defaultWorkflows = validateWorkflows([
 	definitions[0],
 	{
@@ -338,6 +405,15 @@ export function upgradeWorkflows(value: unknown): unknown {
 					? step.tool === old.tool
 					: step.prompt === old.prompt ||
 						step.prompt === current.prompt ||
+						step.prompt ===
+							current.prompt?.replace(videoPrompts[id] ?? "", "") ||
+						step.prompt === previousVideoPrompts.get(id) ||
+						step.prompt ===
+							(
+								legacyReviewSteps.find((s) => s.id === id) as
+									| { prompt?: string }
+									| undefined
+							)?.prompt ||
 						(legacyVisualPrompts[id] ?? []).includes(String(step.prompt));
 			const routeMatches =
 				(step.next === old.next ||
@@ -363,11 +439,22 @@ export function upgradeWorkflows(value: unknown): unknown {
 				Object.assign(step, {
 					name: stock.name,
 					qaContract: stock.qaContract,
+					...(stock.videoContract
+						? { videoContract: stock.videoContract }
+						: {}),
 					branches: structuredClone(
 						step.id === "handoff" ? (step.branches ?? []) : stock.branches,
 					),
 					...(stock.prompt ? { prompt: stock.prompt } : {}),
-					...(stock.next ? { next: stock.next } : {}),
+					...(stock.next
+						? {
+								next:
+									stock.next === "extract-requirements" &&
+									steps.some((s) => s.id === "code-review")
+										? "code-review"
+										: stock.next,
+							}
+						: {}),
 				});
 				if (!stock.next) delete step.next;
 				if (
@@ -384,8 +471,13 @@ export function upgradeWorkflows(value: unknown): unknown {
 				.steps.find((item) => item.id === step.id);
 			if (
 				step.id === "clarify" &&
-				step.prompt ===
-					`Read the input, all comments, metadata, assets and previous answers. Determine whether you fully understand the requirements. Ask only questions that materially affect implementation. Do not assume answers or implement anything. Return {"questions":["..."],"decisions":[{"question":"...","answer":"...","reason":"..."}],"requirements":["..."]}. Empty questions means everything is understood. Preserve all answered decisions across rounds.`
+				(step.prompt ===
+					stock!.prompt!.replace(
+						'"questionRecommendations":[{"questionIndex":0,"answer":"recommended answer","reason":"evidence-based explanation"}],',
+						"",
+					) ||
+					step.prompt ===
+						`Read the input, all comments, metadata, assets and previous answers. Determine whether you fully understand the requirements. Ask only questions that materially affect implementation. Do not assume answers or implement anything. Return {"questions":["..."],"decisions":[{"question":"...","answer":"...","reason":"..."}],"requirements":["..."]}. Empty questions means everything is understood. Preserve all answered decisions across rounds.`)
 			)
 				step.prompt = stock!.prompt;
 			if (
@@ -402,6 +494,7 @@ export function upgradeWorkflows(value: unknown): unknown {
 				stock?.type === "tool" &&
 				step.tool === stock.tool &&
 				(step.name === stock.name ||
+					step.name === legacyReviewSteps.find((s) => s.id === step.id)?.name ||
 					(step.id === "ci" && step.name === "Watch pull request CI"))
 			)
 				step.maxVisits = stock.maxVisits;
@@ -433,13 +526,14 @@ export function upgradeWorkflows(value: unknown): unknown {
 					.steps.find((step) => step.id === "ci-fix")!.prompt
 		) {
 			ciFix.next = "after-ci-fix";
-			steps.push(
-				structuredClone(
+			steps.push({
+				...structuredClone(
 					defaultWorkflows
 						.find((item) => item.id === "factory-pipeline")!
 						.steps.find((step) => step.id === "after-ci-fix")!,
-				) as unknown as Record<string, unknown>,
-			);
+				),
+				next: "code-review",
+			} as unknown as Record<string, unknown>);
 		}
 		const ci = steps.find((step) => step.tool === "ci");
 		if (ci && Array.isArray(ci.branches))
@@ -469,6 +563,80 @@ export function upgradeWorkflows(value: unknown): unknown {
 				),
 			).map((step) => ({ ...step })),
 		);
+	}
+	for (const definition of definitions) {
+		if (
+			!["factory-pipeline", "factory"].includes(String(definition.id)) ||
+			!Array.isArray(definition.steps)
+		)
+			continue;
+		const steps = definition.steps as Record<string, any>[];
+		const reviewer = steps.find((s) => s.id === "code-review");
+		const gate = steps.find((s) => s.id === "review-gate");
+		const old = legacyReviewSteps.find((s) => s.id === "code-review")!;
+		// Do not overwrite a customized reviewer, source restriction, output setting or graph.
+		const stockReviewer =
+			reviewer &&
+			reviewer.prompt === review &&
+			reviewer.name === old.name &&
+			reviewer.type === "agent" &&
+			![
+				"runner",
+				"model",
+				"reasoningEffort",
+				"modelVariant",
+				"serviceTier",
+				"inputs",
+				"chat",
+				"reviewContract",
+				"review",
+			].some((k) => reviewer[k] !== undefined) &&
+			reviewer.json !== false &&
+			!reviewer.askQuestions &&
+			!reviewer.next &&
+			!reviewer.branches?.length &&
+			(reviewer.maxVisits ?? 8) === 8;
+		const stockGate =
+			gate &&
+			gate.tool === "review-gate" &&
+			!gate.args?.length &&
+			!gate.arguments &&
+			!gate.review &&
+			!gate.next &&
+			JSON.stringify(gate.branches ?? []) ===
+				JSON.stringify([
+					{ when: { path: "approved", equals: false }, next: "code-fix" },
+				]);
+		const compatibleConsumers =
+			steps.every(
+				(s) =>
+					!(s.inputs ?? []).some((path: string) =>
+						path.includes("code-review"),
+					),
+			) &&
+			["visual-scope", "guide"].every((id) => {
+				const step = steps.find((s) => s.id === id);
+				const previous = legacyReviewSteps.find((s) => s.id === id);
+				const current = defaultWorkflows
+					.find((w) => w.id === "factory-pipeline")!
+					.steps.find((s) => s.id === id);
+				return (
+					!step ||
+					(previous &&
+						"prompt" in previous &&
+						step.prompt === previous.prompt) ||
+					step.prompt === current?.prompt
+				);
+			});
+		if (
+			stockReviewer &&
+			stockGate &&
+			compatibleConsumers &&
+			!steps.some((s) =>
+				["extract-requirements", "specialist-review"].includes(s.id),
+			)
+		)
+			installSpecialists(steps);
 	}
 	return definitions;
 }

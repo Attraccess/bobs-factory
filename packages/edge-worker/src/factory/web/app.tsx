@@ -12,6 +12,7 @@ import {
 	useParams,
 } from "react-router-dom";
 import { ArtifactCard, Inspector } from "./artifacts";
+import { AccessBoundary } from "./auth";
 import {
 	active,
 	ago,
@@ -34,6 +35,7 @@ import {
 	workingLabel,
 } from "./client";
 import { RunConversation } from "./conversation";
+import { ExecutionDetails } from "./execution";
 import {
 	FocusCard,
 	originLabel,
@@ -44,13 +46,14 @@ import {
 	WorkingRow,
 } from "./focus";
 import { Composer, Recipes } from "./forms";
+import { NotificationsControl } from "./notifications-ui";
 import { pwaState, startPwa, usePwa } from "./pwa";
-import { ConnectionNotice, InstallControl, RecoveredDrafts } from "./pwa-ui";
+import { ConnectionNotice, InstallControl } from "./pwa-ui";
 import { useReadingPosition } from "./reading-position";
 import {
 	completeRestoration,
-	forgetDraft,
-	restoredDraft,
+	forgetView,
+	restoredView,
 	useRestorableState,
 } from "./restoration";
 import { ReviewPage } from "./review-page";
@@ -61,6 +64,7 @@ import {
 	writeStored,
 	writeTextStored,
 } from "./review-state";
+import { Settings } from "./settings";
 import {
 	applyTheme,
 	readThemeChoice,
@@ -173,7 +177,12 @@ function Header({
 				</Link>
 				<nav className="nav-pill" aria-label="Main navigation">
 					<Link
-						aria-current={location.pathname !== "/recipes" ? "page" : undefined}
+						aria-current={
+							location.pathname === "/" ||
+							location.pathname.startsWith("/runs/")
+								? "page"
+								: undefined
+						}
 						to="/"
 						state={todayContext(location.pathname, location.state)}
 					>
@@ -186,9 +195,18 @@ function Header({
 					>
 						Recipes
 					</Link>
+					<Link
+						aria-current={
+							location.pathname.startsWith("/settings") ? "page" : undefined
+						}
+						to="/settings"
+					>
+						Settings
+					</Link>
 				</nav>
 				<div className="header-actions">
 					<InstallControl />
+					<NotificationsControl />
 					<Dropdown.Root>
 						<Dropdown.Trigger asChild>
 							<Button variant="icon" aria-label={`Theme: ${theme.choice}`}>
@@ -748,12 +766,12 @@ function RunPage({
 			`panels/${id}`,
 			{},
 		),
-		panelsEdited = useRef(Boolean(restoredDraft(`panels/${id}`)));
+		panelsEdited = useRef(Boolean(restoredView(`panels/${id}`)));
 	// Auto-opened steps belong to this mounted page. Retain historical panel
 	// state only when the user changed it or it was restored from an update.
 	useEffect(
 		() => () => {
-			if (!panelsEdited.current) forgetDraft(`panels/${id}`);
+			if (!panelsEdited.current) forgetView(`panels/${id}`);
 		},
 		[id],
 	);
@@ -809,7 +827,7 @@ function RunPage({
 		visited = new Set(run.history?.map((h: any) => h.step));
 	const graphRows = steps.length
 			? steps
-			: [{ id: "simple", key: "simple", name: "Cyrus session" }],
+			: [{ id: "simple", key: "simple", name: "Bob’s Factory session" }],
 		rows = [
 			...graphRows,
 			...Object.keys(run.capacityLeaves ?? {})
@@ -884,6 +902,7 @@ function RunPage({
 					)}
 				</div>
 			</header>
+			<ExecutionDetails run={run} />
 			<RunOrigin run={run} />
 			{kind && !reason && (
 				<FocusCard
@@ -941,7 +960,9 @@ function RunPage({
 								Boolean(run.capacityLeaves?.[step.key]) ||
 								current === step.key ||
 								!steps.length,
-							artifact = artifacts.find((a) => a.name === step.id),
+							artifact =
+								artifacts.find((a) => a.name === step.key) ??
+								artifacts.find((a) => a.name === step.id),
 							isOpen = open[step.key] ?? (!current && i === rows.length - 1);
 						return (
 							<li
@@ -1108,7 +1129,6 @@ function App() {
 			/>
 			<main id="main-content" className="page">
 				<ConnectionNotice hasData={Boolean(config || runs.length)} />
-				<RecoveredDrafts />
 				<div inert={pwa.updating}>
 					{!config || (runsQuery.isLoading && !runsQuery.data) ? (
 						pwa.status === "offline" || pwa.status === "mismatch" ? (
@@ -1128,6 +1148,7 @@ function App() {
 								}
 							/>
 							<Route path="/recipes" element={<Recipes />} />
+							<Route path="/settings/*" element={<Settings />} />
 							<Route
 								path="/runs/:id/review"
 								element={
@@ -1213,7 +1234,9 @@ createRoot(document.getElementById("root")!).render(
 	<QueryClientProvider client={client}>
 		<HashRouter>
 			<ToastProvider>
-				<App />
+				<AccessBoundary>
+					<App />
+				</AccessBoundary>
 			</ToastProvider>
 		</HashRouter>
 	</QueryClientProvider>,

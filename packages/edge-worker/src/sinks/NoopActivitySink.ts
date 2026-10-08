@@ -1,4 +1,4 @@
-import type { AgentActivityContent } from "cyrus-core";
+import type { AgentActivityContent } from "bobs-factory-core";
 import type {
 	ActivityPostOptions,
 	ActivityPostResult,

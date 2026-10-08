@@ -14,12 +14,12 @@ afterEach(() => {
 		rmSync(directory, { recursive: true, force: true });
 });
 
-function fixture() {
+async function fixture() {
 	const home = mkdtempSync(join(tmpdir(), "merge-recovery-"));
 	directories.push(home);
 	const worker = new EdgeWorker({
 		platform: "cli",
-		cyrusHome: home,
+		factoryHome: home,
 		repositories: [
 			{
 				id: "repo",
@@ -31,6 +31,7 @@ function fixture() {
 			},
 		],
 	});
+	await (worker as any).runnerSlots.ready();
 	const runtime: WorkflowRuntime = (worker as any).getFactoryRuntime();
 	const workflow = defaultWorkflows.find((item) => item.id === "factory")!;
 	const run = runtime.create({
@@ -73,12 +74,58 @@ function fixture() {
 }
 
 it.each([
+	"approved",
+	"different",
+])("recovers GitLab merge evidence only at the approved revision (%s)", async (head) => {
+	const { runtime, run } = await fixture();
+	run.gitProvider = {
+		type: "gitlab",
+		repositoryUrl: "https://gitlab.example/team/repo",
+	};
+	run.outputs["draft-pr"] = {
+		url: "https://gitlab.example/team/repo/-/merge_requests/7",
+	};
+	const command = vi
+		.spyOn(tools, "executeCommand")
+		.mockImplementation(async (_ctx, exe, args) => {
+			expect(exe).toBe("glab");
+			expect(args[1]).toBe("projects/team%2Frepo/merge_requests/7");
+			expect(args).toContain("gitlab.example");
+			return JSON.stringify({
+				web_url: "https://gitlab.example/team/repo/-/merge_requests/7",
+				iid: 7,
+				title: "Change",
+				description: "",
+				source_branch: "feature",
+				target_branch: "main",
+				sha: head,
+				state: "merged",
+				draft: false,
+				source_project_id: 1,
+				target_project_id: 1,
+			});
+		});
+	run.status = "running";
+	await runtime.launch(run);
+	expect(command).toHaveBeenCalledOnce();
+	expect(run.status).toBe(head === "approved" ? "completed" : "failed");
+	if (head === "approved")
+		expect(run.outputs.merge).toEqual({
+			merged: true,
+			headSha: "approved",
+			url: "https://gitlab.example/team/repo/-/merge_requests/7",
+		});
+	else expect(run.outputs.merge).toBeUndefined();
+	await runtime.shutdown();
+});
+
+it.each([
 	["MERGED", "approved", "completed"],
 	["MERGED", "another-revision", "failed"],
 	["OPEN", "approved", "failed"],
 	["CLOSED", "approved", "failed"],
 ])("recovers the saved merge checkpoint only for the approved merged revision (%s/%s)", async (state, headRefOid, status) => {
-	const { runtime, run, home } = fixture();
+	const { runtime, run, home } = await fixture();
 	const history = structuredClone(run.history);
 	const command = vi
 		.spyOn(tools, "executeCommand")
@@ -122,7 +169,7 @@ it.each([
 });
 
 it("retains an already saved merge receipt without duplicating it", async () => {
-	const { runtime, run } = fixture();
+	const { runtime, run } = await fixture();
 	const output = {
 		merged: true,
 		url: "https://github.com/test/repo/pull/1",
@@ -147,7 +194,7 @@ it.each([
 	"result",
 ] as const)("rejects receipt-dependent unfinished work from the %s phase", async (phase) => {
 	for (const path of ["merged", "headSha", "url"]) {
-		const { runtime, run } = fixture();
+		const { runtime, run } = await fixture();
 		const receipt = {
 			merged: true,
 			url: "https://github.com/test/repo/pull/1",
@@ -196,7 +243,7 @@ it.each([
 });
 
 it("allows a receipt-dependent terminal route", async () => {
-	const { runtime, run } = fixture();
+	const { runtime, run } = await fixture();
 	const pipeline = run.workflowDefinitions!.find(
 		(item) => item.id === "factory-pipeline",
 	)!;
@@ -223,7 +270,7 @@ it.each([
 	"unfinished-agent",
 	"more-work",
 ])("does not bypass missing-worktree protection for %s", async (scenario) => {
-	const { runtime, run } = fixture();
+	const { runtime, run } = await fixture();
 	if (scenario === "no-approval") run.humanDecisions = [];
 	if (scenario === "unfinished-agent") {
 		run.step = "pipeline/guide";

@@ -86,12 +86,181 @@ function makeBackend(): { backend: AppServerCodexBackend; client: FakeClient } {
 
 describe("AppServerCodexBackend", () => {
 	it.each([
+		false,
+		true,
+	])("waits for required MCP tools before exposing a usable thread (resume=%s)", async (resume) => {
+		const { backend, client } = makeBackend();
+		let ready!: () => void;
+		client.responses["mcpServerStatus/list"] = () =>
+			new Promise((resolve) => {
+				ready = () =>
+					resolve({
+						data: [
+							{
+								name: "factory-context",
+								runtimeStatus: "connected",
+								tools: {
+									list_context: { name: "list_context" },
+									read_context: { name: "read_context" },
+								},
+							},
+						],
+					});
+			});
+		const events: NormalizedCodexEvent[] = [];
+		backend.on("event", (event) => events.push(event));
+		const opening = backend.open({
+			...baseConfig,
+			codexPath: "/bin/true",
+			...(resume ? { resumeSessionId: "saved" } : {}),
+			configOverrides: {
+				mcp_servers: {
+					"factory-context": {
+						command: "fixture",
+						required: true,
+						enabled_tools: ["list_context", "read_context"],
+					},
+				},
+			},
+		});
+		await vi.waitFor(() =>
+			expect(client.lastRequest("mcpServerStatus/list")).toBeDefined(),
+		);
+		expect(events).toEqual([]);
+		expect(client.lastRequest("turn/start")).toBeUndefined();
+		ready();
+		await expect(opening).resolves.toEqual({
+			threadId: resume ? "thread-resumed" : "thread-1",
+		});
+		expect(events).toEqual([
+			{
+				kind: "thread-started",
+				threadId: resume ? "thread-resumed" : "thread-1",
+			},
+		]);
+		await backend.close();
+	});
+
+	it("fails required MCP discovery before emitting init or starting model work", async () => {
+		const { backend, client } = makeBackend();
+		client.responses["mcpServerStatus/list"] = {
+			data: [
+				{
+					name: "factory-context",
+					runtimeStatus: "connected",
+					tools: { list_context: { name: "list_context" } },
+				},
+			],
+		};
+		const event = vi.fn();
+		backend.on("event", event);
+		await expect(
+			backend.open({
+				...baseConfig,
+				codexPath: "/bin/true",
+				configOverrides: {
+					mcp_servers: {
+						"factory-context": {
+							command: "fixture",
+							required: true,
+							enabled_tools: ["list_context", "read_context"],
+						},
+					},
+				},
+			}),
+		).rejects.toThrow("read_context");
+		expect(event).not.toHaveBeenCalled();
+		expect(client.lastRequest("turn/start")).toBeUndefined();
+		expect(client.closeCalls).toBe(1);
+	});
+	it.each([
+		"starting",
+		"failed",
+		"missing",
+		"discovery error",
+		"request timeout",
+	])("rejects %s required MCP infrastructure without a model turn", async (failure) => {
+		const { backend, client } = makeBackend();
+		client.responses["mcpServerStatus/list"] =
+			failure === "request timeout"
+				? () => Promise.reject(new Error("mcpServerStatus/list timed out"))
+				: {
+						data:
+							failure === "missing"
+								? []
+								: [
+										{
+											name: "factory-context",
+											runtimeStatus:
+												failure === "discovery error" ? "connected" : failure,
+											toolsError:
+												failure === "discovery error"
+													? "Unavailable catalog"
+													: null,
+											tools: { read_context: { name: "read_context" } },
+										},
+									],
+					};
+		const event = vi.fn();
+		backend.on("event", event);
+		await expect(
+			backend.open({
+				...baseConfig,
+				codexPath: "/bin/true",
+				configOverrides: {
+					mcp_servers: {
+						"factory-context": {
+							command: "fixture",
+							required: true,
+							enabled_tools: ["read_context"],
+						},
+					},
+				},
+			}),
+		).rejects.toThrow("Required MCP server 'factory-context'");
+		expect(event).not.toHaveBeenCalled();
+		expect(client.lastRequest("turn/start")).toBeUndefined();
+		expect(client.closeCalls).toBe(1);
+	});
+	it("cancels required MCP discovery without exposing the late-ready thread", async () => {
+		const { backend, client } = makeBackend();
+		let ready!: () => void;
+		client.responses["mcpServerStatus/list"] = () =>
+			new Promise((resolve) => {
+				ready = () =>
+					resolve({
+						data: [{ name: "context", runtimeStatus: "connected", tools: {} }],
+					});
+			});
+		const event = vi.fn();
+		backend.on("event", event);
+		const opening = backend
+			.open({
+				...baseConfig,
+				codexPath: "/bin/true",
+				configOverrides: {
+					mcp_servers: { context: { command: "fixture", required: true } },
+				},
+			})
+			.catch(() => "cancelled");
+		await vi.waitFor(() =>
+			expect(client.lastRequest("mcpServerStatus/list")).toBeDefined(),
+		);
+		await backend.close();
+		expect(await opening).toBe("cancelled");
+		ready();
+		await Promise.resolve();
+		expect(event).not.toHaveBeenCalled();
+		expect(client.closeCalls).toBe(1);
+	});
+
+	it.each([
 		"fast",
 		"standard",
 		undefined,
 	] as const)("passes %s tier independently of model/reasoning into native thread config", async (serviceTier) => {
 		const resolved = await new CodexConfigBuilder({
-			cyrusHome: "/tmp",
+			factoryHome: "/tmp",
 			workingDirectory: "/tmp",
 			model: "gpt-6.1-sol",
 			modelReasoningEffort: "low",
@@ -117,6 +286,258 @@ describe("AppServerCodexBackend", () => {
 		});
 		await backend.close();
 	});
+	it("cancels a pending initialize without starting a thread", async () => {
+		const { backend, client } = makeBackend();
+		client.responses.initialize = () => new Promise(() => {});
+		const opened = backend
+			.open({ ...baseConfig, codexPath: "/bin/true" })
+			.catch(() => "cancelled");
+		await vi.waitFor(() => expect(client.startCalls).toBe(1));
+		await backend.close();
+		const outcome = await Promise.race([
+			opened,
+			new Promise((resolve) => setTimeout(() => resolve("hung"), 100)),
+		]);
+		expect(outcome).toBe("cancelled");
+		expect(client.closeCalls).toBe(1);
+		expect(client.lastRequest("thread/start")).toBeUndefined();
+	});
+
+	it("cancels only one waiter while a shared process initializes", async () => {
+		const client = new FakeClient();
+		let initialized!: () => void;
+		client.responses.initialize = () =>
+			new Promise((resolve) => {
+				initialized = () => resolve({});
+			});
+		const manager = new AppServerProcessManager(() => client, {
+			idleCloseMs: 0,
+		});
+		const cancelled = new AppServerCodexBackend(manager);
+		const survivor = new AppServerCodexBackend(manager);
+		const config = { ...baseConfig, codexPath: "/bin/true" };
+		const first = cancelled.open(config).catch(() => "cancelled");
+		const second = survivor.open(config);
+		await vi.waitFor(() => expect(client.startCalls).toBe(1));
+		expect(client.lastRequest("thread/start")).toBeUndefined();
+		await cancelled.close();
+		expect(await first).toBe("cancelled");
+		expect(client.closeCalls).toBe(0);
+		initialized();
+		expect(await second).toEqual({ threadId: "thread-1" });
+		expect(
+			client.requests.filter((r) => r.method === "thread/start"),
+		).toHaveLength(1);
+		await survivor.close();
+		expect(client.closeCalls).toBe(1);
+	});
+
+	it.each([
+		"thread/start",
+		"thread/resume",
+	])("cancels a pending %s and ignores its late response", async (method) => {
+		const { backend, client } = makeBackend();
+		let finish!: () => void;
+		client.responses[method] = () =>
+			new Promise((resolve) => {
+				finish = () => resolve({ thread: { id: "late-thread" } });
+			});
+		const event = vi.fn();
+		backend.on("event", event);
+		const opening = backend
+			.open({
+				...baseConfig,
+				codexPath: "/bin/true",
+				...(method === "thread/resume" ? { resumeSessionId: "saved" } : {}),
+			})
+			.catch(() => "cancelled");
+		await vi.waitFor(() => expect(client.lastRequest(method)).toBeDefined());
+		await backend.close();
+		expect(await opening).toBe("cancelled");
+		expect(client.closeCalls).toBe(1);
+		finish();
+		await Promise.resolve();
+		expect(event).not.toHaveBeenCalled();
+		expect(client.lastRequest("turn/start")).toBeUndefined();
+	});
+
+	it("interrupts a late turn/start response without closing another active lease", async () => {
+		const client = new FakeClient();
+		let thread = 0;
+		client.responses["thread/start"] = () => ({
+			thread: { id: `thread-${++thread}` },
+		});
+		let finish!: () => void;
+		client.responses["turn/start"] = (params) =>
+			(params as { threadId: string }).threadId === "thread-1"
+				? new Promise((resolve) => {
+						finish = () => resolve({ turn: { id: "late-turn" } });
+					})
+				: { turn: { id: "surviving-turn" } };
+		const manager = new AppServerProcessManager(() => client, {
+			idleCloseMs: 0,
+		});
+		const cancelled = new AppServerCodexBackend(manager);
+		const survivor = new AppServerCodexBackend(manager);
+		const config = { ...baseConfig, codexPath: "/bin/true" };
+		await cancelled.open(config);
+		await survivor.open(config);
+		const first = cancelled
+			.runTurn([{ type: "text", text: "cancel me" }])
+			.catch(() => "cancelled");
+		const second = survivor.runTurn([{ type: "text", text: "keep running" }]);
+		await vi.waitFor(() => expect(survivor.isTurnActive()).toBe(true));
+		await cancelled.close();
+		expect(await first).toBe("cancelled");
+		expect(client.closeCalls).toBe(0);
+		finish();
+		await vi.waitFor(() =>
+			expect(client.lastRequest("turn/interrupt")?.params).toEqual({
+				threadId: "thread-1",
+				turnId: "late-turn",
+			}),
+		);
+		expect(cancelled.isTurnActive()).toBe(false);
+		expect(survivor.isTurnActive()).toBe(true);
+		client.push("turn/completed", {
+			threadId: "thread-2",
+			turn: { id: "surviving-turn", status: "completed" },
+		});
+		await second;
+		await survivor.close();
+		expect(client.closeCalls).toBe(1);
+	});
+
+	it.each([
+		"late response",
+		"timeout before close",
+		"timeout after close",
+		"timeout after notification",
+	])("interrupts late turn notifications with %s on a shared process", async (timing) => {
+		const client = new FakeClient();
+		let thread = 0;
+		client.responses["thread/start"] = () => ({
+			thread: { id: `thread-${++thread}` },
+		});
+		client.responses["thread/resume"] = { thread: { id: "thread-1" } };
+		let finish!: () => void;
+		let timeout!: () => void;
+		client.responses["turn/start"] = (params) =>
+			(params as { threadId: string }).threadId === "thread-1"
+				? new Promise((resolve, reject) => {
+						finish = () => resolve({ turn: { id: "late-turn" } });
+						timeout = () => reject(new Error("turn/start timed out"));
+					})
+				: { turn: { id: "surviving-turn" } };
+		const manager = new AppServerProcessManager(() => client, {
+			idleCloseMs: 0,
+		});
+		const cancelled = new AppServerCodexBackend(manager);
+		const survivor = new AppServerCodexBackend(manager);
+		const config = { ...baseConfig, codexPath: "/bin/true" };
+		const events = vi.fn();
+		cancelled.on("event", events);
+		try {
+			await cancelled.open(config);
+			await survivor.open(config);
+			const first = cancelled.runTurn([]).catch(() => "cancelled");
+			const second = survivor.runTurn([]);
+			await vi.waitFor(() => expect(survivor.isTurnActive()).toBe(true));
+			if (timing === "timeout before close") {
+				timeout();
+				expect(await first).toBe("cancelled");
+			}
+			await cancelled.close();
+			expect(await first).toBe("cancelled");
+			if (timing === "timeout after close") timeout();
+			// Late events must cancel remote execution without reviving the runner.
+			events.mockClear();
+			client.push("turn/started", {
+				threadId: "thread-1",
+				turn: { id: "late-turn" },
+			});
+			if (timing === "late response") finish();
+			if (timing === "timeout after notification") timeout();
+			await Promise.resolve();
+			await Promise.resolve();
+			client.push("turn/started", {
+				threadId: "thread-1",
+				turn: { id: "late-turn" },
+			});
+			expect(
+				client.requests.filter((r) => r.method === "turn/interrupt"),
+			).toEqual([
+				{
+					method: "turn/interrupt",
+					params: { threadId: "thread-1", turnId: "late-turn" },
+				},
+			]);
+			expect(client.closeCalls).toBe(0);
+			expect(cancelled.isTurnActive()).toBe(false);
+			expect(survivor.isTurnActive()).toBe(true);
+			expect(events).not.toHaveBeenCalled();
+			client.push("turn/completed", {
+				threadId: "thread-1",
+				turn: { id: "late-turn", status: "interrupted" },
+			});
+			// Completion retires the cancellation handler so the thread can resume.
+			const resumed = new AppServerCodexBackend(manager);
+			await resumed.open({ ...config, resumeSessionId: "thread-1" });
+			await resumed.close();
+			client.push("turn/completed", {
+				threadId: "thread-2",
+				turn: { id: "surviving-turn", status: "completed" },
+			});
+			await second;
+			await survivor.close();
+			expect(client.closeCalls).toBe(1);
+		} finally {
+			await manager.closeAll();
+		}
+	});
+
+	it.each([
+		"completion",
+		"process exit",
+	])("ignores a late start response after cancellation and %s", async (terminal) => {
+		const client = new FakeClient();
+		let thread = 0;
+		client.responses["thread/start"] = () => ({
+			thread: { id: `thread-${++thread}` },
+		});
+		let finish!: () => void;
+		client.responses["turn/start"] = () =>
+			new Promise((resolve) => {
+				finish = () => resolve({ turn: { id: "late-turn" } });
+			});
+		const manager = new AppServerProcessManager(() => client, {
+			idleCloseMs: 0,
+		});
+		const cancelled = new AppServerCodexBackend(manager);
+		const survivor = new AppServerCodexBackend(manager);
+		const config = { ...baseConfig, codexPath: "/bin/true" };
+		try {
+			await cancelled.open(config);
+			await survivor.open(config);
+			const first = cancelled.runTurn([]).catch(() => "cancelled");
+			await cancelled.close();
+			expect(await first).toBe("cancelled");
+			if (terminal === "process exit") client.emit("exit");
+			else
+				client.push("turn/completed", {
+					threadId: "thread-1",
+					turn: { id: "late-turn", status: "completed" },
+				});
+			finish();
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(client.lastRequest("turn/interrupt")).toBeUndefined();
+		} finally {
+			await survivor.close();
+			await manager.closeAll();
+		}
+	});
+
 	it("declares steering support", () => {
 		const { backend } = makeBackend();
 		expect(backend.supportsSteer).toBe(true);
@@ -204,25 +625,32 @@ describe("AppServerCodexBackend", () => {
 		expect(params.config?.sandbox_workspace_write).toBeUndefined();
 	});
 
-	it("serializes a profile sandbox to thread/start permissions + config.permissions (not sandbox)", async () => {
+	it.each([
+		"thread/start",
+		"thread/resume",
+	])("serializes a profile sandbox to %s permissions + config.permissions (not sandbox)", async (method) => {
 		const { backend, client } = makeBackend();
 		await backend.open({
 			...baseConfig,
 			codexPath: "/bin/true",
+			...(method === "thread/resume" ? { resumeSessionId: "saved" } : {}),
 			sandbox: {
 				kind: "profile",
 				profileId: "cyrus-sandbox",
+				extends: ":workspace",
+				workspaceRoots: ["/repo/extra"],
 				networkAccess: false,
 				filesystem: {
 					":minimal": "read",
-					":workspace_roots": "write",
+					":workspace_roots": { ".": "write", ".codex": "read" },
+					"/repo/.git": "write",
 					":tmpdir": "write",
 					":slash_tmp": "write",
 					"/usr/lib": "read",
 				},
 			},
 		});
-		const params = client.lastRequest("thread/start")?.params as {
+		const params = client.lastRequest(method)?.params as {
 			sandbox?: string;
 			permissions?: string;
 			config?: Record<string, unknown>;
@@ -233,9 +661,12 @@ describe("AppServerCodexBackend", () => {
 		expect(params.config?.sandbox_workspace_write).toBeUndefined();
 		expect(params.config?.permissions).toEqual({
 			"cyrus-sandbox": {
+				extends: ":workspace",
+				workspace_roots: { "/repo/extra": true },
 				filesystem: {
 					":minimal": "read",
-					":workspace_roots": "write",
+					":workspace_roots": { ".": "write", ".codex": "read" },
+					"/repo/.git": "write",
 					":tmpdir": "write",
 					":slash_tmp": "write",
 					"/usr/lib": "read",

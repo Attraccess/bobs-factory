@@ -1,7 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { SDKResultMessage } from "cyrus-core";
+import type { SDKResultMessage } from "bobs-factory-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Hoisted mock for @cursor/sdk so we can drive Agent.create / Agent.resume
@@ -102,9 +108,35 @@ function tempWorkspace(): string {
 }
 
 describe("CursorRunner (SDK adapter)", () => {
+	it("preserves external artifact edits and returns a repair failure instead of successful cleanup", async () => {
+		const workspace = tempWorkspace();
+		const factoryHome = tempWorkspace();
+		const agent = sdkMock.__install({ events: [] });
+		sdkMock.create.mockImplementationOnce(async () => {
+			writeFileSync(join(workspace, ".cursor", "hooks.json"), "external edit");
+			return agent;
+		});
+		const runner = new CursorRunner({
+			workingDirectory: workspace,
+			factoryHome,
+			onError: () => {},
+		});
+		await runner.start("fixture");
+		expect(readFileSync(join(workspace, ".cursor", "hooks.json"), "utf8")).toBe(
+			"external edit",
+		);
+		expect(runner.getMessages().at(-1)).toMatchObject({
+			type: "result",
+			is_error: true,
+			errors: [
+				"Cursor runner artifacts could not be safely restored. Inspect the private recovery journal before retrying.",
+			],
+		});
+		expect(runner.isRunning()).toBe(false);
+	});
 	it("installs and uninstalls .cursor permission artifacts around a session", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		sdkMock.__install({
 			events: [
 				{
@@ -132,7 +164,7 @@ describe("CursorRunner (SDK adapter)", () => {
 		});
 
 		const runner = new CursorRunner({
-			cyrusHome,
+			factoryHome,
 			workingDirectory: workspace,
 			allowedTools: ["Read(src/**)"],
 		});
@@ -143,16 +175,18 @@ describe("CursorRunner (SDK adapter)", () => {
 
 		expect(existsSync(join(workspace, ".cursor", "hooks.json"))).toBe(false);
 		expect(
-			existsSync(join(workspace, ".cursor", "cyrus-permissions.json")),
+			existsSync(join(workspace, ".cursor", "bobs-factory-permissions.json")),
 		).toBe(false);
 		expect(
-			existsSync(join(workspace, ".cursor", "cyrus-permission-check.mjs")),
+			existsSync(
+				join(workspace, ".cursor", "bobs-factory-permission-check.mjs"),
+			),
 		).toBe(false);
 	});
 
 	it("emits init, assistant text, and result messages", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		sdkMock.__install({
 			agentId: "agent-emit",
 			events: [
@@ -181,7 +215,7 @@ describe("CursorRunner (SDK adapter)", () => {
 		});
 
 		const runner = new CursorRunner({
-			cyrusHome,
+			factoryHome,
 			workingDirectory: workspace,
 		});
 		const session = await runner.start("hi");
@@ -197,7 +231,7 @@ describe("CursorRunner (SDK adapter)", () => {
 
 	it("accumulates token usage from turn-ended deltas into the result message", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		sdkMock.__install({
 			agentId: "agent-tokens",
 			events: [
@@ -239,7 +273,7 @@ describe("CursorRunner (SDK adapter)", () => {
 		});
 
 		const runner = new CursorRunner({
-			cyrusHome,
+			factoryHome,
 			workingDirectory: workspace,
 		});
 		await runner.start("hi");
@@ -257,7 +291,7 @@ describe("CursorRunner (SDK adapter)", () => {
 
 	it("coalesces consecutive assistant text deltas into a single message", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		sdkMock.__install({
 			agentId: "agent-coalesce",
 			events: [
@@ -332,7 +366,7 @@ describe("CursorRunner (SDK adapter)", () => {
 		});
 
 		const runner = new CursorRunner({
-			cyrusHome,
+			factoryHome,
 			workingDirectory: workspace,
 		});
 		await runner.start("hi");
@@ -361,7 +395,7 @@ describe("CursorRunner (SDK adapter)", () => {
 
 	it("maps tool_call events with status=completed into tool_use + tool_result", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		sdkMock.__install({
 			events: [
 				{
@@ -389,7 +423,10 @@ describe("CursorRunner (SDK adapter)", () => {
 			],
 		});
 
-		const runner = new CursorRunner({ cyrusHome, workingDirectory: workspace });
+		const runner = new CursorRunner({
+			factoryHome,
+			workingDirectory: workspace,
+		});
 		await runner.start("run a tool");
 
 		const msgs = runner.getMessages();
@@ -413,7 +450,7 @@ describe("CursorRunner (SDK adapter)", () => {
 
 	it("maps mcp tool_use blocks into mcp__server__tool names", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		sdkMock.__install({
 			events: [
 				{
@@ -451,7 +488,10 @@ describe("CursorRunner (SDK adapter)", () => {
 			],
 		});
 
-		const runner = new CursorRunner({ cyrusHome, workingDirectory: workspace });
+		const runner = new CursorRunner({
+			factoryHome,
+			workingDirectory: workspace,
+		});
 		await runner.start("call mcp");
 		const msgs = runner.getMessages();
 		const tu = msgs.find(
@@ -465,7 +505,7 @@ describe("CursorRunner (SDK adapter)", () => {
 
 	it("uses Agent.resume when resumeSessionId is provided", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		sdkMock.__install({
 			agentId: "agent-resumed",
 			events: [
@@ -485,7 +525,7 @@ describe("CursorRunner (SDK adapter)", () => {
 		});
 
 		const runner = new CursorRunner({
-			cyrusHome,
+			factoryHome,
 			workingDirectory: workspace,
 			resumeSessionId: "agent-resumed",
 		});
@@ -496,13 +536,16 @@ describe("CursorRunner (SDK adapter)", () => {
 
 	it("emits an error result when SDK send throws", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		sdkMock.__install({
 			events: [],
 			throwOnSend: new Error("auth boom"),
 		});
 
-		const runner = new CursorRunner({ cyrusHome, workingDirectory: workspace });
+		const runner = new CursorRunner({
+			factoryHome,
+			workingDirectory: workspace,
+		});
 		runner.on("error", () => {});
 		await runner.start("hi");
 		const msgs = runner.getMessages();
@@ -511,9 +554,9 @@ describe("CursorRunner (SDK adapter)", () => {
 		expect(last.is_error).toBe(true);
 	});
 
-	it("writes Cyrus permission config file with translated patterns during run", async () => {
+	it("writes Bob’s Factory permission config file with translated patterns during run", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 
 		// Capture the file contents during the stream by reading them in the
 		// first event handler. We accomplish this with an SDK mock whose stream
@@ -542,7 +585,11 @@ describe("CursorRunner (SDK adapter)", () => {
 			downloadArtifact: async () => Buffer.alloc(0),
 			[Symbol.asyncDispose]: async () => {},
 			send: async () => {
-				const cfgPath = join(workspace, ".cursor", "cyrus-permissions.json");
+				const cfgPath = join(
+					workspace,
+					".cursor",
+					"bobs-factory-permissions.json",
+				);
 				capturedConfig = JSON.parse(readFileSync(cfgPath, "utf8"));
 				return {
 					id: "run",
@@ -567,7 +614,7 @@ describe("CursorRunner (SDK adapter)", () => {
 		});
 
 		const runner = new CursorRunner({
-			cyrusHome,
+			factoryHome,
 			workingDirectory: workspace,
 			allowedTools: ["Read(src/**)", "Bash(git:*)"],
 			disallowedTools: ["Bash(rm:*)"],
@@ -585,7 +632,7 @@ describe("CursorRunner (SDK adapter)", () => {
 
 	it("writes .cursor/sandbox.json and passes sandboxOptions when sandbox enabled", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		let capturedAgentOpts: any = null;
 		const realCreate = sdkMock.create.getMockImplementation();
 		sdkMock.create.mockImplementationOnce(async (opts: any) => {
@@ -647,7 +694,7 @@ describe("CursorRunner (SDK adapter)", () => {
 		});
 
 		const runner = new CursorRunner({
-			cyrusHome,
+			factoryHome,
 			workingDirectory: workspace,
 			sandboxSettings: {
 				enabled: true,
@@ -684,7 +731,7 @@ describe("CursorRunner (SDK adapter)", () => {
 
 	it("does not pass sandboxOptions.enabled=true when sandbox is disabled", async () => {
 		const workspace = tempWorkspace();
-		const cyrusHome = tempWorkspace();
+		const factoryHome = tempWorkspace();
 		let capturedAgentOpts: any = null;
 		sdkMock.create.mockImplementationOnce(async (opts: any) => {
 			capturedAgentOpts = opts;
@@ -716,7 +763,10 @@ describe("CursorRunner (SDK adapter)", () => {
 			};
 		});
 
-		const runner = new CursorRunner({ cyrusHome, workingDirectory: workspace });
+		const runner = new CursorRunner({
+			factoryHome,
+			workingDirectory: workspace,
+		});
 		await runner.start("hi");
 
 		expect(capturedAgentOpts.local.sandboxOptions).toEqual({ enabled: false });

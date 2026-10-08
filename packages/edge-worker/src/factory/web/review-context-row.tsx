@@ -1,6 +1,10 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { useEffect, useRef, useState } from "react";
-import { type CheckoutCommand, reviewContext } from "./review-context";
+import {
+	type CheckoutCommand,
+	reviewContext,
+	reviewDeliveries,
+} from "./review-context";
 import { Button, External, useToast } from "./ui";
 
 function CopyIcon({ copied = false }: { copied?: boolean }) {
@@ -30,6 +34,7 @@ function CopyIcon({ copied = false }: { copied?: boolean }) {
 export function ReviewContextRow({ run }: { run: unknown }) {
 	const context = reviewContext(run),
 		toast = useToast();
+	const deliveries = reviewDeliveries(run);
 	const [manual, setManual] = useState<CheckoutCommand>();
 	const [copied, setCopied] = useState<CheckoutCommand>();
 	const text = useRef<HTMLTextAreaElement>(null);
@@ -64,6 +69,12 @@ export function ReviewContextRow({ run }: { run: unknown }) {
 				{context.pr && (
 					<External href={context.pr.url}>{context.pr.label} ↗</External>
 				)}
+				{deliveries.length > 1 &&
+					deliveries.map((delivery) => (
+						<External key={delivery.repositoryId} href={delivery.url}>
+							{delivery.name} · {delivery.headSha.slice(0, 8)} ↗
+						</External>
+					))}
 				{context.branch && (
 					<span className="review-branch">
 						<span className="muted">Branch</span>{" "}

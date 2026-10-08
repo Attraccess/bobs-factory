@@ -36,7 +36,7 @@ const edgeWorker = new EdgeWorker({
     baseBranch: 'main',
     linearWorkspaceId: 'workspace-123',
     linearToken: await oauthHelper.getAccessToken(),
-    workspaceBaseDir: '/home/user/.cyrus/workspaces/main'
+    workspaceBaseDir: '/home/user/.bobs-factory/workspaces/main'
   }],
   
   // Optional handlers

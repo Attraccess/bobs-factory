@@ -18,7 +18,7 @@ export interface OpenCodeMcpRemoteConfig {
 	type: "remote";
 	url: string;
 	headers?: Record<string, string>;
-	oauth?: Record<string, unknown>;
+	oauth?: Record<string, unknown> | false;
 	enabled?: boolean;
 }
 
@@ -47,12 +47,12 @@ interface CyrusMcpServerConfig {
 	env?: Record<string, string>;
 	url?: string;
 	headers?: Record<string, string>;
-	oauth?: Record<string, unknown>;
+	oauth?: Record<string, unknown> | false;
 }
 
 const ENV_DENY_PATTERNS = ["*.env", "*.env.*"];
 
-// Cyrus shares platform tool defaults across runners. These Claude SDK tools
+// Bob’s Factory shares platform tool defaults across runners. These Claude SDK tools
 // have no OpenCode equivalent, so omitting them is expected rather than a
 // configuration error worth logging for every session.
 const CLAUDE_ONLY_TOOL_NAMES = new Set([
@@ -183,7 +183,7 @@ function addOpenCodePermission(
 	const parsed = parseToolPattern(pattern);
 	if (!parsed) {
 		unsupported.push(
-			`permission:${pattern}: Unsupported Cyrus tool pattern for OpenCode`,
+			`permission:${pattern}: Unsupported Bob’s Factory tool pattern for OpenCode`,
 		);
 		return;
 	}
@@ -217,7 +217,7 @@ function addOpenCodePermission(
 			const rules = normalizeBashRule(parsed.argument);
 			if (rules.length === 0) {
 				unsupported.push(
-					`permission:${pattern}: Unsupported Cyrus tool pattern for OpenCode`,
+					`permission:${pattern}: Unsupported Bob’s Factory tool pattern for OpenCode`,
 				);
 				return;
 			}
@@ -252,7 +252,7 @@ function addOpenCodePermission(
 			return;
 		default:
 			unsupported.push(
-				`permission:${pattern}: Unsupported Cyrus tool pattern for OpenCode`,
+				`permission:${pattern}: Unsupported Bob’s Factory tool pattern for OpenCode`,
 			);
 	}
 }
@@ -307,6 +307,7 @@ function mapMcpServer(
 	name: string,
 	server: CyrusMcpServerConfig,
 	unsupported: string[],
+	disableOAuth = false,
 ): OpenCodeMcpLocalConfig | OpenCodeMcpRemoteConfig | null {
 	if (!server || typeof server !== "object") return null;
 
@@ -322,7 +323,11 @@ function mapMcpServer(
 			type: "remote",
 			url: server.url,
 			...(server.headers ? { headers: server.headers } : {}),
-			...(isRecord(server.oauth) ? { oauth: server.oauth } : {}),
+			...(disableOAuth
+				? { oauth: false as const }
+				: isRecord(server.oauth)
+					? { oauth: server.oauth }
+					: {}),
 			enabled: true,
 		};
 	}
@@ -406,12 +411,12 @@ export function buildOpenCodeConfig(
 	}
 	const workingDirectory = config.workingDirectory || process.cwd();
 	// OpenCode defaults to allowing tools unless permission rules say
-	// otherwise. Cyrus sessions must be deny-by-default so hosted/sandboxed
+	// otherwise. Bob’s Factory sessions must be deny-by-default so hosted/sandboxed
 	// runs do not inherit a permissive project or user config unexpectedly.
 	const permission: Record<string, OpenCodePermissionRule> = {
 		"*": "deny",
 		// OpenCode treats repeated calls as an interactive permission request.
-		// Cyrus is headless, so that request otherwise terminates the whole run.
+		// Bob’s Factory is headless, so that request otherwise terminates the whole run.
 		doom_loop: "allow",
 	};
 
@@ -426,7 +431,12 @@ export function buildOpenCodeConfig(
 	const mcp: Record<string, OpenCodeMcpLocalConfig | OpenCodeMcpRemoteConfig> =
 		{};
 	for (const [name, server] of Object.entries(mcpServers)) {
-		const mapped = mapMcpServer(name, server, unsupported);
+		const mapped = mapMcpServer(
+			name,
+			server,
+			unsupported,
+			!!config.childEnvironment,
+		);
 		if (mapped) mcp[name] = mapped;
 	}
 
@@ -460,7 +470,7 @@ export function buildOpenCodeConfig(
 		workingDirectory,
 		config.allowedDirectories,
 	);
-	// Cyrus permissions are safety controls, so they replace user-provided
+	// Bob’s Factory permissions are safety controls, so they replace user-provided
 	// permission config instead of preserving non-conflicting entries.
 	runtimeConfig.permission = permission;
 
@@ -474,7 +484,7 @@ function sanitizePathSegment(value: string): string {
 export function buildOpenCodeStateRoot(config: OpenCodeRunnerConfig): string {
 	const scope = config.opencodeStateScope ?? "inherit";
 	if (scope === "shared") {
-		return join(config.cyrusHome, "opencode-state", "shared");
+		return join(config.factoryHome, "opencode-state", "shared");
 	}
 	if (scope === "repository") {
 		const key =
@@ -484,7 +494,7 @@ export function buildOpenCodeStateRoot(config: OpenCodeRunnerConfig): string {
 				basename(resolve(config.workingDirectory || process.cwd())),
 			);
 		return join(
-			config.cyrusHome,
+			config.factoryHome,
 			"opencode-state",
 			"repositories",
 			sanitizePathSegment(key) || "repository",
@@ -494,7 +504,7 @@ export function buildOpenCodeStateRoot(config: OpenCodeRunnerConfig): string {
 	const workspaceName =
 		config.workspaceName || sanitizePathSegment(basename(workingDirectory));
 	const safeWorkspaceName = sanitizePathSegment(workspaceName) || "workspace";
-	return join(config.cyrusHome, "opencode-state", safeWorkspaceName);
+	return join(config.factoryHome, "opencode-state", safeWorkspaceName);
 }
 
 export function buildOpenCodeRuntimeEnv(
@@ -502,7 +512,7 @@ export function buildOpenCodeRuntimeEnv(
 ): Record<string, string> {
 	const built = buildOpenCodeConfig(config);
 	// OpenCode loads OPENCODE_CONFIG_CONTENT after project config, making this
-	// the safest supported place for Cyrus-enforced MCP and permission rules.
+	// the safest supported place for Bob’s Factory-enforced MCP and permission rules.
 	const env: Record<string, string> = {
 		OPENCODE_CONFIG_CONTENT: JSON.stringify(built.config),
 	};

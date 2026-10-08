@@ -1,7 +1,11 @@
-import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
-import type { IAgentRunner, IMessageFormatter, SDKMessage } from "cyrus-core";
+import type {
+	IAgentRunner,
+	IMessageFormatter,
+	SDKMessage,
+} from "bobs-factory-core";
 import { AppServerCodexBackend } from "./backend/AppServerCodexBackend.js";
+import { waitWithAbort } from "./backend/abort.js";
 import type {
 	CodexBackend,
 	CodexUserInput,
@@ -29,7 +33,7 @@ export declare interface CodexRunner {
 }
 
 /**
- * Adapts Codex to Cyrus's {@link IAgentRunner} contract.
+ * Adapts Codex to Bob’s Factory's {@link IAgentRunner} contract.
  *
  * The runner is a thin orchestrator: it owns session lifecycle and delegates
  * configuration assembly ({@link CodexConfigBuilder}), skill staging
@@ -49,6 +53,8 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 	private sessionInfo: CodexSessionInfo | null = null;
 	private backend: CodexBackend | null = null;
 	private wasStopped = false;
+	private cancellation: AbortController | null = null;
+	private cleanupPromise: Promise<void> | null = null;
 	/** Set once the turn reaches a terminal state; gates {@link isStreaming}. */
 	private turnFinished = false;
 	/**
@@ -111,13 +117,17 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		// startup gap before the turn is active — so callers stream follow-ups in
 		// (buffered if needed) rather than deferring them.
 		return (
-			this.supportsStreamingInput && this.isRunning() && !this.turnFinished
+			this.supportsStreamingInput &&
+			this.isRunning() &&
+			!this.turnFinished &&
+			!this.wasStopped
 		);
 	}
 
 	stop(): void {
 		if (this.sessionInfo?.isRunning) {
 			this.wasStopped = true;
+			this.cancellation?.abort(new Error("Codex session stopped"));
 		}
 		void this.cleanupRuntimeState();
 	}
@@ -127,7 +137,11 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	getMessages(): SDKMessage[] {
-		return this.mapper.getMessages();
+		return this.config.redact
+			? JSON.parse(
+					this.config.redact(JSON.stringify(this.mapper.getMessages())),
+				)
+			: this.mapper.getMessages();
 	}
 
 	getFormatter(): IMessageFormatter {
@@ -144,11 +158,15 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		}
 
 		this.sessionInfo = {
-			sessionId: this.config.resumeSessionId || crypto.randomUUID(),
+			// Only Codex can assign a resumable thread ID. A startup failure must
+			// not publish a locally generated UUID as a native conversation.
+			sessionId: this.config.resumeSessionId || null,
 			startedAt: new Date(),
 			isRunning: true,
 		};
 		this.wasStopped = false;
+		const cancellation = new AbortController();
+		this.cancellation = cancellation;
 		this.turnFinished = false;
 		this.pendingFollowups = [];
 		this.mapper.reset();
@@ -160,17 +178,21 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		this.backend = backend;
 		backend.on("event", (event) => this.handleBackendEvent(event));
 
-		const resolved = await new CodexConfigBuilder(this.config).build();
-		this.skillStager.stage();
-
-		const input: CodexUserInput[] = prompt?.trim()
-			? [{ type: "text", text: prompt.trim() }]
-			: [];
-
 		let caughtError: unknown;
 		try {
+			const resolved = await waitWithAbort(
+				new CodexConfigBuilder(this.config).build(cancellation.signal),
+				cancellation.signal,
+			);
+			if (this.wasStopped) return this.sessionInfo;
+			this.skillStager.stage();
+
+			const input: CodexUserInput[] = prompt?.trim()
+				? [{ type: "text", text: prompt.trim() }]
+				: [];
+
 			await backend.open(resolved);
-			await backend.runTurn(input);
+			if (!this.wasStopped) await backend.runTurn(input);
 		} catch (error) {
 			caughtError = error;
 		} finally {
@@ -227,7 +249,13 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 			},
 			getSessionId: () => self.sessionInfo?.sessionId || "pending",
 			getStagedSkillNames: () => self.skillStager.getStagedSkillNames(),
-			emitMessage: (message) => self.emit("message", message),
+			emitMessage: (message) =>
+				self.emit(
+					"message",
+					self.config.redact
+						? JSON.parse(self.config.redact(JSON.stringify(message)))
+						: message,
+				),
 			onThreadStarted: (threadId) => {
 				if (self.sessionInfo) {
 					self.sessionInfo.sessionId = threadId;
@@ -243,20 +271,33 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		}
 
 		this.sessionInfo.isRunning = false;
-		const messages = this.mapper.finalize({
+		this.mapper.finalize({
 			caughtError,
 			wasStopped: this.wasStopped,
 		});
 		await this.cleanupRuntimeState();
-		this.emit("complete", messages);
+		this.emit("complete", this.getMessages());
 	}
 
 	private async cleanupRuntimeState(): Promise<void> {
+		if (this.cleanupPromise) {
+			await this.cleanupPromise;
+			return;
+		}
 		const backend = this.backend;
 		this.backend = null;
-		if (backend) {
-			await backend.close();
+		const cleanup = (async () => {
+			try {
+				await backend?.close();
+			} finally {
+				this.skillStager.cleanup();
+			}
+		})();
+		this.cleanupPromise = cleanup;
+		try {
+			await cleanup;
+		} finally {
+			this.cleanupPromise = null;
 		}
-		this.skillStager.cleanup();
 	}
 }

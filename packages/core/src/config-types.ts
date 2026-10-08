@@ -47,7 +47,7 @@ export { TRUSTED_DOMAINS } from "./trusted-domains.js";
  * Resolve path with tilde (~) expansion
  * Expands ~ to the user's home directory and resolves to absolute path
  *
- * @param path - Path that may contain ~ prefix (e.g., "~/.cyrus/repos/myrepo")
+ * @param path - Path that may contain ~ prefix (e.g., "~/.bobs-factory/repos/myrepo")
  * @returns Absolute path with ~ expanded
  *
  * @example
@@ -100,11 +100,11 @@ export type RepoSetupHookEventHandler = (
  * be persisted to config.json.
  */
 export interface EdgeWorkerRuntimeConfig {
-	/** Cyrus CLI version (e.g., "1.2.3"), used in /version endpoint */
+	/** Bob’s Factory CLI version (e.g., "1.2.3"), used in /version endpoint */
 	version?: string;
 
-	/** Cyrus home directory - required at runtime */
-	cyrusHome: string;
+	/** Bob’s Factory home directory - required at runtime */
+	factoryHome: string;
 
 	// --- Server/Network Configuration (runtime-specific) ---
 
@@ -163,6 +163,8 @@ export interface EdgeWorkerRuntimeConfig {
 			options?: {
 				baseBranchOverrides?: Map<string, string>;
 				onRepoSetupHookEvent?: RepoSetupHookEventHandler;
+				/** Complete execution environment; implementations must forward it to Git and setup hooks. */
+				childEnvironment?: Record<string, string>;
 			},
 		) => Promise<Workspace>;
 
@@ -199,7 +201,7 @@ export interface EdgeWorkerRuntimeConfig {
  * Configuration for the EdgeWorker supporting multiple repositories.
  *
  * This is the complete runtime configuration that combines:
- * - EdgeConfig: Serializable settings from ~/.cyrus/config.json
+ * - EdgeConfig: Serializable settings from ~/.bobs-factory/config.json
  * - EdgeWorkerRuntimeConfig: Runtime-only fields (callbacks, handlers, server config)
  *
  * The separation exists because EdgeConfig can be persisted to disk as JSON,
@@ -213,7 +215,7 @@ export interface EdgeWorkerRuntimeConfig {
  * // EdgeWorkerConfig adds runtime handlers
  * const runtimeConfig: EdgeWorkerConfig = {
  *   ...fileConfig,
- *   cyrusHome: '/home/user/.cyrus',
+ *   factoryHome: '/home/user/.bobs-factory',
  *   handlers: {
  *     onSessionStart: (issueId, issue, repoId) => console.log('Started'),
  *     onError: (error) => console.error(error),
