@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { promisify } from "node:util";
+import { runRepositories } from "./RepositoryScope.js";
 import type { ExecutionContext, FactoryRun } from "./WorkflowRuntime.js";
 
 const exec = promisify(execFile);
@@ -287,6 +288,103 @@ export async function finalizeGuideFiles(
 		throw new Error(
 			"Whole-PR revision scope is unavailable; cannot bind Changed files",
 		);
+	if (scope.repositories?.length) {
+		const repositories = runRepositories(context.run);
+		const validate = async () => {
+			for (const repository of repositories) {
+				const revision = context.progress?.currentRevision?.repositories?.find(
+					(item) => item.repositoryId === repository.id,
+				);
+				if (
+					!revision ||
+					revision.dirty ||
+					(await git(repository.workspace, ["rev-parse", "HEAD"])).trim() !==
+						revision.headSha ||
+					(await git(repository.workspace, ["status", "--porcelain"])).trim()
+				)
+					throw new Error(
+						`${repository.name} changed during guide authoring; regenerate the guide`,
+					);
+			}
+		};
+		await validate();
+		const ref = {
+			snapshotId: digest(
+				JSON.stringify([
+					context.run.id,
+					scope.baseSha,
+					scope.headSha,
+					scope.repositories,
+				]),
+			),
+			baseSha: scope.baseSha,
+			headSha: scope.headSha,
+		};
+		const parent = join(context.evidenceDir, "review-files");
+		await mkdir(parent, { recursive: true });
+		const stage = join(parent, `.staging-${randomUUID()}`);
+		await mkdir(stage);
+		try {
+			const files: ReviewFile[] = [];
+			for (const repository of scope.repositories) {
+				const child = await createReviewSnapshot(
+					context.evidenceDir,
+					context.run.id,
+					repository.workspace,
+					repository.baseSha,
+					repository.headSha,
+				);
+				const manifest = await readReviewManifest(
+					context.evidenceDir,
+					context.run.id,
+					child,
+				);
+				for (const original of manifest.files) {
+					const path = `${repository.name}/${original.path}`;
+					const file = {
+						...original,
+						id: digest(JSON.stringify([repository.repositoryId, original.id])),
+						path,
+						...(original.oldPath
+							? { oldPath: `${repository.name}/${original.oldPath}` }
+							: {}),
+					};
+					if (original.patchSha256) {
+						const { patch } = await readReviewPatch(
+							context.evidenceDir,
+							manifest,
+							original.id,
+						);
+						await writeFile(join(stage, `${file.id}.patch`), patch!);
+					}
+					files.push(file);
+				}
+			}
+			await validate();
+			const content = { ...ref, runId: context.run.id, files };
+			await writeFile(
+				join(stage, "manifest.json"),
+				JSON.stringify({ ...content, digest: digest(JSON.stringify(content)) }),
+			);
+			try {
+				await rename(
+					stage,
+					snapshotDirectory(context.evidenceDir, ref.snapshotId),
+				);
+			} catch (error) {
+				if (
+					!["EEXIST", "ENOTEMPTY"].includes(
+						(error as NodeJS.ErrnoException).code ?? "",
+					)
+				)
+					throw error;
+				await readReviewManifest(context.evidenceDir, context.run.id, ref);
+			}
+			return { ...(value as object), reviewFiles: ref };
+		} finally {
+			await rm(stage, { recursive: true, force: true });
+		}
+	}
 	const head = (await git(context.run.workspace, ["rev-parse", "HEAD"])).trim();
 	if (
 		head !== scope.headSha ||

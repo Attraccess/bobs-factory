@@ -211,6 +211,13 @@ Routes Linear issues with specific labels to this repository. This is useful whe
 
 Example: `["backend", "api"]` - Only process issues that have the "backend" or "api" label
 
+A shared label selects every matching repository in every workflow. To expose a
+single `niotix` project containing multiple repositories, put `niotix` first and
+give all members the same nonempty label set, for example
+`["niotix", "niota-api", "niota-apidocs", "niotix-gitops", "nx-dev", "nx-helm", "gitops"]`.
+Each of these labels then selects the whole scope. Config remains a flat
+`repositories` array; `projectKeys` continues to mean external tracker projects.
+
 ---
 
 ## Routing Priority Order

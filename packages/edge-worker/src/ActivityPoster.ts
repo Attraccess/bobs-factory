@@ -139,7 +139,7 @@ export class ActivityPoster {
 			? `**Routing** (${methodDisplay})`
 			: "**Routing**";
 
-		const body = `${header}\n${repoLines.join("\n")}`;
+		const body = `${header}\n${repoLines.join("\n")}${repoLines.length > 1 ? "\n\nThis repository scope applies to every workflow. Factory reviews and publishes one PR/MR per changed repository, with approval bound to all delivery revisions." : ""}`;
 
 		await this.postActivityDirect(
 			issueTracker,

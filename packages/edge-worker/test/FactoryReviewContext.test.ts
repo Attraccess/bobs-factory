@@ -2,10 +2,40 @@ import { execFileSync } from "node:child_process";
 import { expect, it } from "vitest";
 import {
 	reviewContext,
+	reviewDeliveries,
+	reviewFileTarget,
 	shellQuote,
 } from "../src/factory/web/review-context.js";
 
 const url = "https://github.com/owner/repo/pull/42";
+it("links grouped files to their own PR using the repository-relative filename", () => {
+	const run = {
+		outputs: {
+			"draft-pr": {
+				deliveries: [
+					{
+						repositoryId: "app",
+						name: "app",
+						output: { url, headSha: "app-head" },
+					},
+					{
+						repositoryId: "api",
+						name: "api",
+						output: {
+							url: "https://gitlab.com/team/api/-/merge_requests/2",
+							headSha: "api-head",
+						},
+					},
+				],
+			},
+		},
+	};
+	expect(reviewDeliveries(run)).toHaveLength(2);
+	expect(reviewFileTarget(run, "api/shared.ts")).toEqual({
+		url: "https://gitlab.com/team/api/-/merge_requests/2",
+		path: "shared.ts",
+	});
+});
 it("offers GitLab subgroup and enterprise GitHub review links and checkout commands", () => {
 	const gitlab = reviewContext({
 		outputs: {

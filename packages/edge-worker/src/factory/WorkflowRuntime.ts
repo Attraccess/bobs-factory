@@ -44,6 +44,7 @@ import {
 	type QuestionRecommendation,
 	questionNotification,
 } from "./Questions.js";
+import { deliveryRevisions } from "./RepositoryScope.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
 	isComputeIntensive,
@@ -133,6 +134,7 @@ export interface GraphCheckpoint {
 	outputs?: Record<string, unknown>;
 }
 export interface HumanDecision {
+	repositories?: import("./RepositoryScope.js").ApprovedRepository[];
 	reviewId: string;
 	headSha: string;
 	decision: "approve" | "reject";
@@ -140,6 +142,7 @@ export interface HumanDecision {
 	at: string;
 }
 export interface ReviewGate {
+	repositories?: import("./RepositoryScope.js").ApprovedRepository[];
 	id: string;
 	headSha: string;
 	url: string;
@@ -151,6 +154,9 @@ export interface RunViewState {
 	seenAt?: string;
 }
 export interface FactoryRun {
+	repositories?: import("./RepositoryScope.js").RunRepository[];
+	/** Durable per-repository receipts, including partial publication and merges. */
+	repositoryOutputs?: Record<string, Record<string, unknown>>;
 	/** Accepted forge coordinates/adapter, retained across retry and configuration changes. */
 	gitProvider?: GitProviderSnapshot;
 	executionSnapshot?: ExecutionSnapshot;
@@ -249,6 +255,9 @@ export interface ExecutionContext {
 	evidenceDir: string;
 	resumeAgent?: AgentCheckpoint;
 	checkpointAgent?: (agent: AgentCheckpoint) => void;
+	/** Persist per-repository side effects before the whole step completes. */
+	save?: () => void;
+	allowUnchangedRepository?: boolean;
 }
 export interface RuntimeHooks {
 	execution?(
@@ -558,6 +567,7 @@ export class WorkflowRuntime {
 		};
 	}
 	create(options: {
+		repositories?: import("./RepositoryScope.js").RunRepository[];
 		executionSnapshot?: ExecutionSnapshot;
 		executionSelection?: ExecutionSelection;
 		triggerOrigin: WorkflowTriggerOrigin;
@@ -925,6 +935,7 @@ export class WorkflowRuntime {
 					state.agent = agent;
 					this.save(run);
 				},
+				save: () => this.save(run),
 			};
 			mkdirSync(context.evidenceDir, { recursive: true });
 			let output: unknown = outputs[step.id];
@@ -1142,7 +1153,7 @@ export class WorkflowRuntime {
 						.filter((check) => typeof check === "string")
 						.map((check) => `- ${check}`)
 						.join("\n")}`;
-				if (run.ticketReference && this.hooks.track)
+				if (run.ticketReference && this.hooks.track) {
 					await this.track(run, {
 						key: `${key}:${count}:${readPath(output, "headSha") ?? "result"}`,
 						stage,
@@ -1150,6 +1161,13 @@ export class WorkflowRuntime {
 						...(typeof pr === "string" ? { pr } : {}),
 						...(merged ? { merged: true } : {}),
 					});
+					for (const delivery of deliveryRevisions(output).slice(1))
+						await this.track(run, {
+							key: `${key}:${count}:${delivery.repositoryId}:${delivery.headSha}`,
+							pr: delivery.url,
+							body: `${delivery.name}: ${delivery.url}. ${body}`,
+						});
+				}
 			}
 			if (
 				step.tool === "visual-gate" &&
@@ -1486,6 +1504,7 @@ export class WorkflowRuntime {
 				id: randomUUID(),
 				headSha: result.headSha,
 				url: result.url,
+				repositories: deliveryRevisions(result),
 				status: "pending",
 			};
 		state.phase = "waiting";
@@ -1532,7 +1551,11 @@ export class WorkflowRuntime {
 		if (decision.decision === "reject" && !decision.feedback?.trim())
 			throw new Error("Explain what Bob should change");
 		run.humanDecisions ??= [];
-		run.humanDecisions.push({ ...decision, at: new Date().toISOString() });
+		run.humanDecisions.push({
+			...decision,
+			repositories: structuredClone(gate.repositories),
+			at: new Date().toISOString(),
+		});
 		gate.status = decision.decision;
 		const answered = (frame?: GraphCheckpoint): void => {
 			if (frame?.active?.phase === "waiting") frame.active.phase = "answered";

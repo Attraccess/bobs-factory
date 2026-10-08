@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import type { Guide, GuideChapter } from "../FactoryResults";
 import type { ReviewFile, ReviewFilesManifest } from "../ReviewFiles";
 import { api } from "./client";
+import { reviewFileTarget } from "./review-context";
 import {
 	areaColor,
 	areaName,
@@ -587,9 +588,7 @@ export function ChangedFiles({
 							>
 								→
 							</Button>
-							<FileLink path={file.path} url={url}>
-								PR file
-							</FileLink>
+							<FileLink {...reviewFileTarget(run, file.path)}>PR file</FileLink>
 						</div>
 					)
 				}
