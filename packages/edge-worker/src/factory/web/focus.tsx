@@ -30,6 +30,7 @@ import {
 	useFeedbackController,
 	useReviewFeedback,
 } from "./review-comments";
+import { reviewDiffUrl } from "./review-context";
 import {
 	emptyFeedback,
 	feedbackKey,
@@ -681,7 +682,7 @@ function ReviewDecisions({
 						</Button>
 					)}
 					{url && (
-						<External className="button secondary" href={`${url}/files`}>
+						<External className="button secondary" href={reviewDiffUrl(url)}>
 							Open diff ↗
 						</External>
 					)}

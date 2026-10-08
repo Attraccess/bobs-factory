@@ -19,6 +19,7 @@ import {
 import { qaDigest } from "../src/factory/EvidenceDigest.js";
 import { validateFactoryResult } from "../src/factory/FactoryResults.js";
 import { CaptureSchema } from "../src/factory/FactoryTools.js";
+import { scopeRevision } from "../src/factory/RepositoryScope.js";
 import {
 	byteRange,
 	cleanupVideoEvidence,
@@ -528,6 +529,90 @@ it("streams full/HEAD/open/suffix ranges and rejects stale, malformed, replaced 
 		expect((await get()).statusCode).toBe(410);
 		server.auth.logout("route-fixture-session", "http://localhost");
 		expect((await get("bytes=0-9")).statusCode).toBe(401);
+	} finally {
+		await server.stop();
+		await f.runtime.shutdown();
+	}
+});
+it("serves grouped assets from retained worktrees and rejects any stale, dirty or missing repository", async () => {
+	const f = setup();
+	const secondary = join(f.home, "api");
+	mkdirSync(secondary);
+	const git = (...args: string[]) =>
+		execFileSync("git", args, { cwd: secondary, encoding: "utf8" }).trim();
+	git("init", "-b", "main");
+	git("config", "user.name", "Fixture");
+	git("config", "user.email", "fixture@example.test");
+	git("config", "commit.gpgsign", "false");
+	writeFileSync(join(secondary, "view.txt"), "API response");
+	git("add", ".");
+	git("commit", "-m", "fixture");
+	f.run.repositories = [f.run.workspace, secondary].map((workspace, i) => ({
+		id: i ? "api" : "app",
+		name: i ? "api" : "app",
+		workspace,
+		repositoryPath: workspace,
+		baseBranch: "main",
+	}));
+	f.run.workspace = f.home; // Non-Git parent, as in a grouped product run.
+	f.task.dependencies = ["repo/view.txt", "api/view.txt"];
+	f.ctx.progress!.currentRevision!.headSha = scopeRevision([
+		{ repositoryId: "app", headSha: f.git("rev-parse", "HEAD") },
+		{ repositoryId: "api", headSha: git("rev-parse", "HEAD") },
+	]);
+	const captions = join(f.ctx.evidenceDir, "save.vtt");
+	writeFileSync(captions, "WEBVTT\n\n00:00.000 --> 00:01.000\nSaved\n");
+	f.output.videos![0]!.captionsPath = captions;
+	f.run.outputs.capture = await finalizeVideoEvidence(f.ctx, f.output);
+	const video = (f.run.outputs.capture as VideoCapture).videos![0]!;
+	const server = new FactoryServer(f.runtime, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw Error("unused");
+		},
+		stop: () => {},
+	});
+	const request = (
+		asset: string,
+		method: "GET" | "HEAD" = "GET",
+		range?: string,
+	) =>
+		server.app.inject({
+			url: `/api/runs/${f.run.id}/videos/${video.taskId}/${asset}?v=${video.validation!.sha256}`,
+			method,
+			headers: { ...(range ? { range } : {}) },
+		});
+	try {
+		for (const [asset, path] of [
+			["media", f.path],
+			["poster", f.posterPath],
+			["captions", captions],
+		]) {
+			const bytes = readFileSync(path!);
+			const full = await request(asset!);
+			expect(full.statusCode).toBe(200);
+			expect(full.rawPayload).toEqual(bytes);
+			const head = await request(asset!, "HEAD");
+			expect(head.statusCode).toBe(200);
+			expect(Number(head.headers["content-length"])).toBe(bytes.length);
+			expect(head.body).toBe("");
+			const range = await request(asset!, "GET", "bytes=0-9");
+			expect(range.statusCode).toBe(206);
+			expect(range.rawPayload).toEqual(bytes.subarray(0, 10));
+			expect((await request(asset!, "HEAD", "bytes=-10")).statusCode).toBe(206);
+		}
+		writeFileSync(join(secondary, "view.txt"), "Changed API");
+		for (const asset of ["media", "poster", "captions"])
+			expect((await request(asset)).statusCode).toBe(409);
+		git("add", ".");
+		git("commit", "-m", "changed");
+		expect((await request("media")).statusCode).toBe(409);
+		git("checkout", "HEAD~1");
+		expect((await request("media")).statusCode).toBe(200);
+		rmSync(secondary, { recursive: true });
+		expect((await request("media")).statusCode).toBe(409);
 	} finally {
 		await server.stop();
 		await f.runtime.shutdown();

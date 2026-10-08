@@ -5,6 +5,7 @@ import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { FastifyInstance } from "fastify";
+import { runRepositories, scopeRevision } from "./RepositoryScope.js";
 import {
 	byteRange,
 	evidenceFile,
@@ -53,22 +54,33 @@ export function registerVideoRoutes(
 							: undefined;
 			if (!selected)
 				return reply.code(404).send({ error: "Video asset is unavailable" });
-			const revision = (
-				await exec("git", ["rev-parse", "HEAD"], {
-					cwd: run.workspace,
-					timeout: 10000,
-				})
-			).stdout.trim();
-			const dirty = (
-				await exec("git", ["status", "--porcelain"], {
-					cwd: run.workspace,
-					timeout: 10000,
-				})
-			).stdout.trim();
-			if (revision !== validation.validatedRevision || dirty)
-				return reply
-					.code(409)
-					.send({ error: "Video belongs to an earlier or dirty revision" });
+			// Grouped runs retain Git worktrees beneath a non-Git workspace parent.
+			// Match the same complete scope fingerprint used by capture finalization.
+			try {
+				const revisions = await Promise.all(
+					runRepositories(run).map(async (repository) => {
+						const options = { cwd: repository.workspace, timeout: 10000 };
+						const headSha = (
+							await exec("git", ["rev-parse", "HEAD"], options)
+						).stdout.trim();
+						const dirty = (
+							await exec("git", ["status", "--porcelain"], options)
+						).stdout.trim();
+						return { repositoryId: repository.id, headSha, dirty };
+					}),
+				);
+				if (
+					scopeRevision(revisions) !== validation.validatedRevision ||
+					revisions.some((r) => r.dirty)
+				)
+					return reply
+						.code(409)
+						.send({ error: "Video belongs to an earlier or dirty revision" });
+			} catch {
+				return reply.code(409).send({
+					error: "Video repository revisions are unavailable; refresh this run",
+				});
+			}
 			let path: string;
 			try {
 				path = evidenceFile(

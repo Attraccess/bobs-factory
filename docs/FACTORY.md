@@ -774,6 +774,9 @@ Only the validated loopback UI serves `/api/runs/:id/videos/:task/:asset?v=<hash
 or suffix byte ranges, streams without whole-file buffering, returns 416 for
 invalid/multiple ranges and 409 for changed bytes or stale revisions. API media
 is `no-store` and stays outside the service-worker shell cache and webhook tunnel.
+Grouped requests check every retained Git worktree against the captured scope
+revision. The shared parent need not be a Git repository; a dirty, changed or
+missing member makes the recording unavailable until revalidated.
 
 Limits are three clips, **120 seconds and 50 MiB per finalized clip**, with a
 **512 MiB evidence budget per run**. Keep binaries outside source control. Remove
@@ -1234,6 +1237,10 @@ diffs preserve hunk numbers, empty lines and no-final-newline markers; long diff
 initially display 500 rows and can reveal the rest. The desktop diff header collects
 status, full path, counts, mode, navigation and PR link in one row. Patch content
 starts at the first hunk; metadata-only and unavailable changes keep explicit messages.
+Grouped chapter and file links use the owning delivery and repository-relative
+filename. GitHub links use its files view; GitLab links use its diffs view and
+file selector, including on self-managed instances. Unknown custom forges retain
+the published review URL without invented file routes.
 
 Historical guides without snapshots reconstruct only from retained CI/readiness
 and handoff receipts establishing the original revision. The reconstructed

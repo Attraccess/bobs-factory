@@ -71,7 +71,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Preserve feature-video evidence and capability guidance when integrating grouped repositories and Codex context startup recovery. Validate recording sources across every retained repository. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Preserve feature-video evidence and capability guidance when integrating grouped repositories and Codex context startup recovery. Validate recording sources and stream current media across every retained repository. Use provider-specific diff and file links in grouped review guides. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 
 - Preserve video validation and playback evidence alongside specialist requirement coverage when integrating review guides and saved stock recipes. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 

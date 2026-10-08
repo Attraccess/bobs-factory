@@ -1,9 +1,12 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { expect, it } from "vitest";
 import {
 	reviewContext,
 	reviewDeliveries,
+	reviewDiffUrl,
 	reviewFileTarget,
+	reviewFileUrl,
 	shellQuote,
 } from "../src/factory/web/review-context.js";
 
@@ -250,4 +253,41 @@ it("encodes unusual valid branch names and quotes them as exactly one shell argu
 			reviewContext({ outputs: { "draft-pr": { branch: malformed } } })
 				.commands,
 		).toEqual([]);
+});
+
+it("uses supported GitLab and GitHub diff and file destinations, including grouped filenames", async () => {
+	const mr = "https://gitlab.example/group/subgroup/api/-/merge_requests/17";
+	const run = {
+		reviewGate: {
+			repositories: [
+				{ repositoryId: "app", name: "app", url, headSha: "app-head" },
+				{ repositoryId: "api", name: "api", url: mr, headSha: "api-head" },
+			],
+		},
+	};
+	const sha1 = createHash("sha1").update("shared.txt").digest("hex");
+	const sha256 = createHash("sha256").update("shared.txt").digest("hex");
+	expect(reviewDiffUrl(mr)).toBe(`${mr}/diffs`);
+	expect(reviewDiffUrl(`${url}/`)).toBe(`${url}/files`);
+	const api = reviewFileTarget(run, "api/shared.txt"),
+		app = reviewFileTarget(run, "app/shared.txt");
+	expect(await reviewFileUrl(api.url, api.path)).toBe(
+		`${mr}/diffs?file=${sha1}#diff-content-${sha1}`,
+	);
+	expect(await reviewFileUrl(app.url, app.path)).toBe(
+		`${url}/files#diff-${sha256}`,
+	);
+	expect(await reviewFileUrl(url, "shared.txt")).toBe(
+		`${url}/files#diff-${sha256}`,
+	);
+	for (const malformed of [
+		undefined,
+		"javascript:alert(1)",
+		"https://user:secret@gitlab.example/a/-/merge_requests/17",
+	])
+		expect(await reviewFileUrl(malformed, "shared.txt")).toBeUndefined();
+	// Custom forges keep their published destination; unsupported routes are never invented.
+	expect(
+		await reviewFileUrl("https://forge.example/reviews/17", "shared.txt"),
+	).toBe("https://forge.example/reviews/17");
 });
