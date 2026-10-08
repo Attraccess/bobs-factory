@@ -17,4 +17,28 @@ describe("resolveCodexAppServerLaunch", () => {
 			args: APP_SERVER_ARGS,
 		});
 	});
+
+	it("encodes launch overrides as TOML without splitting path or profile keys", () => {
+		expect(
+			resolveCodexAppServerLaunch("/opt/codex", {
+				permissions: {
+					"factory.profile": {
+						filesystem: { '/tmp/a "quoted"/repo.git': "write" },
+						network: { enabled: true },
+						workspace_roots: { "/tmp/repo": true },
+					},
+				},
+				default_permissions: "factory.profile",
+			}),
+		).toEqual({
+			command: "/opt/codex",
+			args: [
+				...APP_SERVER_ARGS,
+				"-c",
+				'default_permissions="factory.profile"',
+				"-c",
+				'permissions={"factory.profile" = {"filesystem" = {"/tmp/a \\"quoted\\"/repo.git" = "write"}, "network" = {"enabled" = true}, "workspace_roots" = {"/tmp/repo" = true}}}',
+			],
+		});
+	});
 });
