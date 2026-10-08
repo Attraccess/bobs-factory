@@ -175,7 +175,10 @@ function runScenario(config: Scenario = {}) {
 	return { status, output, events, publishes, tags, releases };
 }
 
-describe("release workflow executable registry gate", () => {
+// Each scenario launches mocked npm processes for the complete package graph.
+describe("release workflow executable registry gate", {
+	timeout: 30_000,
+}, () => {
 	it("uploads all artifacts in dependency order before shared polling, then tags once all are verified", () => {
 		const run = runScenario({
 			delays: names.map((_, index) => ((index % 3) + 1) * 10000),

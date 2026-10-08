@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Configurable specialist review with a versioned requirement inventory, complete acceptance coverage and revision-bound reviewer evidence. Recipes exposes each reviewer independently; QA and the human guide retain accepted skips, observations and disagreements. Nested workflows and subsequent fanout branches preserve review safeguards in their callers and guides, renamed gates retain QA coverage, and settled findings require fresh evidence even after intervening omissions. ([Taskbot #73](https://taskbot.apps.janjaap.de/p/bobs-factory/t/73), [#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Select execution identities and tool profiles independently from dedicated Settings pages, separate from workflow Recipes, machine capacity and run titles. Preserve the active Settings page and unsaved capacity/title settings through app updates. Configure repository/factory defaults, preview selected accounts and MCP tools, and retain accepted bindings through workflow roles and recovery. Private runner environments use explicit credential references; eligible Claude/Codex Share profiles can reuse a selected native login. Preserve effective shared Git attribution/signing, validate the selected model before setup, clean interrupted runner artifacts, and reject undeclared native Codex notification commands before setup. Validate the actual prepared agent tools in binary installations and retain Cursor SDK/Node paths in private environments. ([Taskbot #57](https://taskbot.apps.janjaap.de/p/bobs-factory/t/57), [#30](https://github.com/Attraccess/bobs-factory/pull/30))
 - Refinement questions now offer generated recommendations selected by default, with a separate custom answer field and explicit submission before work resumes. ([Taskbot #83](https://taskbot.apps.janjaap.de/p/bobs-factory/t/83))
 - Review Guide headers now link to the PR, branch and originating ticket, with simple GitHub CLI and Git checkout commands that copy on click, visible copy confirmation and manual copying when clipboard access fails. ([#28](https://github.com/Attraccess/bobs-factory/pull/28))
 - Provide durable capacity limits for agents and intensive workflow steps, with four slots by default, live capacity settings, separate queue states and cancellable queued work. Recipes can classify scripts and tools, including fanout branches, and separate the capacity and Run titles cards with consistent spacing. Preserve unsaved capacity settings through app updates and keep passive handoff polling outside the pool. Managed conversations resume through admission after each completed turn. Keep Slack/Zulip message submission available during capacity waits, visibly mark queued messages, and preserve pending follow-ups through restart. Concurrent submissions persist atomically so rejected messages cannot return after restart, while ordinary history saves remain batched and responsive. ([Taskbot #37](https://taskbot.apps.janjaap.de/p/bobs-factory/t/37), [#20](https://github.com/Attraccess/bobs-factory/pull/20))
@@ -65,6 +66,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve frozen specialist review, requirement coverage and redacted execution results when integrating independent execution profiles and dedicated Settings pages. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
 - Preserve specialist coverage and disagreement evidence when integrating review-guide scope classification, system maps and Decide feedback controls. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve specialist role editing and exact-step saves when integrating dashboard input resets; unsaved edits reset while required review output validation remains enforced. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
@@ -73,6 +76,13 @@ All notable changes to this project will be documented in this file.
 - Retain generated recommendations on requirement-extraction questions while enforcing specialist inventory validation and explicit human submission. Notify the originating ticket when restored questions or recommendations change, without duplicating unchanged waits. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve resolved specialist disagreements, their rationale and supporting evidence in exported review guide Markdown. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Save instance concurrency through public proxies without a false PWA update loop, and report blocked or unverified responses as recoverable connection errors. ([#45](https://github.com/Attraccess/bobs-factory/pull/45))
+
+- Reconcile execution profiles with fresh-input behavior and current review-guide requirements, cover the prepared Claude executable in cross-platform runner tests, and check background feedback delivery without a fragile timing limit. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
+- Keep the fixer’s existing conversation when answering assistance questions, including after a restart or a request for a simpler explanation. Process new replies without replaying the previous answer or completed steps. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
+- Preserve independent composer execution choices across reloads and updates, and avoid diagnostic DNS stalls when previewing Claude execution profiles. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 - Update the routing prompt test to cover the current review-guide requirements and restore CI validation ([#44](https://github.com/Attraccess/bobs-factory/pull/44)).
 - Recover PR/worktree revision mismatches through the configured CI fixer; preserve both revisions and wait for assistance when synchronization makes no progress, keeping old CI from approving newer work. ([#43](https://github.com/Attraccess/bobs-factory/pull/43))
 

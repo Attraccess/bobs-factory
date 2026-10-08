@@ -1,11 +1,15 @@
 import { spawn } from "node:child_process";
 import { runtimeAssetPath } from "bobs-factory-core";
-import { loadCursorSdk } from "bobs-factory-cursor-runner";
+import { loadCursorSdk, serveCursorWorker } from "bobs-factory-cursor-runner";
 import { serveFactoryContext } from "bobs-factory-mcp-tools";
 
 /** Dispatch before logging, env loading or application bootstrap: protocol stdout is clean. */
 export async function runInternal(args: string[]): Promise<void> {
 	const [mode, ...rest] = args;
+	if (mode === "cursor-worker") {
+		serveCursorWorker();
+		return;
+	}
 	if (mode === "factory-context") {
 		await serveFactoryContext(rest[0]);
 		return;

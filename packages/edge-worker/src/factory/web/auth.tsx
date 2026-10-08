@@ -227,7 +227,7 @@ export function AccessSettings() {
 	}, [run, load]);
 	return (
 		<div className="access-settings">
-			<h1>Settings</h1>
+			<h2>Access</h2>
 			<p className="intro">Manage access to your Factory.</p>
 			<section className="settings-card" aria-labelledby="passkeys-heading">
 				<div className="settings-heading">

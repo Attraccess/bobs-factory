@@ -97,8 +97,8 @@ export class CodexConfigBuilder {
 	private resolveCodexHome(): string {
 		const codexHome =
 			this.config.codexHome ||
-			process.env.CODEX_HOME ||
-			join(homedir(), ".codex");
+			(this.config.childEnvironment ?? process.env).CODEX_HOME ||
+			join(this.config.childEnvironment?.HOME ?? homedir(), ".codex");
 		mkdirSync(codexHome, { recursive: true });
 		return codexHome;
 	}
@@ -106,15 +106,19 @@ export class CodexConfigBuilder {
 	private buildEnvOverride(
 		codexHome: string,
 	): Record<string, string> | undefined {
-		if (!this.config.codexHome) {
+		if (!this.config.codexHome && !this.config.childEnvironment) {
 			return undefined;
 		}
 		const env: Record<string, string> = {};
-		for (const [key, value] of Object.entries(process.env)) {
+		for (const [key, value] of Object.entries(
+			this.config.childEnvironment ?? process.env,
+		)) {
 			if (typeof value === "string") {
 				env[key] = value;
 			}
 		}
+		if (this.config.childEnvironment)
+			Object.assign(env, this.config.additionalEnv);
 		env.CODEX_HOME = codexHome;
 		return env;
 	}
@@ -131,17 +135,29 @@ export class CodexConfigBuilder {
 	private buildConfigOverrides(): CodexConfigOverrides | undefined {
 		const { sandbox_workspace_write: _dropped, ...rest } =
 			this.config.configOverrides ?? {};
-		const configOverrides: CodexConfigOverrides = { ...rest };
+		const configOverrides: CodexConfigOverrides = {
+			...rest,
+			...((this.config.runnerSettings as CodexConfigOverrides) ?? {}),
+		};
 		if (this.config.serviceTier)
 			configOverrides.service_tier =
 				this.config.serviceTier === "fast" ? "fast" : "default";
 
 		const mcpServers = buildCodexMcpServersConfig({
+			childEnvironment: this.config.childEnvironment,
 			workingDirectory: this.config.workingDirectory,
 			mcpConfigPath: this.config.mcpConfigPath,
 			mcpConfig: this.config.mcpConfig,
 			allowedTools: this.config.allowedTools,
+			disallowedTools: this.config.disallowedTools,
 		});
+		for (const name of this.config.codexDisabledMcp ?? []) {
+			configOverrides.mcp_servers = {
+				...((configOverrides.mcp_servers as Record<string, CodexConfigValue>) ??
+					{}),
+				[name]: { enabled: false },
+			};
+		}
 		if (mcpServers) {
 			const existingMcpServers = configOverrides.mcp_servers;
 			configOverrides.mcp_servers =
@@ -170,15 +186,19 @@ export class CodexConfigBuilder {
 		const fallback = this.config.fallbackModel;
 		if (!model || !fallback || fallback === model) return;
 
-		const apiKey = process.env.OPENAI_API_KEY;
+		const sourceEnv = {
+			...(this.config.childEnvironment ?? process.env),
+			...(this.config.childEnvironment ? this.config.additionalEnv : {}),
+		};
+		const apiKey = sourceEnv.OPENAI_API_KEY;
 		if (!apiKey) return;
 
 		if (await this.hasCodexSubscription(signal)) return;
 		signal?.throwIfAborted();
 
 		const baseUrl = (
-			process.env.OPENAI_BASE_URL ||
-			process.env.OPENAI_API_BASE ||
+			sourceEnv.OPENAI_BASE_URL ||
+			sourceEnv.OPENAI_API_BASE ||
 			"https://api.openai.com/v1"
 		).replace(/\/+$/, "");
 
@@ -215,7 +235,11 @@ export class CodexConfigBuilder {
 			const { stdout, stderr } = await execFileAsync(
 				codexBin,
 				["login", "status"],
-				{ timeout: 5_000, ...(signal ? { signal } : {}) },
+				{
+					timeout: 5_000,
+					env: this.buildEnvOverride(this.resolveCodexHome()),
+					...(signal ? { signal } : {}),
+				},
 			);
 			const result = /logged in using chatgpt/i.test(stdout + stderr);
 			console.log(

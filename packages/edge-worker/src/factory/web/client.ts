@@ -125,7 +125,12 @@ export async function api<T = any>(
 	// Bind the write to the configuration shown when it began, before async checks.
 	const configRevision =
 		write &&
-		["/api/workflows", "/api/title-settings", "/api/runs"].includes(path)
+		[
+			"/api/workflows",
+			"/api/title-settings",
+			"/api/execution-profiles",
+			"/api/runs",
+		].includes(path)
 			? client.getQueryData<any>(["config"])?.configRevision
 			: undefined;
 	try {
@@ -152,8 +157,18 @@ export async function api<T = any>(
 			throw new Error("Sign in required");
 		}
 		if (epoch !== accessGeneration()) throw new Error("Session changed");
-		if (response.headers.get("X-Factory-Build") !== uiBuild) {
-			versionMismatch(response.headers.get("X-Factory-Build") ?? undefined);
+		const responseBuild = response.headers.get("X-Factory-Build");
+		if (!responseBuild) {
+			const message =
+				response.status === 403
+					? "Factory request was blocked (HTTP 403). Check the public connection and reconnect."
+					: "Factory response could not be verified. Check the public connection and reconnect.";
+			disconnected(message);
+			await response.body?.cancel();
+			throw new Error(message);
+		}
+		if (responseBuild !== uiBuild) {
+			versionMismatch(responseBuild);
 			throw new Error("Factory version changed. Update before continuing.");
 		}
 		const body = await response.json();

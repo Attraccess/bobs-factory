@@ -1583,8 +1583,7 @@ kbd {
 	padding-left: 12px;
 	color: var(--muted);
 }
-.recipes,
-.recipe-settings {
+.recipes {
 	display: grid;
 	gap: 18px;
 }
@@ -4185,6 +4184,97 @@ kbd {
 	line-height: 1.65;
 }
 
+/* Factory settings are separate pages with persistent section navigation. */
+.settings-layout {
+	display: grid;
+	grid-template-columns: 210px minmax(0, 1fr);
+	gap: 24px;
+	align-items: start;
+}
+.settings-nav {
+	display: grid;
+	gap: 6px;
+}
+.settings-nav a {
+	display: grid;
+	gap: 4px;
+	padding: 12px;
+	border: 1px solid var(--line);
+	border-radius: 12px;
+	text-decoration: none;
+	color: var(--text);
+	background: var(--surface);
+}
+.settings-nav small {
+	color: var(--secondary);
+}
+.settings-nav a[aria-current="page"] {
+	border-color: var(--text);
+	box-shadow: inset 3px 0 var(--text);
+}
+.settings-content {
+	min-width: 0;
+}
+.settings-content > .recipe {
+	margin: 0;
+}
+.settings-save {
+	margin-top: 24px;
+	padding-top: 16px;
+	border-top: 1px solid var(--line);
+}
+.profile-row {
+	display: flex;
+	gap: 8px;
+	align-items: start;
+	margin-bottom: 8px;
+}
+.profile-row .button:first-child {
+	flex: 1;
+	min-width: 0;
+	border-radius: 14px;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	text-align: left;
+}
+.profile-row .button:last-child {
+	flex: 0 0 auto;
+}
+@media (max-width: 640px) {
+	.settings-layout {
+		grid-template-columns: minmax(0, 1fr);
+		gap: 20px;
+	}
+	.settings-nav {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.settings-nav a {
+		padding: 10px;
+	}
+}
+.execution-editor {
+	margin: 1rem 0;
+}
+.execution-editor fieldset {
+	margin: 1rem 0;
+	padding: 1rem;
+	border: 1px solid var(--line);
+	border-radius: 1rem;
+}
+.execution-editor legend {
+	padding: 0 0.4rem;
+	font-weight: 700;
+}
+.execution-editor label:has(input[type="checkbox"]) {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+.execution-editor input[type="checkbox"] {
+	width: 1.1rem;
+	height: 1.1rem;
+	flex: 0 0 auto;
+}
 .auth-screen {
 	min-height: 100dvh;
 	display: grid;

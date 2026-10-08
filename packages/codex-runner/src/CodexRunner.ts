@@ -137,7 +137,11 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	getMessages(): SDKMessage[] {
-		return this.mapper.getMessages();
+		return this.config.redact
+			? JSON.parse(
+					this.config.redact(JSON.stringify(this.mapper.getMessages())),
+				)
+			: this.mapper.getMessages();
 	}
 
 	getFormatter(): IMessageFormatter {
@@ -245,7 +249,13 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 			},
 			getSessionId: () => self.sessionInfo?.sessionId || "pending",
 			getStagedSkillNames: () => self.skillStager.getStagedSkillNames(),
-			emitMessage: (message) => self.emit("message", message),
+			emitMessage: (message) =>
+				self.emit(
+					"message",
+					self.config.redact
+						? JSON.parse(self.config.redact(JSON.stringify(message)))
+						: message,
+				),
 			onThreadStarted: (threadId) => {
 				if (self.sessionInfo) {
 					self.sessionInfo.sessionId = threadId;
@@ -261,12 +271,12 @@ export class CodexRunner extends EventEmitter implements IAgentRunner {
 		}
 
 		this.sessionInfo.isRunning = false;
-		const messages = this.mapper.finalize({
+		this.mapper.finalize({
 			caughtError,
 			wasStopped: this.wasStopped,
 		});
 		await this.cleanupRuntimeState();
-		this.emit("complete", messages);
+		this.emit("complete", this.getMessages());
 	}
 
 	private async cleanupRuntimeState(): Promise<void> {

@@ -260,6 +260,38 @@ it("checks response versions before consuming potentially incompatible data", as
 	expect(pwaState().status).toBe("mismatch");
 });
 
+it("reports a proxy rejection without trapping the app in an update loop", async () => {
+	const response = new Response("<html>403 Forbidden</html>", {
+		status: 403,
+		headers: { "Content-Type": "text/html" },
+	});
+	const json = vi.spyOn(response, "json");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (path) => (path === "/api/version" ? version() : response)),
+	);
+	await expect(
+		api("/api/capacity", {
+			method: "PUT",
+			body: '{"concurrency":4}',
+		}),
+	).rejects.toThrow("blocked (HTTP 403)");
+	expect(json).not.toHaveBeenCalled();
+	expect(pwaState().status).toBe("offline");
+	await checkVersion();
+	authoritativeReady();
+	expect(pwaState().status).toBe("ready");
+});
+
+it("rejects unverified successful responses without treating them as a new build", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({ capacity: { limit: 4 } })),
+	);
+	await expect(api("/api/config")).rejects.toThrow("could not be verified");
+	expect(pwaState().status).toBe("offline");
+});
+
 it("releases a rejected SSE response before retrying or waiting for an update", async () => {
 	const cancel = vi.fn();
 	const response = new Response(new ReadableStream({ cancel }), {

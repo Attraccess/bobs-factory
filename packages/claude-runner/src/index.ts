@@ -20,6 +20,7 @@ export {
 	type ToolName,
 	writeTools,
 } from "./config.js";
+export { resolveClaudeExecutable } from "./executable.js";
 export {
 	ClaudeMessageFormatter,
 	type IMessageFormatter,

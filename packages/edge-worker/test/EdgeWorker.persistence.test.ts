@@ -7,14 +7,15 @@ import type {
 } from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
+import type { MachineCapacity } from "../src/MachineCapacity.js";
 
 interface PersistenceAccess {
-	runnerSlots: { ready(): Promise<void> };
 	savePersistedState(
 		requireSuccess?: boolean,
 		update?: () => () => void,
 	): Promise<void>;
 	persistenceManager: PersistenceManager;
+	runnerSlots: MachineCapacity;
 }
 
 const homes: string[] = [];
@@ -36,7 +37,7 @@ it.each([
 		repositories: [],
 	});
 	const access = worker as unknown as PersistenceAccess;
-	// Constructor starts capacity initialization; finish it before removing the home.
+	// Finish constructor-owned filesystem writes before the fixture can be removed.
 	await access.runnerSlots.ready();
 	let revision = "initial";
 	vi.spyOn(worker, "serializeMappings").mockImplementation(() => ({

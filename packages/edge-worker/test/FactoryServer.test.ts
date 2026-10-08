@@ -1460,18 +1460,33 @@ it("protects and validates machine settings, exposing durable cross-worker polic
 				})
 			).statusCode,
 		).toBe(403);
-		for (const limit of [0, -1, 1.5, "2"]) {
+		for (const payload of [
+			...[0, -1, 1.5, "2"].flatMap((value) => [
+				{ limit: value },
+				{ concurrency: value },
+			]),
+			{},
+			{ limit: 2, concurrency: 3 },
+		]) {
 			expect(
 				(
 					await server.app.inject({
 						method: "PUT",
 						url: "/api/capacity",
 						headers,
-						payload: { limit },
+						payload,
 					})
 				).statusCode,
 			).toBe(400);
 		}
+		const concurrency = await server.app.inject({
+			method: "PUT",
+			url: "/api/capacity",
+			headers,
+			payload: { concurrency: 3 },
+		});
+		expect(concurrency.statusCode).toBe(200);
+		expect((await other.snapshot()).limit).toBe(3);
 		const saved = await server.app.inject({
 			method: "PUT",
 			url: "/api/capacity",

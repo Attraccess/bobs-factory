@@ -12,7 +12,7 @@ import {
 	useParams,
 } from "react-router-dom";
 import { ArtifactCard, Inspector } from "./artifacts";
-import { AccessBoundary, AccessSettings } from "./auth";
+import { AccessBoundary } from "./auth";
 import {
 	active,
 	ago,
@@ -35,6 +35,7 @@ import {
 	workingLabel,
 } from "./client";
 import { RunConversation } from "./conversation";
+import { ExecutionDetails } from "./execution";
 import {
 	FocusCard,
 	originLabel,
@@ -62,6 +63,7 @@ import {
 	writeStored,
 	writeTextStored,
 } from "./review-state";
+import { Settings } from "./settings";
 import {
 	applyTheme,
 	readThemeChoice,
@@ -175,7 +177,8 @@ function Header({
 				<nav className="nav-pill" aria-label="Main navigation">
 					<Link
 						aria-current={
-							!["/recipes", "/settings"].includes(location.pathname)
+							location.pathname === "/" ||
+							location.pathname.startsWith("/runs/")
 								? "page"
 								: undefined
 						}
@@ -193,7 +196,7 @@ function Header({
 					</Link>
 					<Link
 						aria-current={
-							location.pathname === "/settings" ? "page" : undefined
+							location.pathname.startsWith("/settings") ? "page" : undefined
 						}
 						to="/settings"
 					>
@@ -897,6 +900,7 @@ function RunPage({
 					)}
 				</div>
 			</header>
+			<ExecutionDetails run={run} />
 			<RunOrigin run={run} />
 			{kind && !reason && (
 				<FocusCard
@@ -1142,7 +1146,7 @@ function App() {
 								}
 							/>
 							<Route path="/recipes" element={<Recipes />} />
-							<Route path="/settings" element={<AccessSettings />} />
+							<Route path="/settings/*" element={<Settings />} />
 							<Route
 								path="/runs/:id/review"
 								element={

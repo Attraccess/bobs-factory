@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { passiveTools } from "../CapacityPolicy";
+import type { ExecutionSelection } from "../ExecutionProfiles";
 import { useAction, useConfig } from "./client";
+import { ExecutionSelectors } from "./execution";
 import { useCurrentForm, useFormState } from "./form-state";
 import { revisionOf } from "./restoration";
 import { Button, Modal, useToast } from "./ui";
@@ -196,6 +198,7 @@ export function Composer({
 		config.defaultRunner,
 		config.reasoningLevels,
 		config.serviceTierRunners,
+		config.executionProfiles,
 	]);
 	const [workflowId, setWorkflow] = useFormState(
 			launchConfig,
@@ -213,6 +216,10 @@ export function Composer({
 			{},
 		),
 		[settings, setSettings] = useFormState(inputContext, {}),
+		[execution, setExecution] = useFormState<ExecutionSelection>(
+			inputContext,
+			{},
+		),
 		[agentOpen, setAgentOpen] = useFormState(inputContext, false);
 	const workflows = config.workflows.filter((w: any) =>
 			w.allowedTriggers.includes("manual"),
@@ -235,6 +242,7 @@ export function Composer({
 					workflow: workflow.id,
 					inputs,
 					...settings,
+					execution,
 				},
 			});
 			if (!isCurrent()) return;
@@ -309,6 +317,16 @@ export function Composer({
 						</div>
 					</details>
 				)}
+				<ExecutionSelectors
+					key={inputContext}
+					config={config}
+					repositoryId={repo}
+					workflow={workflow?.id}
+					model={(settings as any).model}
+					value={execution}
+					onChange={setExecution}
+					runner={(settings as any).runner}
+				/>
 				{agentOpen && (
 					<AgentSettings
 						config={config}
@@ -433,69 +451,6 @@ function ownRoles(
 				: [],
 	);
 }
-function MachineCapacitySettings({ config }: { config: any }) {
-	const capacity = config.capacity;
-	const action = useAction("capacity", revisionOf(capacity?.limit));
-	const [draft, setDraft] = useFormState<{ limit: string } | undefined>(
-		revisionOf(capacity?.limit),
-		undefined,
-	);
-	const limit = draft?.limit ?? String(capacity?.limit ?? 4);
-	if (!capacity) return null;
-	return (
-		<section className="recipe" aria-labelledby="machine-capacity">
-			<h2 id="machine-capacity">Instance capacity</h2>
-			<p>
-				One pool for this Bob’s Factory instance’s agents and intensive workflow
-				steps. Default: {capacity.defaultLimit} slots.
-			</p>
-			<p role="status">
-				Instance limit: {capacity.limit}{" "}
-				{capacity.limit === 1 ? "slot" : "slots"}. {capacity.active} executing ·{" "}
-				{capacity.stopping} stopping · {capacity.queued} waiting for capacity
-			</p>
-			{capacity.error && <p role="alert">{capacity.error}</p>}
-			{capacity.conflict && <p role="alert">{capacity.conflict}</p>}
-			<form
-				onSubmit={async (event) => {
-					event.preventDefault();
-					if (action.isPending) return;
-					try {
-						await action.mutateAsync({
-							path: "/api/capacity",
-							method: "PUT",
-							body: { limit: Number(limit) },
-						});
-						setDraft(undefined);
-					} catch {}
-				}}
-			>
-				<label>
-					Instance slot limit{" "}
-					<input
-						type="number"
-						min="1"
-						step="1"
-						required
-						disabled={action.isPending}
-						value={limit}
-						onChange={(event) => {
-							setDraft({ limit: event.target.value });
-						}}
-					/>
-				</label>
-				<Button
-					type="submit"
-					requiresConnection
-					disabled={draft === undefined || action.isPending}
-				>
-					Save instance limit
-				</Button>
-				{action.error && <p role="alert">{action.error.message}</p>}
-			</form>
-		</section>
-	);
-}
 function CapacityClassification({
 	disabled,
 	steps,
@@ -562,59 +517,6 @@ function CapacityClassification({
 		</div>
 	);
 }
-function RunTitleSettings({ config }: { config: any }) {
-	const [draft, setDraft] = useFormState<{ value: any } | undefined>(
-		revisionOf(config.titleGeneration ?? {}),
-		undefined,
-	);
-	const value = draft?.value ?? config.titleGeneration ?? {};
-	const dirty = draft !== undefined;
-	const action = useAction(
-			"title-settings",
-			revisionOf(config.titleGeneration ?? {}),
-		),
-		toast = useToast();
-	return (
-		<section className="recipe" aria-labelledby="run-title-settings">
-			<h2 id="run-title-settings">Run titles</h2>
-			<p>
-				Choose a fast, inexpensive agent to name all new runs. Runs start with
-				their ID while titles generate in the background. These settings are
-				independent of execution agents.
-			</p>
-			<AgentSettings
-				config={config}
-				value={value}
-				label="Global default"
-				modelPlaceholder="Provider global default"
-				onChange={(next) => {
-					setDraft({ value: next });
-				}}
-			/>
-			<Button
-				requiresConnection
-				disabled={!dirty || action.isPending}
-				onClick={() =>
-					void action
-						.mutateAsync({
-							path: "/api/title-settings",
-							method: "PUT",
-							body: value,
-						})
-						.then(() => {
-							setDraft(undefined);
-							toast({ text: "Run title settings saved" });
-						})
-						.catch(() => {})
-				}
-			>
-				Save title settings
-			</Button>
-			{action.error && <p role="alert">{action.error.message}</p>}
-		</section>
-	);
-}
-
 export function Recipes() {
 	const configQuery = useConfig(),
 		toast = useToast();
@@ -661,10 +563,10 @@ export function Recipes() {
 				recipe is used when nothing else matches. Launch methods apply to new
 				runs; existing runs retain their definitions.
 			</p>
-			<div className="recipe-settings">
-				<MachineCapacitySettings config={config} />
-				<RunTitleSettings config={config} />
-			</div>
+			<p className="muted">
+				Factory-wide profiles, defaults, capacity and run titles are in{" "}
+				<Link to="/settings">Settings</Link>.
+			</p>
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (
 					<article className="recipe" key={workflow.id}>
