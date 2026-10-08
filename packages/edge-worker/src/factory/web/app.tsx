@@ -12,12 +12,14 @@ import {
 	useParams,
 } from "react-router-dom";
 import { ArtifactCard, Inspector } from "./artifacts";
+import { AccessBoundary } from "./auth";
 import {
 	active,
 	ago,
 	api,
 	artifactsOf,
 	attention,
+	capacityPhaseLabel,
 	client,
 	finished,
 	icons,
@@ -30,8 +32,10 @@ import {
 	useLiveUpdates,
 	useRun,
 	useRuns,
+	workingLabel,
 } from "./client";
 import { RunConversation } from "./conversation";
+import { ExecutionDetails } from "./execution";
 import {
 	FocusCard,
 	originLabel,
@@ -42,13 +46,14 @@ import {
 	WorkingRow,
 } from "./focus";
 import { Composer, Recipes } from "./forms";
+import { NotificationsControl } from "./notifications-ui";
 import { pwaState, startPwa, usePwa } from "./pwa";
-import { ConnectionNotice, InstallControl, RecoveredDrafts } from "./pwa-ui";
+import { ConnectionNotice, InstallControl } from "./pwa-ui";
 import { useReadingPosition } from "./reading-position";
 import {
 	completeRestoration,
-	forgetDraft,
-	restoredDraft,
+	forgetView,
+	restoredView,
 	useRestorableState,
 } from "./restoration";
 import { ReviewPage } from "./review-page";
@@ -59,6 +64,14 @@ import {
 	writeStored,
 	writeTextStored,
 } from "./review-state";
+import { Settings } from "./settings";
+import {
+	applyTheme,
+	readThemeChoice,
+	resolveTheme,
+	themeChoice,
+	themeQuery,
+} from "./theme";
 import {
 	Bob,
 	Button,
@@ -120,27 +133,25 @@ function useSettle() {
 	};
 }
 function useTheme() {
-	const [choice, setChoice] = useState(() =>
-			readTextStored("factory-theme", "system"),
-		),
+	const [choice, setChoice] = useState(readThemeChoice),
 		[systemDark, setSystemDark] = useState(
-			() => matchMedia("(prefers-color-scheme: dark)").matches,
+			() => matchMedia(themeQuery).matches,
 		);
-	useEffect(() => {
-		const media = matchMedia("(prefers-color-scheme: dark)"),
+	useLayoutEffect(() => {
+		const media = matchMedia(themeQuery),
 			changed = (event: MediaQueryListEvent) => setSystemDark(event.matches);
 		media.addEventListener("change", changed);
+		setSystemDark(media.matches);
 		return () => media.removeEventListener("change", changed);
 	}, []);
-	const dark = choice === "dark" || (choice === "system" && systemDark);
-	useEffect(() => {
-		document.documentElement.dataset.theme = dark ? "dark" : "light";
+	useLayoutEffect(() => {
+		applyTheme(resolveTheme(choice, systemDark));
 		writeTextStored("factory-theme", choice);
-		document
-			.querySelector('meta[name="theme-color"]')
-			?.setAttribute("content", dark ? "#16122a" : "#fff4f6");
-	}, [dark, choice]);
-	return { choice, setChoice };
+	}, [systemDark, choice]);
+	return {
+		choice,
+		setChoice: (value: string) => setChoice(themeChoice(value)),
+	};
 }
 function Header({
 	count,
@@ -166,7 +177,12 @@ function Header({
 				</Link>
 				<nav className="nav-pill" aria-label="Main navigation">
 					<Link
-						aria-current={location.pathname !== "/recipes" ? "page" : undefined}
+						aria-current={
+							location.pathname === "/" ||
+							location.pathname.startsWith("/runs/")
+								? "page"
+								: undefined
+						}
 						to="/"
 						state={todayContext(location.pathname, location.state)}
 					>
@@ -179,9 +195,18 @@ function Header({
 					>
 						Recipes
 					</Link>
+					<Link
+						aria-current={
+							location.pathname.startsWith("/settings") ? "page" : undefined
+						}
+						to="/settings"
+					>
+						Settings
+					</Link>
 				</nav>
 				<div className="header-actions">
 					<InstallControl />
+					<NotificationsControl />
 					<Dropdown.Root>
 						<Dropdown.Trigger asChild>
 							<Button variant="icon" aria-label={`Theme: ${theme.choice}`}>
@@ -741,12 +766,12 @@ function RunPage({
 			`panels/${id}`,
 			{},
 		),
-		panelsEdited = useRef(Boolean(restoredDraft(`panels/${id}`)));
+		panelsEdited = useRef(Boolean(restoredView(`panels/${id}`)));
 	// Auto-opened steps belong to this mounted page. Retain historical panel
 	// state only when the user changed it or it was restored from an update.
 	useEffect(
 		() => () => {
-			if (!panelsEdited.current) forgetDraft(`panels/${id}`);
+			if (!panelsEdited.current) forgetView(`panels/${id}`);
 		},
 		[id],
 	);
@@ -800,9 +825,19 @@ function RunPage({
 		artifacts = artifactsOf(run),
 		steps = stepsOf(run, config),
 		visited = new Set(run.history?.map((h: any) => h.step));
-	const rows = steps.length
+	const graphRows = steps.length
 			? steps
-			: [{ id: "simple", key: "simple", name: "Cyrus session" }],
+			: [{ id: "simple", key: "simple", name: "Bob’s Factory session" }],
+		rows = [
+			...graphRows,
+			...Object.keys(run.capacityLeaves ?? {})
+				.filter((key) => !graphRows.some((step) => step.key === key))
+				.map((key) => ({
+					id: key,
+					key,
+					name: key === "setup" ? "Prepare workspace" : key.split("/").at(-1),
+				})),
+		],
 		pr = run.outputs?.["draft-pr"]?.url;
 	return (
 		<>
@@ -825,7 +860,7 @@ function RunPage({
 											? run.outputs?.guide
 												? "Ready for your review"
 												: "Done — take a look"
-											: "Working")}
+											: workingLabel(run))}
 						</span>
 						<RunMeta run={run} config={config} />
 						<span>started {ago(run.createdAt)}</span>
@@ -834,6 +869,9 @@ function RunPage({
 					<RunTitleStatus run={run} />
 				</div>
 				<div className="actions">
+					{run.status === "capacity-waiting" && (
+						<p role="status">Waiting for instance capacity</p>
+					)}
 					{active(run.status) ? (
 						<ConfirmStop
 							requiresConnection
@@ -864,6 +902,7 @@ function RunPage({
 					)}
 				</div>
 			</header>
+			<ExecutionDetails run={run} />
 			<RunOrigin run={run} />
 			{kind && !reason && (
 				<FocusCard
@@ -917,8 +956,13 @@ function RunPage({
 								(h: any) => h.step === step.key,
 							).length,
 							started =
-								visited.has(step.key) || current === step.key || !steps.length,
-							artifact = artifacts.find((a) => a.name === step.id),
+								visited.has(step.key) ||
+								Boolean(run.capacityLeaves?.[step.key]) ||
+								current === step.key ||
+								!steps.length,
+							artifact =
+								artifacts.find((a) => a.name === step.key) ??
+								artifacts.find((a) => a.name === step.id),
 							isOpen = open[step.key] ?? (!current && i === rows.length - 1);
 						return (
 							<li
@@ -937,6 +981,11 @@ function RunPage({
 								>
 									<span className="step-dot">{icons[step.id] ?? "⚙️"}</span>
 									<strong>{step.name}</strong>
+									{run.capacityLeaves?.[step.key] && (
+										<span className="chip">
+											{capacityPhaseLabel(run.capacityLeaves[step.key].phase)}
+										</span>
+									)}
 									{count > 1 && <span className="chip">↺ {count}</span>}
 									{artifact && (
 										<span role="img" aria-label="Has artifact">
@@ -1080,7 +1129,6 @@ function App() {
 			/>
 			<main id="main-content" className="page">
 				<ConnectionNotice hasData={Boolean(config || runs.length)} />
-				<RecoveredDrafts />
 				<div inert={pwa.updating}>
 					{!config || (runsQuery.isLoading && !runsQuery.data) ? (
 						pwa.status === "offline" || pwa.status === "mismatch" ? (
@@ -1100,6 +1148,7 @@ function App() {
 								}
 							/>
 							<Route path="/recipes" element={<Recipes />} />
+							<Route path="/settings/*" element={<Settings />} />
 							<Route
 								path="/runs/:id/review"
 								element={
@@ -1185,7 +1234,9 @@ createRoot(document.getElementById("root")!).render(
 	<QueryClientProvider client={client}>
 		<HashRouter>
 			<ToastProvider>
-				<App />
+				<AccessBoundary>
+					<App />
+				</AccessBoundary>
 			</ToastProvider>
 		</HashRouter>
 	</QueryClientProvider>,

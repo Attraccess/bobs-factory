@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIIssueTrackerService } from "cyrus-core";
+import { CLIIssueTrackerService } from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { TakeoverSourceSchema } from "../src/factory/Takeover.js";
@@ -14,6 +14,7 @@ import {
 	taskbotServer,
 	taskbotSource,
 } from "../src/factory/TicketTracking.js";
+import { validateWorkflows } from "../src/factory/Workflow.js";
 import {
 	type FactoryRun,
 	WorkflowRuntime,
@@ -97,6 +98,113 @@ function fixture() {
 		home,
 	};
 }
+it.each([
+	"question",
+	"answer",
+	"reason",
+	"removed",
+	"unchanged",
+	"legacy",
+] as const)("delivers restored assistance once per question batch (%s)", async (changed) => {
+	const f = fixture();
+	const output = {
+		approved: false,
+		qaBlocked: true,
+		questions: ["Which fixture account is ready?"],
+		questionRecommendations: [
+			{ questionIndex: 0, answer: "Restore access", reason: "QA needs access" },
+		],
+	};
+	let trackedWaits = 0;
+	const hooks = {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => structuredClone(output),
+		track: async (
+			run: FactoryRun,
+			milestone: Parameters<TicketTracking["record"]>[1],
+		) => {
+			await f.service.record(run, milestone);
+			if (milestone.key.startsWith("questions:")) trackedWaits++;
+		},
+	};
+	let runtime = new WorkflowRuntime(f.home, hooks);
+	const definition = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "qa-assistance",
+			name: "QA assistance",
+			steps: [
+				{ id: "capture", name: "Capture", type: "agent", prompt: "Mock" },
+				{ id: "visual-review", name: "Review", type: "agent", prompt: "Mock" },
+				{
+					id: "visual-gate",
+					name: "Gate",
+					type: "tool",
+					tool: "visual-gate",
+					qaContract: "qa-v1",
+					next: "end",
+				},
+			],
+		},
+	]).at(-1)!;
+	const run = runtime.create({
+		repositoryId: "repo",
+		workspace: f.home,
+		input: source,
+		workflow: definition,
+		triggerOrigin: {
+			type: "manual",
+			workflowId: definition.id,
+			at: new Date().toISOString(),
+		},
+	});
+	run.ticketReference = ref;
+	const comments = () =>
+		f.ticket.comments.filter((c) =>
+			c.body.startsWith("Factory needs assistance:"),
+		);
+	const wait = (count: number) =>
+		vi.waitFor(() => {
+			expect(runtime.get(run.id).status).toBe("waiting");
+			expect(trackedWaits).toBe(count);
+			expect(
+				runtime.get(run.id).ticketSync?.receipts.every((r) => r.delivered),
+			).toBe(true);
+		});
+	try {
+		void runtime.launch(run);
+		await wait(1);
+		expect(comments()).toHaveLength(1);
+		const original = run.questionBatchId;
+		await runtime.shutdown();
+		if (changed === "legacy") {
+			run.ticketSync!.receipts.find((r) =>
+				r.key.startsWith("questions:"),
+			)!.key = `questions:${run.step}:${run.answers.length}`;
+			runtime.save(run);
+		} else if (changed === "question")
+			output.questions[0] = "Which replacement account is ready?";
+		else if (changed === "removed") output.questionRecommendations = [];
+		else if (changed !== "unchanged")
+			output.questionRecommendations[0]![changed] = "Updated guidance";
+		for (let restart = 0; restart < 2; restart++) {
+			runtime = new WorkflowRuntime(f.home, hooks);
+			runtime.resumeAll();
+			await wait(restart + 2);
+			const replaced = !["unchanged", "legacy"].includes(changed);
+			expect(comments()).toHaveLength(replaced ? 2 : 1);
+			if (replaced) {
+				expect(runtime.get(run.id).questionBatchId).not.toBe(original);
+				expect(comments().at(-1)!.body).not.toBe(comments()[0]!.body);
+			} else expect(runtime.get(run.id).questionBatchId).toBe(original);
+			expect(runtime.get(run.id).answers).toEqual([]);
+			await runtime.shutdown();
+		}
+	} finally {
+		await runtime.shutdown();
+	}
+});
 it("resolves only designated origins, preserves instance/project, and rejects ambiguity", () => {
 	expect(originatingTicket(source)).toBe(source);
 	expect(originatingTicket(`Task source: ${source}`)).toBe(source);
@@ -131,6 +239,79 @@ it("resolves only designated origins, preserves instance/project, and rejects am
 			taskbot: { type: "http", url: "https://other.example/mcp" },
 		}),
 	).toThrow(/found 0/);
+});
+it("resolves uploaded Taskbot files and retains metadata through lifecycle synchronization", async () => {
+	const f = fixture();
+	const file = {
+		id: 100,
+		ticket_id: 77,
+		kind: "file",
+		url: null,
+		filename: "screenshot.png",
+		mime: "image/png",
+		size: 1471794,
+		title: "Screenshot",
+	};
+	const original = f.call.getMockImplementation()!;
+	f.call.mockImplementation(async (tool, args) => {
+		if (tool === "get_ticket")
+			return {
+				content: [
+					{
+						type: "text",
+						text: JSON.stringify({
+							...f.ticket,
+							attachments: [file, ...f.ticket.attachments],
+						}),
+					},
+				],
+			};
+		return original(tool, args);
+	});
+	expect(await f.adapter.read()).toEqual({
+		...f.ticket,
+		url: source,
+		attachments: [
+			{ ...file, url: "https://taskbot.example/api/project-a/files/100" },
+		],
+	});
+	const pr = "https://github.com/org/repo/pull/1";
+	await f.service.record(f.run, {
+		key: "start",
+		body: "Started",
+		stage: "in_progress",
+		pr,
+	});
+	await f.service.record(f.run, {
+		key: "review",
+		body: "Review underway",
+		stage: "in_review",
+		pr,
+	});
+	expect(f.ticket.status).toBe("in_review");
+	expect(f.run.ticketSync?.error).toBeUndefined();
+	expect((await f.adapter.read()).attachments).toEqual([
+		{ ...file, url: "https://taskbot.example/api/project-a/files/100" },
+		{ url: pr },
+	]);
+	expect(f.calls.filter((c) => c.tool === "add_attachment")).toHaveLength(1);
+});
+it.each([
+	{ kind: "link", url: null },
+	{ kind: "pr", url: null },
+	{ kind: "file", id: 0, url: null },
+	{ kind: "file", url: null },
+])("rejects attachments without a resolvable URL: %j", async (attachment) => {
+	const f = fixture();
+	f.call.mockResolvedValue({
+		content: [
+			{
+				type: "text",
+				text: JSON.stringify({ ...f.ticket, attachments: [attachment] }),
+			},
+		],
+	});
+	await expect(f.adapter.read()).rejects.toThrow();
 });
 it("delivers progress and one canonical PR attachment; only confirmed merge establishes Done", async () => {
 	const f = fixture();

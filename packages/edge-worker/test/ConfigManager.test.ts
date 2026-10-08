@@ -1,7 +1,11 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { EdgeWorkerConfig, ILogger, RepositoryConfig } from "cyrus-core";
+import type {
+	EdgeWorkerConfig,
+	ILogger,
+	RepositoryConfig,
+} from "bobs-factory-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConfigManager } from "../src/ConfigManager.js";
 
@@ -154,4 +158,27 @@ describe("ConfigManager", () => {
 			false,
 		);
 	});
+});
+
+it("clears an explicitly removed machine limit instead of retaining the previous value", async () => {
+	const home = await mkdtemp(join(tmpdir(), "capacity-config-removal-"));
+	const path = join(home, "config.json");
+	const manager = new ConfigManager(
+		{ repositories: [repo], maxConcurrentSessions: 2 },
+		logger,
+		path,
+		new Map([[repo.id, repo]]),
+	);
+	const changed = vi.fn();
+	manager.on("configChanged", changed);
+	try {
+		await writeFile(path, JSON.stringify({ repositories: [repo] }));
+		await (manager as any).handleConfigChange();
+		expect(changed).toHaveBeenCalledOnce();
+		expect(
+			changed.mock.lastCall![0].newConfig.maxConcurrentSessions,
+		).toBeUndefined();
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
 });

@@ -5,7 +5,7 @@ import type {
 	ErrorReporterLogAttributes,
 	ErrorReporterLogLevel,
 	ErrorReporterSeverity,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 export interface SentryErrorReporterOptions {
 	dsn: string;
@@ -13,7 +13,7 @@ export interface SentryErrorReporterOptions {
 	environment?: string;
 	/**
 	 * Tags applied to every event emitted by this reporter (e.g. `team_id` from
-	 * `CYRUS_TEAM_ID`). See https://docs.sentry.io/platform-redirect/?next=/enriching-events/tags
+	 * `BOBS_FACTORY_TEAM_ID`). See https://docs.sentry.io/platform-redirect/?next=/enriching-events/tags
 	 */
 	tags?: Record<string, string>;
 	/**
@@ -30,7 +30,7 @@ export interface SentryErrorReporterOptions {
 	sampleRate?: number;
 	/**
 	 * If true, prints debug logs from the SDK itself. Decoupled from
-	 * CYRUS_LOG_LEVEL — gate on the dedicated `CYRUS_SENTRY_DEBUG` env var so
+	 * BOBS_FACTORY_LOG_LEVEL — gate on the dedicated `BOBS_FACTORY_SENTRY_DEBUG` env var so
 	 * app-level debugging doesn't pull in the firehose of Sentry-internal
 	 * tracing/transport chatter.
 	 */
@@ -60,7 +60,7 @@ export interface SentryErrorReporterOptions {
 /**
  * Sentry-backed {@link ErrorReporter}.
  *
- * Single Responsibility: this class only knows how to translate Cyrus-shaped
+ * Single Responsibility: this class only knows how to translate Bob’s Factory-shaped
  * events into the Sentry SDK. It owns no application logic.
  *
  * The constructor initialises the Sentry SDK; therefore at most one instance
@@ -88,7 +88,7 @@ export class SentryErrorReporter implements ErrorReporter {
 			// Performance monitoring is intentionally disabled — we only ship
 			// error tracking. Flip this on later if we need transaction data.
 			tracesSampleRate: 0,
-			// Issues and Logs share a single gate (CYRUS_TEAM_ID upstream); by
+			// Issues and Logs share a single gate (BOBS_FACTORY_TEAM_ID upstream); by
 			// the time we get here both are wanted, so always enable Logs.
 			enableLogs: true,
 			beforeSend: options.beforeSend,
@@ -96,7 +96,7 @@ export class SentryErrorReporter implements ErrorReporter {
 			// Append integrations that enrich every event with structured data:
 			//   - extraErrorDataIntegration walks Error subclasses and serialises
 			//     non-standard own properties as `extra` (so e.g. `err.statusCode`,
-			//     `err.requestId`, custom Cyrus error fields surface in Sentry).
+			//     `err.requestId`, custom Bob’s Factory error fields surface in Sentry).
 			//   - consoleIntegration captures console.* output as breadcrumbs so
 			//     events arrive with a structured trail of the last log lines.
 			integrations: (defaults) => [
@@ -136,7 +136,7 @@ export class SentryErrorReporter implements ErrorReporter {
 		attributes?: ErrorReporterLogAttributes,
 	): void {
 		// Merge per-call attributes on top of the process-wide set so team_id
-		// (and any other CYRUS_* tag we configured) lands on every log record.
+		// (and any other BOBS_FACTORY_* tag we configured) lands on every log record.
 		const merged: ErrorReporterLogAttributes = {
 			...this.globalLogAttributes,
 			...attributes,

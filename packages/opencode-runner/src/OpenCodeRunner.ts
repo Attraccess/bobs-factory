@@ -1,4 +1,4 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import { cwd } from "node:process";
@@ -9,7 +9,8 @@ import type {
 	SDKMessage,
 	SDKResultMessage,
 	SDKUserMessage,
-} from "cyrus-core";
+} from "bobs-factory-core";
+import { spawnExecution as spawn } from "bobs-factory-core";
 import {
 	buildOpenCodeConfig,
 	buildOpenCodeRuntimeEnv,
@@ -390,8 +391,9 @@ export class OpenCodeRunner extends EventEmitter implements IAgentRunner {
 			const child = spawn(this.config.openCodePath || "opencode", args, {
 				cwd: this.config.workingDirectory || cwd(),
 				env: {
-					...process.env,
+					...(this.config.childEnvironment ?? process.env),
 					...this.config.env,
+					...(this.config.childEnvironment ? this.config.additionalEnv : {}),
 					...runtimeEnv,
 				},
 				stdio: ["pipe", "pipe", "pipe"],
@@ -533,7 +535,7 @@ export class OpenCodeRunner extends EventEmitter implements IAgentRunner {
 		}
 
 		return new Error(
-			`Invalid OpenCode model selector "${model}". Use a provider-qualified OpenCode model such as "openai/gpt-5.5" in runner config or select it with the Cyrus label "opencode/openai/gpt-5.5".`,
+			`Invalid OpenCode model selector "${model}". Use a provider-qualified OpenCode model such as "openai/gpt-5.5" in runner config or select it with the Bob’s Factory label "opencode/openai/gpt-5.5".`,
 		);
 	}
 
@@ -558,7 +560,7 @@ export class OpenCodeRunner extends EventEmitter implements IAgentRunner {
 			"--dir",
 			this.config.workingDirectory || cwd(),
 			"--title",
-			this.config.title || "Cyrus OpenCode session",
+			this.config.title || "Bob’s Factory OpenCode session",
 		];
 
 		if (this.config.model) {
@@ -836,13 +838,18 @@ export class OpenCodeRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	private pushMessage(message: SDKMessage): void {
+		if (this.config.redact)
+			message = JSON.parse(this.config.redact(JSON.stringify(message)));
 		this.messages.push(message);
 		this.emit("message", message);
 	}
 
 	private emitError(error: Error): void {
+		const safeError = this.config.redact
+			? new Error(this.config.redact(error.message))
+			: error;
 		if (this.listenerCount("error") > 0) {
-			this.emit("error", error);
+			this.emit("error", safeError);
 		}
 	}
 }

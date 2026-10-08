@@ -1,7 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentRunnerConfig, RunnerType } from "cyrus-core";
+import {
+	type AgentRunnerConfig,
+	executionScope,
+	type RunnerType,
+} from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
@@ -11,11 +15,11 @@ const { nativeCall, directCall } = vi.hoisted(() => ({
 	nativeCall: vi.fn(),
 	directCall: vi.fn(),
 }));
-vi.mock("cyrus-codex-runner", async (original) => ({
+vi.mock("bobs-factory-codex-runner", async (original) => ({
 	...(await original<object>()),
 	callCodexMcpTool: nativeCall,
 }));
-vi.mock("cyrus-mcp-tools", async (original) => ({
+vi.mock("bobs-factory-mcp-tools", async (original) => ({
 	...(await original<object>()),
 	callConfiguredTool: directCall,
 }));
@@ -33,7 +37,7 @@ function fixture(runner: RunnerType, acceptedRunner?: RunnerType) {
 	homes.push(home);
 	const worker = new EdgeWorker({
 		platform: "cli",
-		cyrusHome: home,
+		factoryHome: home,
 		repositories: [
 			{
 				id: "repo",
@@ -52,6 +56,14 @@ function fixture(runner: RunnerType, acceptedRunner?: RunnerType) {
 		buildAgentRunnerConfig(): Promise<{
 			runnerType: RunnerType;
 			config: AgentRunnerConfig;
+		}>;
+		factoryMcpConfig(run: FactoryRun): Promise<{
+			callTool(
+				server: string,
+				tool: string,
+				args: Record<string, unknown>,
+				signal: AbortSignal,
+			): Promise<unknown>;
 		}>;
 		factoryTicketAdapter(
 			run: FactoryRun,
@@ -84,7 +96,7 @@ function fixture(runner: RunnerType, acceptedRunner?: RunnerType) {
 		[],
 	);
 	const config: AgentRunnerConfig = {
-		cyrusHome: home,
+		factoryHome: home,
 		workingDirectory: home,
 		allowedTools: ["mcp__taskbot__get_ticket"],
 		mcpConfig: {
@@ -148,4 +160,34 @@ it("checks configured tool restrictions before native OAuth calls", async () => 
 	);
 	expect(nativeCall).not.toHaveBeenCalled();
 	expect(directCall).not.toHaveBeenCalled();
+});
+
+it.each([
+	undefined,
+	{ HOME: "/selected/home", SELECTED_ACCOUNT: "fixture" },
+])("keeps intensive stdio tool descendants attached to their execution lease with child environment %j", async (childEnvironment) => {
+	const { edge, run, config } = fixture("codex");
+	config.childEnvironment = childEnvironment;
+	config.mcpConfig = {
+		taskbot: { command: "fixture-tool", env: { CONFIGURED: "retained" } },
+	};
+	directCall.mockResolvedValue({ ok: true });
+	await executionScope.run({ token: "capacity-test-lease" }, async () => {
+		const { callTool } = await edge.factoryMcpConfig(run);
+		await callTool("taskbot", "get_ticket", {}, new AbortController().signal);
+	});
+	expect(directCall).toHaveBeenCalledWith(
+		expect.objectContaining({
+			env: {
+				CONFIGURED: "retained",
+				BOBS_FACTORY_EXECUTION_LEASE: "capacity-test-lease",
+			},
+		}),
+		"get_ticket",
+		{},
+		expect.any(AbortSignal),
+		run.workspace,
+		childEnvironment,
+	);
+	expect(nativeCall).not.toHaveBeenCalled();
 });

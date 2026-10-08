@@ -7,7 +7,7 @@ import {
 	type ILogger,
 	type RepositoryConfig,
 	type Webhook,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 /**
  * Repository routing result types

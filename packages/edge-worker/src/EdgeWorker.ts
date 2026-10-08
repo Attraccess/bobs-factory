@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import type {
@@ -11,20 +11,14 @@ import type {
 	SDKMessage,
 	SessionStore,
 	WarmQuery,
-} from "cyrus-claude-runner";
+} from "bobs-factory-claude-runner";
 import {
 	buildBaseSessionEnv,
 	ClaudeRunner,
-	HttpSessionStore,
 	normalizeMcpHttpTransport,
-} from "cyrus-claude-runner";
-import { getCyrusAppUrl } from "cyrus-cloudflare-tunnel-client";
-import { CodexRunner, callCodexMcpTool } from "cyrus-codex-runner";
-import {
-	ConfigUpdater,
-	ensureGhTokenResolver,
-	ensureGitHubCredentialHelper,
-} from "cyrus-config-updater";
+} from "bobs-factory-claude-runner";
+import { CodexRunner, callCodexMcpTool } from "bobs-factory-codex-runner";
+import { ConfigUpdater } from "bobs-factory-config-updater";
 import type {
 	AgentActivityCreateInput,
 	AgentEvent,
@@ -56,7 +50,8 @@ import type {
 	WebhookAgentSession,
 	WebhookIssue,
 	WorkflowTriggerOrigin,
-} from "cyrus-core";
+	Workspace,
+} from "bobs-factory-core";
 import {
 	AgentSessionStatus,
 	AgentSessionType,
@@ -64,6 +59,7 @@ import {
 	CLIRPCServer,
 	createLogger,
 	DEFAULT_PROXY_URL,
+	executionEnvironment,
 	GitHubTokenStore,
 	isAgentSessionCreatedWebhook,
 	isAgentSessionPromptedWebhook,
@@ -86,9 +82,9 @@ import {
 	requireLinearWorkspaceId,
 	resolvePath,
 	WebhookIpValidator,
-} from "cyrus-core";
-import { CursorRunner } from "cyrus-cursor-runner";
-import { GeminiRunner } from "cyrus-gemini-runner";
+} from "bobs-factory-core";
+import { CursorRunner } from "bobs-factory-cursor-runner";
+import { GeminiRunner } from "bobs-factory-gemini-runner";
 import {
 	extractCommentAuthor,
 	extractCommentBody,
@@ -113,8 +109,8 @@ import {
 	isPullRequestReviewCommentPayload,
 	isPullRequestReviewPayload,
 	stripMention,
-} from "cyrus-github-event-transport";
-import type { GitLabWebhookEvent } from "cyrus-gitlab-event-transport";
+} from "bobs-factory-github-event-transport";
+import type { GitLabWebhookEvent } from "bobs-factory-gitlab-event-transport";
 import {
 	extractDiscussionId,
 	extractSessionKey as extractGitLabSessionKey,
@@ -133,12 +129,12 @@ import {
 	GitLabEventTransport,
 	isNoteOnMergeRequest,
 	stripMention as stripGitLabMention,
-} from "cyrus-gitlab-event-transport";
+} from "bobs-factory-gitlab-event-transport";
 import {
 	LinearEventTransport,
 	LinearIssueTrackerService,
 	type LinearOAuthConfig,
-} from "cyrus-linear-event-transport";
+} from "bobs-factory-linear-event-transport";
 import {
 	type CyrusToolsOptions,
 	callConfiguredTool,
@@ -148,16 +144,16 @@ import {
 	factoryContextInstructions,
 	prepareFactoryContext,
 	type ResolvedSession,
-} from "cyrus-mcp-tools";
-import { OpenCodeRunner } from "cyrus-opencode-runner";
+} from "bobs-factory-mcp-tools";
+import { OpenCodeRunner } from "bobs-factory-opencode-runner";
 import {
 	SlackEventTransport,
 	type SlackWebhookEvent,
-} from "cyrus-slack-event-transport";
+} from "bobs-factory-slack-event-transport";
 import {
 	ZulipEventTransport,
 	type ZulipWebhookEvent,
-} from "cyrus-zulip-event-transport";
+} from "bobs-factory-zulip-event-transport";
 import { Sessions, streamableHttp } from "fastify-mcp";
 import { ActivityPoster } from "./ActivityPoster.js";
 import { AgentSessionManager } from "./AgentSessionManager.js";
@@ -171,6 +167,19 @@ import { ConfigManager, type RepositoryChanges } from "./ConfigManager.js";
 import { DefaultSkillsDeployer } from "./DefaultSkillsDeployer.js";
 import { EgressProxy } from "./EgressProxy.js";
 import { resolveAgentSettings } from "./factory/AgentSettings.js";
+import {
+	executionCapabilities,
+	validateProfileRunner,
+} from "./factory/ExecutionCapabilities.js";
+import {
+	ExecutionEnvironmentResolver,
+	type ResolvedExecutionEnvironment,
+} from "./factory/ExecutionEnvironment.js";
+import {
+	ExecutionProfileStore,
+	ExecutionSnapshotSchema,
+} from "./factory/ExecutionProfiles.js";
+import { FactoryPush } from "./factory/FactoryPush.js";
 import { validateFactoryResult } from "./factory/FactoryResults.js";
 import { FactoryServer } from "./factory/FactoryServer.js";
 import {
@@ -181,7 +190,15 @@ import {
 	parseAgentOutput,
 	toolArguments,
 } from "./factory/FactoryTools.js";
+import { factoryFeedbackContext } from "./factory/FeedbackPolicy.js";
 import {
+	normalizeGitProviderConfig,
+	resolveGitProvider,
+} from "./factory/GitProvider.js";
+import { isPullRequestSource } from "./factory/GitProviderReference.js";
+import { confirmedGroupedMerge } from "./factory/GroupedTools.js";
+import {
+	attachRequirementCoverage,
 	validateGuideCoverage,
 	validateGuideGeneration,
 } from "./factory/Guide.js";
@@ -198,7 +215,11 @@ import {
 } from "./factory/LaunchAdmission.js";
 import type { ResolvedLaunchRequest } from "./factory/LaunchFields.js";
 import { resolveLaunchRequest } from "./factory/LaunchFields.js";
-import { recordFeedbackAssessment } from "./factory/MergeReadiness.js";
+import {
+	assessFeedback,
+	type MergeReadiness,
+	recordFeedbackAssessment,
+} from "./factory/MergeReadiness.js";
 import {
 	confirmedMerge,
 	pendingMergeConfirmation,
@@ -208,8 +229,22 @@ import {
 	outputValidationError,
 } from "./factory/OutputValidation.js";
 import { type QaScope, qaDigest, qaRequirementIssues } from "./factory/Qa.js";
-import { questionInstructions } from "./factory/Questions.js";
+import {
+	normalizeQuestionResult,
+	questionInstructions,
+	questionNotification,
+} from "./factory/Questions.js";
+import {
+	repositoryScopeInstructions,
+	repositoryScopes,
+	snapshotRepositories,
+} from "./factory/RepositoryScope.js";
 import { finalizeGuideFiles } from "./factory/ReviewFiles.js";
+import {
+	factoryReviewFixContext,
+	recordReviewFix,
+	validateReviewFix,
+} from "./factory/ReviewRecovery.js";
 import {
 	buildTitleContext,
 	RunTitleGenerator,
@@ -221,6 +256,10 @@ import {
 	SessionChat,
 	steeringState,
 } from "./factory/SessionChat.js";
+import {
+	aggregateForContext,
+	validateContractOutput,
+} from "./factory/SpecialistReview.js";
 import {
 	inspectPullRequest,
 	type TakeoverPullRequest,
@@ -237,8 +276,12 @@ import {
 	taskbotSource,
 } from "./factory/TicketTracking.js";
 import { titleMcpConfig } from "./factory/TitleMcpConfig.js";
+import { finalizeVideoEvidence, videoGateIssues } from "./factory/Video.js";
 import {
+	capacityInstructions,
 	readPath as readFactoryPath,
+	type Workflow,
+	type WorkflowStep,
 	workflowTriggerInstructions,
 } from "./factory/Workflow.js";
 import {
@@ -247,8 +290,12 @@ import {
 	WorkflowRuntime,
 } from "./factory/WorkflowRuntime.js";
 import { resolveWorkflowSelector } from "./factory/WorkflowSelector.js";
-import { GitService } from "./GitService.js";
+import { GitService, setupExecutionScope } from "./GitService.js";
 import { GlobalSessionRegistry } from "./GlobalSessionRegistry.js";
+import {
+	DEFAULT_MACHINE_CAPACITY,
+	MachineCapacity,
+} from "./MachineCapacity.js";
 import { McpConfigService } from "./McpConfigService.js";
 import { PromptBuilder } from "./PromptBuilder.js";
 import type {
@@ -262,12 +309,17 @@ import {
 	RepositoryRouter,
 	type RepositoryRouterDeps,
 } from "./RepositoryRouter.js";
-import { capRunnerStarts, SessionSemaphore } from "./RunnerConcurrency.js";
+import {
+	capRunnerStarts,
+	runnerCapacityState,
+	waitForRunnerCapacity,
+} from "./RunnerConcurrency.js";
 import {
 	RunnerConfigBuilder,
 	resolveIssueMcpConfigPath,
 } from "./RunnerConfigBuilder.js";
 import { RunnerSelectionService } from "./RunnerSelectionService.js";
+import { persistReplyEvent } from "./SessionRecovery.js";
 import { SharedApplicationServer } from "./SharedApplicationServer.js";
 import {
 	type SkillSessionContext,
@@ -327,15 +379,19 @@ export class EdgeWorker extends EventEmitter {
 	private configUpdater: ConfigUpdater | null = null; // Single config updater for configuration updates
 	private persistenceManager: PersistenceManager;
 	private sharedApplicationServer: SharedApplicationServer;
-	private cyrusHome: string;
+	private factoryHome: string;
 	private factoryRuntime?: WorkflowRuntime;
+	private executionResolver?: ExecutionEnvironmentResolver;
 	private ticketTracking?: TicketTracking;
 	private titleGenerator?: RunTitleGenerator;
 	private titleStarted = new Set<string>();
 	private stateSaveQueue: Promise<void> = Promise.resolve();
+	private pendingStateSave?: Promise<void>;
 	private recoveryAbort = new AbortController();
+	private preparationStarts = new Map<string, AbortController>();
 	private stopping = false;
 	private factoryServer?: FactoryServer;
+	private factoryPush?: FactoryPush;
 	private factoryChat = new SessionChat();
 	private chatContinuations = new Set<string>();
 	/** Per-org GitHub App installation tokens pushed by cyrus-hosted (lazy file-backed reads) */
@@ -357,8 +413,8 @@ export class EdgeWorker extends EventEmitter {
 	// Extracted service modules
 	private attachmentService: AttachmentService;
 	private runnerSelectionService: RunnerSelectionService;
-	/** Global cap on concurrently executing runner sessions (see maxConcurrentSessions). */
-	private runnerSlots: SessionSemaphore;
+	/** Instance cap on concurrently executing runner sessions (see maxConcurrentSessions). */
+	private runnerSlots: MachineCapacity;
 	private toolPermissionResolver: ToolPermissionResolver;
 	private mcpConfigService: McpConfigService;
 	private runnerConfigBuilder: RunnerConfigBuilder;
@@ -367,25 +423,25 @@ export class EdgeWorker extends EventEmitter {
 	private promptBuilder: PromptBuilder;
 	private defaultSkillsDeployer: DefaultSkillsDeployer;
 	private skillsPluginResolver: SkillsPluginResolver;
-	private readonly cyrusToolsMcpEndpoint = "/mcp/cyrus-tools";
-	private cyrusToolsMcpRegistered = false;
-	private cyrusToolsMcpRequestContext =
+	private readonly factoryToolsMcpEndpoint = "/mcp/bobs-factory-tools";
+	private factoryToolsMcpRegistered = false;
+	private factoryToolsMcpRequestContext =
 		new AsyncLocalStorage<CyrusToolsMcpContext>();
-	private cyrusToolsMcpSessions = new Sessions<any>();
+	private factoryToolsMcpSessions = new Sessions<any>();
 	/** Validates webhook source IPs against known provider allowlists */
 	private webhookIpValidator: WebhookIpValidator;
 	/** Egress proxy for sandbox network traffic filtering and header injection */
 	private egressProxy: EgressProxy | null = null;
 	/** Base SDK sandbox settings to pass to ClaudeRunner sessions (set when proxy starts) */
 	private sdkSandboxSettings:
-		| import("cyrus-claude-runner").SandboxSettings
+		| import("bobs-factory-claude-runner").SandboxSettings
 		| null = null;
 	/** CA cert path for MITM TLS termination (passed per-session env, not process.env) */
 	private egressCaCertPath: string | null = null;
 	/**
-	 * Remote SessionStore that mirrors Claude SDK transcripts to the Cyrus
-	 * hosted control plane. Enabled when all three of `CYRUS_APP_URL`,
-	 * `CYRUS_API_KEY`, and `CYRUS_TEAM_ID` are set — used by any Claude
+	 * Remote SessionStore that mirrors Claude SDK transcripts to the Bob’s Factory
+	 * hosted control plane. Enabled when all three of `BOBS_FACTORY_APP_URL`,
+	 * `BOBS_FACTORY_API_KEY`, and `BOBS_FACTORY_TEAM_ID` are set — used by any Claude
 	 * runner spawned from this worker so transcripts survive ephemeral
 	 * worktrees and are resumable from any host.
 	 */
@@ -426,7 +482,7 @@ export class EdgeWorker extends EventEmitter {
 	 * passed verbatim to `fs.readFileSync` (which does not expand tildes).
 	 * Repository-scoped paths are normalized separately in addNew /
 	 * updateModified; this covers the platform-level MCP config lists that
-	 * cyrus-hosted writes with literal `~/.cyrus/...` prefixes when
+	 * cyrus-hosted writes with literal `~/.bobs-factory/...` prefixes when
 	 * generating self-host config.
 	 */
 	private static normalizeConfigPaths(
@@ -446,45 +502,14 @@ export class EdgeWorker extends EventEmitter {
 	constructor(config: EdgeWorkerConfig) {
 		super();
 		this.config = EdgeWorker.normalizeConfigPaths(config);
-		this.cyrusHome = config.cyrusHome;
-		this.githubTokenStore = new GitHubTokenStore(this.cyrusHome);
+		this.factoryHome = config.factoryHome;
+		this.githubTokenStore = new GitHubTokenStore(this.factoryHome);
 		this.logger = createLogger({ component: "EdgeWorker" });
 		this.persistenceManager = new PersistenceManager(
-			join(this.cyrusHome, "state"),
+			join(this.factoryHome, "state"),
 		);
 
-		// Mirror Claude SDK session transcripts to the hosted control plane
-		// when CYRUS_API_KEY (proof of team ownership) and CYRUS_TEAM_ID
-		// (which team the transcripts belong to) are configured. The
-		// destination URL defaults to DEFAULT_CYRUS_APP_URL but can be
-		// overridden via CYRUS_APP_URL for preview environments. If either
-		// of the required vars is missing the store stays null and the SDK
-		// falls back to local JSONL only. Operators can also opt out
-		// explicitly by setting CYRUS_DISABLE_REMOTE_SESSION_STORE=1, which
-		// keeps transcripts local even when the vars above are present.
-		const sessionStoreBaseUrl = getCyrusAppUrl();
-		const sessionStoreApiKey = process.env.CYRUS_API_KEY;
-		const sessionStoreTeamId = process.env.CYRUS_TEAM_ID;
-		const sessionStoreDisabled = this.isRemoteSessionStoreDisabled();
-		if (!sessionStoreDisabled && sessionStoreApiKey && sessionStoreTeamId) {
-			this.claudeSessionStore = new HttpSessionStore({
-				baseUrl: sessionStoreBaseUrl,
-				apiKey: sessionStoreApiKey,
-				teamId: sessionStoreTeamId,
-				logger: this.logger,
-			});
-			this.logger.info(
-				`[SessionStore] Mirroring Claude sessions to ${sessionStoreBaseUrl} for team ${sessionStoreTeamId}`,
-			);
-		} else if (
-			sessionStoreDisabled &&
-			sessionStoreApiKey &&
-			sessionStoreTeamId
-		) {
-			this.logger.info(
-				"[SessionStore] Remote session store disabled via CYRUS_DISABLE_REMOTE_SESSION_STORE; transcripts will stay local.",
-			);
-		}
+		// Independent self-hosting keeps transcripts local. Host credentials are unchanged.
 
 		// Initialize GitHub comment service for posting replies to GitHub PRs
 		this.gitHubCommentService = new GitHubCommentService();
@@ -493,7 +518,7 @@ export class EdgeWorker extends EventEmitter {
 		// For Self-Managed GitLab the API base URL must be derived from the
 		// configured repos' gitlabUrl host; otherwise the service falls back to
 		// gitlab.com and 404s on every reply. Picks the first configured
-		// GitLab repo's host (single GitLab host per Cyrus instance).
+		// GitLab repo's host (single GitLab host per Bob’s Factory instance).
 		const firstGitlabRepo = config.repositories.find((r) => r.gitlabUrl);
 		let gitlabApiBaseUrl: string | undefined;
 		if (firstGitlabRepo?.gitlabUrl) {
@@ -550,7 +575,10 @@ export class EdgeWorker extends EventEmitter {
 			},
 		};
 		this.repositoryRouter = new RepositoryRouter(repositoryRouterDeps);
-		this.gitService = new GitService({ cyrusHome: this.cyrusHome });
+		this.gitService = new GitService({
+			factoryHome: this.factoryHome,
+			capacity: () => this.runnerSlots,
+		});
 
 		// Initialize AskUserQuestion handler for elicitation via Linear select signal
 		this.askUserQuestionHandler = new AskUserQuestionHandler({
@@ -560,10 +588,10 @@ export class EdgeWorker extends EventEmitter {
 		});
 
 		// Initialize webhook IP validator
-		// Enabled by default in self-hosted mode (CYRUS_HOST_EXTERNAL=true),
+		// Enabled by default in self-hosted mode (BOBS_FACTORY_HOST_EXTERNAL=true),
 		// can be overridden with WEBHOOK_IP_VALIDATION=false to disable
 		const isExternalHost =
-			process.env.CYRUS_HOST_EXTERNAL?.toLowerCase().trim() === "true";
+			process.env.BOBS_FACTORY_HOST_EXTERNAL?.toLowerCase().trim() === "true";
 		const ipValidationEnv =
 			process.env.WEBHOOK_IP_VALIDATION?.toLowerCase().trim();
 		const ipValidationEnabled =
@@ -623,6 +651,7 @@ export class EdgeWorker extends EventEmitter {
 				const resolvedRepo: RepositoryConfig = {
 					...repo,
 					repositoryPath: resolvePath(repo.repositoryPath),
+					gitProvider: normalizeGitProviderConfig(repo.gitProvider),
 					workspaceBaseDir: resolvePath(repo.workspaceBaseDir),
 					mcpConfigPath: Array.isArray(repo.mcpConfigPath)
 						? repo.mcpConfigPath.map(resolvePath)
@@ -671,7 +700,7 @@ export class EdgeWorker extends EventEmitter {
 		// Initialize user access control with global and per-repository configs
 		const repoAccessConfigs = new Map<
 			string,
-			import("cyrus-core").UserAccessControlConfig | undefined
+			import("bobs-factory-core").UserAccessControlConfig | undefined
 		>();
 		for (const repo of config.repositories) {
 			if (repo.isActive !== false) {
@@ -686,13 +715,13 @@ export class EdgeWorker extends EventEmitter {
 		// Initialize extracted service modules
 		this.attachmentService = new AttachmentService(
 			this.logger,
-			this.cyrusHome,
+			this.factoryHome,
 			this.config.linearWorkspaces || {},
 		);
 		this.runnerSelectionService = new RunnerSelectionService(this.config);
-		this.runnerSlots = new SessionSemaphore(
-			this.config.maxConcurrentSessions ?? Number.POSITIVE_INFINITY,
-			(message) => this.logger.info(message),
+		this.runnerSlots = new MachineCapacity(
+			this.config.maxConcurrentSessions,
+			join(this.factoryHome, "machine-capacity"),
 		);
 		this.toolPermissionResolver = new ToolPermissionResolver(
 			this.config,
@@ -734,11 +763,11 @@ export class EdgeWorker extends EventEmitter {
 			gitService: this.gitService,
 		});
 		this.defaultSkillsDeployer = new DefaultSkillsDeployer(
-			this.cyrusHome,
+			this.factoryHome,
 			this.logger,
 		);
 		this.skillsPluginResolver = new SkillsPluginResolver(
-			this.cyrusHome,
+			this.factoryHome,
 			this.logger,
 		);
 
@@ -749,26 +778,17 @@ export class EdgeWorker extends EventEmitter {
 	 * Start the edge worker
 	 */
 	async start(): Promise<void> {
-		// If cyrus-hosted has pushed per-org GitHub App tokens previously, make
-		// sure the git credential helper and the per-invocation gh token
-		// resolver are wired up (idempotent). Covers the case where the
-		// process restarted after the helper config was wiped.
-		if (existsSync(this.githubTokenStore.filePath)) {
-			try {
-				ensureGitHubCredentialHelper(this.cyrusHome);
-				ensureGhTokenResolver(this.cyrusHome);
-				this.logger.info(
-					"✅ GitHub auth scripts configured from existing token store",
-				);
-			} catch (error) {
-				this.logger.warn(
-					"Failed to configure GitHub auth scripts on startup (non-fatal):",
-					error instanceof Error ? error : new Error(String(error)),
-				);
-			}
-		}
+		await this.runnerSlots.ready();
+		const factory = this.getFactoryRuntime();
+		await this.runnerSlots.reconcileQueue((identity) => {
+			const prefix = `${factory.directory}:run:`;
+			if (!identity.startsWith(prefix)) return false;
+			const id = identity.slice(prefix.length).split(":")[0]!;
+			const run = factory.runs.get(id);
+			return !run || ["completed", "failed", "stopped"].includes(run.status);
+		});
 
-		// Deploy default skills to cyrusHome if not already present (one-time setup)
+		// Deploy default skills to factoryHome if not already present (one-time setup)
 		await this.defaultSkillsDeployer.ensureDeployed();
 
 		// Scaffold user skills plugin manifest if needed (one-time setup)
@@ -776,10 +796,32 @@ export class EdgeWorker extends EventEmitter {
 
 		// Load persisted state for each repository
 		await this.loadPersistedState();
+		await this.runnerSlots.reconcileQueue((identity) => {
+			const preparationPrefix = `${this.factoryHome}:preparation:`;
+			if (identity.startsWith(preparationPrefix)) {
+				const receipt = this.getLaunchAdmission()
+					.values()
+					.find(
+						(r) => r.sessionId === identity.slice(preparationPrefix.length),
+					);
+				return !receipt || receipt.phase === "settled";
+			}
+			const prefix = `${this.factoryHome}:session:`;
+			if (!identity.startsWith(prefix)) return false;
+			const session = this.titleSession(identity.slice(prefix.length));
+			return (
+				!session ||
+				Boolean(
+					[AgentSessionStatus.Complete, AgentSessionStatus.Error].includes(
+						session.status,
+					),
+				)
+			);
+		});
 
 		// Pre-warm the 30 most recent Claude sessions in the background
 		// so their first query after restart has near-zero cold-start latency.
-		// Disabled by default; opt in with CYRUS_ENABLE_WARM_SESSIONS=1.
+		// Disabled by default; opt in with BOBS_FACTORY_ENABLE_WARM_SESSIONS=1.
 		if (this.isWarmSessionsEnabled()) {
 			this.warmupRecentSessions(30).catch((err) => {
 				this.logger.warn("Session warmup failed (non-fatal):", err);
@@ -805,13 +847,18 @@ export class EdgeWorker extends EventEmitter {
 				await this.addNewRepositories(changes.added);
 				// Live-update sandbox / egress proxy settings
 				await this.applySandboxConfigChanges(changes.newConfig);
+				if (
+					changes.newConfig.maxConcurrentSessions !==
+					this.config.maxConcurrentSessions
+				) {
+					await this.runnerSlots.setLimit(
+						changes.newConfig.maxConcurrentSessions ?? DEFAULT_MACHINE_CAPACITY,
+					);
+				}
 				this.config = EdgeWorker.normalizeConfigPaths(changes.newConfig);
 				this.configManager.setConfig(changes.newConfig);
 				this.runnerSelectionService.setConfig(changes.newConfig);
 				this.toolPermissionResolver.setConfig(changes.newConfig);
-				this.runnerSlots.setLimit(
-					changes.newConfig.maxConcurrentSessions ?? Number.POSITIVE_INFINITY,
-				);
 			},
 		);
 		this.configManager.startConfigWatcher();
@@ -823,7 +870,7 @@ export class EdgeWorker extends EventEmitter {
 			this.logger.info("🛡️  Sandbox egress proxy: starting...");
 			this.egressProxy = new EgressProxy(
 				this.config.sandbox,
-				this.cyrusHome,
+				this.factoryHome,
 				this.logger,
 			);
 			await this.egressProxy.start();
@@ -869,6 +916,31 @@ export class EdgeWorker extends EventEmitter {
 
 		// Start shared application server (this also starts Cloudflare tunnel if CLOUDFLARE_TOKEN is set)
 		await this.sharedApplicationServer.start();
+		this.factoryPush?.attach(this.getFactoryRuntime(), {
+			sessions: () =>
+				this.getAllKnownSessions().map((session) => {
+					const work = session.agentRunner?.getPendingWork?.();
+					return {
+						id: session.id,
+						status: session.status,
+						stopped: session.metadata?.intentionalStop,
+						// Saved execution input survives normal completion. Active recovery
+						// has no eligible status; only shutdown suppresses terminal alerts.
+						recovering: this.stopping,
+						pendingWork: Boolean(
+							work && (work.sessionCrons.length || work.backgroundTasks.length),
+						),
+					};
+				}),
+			subscribe: (notify) => {
+				this.agentSessionManager.on("sessionChanged", notify);
+				this.on("chatSessionChanged", notify);
+				return () => {
+					this.agentSessionManager.off("sessionChanged", notify);
+					this.off("chatSessionChanged", notify);
+				};
+			},
+		});
 		this.recoverFactoryRuns();
 		this.recoverPendingTicketLaunches();
 	}
@@ -878,23 +950,27 @@ export class EdgeWorker extends EventEmitter {
 	 */
 	private async initializeComponents(): Promise<void> {
 		if (
-			process.env.CYRUS_FACTORY_PORT &&
-			process.env.CYRUS_FACTORY_PORT !== "0"
+			process.env.BOBS_FACTORY_FACTORY_PORT &&
+			process.env.BOBS_FACTORY_FACTORY_PORT !== "0"
 		) {
+			this.factoryPush ??= new FactoryPush(this.factoryHome);
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
+				push: this.factoryPush,
+				capacity: this.runnerSlots,
 				defaultRunner: () => this.runnerSelectionService.getDefaultRunner(),
 				repositories: () =>
-					Array.from(this.repositories.values())
-						.filter((repo) => repo.isActive)
-						.map((repo) => ({ id: repo.id, name: repo.name })),
+					repositoryScopes(Array.from(this.repositories.values())),
 				sessions: () =>
 					this.getAllKnownSessions().map((session) => ({
 						id: session.id,
 						title: session.displayTitle ?? session.issue?.title ?? session.id,
 						titleGeneration: session.titleGeneration,
-						status: session.agentRunner?.isRunning()
-							? "running"
-							: session.status,
+						status:
+							runnerCapacityState(session.agentRunner)?.phase === "queued"
+								? "capacity-waiting"
+								: session.agentRunner?.isRunning()
+									? "running"
+									: session.status,
 						createdAt: new Date(session.createdAt).toISOString(),
 						triggerOrigin: session.triggerOrigin,
 						workspace: session.workspace.path,
@@ -920,8 +996,60 @@ export class EdgeWorker extends EventEmitter {
 						this.off("chatSessionChanged", notify);
 					};
 				},
+				previewExecution: async (
+					repositoryId,
+					selection,
+					runner,
+					workflowId,
+					model,
+				) => {
+					const snapshot = this.getFactoryRuntime().executionProfiles.select(
+						repositoryId,
+						selection,
+					);
+					if (!snapshot)
+						return { mode: "Legacy", validation: "Existing runner behavior" };
+					const id = `preview-${randomUUID()}`;
+					try {
+						const temporary = {
+							id,
+							repositoryId,
+							workspace: "",
+							runner,
+							executionSnapshot: snapshot,
+							model,
+						} as FactoryRun;
+						if (workflowId) {
+							const runtime = this.getFactoryRuntime();
+							const selected = runtime.selectWorkflow([], "manual", workflowId);
+							await this.preflightExecution(
+								temporary,
+								selected,
+								runtime.listWorkflows(),
+							);
+						}
+						const resolved = await this.resolveRunExecution(temporary);
+						return {
+							diagnostics: temporary.executionDiagnostics,
+							snapshot,
+							accounts: resolved?.accounts,
+							mcp: Object.keys(resolved?.mcp ?? {}),
+							validation:
+								"Configuration and repository accounts checked. Runner API owner remains declared and unverified",
+						};
+					} finally {
+						await rm(
+							join(this.factoryHome, "factory", "execution-private", id),
+							{
+								recursive: true,
+								force: true,
+							},
+						);
+					}
+				},
 				chat: (id) => this.factoryChatState(id),
-				message: (id, text) => this.sendFactoryChat(id, text),
+				message: (id, text, messageId) =>
+					this.sendFactoryChat(id, text, messageId),
 				start: (input) => this.startManualFactoryRun(input),
 				followup: (id, feedback) => this.startFactoryFollowup(id, feedback),
 				retryTitle: (id) => this.retryRunTitle(id),
@@ -938,9 +1066,11 @@ export class EdgeWorker extends EventEmitter {
 					void this.savePersistedState();
 				},
 			});
-			await this.factoryServer.start(Number(process.env.CYRUS_FACTORY_PORT));
+			await this.factoryServer.start(
+				Number(process.env.BOBS_FACTORY_FACTORY_PORT),
+			);
 			this.logger.info(
-				`Software factory UI: http://127.0.0.1:${process.env.CYRUS_FACTORY_PORT}`,
+				`Software factory UI: http://127.0.0.1:${process.env.BOBS_FACTORY_FACTORY_PORT}`,
 			);
 		}
 		// 1. Platform-specific initialization
@@ -1017,7 +1147,7 @@ export class EdgeWorker extends EventEmitter {
 			// Get appropriate secret based on mode
 			const secret = useDirectWebhooks
 				? process.env.LINEAR_WEBHOOK_SECRET || ""
-				: process.env.CYRUS_API_KEY || "";
+				: process.env.BOBS_FACTORY_API_KEY || "";
 
 			this.linearEventTransport = new LinearEventTransport({
 				fastifyServer: this.sharedApplicationServer.getFastifyInstance(),
@@ -1068,8 +1198,8 @@ export class EdgeWorker extends EventEmitter {
 		// 3. Create and register ConfigUpdater (both platforms)
 		this.configUpdater = new ConfigUpdater(
 			this.sharedApplicationServer.getFastifyInstance(),
-			this.cyrusHome,
-			() => process.env.CYRUS_API_KEY || "",
+			this.factoryHome,
+			() => process.env.BOBS_FACTORY_API_KEY || "",
 		);
 
 		// Register config update routes
@@ -1077,13 +1207,13 @@ export class EdgeWorker extends EventEmitter {
 
 		this.logger.info("✅ Config updater registered");
 		this.logger.info(
-			"   Routes: /api/update/cyrus-config, /api/update/cyrus-env,",
+			"   Routes: /api/update/bobs-factory-config, /api/update/bobs-factory-env,",
 		);
 		this.logger.info(
 			"           /api/update/repository, /api/update/test-mcp, /api/update/configure-mcp",
 		);
 
-		// 3. Register MCP endpoint for cyrus-tools on the same Fastify server/port
+		// 3. Register MCP endpoint for bobs-factory-tools on the same Fastify server/port
 		await this.registerCyrusToolsMcpEndpoint();
 		// 4. Register /status endpoint for process activity monitoring
 		this.registerStatusEndpoint();
@@ -1132,11 +1262,11 @@ export class EdgeWorker extends EventEmitter {
 	private registerGitHubEventTransport(): void {
 		// Use direct GitHub signature verification only when BOTH:
 		// 1. GITHUB_WEBHOOK_SECRET is set (we have the secret to verify)
-		// 2. CYRUS_HOST_EXTERNAL is true (self-hosted: GitHub sends directly to us)
+		// 2. BOBS_FACTORY_HOST_EXTERNAL is true (self-hosted: GitHub sends directly to us)
 		// On cloud droplets, CYHOST forwards webhooks with Bearer token auth
 		// (it verifies the GitHub signature itself and doesn't forward the headers).
 		const isExternalHost =
-			process.env.CYRUS_HOST_EXTERNAL?.toLowerCase().trim() === "true";
+			process.env.BOBS_FACTORY_HOST_EXTERNAL?.toLowerCase().trim() === "true";
 		const hasGithubWebhookSecret =
 			process.env.GITHUB_WEBHOOK_SECRET != null &&
 			process.env.GITHUB_WEBHOOK_SECRET !== "";
@@ -1144,7 +1274,7 @@ export class EdgeWorker extends EventEmitter {
 		const verificationMode = useSignatureVerification ? "signature" : "proxy";
 		const secret = useSignatureVerification
 			? process.env.GITHUB_WEBHOOK_SECRET!
-			: process.env.CYRUS_API_KEY || "";
+			: process.env.BOBS_FACTORY_API_KEY || "";
 
 		this.gitHubEventTransport = new GitHubEventTransport({
 			fastifyServer: this.sharedApplicationServer.getFastifyInstance(),
@@ -1197,7 +1327,7 @@ export class EdgeWorker extends EventEmitter {
 		const appId = process.env.GITHUB_APP_ID;
 		const installationId = process.env.GITHUB_APP_INSTALLATION_ID;
 		if (appId && installationId) {
-			const pemPath = join(this.cyrusHome, "github-app.pem");
+			const pemPath = join(this.factoryHome, "github-app.pem");
 			this.gitHubAppTokenProvider = new GitHubAppTokenProvider({
 				appId,
 				installationId,
@@ -1220,7 +1350,7 @@ export class EdgeWorker extends EventEmitter {
 	 */
 	private registerGitLabEventTransport(): void {
 		const isExternalHost =
-			process.env.CYRUS_HOST_EXTERNAL?.toLowerCase().trim() === "true";
+			process.env.BOBS_FACTORY_HOST_EXTERNAL?.toLowerCase().trim() === "true";
 		const hasGitlabWebhookSecret =
 			process.env.GITLAB_WEBHOOK_SECRET != null &&
 			process.env.GITLAB_WEBHOOK_SECRET !== "";
@@ -1228,7 +1358,7 @@ export class EdgeWorker extends EventEmitter {
 		const verificationMode = useSignatureVerification ? "signature" : "proxy";
 		const secret = useSignatureVerification
 			? process.env.GITLAB_WEBHOOK_SECRET!
-			: process.env.CYRUS_API_KEY || "";
+			: process.env.BOBS_FACTORY_API_KEY || "";
 
 		this.gitLabEventTransport = new GitLabEventTransport({
 			fastifyServer: this.sharedApplicationServer.getFastifyInstance(),
@@ -1266,14 +1396,16 @@ export class EdgeWorker extends EventEmitter {
 	}
 
 	/**
-	 * Whether Cyrus should follow plain replies in a Slack thread it was
+	 * Whether Bob’s Factory should follow plain replies in a Slack thread it was
 	 * @mentioned in. Enabled by default; controlled by the per-team
 	 * `slackThreadFollowing` config toggle (Behaviours page) and force-disabled
-	 * by the `CYRUS_SLACK_THREAD_FOLLOWING_DISABLED` env kill-switch, which takes
+	 * by the `BOBS_FACTORY_SLACK_THREAD_FOLLOWING_DISABLED` env kill-switch, which takes
 	 * precedence over the toggle. When disabled, only @mentions are processed.
 	 */
 	private isSlackThreadFollowingEnabled(): boolean {
-		const envValue = (process.env.CYRUS_SLACK_THREAD_FOLLOWING_DISABLED ?? "")
+		const envValue = (
+			process.env.BOBS_FACTORY_SLACK_THREAD_FOLLOWING_DISABLED ?? ""
+		)
 			.toLowerCase()
 			.trim();
 		if (envValue === "true" || envValue === "1" || envValue === "yes") {
@@ -1296,11 +1428,11 @@ export class EdgeWorker extends EventEmitter {
 		getPlatformMcpConfigOverrides: () => readonly string[] | undefined,
 	): ChatSessionHandlerDeps {
 		return {
-			cyrusHome: this.cyrusHome,
+			factoryHome: this.factoryHome,
 			chatRepositoryProvider,
 			onSessionChange: (id) => this.emit("chatSessionChanged", id),
 			runnerConfigBuilder: this.runnerConfigBuilder,
-			createRunner: (config, chatRunnerType, signal) => {
+			createRunner: (config, chatRunnerType, signal, sessionId) => {
 				const runnerType =
 					chatRunnerType ?? this.runnerSelectionService.getDefaultRunner();
 				return this.createRunnerForType(
@@ -1311,6 +1443,7 @@ export class EdgeWorker extends EventEmitter {
 						fallbackModel: this.getDefaultFallbackModelForRunner(runnerType),
 					},
 					signal,
+					sessionId,
 				);
 			},
 			getPlatformMcpConfigOverrides,
@@ -1350,6 +1483,8 @@ export class EdgeWorker extends EventEmitter {
 				this.activeWebhookCount--;
 			},
 			onStateChange: () => this.savePersistedState(),
+			persistMessage: (update) => this.savePersistedState(true, update),
+			isShuttingDown: () => this.stopping,
 			onClaudeError: (error) => this.handleClaudeError(error),
 		};
 	}
@@ -1454,16 +1589,14 @@ export class EdgeWorker extends EventEmitter {
 			this.promptBuilder.generateRoutingContextForAllWorkspaces();
 		// Only managed teams (cloud or self-hosted, paired with cyrus-hosted)
 		// have a Behaviours page where automatic Slack thread listening can be
-		// turned off — CYRUS_API_KEY is proof of that pairing, so the
+		// turned off — BOBS_FACTORY_API_KEY is proof of that pairing, so the
 		// stop-listening prompt guidance is gated on it. Community members
 		// don't have the key (or the page).
-		const cyrusAppBaseUrl = process.env.CYRUS_API_KEY
-			? getCyrusAppUrl()
-			: undefined;
+		const factoryAppBaseUrl = undefined;
 		const slackAdapter = new SlackChatAdapter(
 			chatRepositoryProvider,
 			this.logger,
-			{ repositoryRoutingContext: routingContext, cyrusAppBaseUrl },
+			{ repositoryRoutingContext: routingContext, factoryAppBaseUrl },
 		);
 
 		if (
@@ -1488,11 +1621,11 @@ export class EdgeWorker extends EventEmitter {
 
 		// Use direct Slack signature verification only when BOTH:
 		// 1. SLACK_SIGNING_SECRET is set (we have the secret to verify)
-		// 2. CYRUS_HOST_EXTERNAL is true (self-hosted: Slack sends directly to us)
+		// 2. BOBS_FACTORY_HOST_EXTERNAL is true (self-hosted: Slack sends directly to us)
 		// On cloud droplets, CYHOST forwards webhooks with Bearer token auth
 		// (it verifies the Slack signature itself and doesn't forward the headers).
 		const isExternalHost =
-			process.env.CYRUS_HOST_EXTERNAL?.toLowerCase().trim() === "true";
+			process.env.BOBS_FACTORY_HOST_EXTERNAL?.toLowerCase().trim() === "true";
 		const hasSlackSigningSecret =
 			process.env.SLACK_SIGNING_SECRET != null &&
 			process.env.SLACK_SIGNING_SECRET !== "";
@@ -1501,7 +1634,7 @@ export class EdgeWorker extends EventEmitter {
 		const slackVerificationMode = useDirectSlackWebhooks ? "direct" : "proxy";
 		const slackSecret = useDirectSlackWebhooks
 			? process.env.SLACK_SIGNING_SECRET!
-			: process.env.CYRUS_API_KEY || "";
+			: process.env.BOBS_FACTORY_API_KEY || "";
 
 		this.slackEventTransport = new SlackEventTransport({
 			fastifyServer: this.sharedApplicationServer.getFastifyInstance(),
@@ -1686,24 +1819,24 @@ export class EdgeWorker extends EventEmitter {
 				const shouldReply = wasMentioned || isPullRequestReview;
 
 				if (shouldReply && reactionToken && prNumber) {
-					// Presence of CYRUS_API_KEY indicates this worker is paired with the
+					// Presence of BOBS_FACTORY_API_KEY indicates this worker is paired with the
 					// managed control plane (paid customer). Absence means the worker is
 					// running on the Community plan (self-managed config.json).
-					const isManagedCustomer = !!process.env.CYRUS_API_KEY;
+					const isManagedCustomer = !!process.env.BOBS_FACTORY_API_KEY;
 
 					const commonPreamble = [
-						`Cyrus received this webhook but has no repository configured for \`${repoFullName}\`, so no agent session was started.`,
+						`Bob’s Factory received this webhook but has no repository configured for \`${repoFullName}\`, so no agent session was started.`,
 						``,
 						`**Likely causes:**`,
-						`- The owner/org was **renamed or transferred** on GitHub. Webhooks are delivered under the current owner name, but Cyrus's stored repository URL still points at the old one. GitHub's web redirects don't apply to webhook payloads — the stored URL has to be updated explicitly.`,
+						`- The owner/org was **renamed or transferred** on GitHub. Webhooks are delivered under the current owner name, but Bob’s Factory's stored repository URL still points at the old one. GitHub's web redirects don't apply to webhook payloads — the stored URL has to be updated explicitly.`,
 						`- The stored repository URL has a typo (e.g. wrong org/owner) and doesn't match the repo this event came from.`,
-						`- The GitHub App / webhook is installed on a repo Cyrus isn't configured for at all.`,
+						`- The GitHub App / webhook is installed on a repo Bob’s Factory isn't configured for at all.`,
 						``,
 					];
 
 					const fix = isManagedCustomer
-						? `**What to do:** there's currently no self-serve way to update the stored repository URL on your plan — please reach out to Cyrus support and reference \`${repoFullName}\` and we'll reconcile it on the backend.`
-						: `**What to do:** open \`~/.cyrus/config.json\` on the worker and update the \`githubUrl\` of the relevant repository to \`https://github.com/${repoFullName}\`. The worker watches the config file and will pick up the change automatically. If this repo shouldn't be sending events to Cyrus at all, remove the GitHub App from it instead.`;
+						? `**What to do:** there's currently no self-serve way to update the stored repository URL on your plan — please reach out to Bob’s Factory support and reference \`${repoFullName}\` and we'll reconcile it on the backend.`
+						: `**What to do:** open \`~/.bobs-factory/config.json\` on the worker and update the \`githubUrl\` of the relevant repository to \`https://github.com/${repoFullName}\`. The worker watches the config file and will pick up the change automatically. If this repo shouldn't be sending events to Bob’s Factory at all, remove the GitHub App from it instead.`;
 
 					this.gitHubCommentService
 						.postIssueComment({
@@ -1740,7 +1873,7 @@ export class EdgeWorker extends EventEmitter {
 								owner: extractRepoOwner(event),
 								repo: extractRepoName(event),
 								issueNumber: prNumber,
-								body: "Received your request. It is queued and will start after Cyrus finishes the current task on this PR.",
+								body: "Received your request. It is queued and will start after Bob’s Factory finishes the current task on this PR.",
 							})
 							.catch((err: unknown) => {
 								this.logger.warn(
@@ -1973,10 +2106,22 @@ export class EdgeWorker extends EventEmitter {
 				}
 			};
 
-			runner = this.createRunnerForType(runnerType, runnerConfig);
+			runner = this.createRunnerForType(
+				runnerType,
+				runnerConfig,
+				undefined,
+				githubSessionId,
+			);
 
 			// Store the runner in the session manager
 			agentSessionManager.addAgentRunner(githubSessionId, runner);
+			session.metadata!.pendingExecution = {
+				prompt: taskInstructions,
+				systemPrompt,
+				runner: runnerType,
+				model: runnerConfig.model,
+				replyEvent: persistReplyEvent(event),
+			};
 
 			// Save persisted state
 			await this.savePersistedState();
@@ -2701,10 +2846,22 @@ ${taskSection}`;
 					"gitlab", // sessionPlatform → uses githubMcpConfigs override
 				);
 
-			const runner = this.createRunnerForType(runnerType, runnerConfig);
+			const runner = this.createRunnerForType(
+				runnerType,
+				runnerConfig,
+				undefined,
+				gitlabSessionId,
+			);
 
 			// Store the runner in the session manager
 			agentSessionManager.addAgentRunner(gitlabSessionId, runner);
+			session.metadata!.pendingExecution = {
+				prompt: taskInstructions,
+				systemPrompt,
+				runner: runnerType,
+				model: runnerConfig.model,
+				replyEvent: persistReplyEvent(event),
+			};
 
 			// Save persisted state
 			await this.savePersistedState();
@@ -2985,7 +3142,7 @@ ${taskSection}`;
 	}
 
 	/**
-	 * Compute the current status of the Cyrus process
+	 * Compute the current status of the Bob’s Factory process
 	 * @returns "idle" if the process can be safely restarted, "busy" if work is in progress
 	 */
 	private computeStatus(): "idle" | "busy" {
@@ -3091,6 +3248,8 @@ ${taskSection}`;
 	 */
 	async stop(): Promise<void> {
 		this.stopping = true;
+		await this.factoryPush?.stop();
+		await this.runnerSlots.shutdown();
 		this.recoveryAbort.abort();
 		await this.titleGenerator?.shutdown();
 		this.ticketTracking?.stop();
@@ -3129,11 +3288,12 @@ ${taskSection}`;
 		}
 
 		// Clear event transport (no explicit cleanup needed, routes are removed when server stops)
+		await Promise.allSettled(agentRunners.map(waitForRunnerCapacity));
 		this.linearEventTransport = null;
 		this.configUpdater = null;
 		this.mcpConfigService.clearAllContexts();
-		this.cyrusToolsMcpSessions.removeAllListeners();
-		this.cyrusToolsMcpRegistered = false;
+		this.factoryToolsMcpSessions.removeAllListeners();
+		this.factoryToolsMcpRegistered = false;
 
 		// Stop egress proxy
 		if (this.egressProxy) {
@@ -3177,7 +3337,7 @@ ${taskSection}`;
 			this.logger.info("🛡️  Sandbox egress proxy: starting (config change)...");
 			this.egressProxy = new EgressProxy(
 				newConfig.sandbox!,
-				this.cyrusHome,
+				this.factoryHome,
 				this.logger,
 			);
 			await this.egressProxy.start();
@@ -3265,14 +3425,14 @@ ${taskSection}`;
 	}
 
 	/**
-	 * Check whether the Cyrus egress proxy CA is trusted at the OS level.
+	 * Check whether the Bob’s Factory egress proxy CA is trusted at the OS level.
 	 * macOS: searches the System keychain. Linux: checks update-ca-certificates output.
 	 */
 	private isCertTrustedSystemWide(): boolean {
 		try {
 			if (process.platform === "darwin") {
 				execSync(
-					'security find-certificate -c "Cyrus Egress Proxy CA" /Library/Keychains/System.keychain',
+					'security find-certificate -c "Bob’s Factory Egress Proxy CA" /Library/Keychains/System.keychain',
 					{ stdio: "ignore" },
 				);
 				return true;
@@ -3470,6 +3630,7 @@ ${taskSection}`;
 				const resolvedRepo: RepositoryConfig = {
 					...repo,
 					repositoryPath: resolvePath(repo.repositoryPath),
+					gitProvider: normalizeGitProviderConfig(repo.gitProvider),
 					workspaceBaseDir: resolvePath(repo.workspaceBaseDir),
 					mcpConfigPath: Array.isArray(repo.mcpConfigPath)
 						? repo.mcpConfigPath.map(resolvePath)
@@ -3513,6 +3674,7 @@ ${taskSection}`;
 				const resolvedRepo: RepositoryConfig = {
 					...repo,
 					repositoryPath: resolvePath(repo.repositoryPath),
+					gitProvider: normalizeGitProviderConfig(repo.gitProvider),
 					workspaceBaseDir: resolvePath(repo.workspaceBaseDir),
 					mcpConfigPath: Array.isArray(repo.mcpConfigPath)
 						? repo.mcpConfigPath.map(resolvePath)
@@ -3599,7 +3761,7 @@ ${taskSection}`;
 										agentSessionId: session.externalSessionId,
 										content: {
 											type: "response",
-											body: `**Repository Removed from Configuration**\n\nThis repository (\`${repo.name}\`) has been removed from the Cyrus configuration. All active sessions for this repository have been stopped.\n\nIf you need to continue working on this issue, please contact your administrator to restore the repository configuration.`,
+											body: `**Repository Removed from Configuration**\n\nThis repository (\`${repo.name}\`) has been removed from the Bob’s Factory configuration. All active sessions for this repository have been stopped.\n\nIf you need to continue working on this issue, please contact your administrator to restore the repository configuration.`,
 										},
 									},
 									"repository removal",
@@ -3679,7 +3841,7 @@ ${taskSection}`;
 		});
 
 		// Log verbose webhook info if enabled
-		if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+		if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 			this.logger.debug(
 				`Full webhook payload:`,
 				JSON.stringify(webhook, null, 2),
@@ -3717,7 +3879,7 @@ ${taskSection}`;
 				// Handle issue state changes — wake up parked sessions when blocking issues complete
 				await this.handleIssueStateChange(webhook);
 			} else {
-				if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+				if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 					this.logger.debug(
 						`Unhandled webhook type: ${(webhook as any).action}`,
 					);
@@ -3757,7 +3919,7 @@ ${taskSection}`;
 		// TODO: When legacy handlers are removed, restore activeWebhookCount tracking here.
 
 		// Log verbose message info if enabled
-		if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+		if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 			this.logger.debug(
 				`Internal message received: ${message.source}/${message.action}`,
 				JSON.stringify(message, null, 2),
@@ -3781,7 +3943,7 @@ ${taskSection}`;
 			} else {
 				// This branch should never be reached due to exhaustive type checking
 				// If it is reached, log the unexpected message for debugging
-				if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+				if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 					const unexpectedMessage = message as InternalMessage;
 					this.logger.debug(
 						`Unhandled message action: ${unexpectedMessage.action}`,
@@ -3925,7 +4087,7 @@ ${taskSection}`;
 		}
 
 		// Build the set of repositories involved with this issue so per-repo
-		// cyrus-teardown.sh scripts (if present) can run before worktrees are
+		// bobs-factory-teardown.sh scripts (if present) can run before worktrees are
 		// removed. Source-of-truth is the session manager: each session's
 		// repositoryId maps to a configured RepositoryConfig.
 		const repoIds = new Set<string>();
@@ -3940,7 +4102,24 @@ ${taskSection}`;
 		}
 
 		// Delete worktrees for this issue, keyed by the Linear issue identifier.
-		await this.gitService.deleteWorktree(message.workItemIdentifier, {
+		const configured = sessions.find(
+			(session) => session.metadata?.executionSnapshot,
+		);
+		let teardownService = this.gitService;
+		if (configured) {
+			const snapshot = ExecutionSnapshotSchema.parse(
+				configured.metadata!.executionSnapshot,
+			);
+			const resolved = await this.getExecutionResolver().resolve(
+				snapshot,
+				configured.id,
+				configured.workspace.path,
+				configured.titleGeneration?.settings.runner ??
+					this.runnerSelectionService.getDefaultRunner(),
+			);
+			teardownService = this.gitService.withEnvironment(resolved.environment);
+		}
+		await teardownService.deleteWorktree(message.workItemIdentifier, {
 			repositories: teardownRepositories,
 		});
 
@@ -4044,7 +4223,7 @@ ${taskSection}`;
 	): Promise<void> {
 		// Check if issue update trigger is enabled (defaults to true if not set)
 		if (this.config.issueUpdateTrigger === false) {
-			if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+			if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 				this.logger.debug(
 					"Issue update trigger is disabled, skipping issue content update",
 				);
@@ -4122,7 +4301,7 @@ ${taskSection}`;
 		// Find session(s) for this issue
 		const sessions = this.agentSessionManager.getSessionsByIssueId(issueId);
 		if (sessions.length === 0) {
-			if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+			if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 				this.logger.debug(
 					`No sessions found for issue ${issueIdentifier} to receive update`,
 				);
@@ -4140,7 +4319,7 @@ ${taskSection}`;
 			}
 			const workspaceFolderName = basename(firstSession.workspace.path);
 			const attachmentsDir = join(
-				this.cyrusHome,
+				this.factoryHome,
 				workspaceFolderName,
 				"attachments",
 			);
@@ -4588,7 +4767,7 @@ ${taskSection}`;
 	}
 
 	/**
-	 * Create a new Cyrus agent session with all necessary setup
+	 * Create a new Bob’s Factory agent session with all necessary setup
 	 * @param sessionId The Linear agent activity session ID
 	 * @param issue Linear issue object
 	 * @param repositories Repository configurations (primary repo is repositories[0])
@@ -4626,10 +4805,6 @@ ${taskSection}`;
 				fullIssue,
 				linearWorkspaceId,
 			);
-			if (launch.workflow.id !== "simple" && repositories.length !== 1)
-				throw new Error(
-					"Factory MVP runs use one repository; use Simple for multi-repository tasks",
-				);
 		} catch (error) {
 			const tracker = this.issueTrackers.get(linearWorkspaceId);
 			if (tracker)
@@ -4649,12 +4824,48 @@ ${taskSection}`;
 				);
 			throw error;
 		}
+		const executionSnapshot = new ExecutionProfileStore(
+			join(this.factoryHome, "factory"),
+		).select(primaryRepo.id);
+		let execution: ResolvedExecutionEnvironment | undefined;
+		if (executionSnapshot) {
+			const labels = await this.fetchIssueLabels(fullIssue);
+			const selection = this.runnerSelectionService.determineRunnerSelection(
+				labels,
+				fullIssue.description ?? undefined,
+			);
+			await this.preflightExecution(
+				{
+					id: sessionId,
+					repositoryId: primaryRepo.id,
+					repositories: snapshotRepositories(repositories, ""),
+					workspace: "",
+					runner: selection.runnerType,
+					model: selection.modelOverride,
+					executionSnapshot,
+				} as FactoryRun,
+				launch.workflow,
+				launch.workflowDefinitions,
+			);
+			executionCapabilities(selection.runnerType);
+			execution = await this.getExecutionResolver().resolve(
+				executionSnapshot,
+				sessionId,
+				primaryRepo.repositoryPath,
+				selection.runnerType,
+				"main",
+				repositories.map((repo) => repo.repositoryPath),
+			);
+		}
+		const gitService = execution
+			? this.gitService.withEnvironment(execution.environment)
+			: this.gitService;
 		const takeover = launch.workflow.id === "takeover";
 		this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 		if (takeover && fullIssue.branchName) {
 			baseBranchOverrides = new Map(baseBranchOverrides);
-			for (const repo of repositories)
-				baseBranchOverrides.set(repo.id, fullIssue.branchName);
+			if (!baseBranchOverrides.has(primaryRepo.id))
+				baseBranchOverrides.set(primaryRepo.id, fullIssue.branchName);
 		}
 
 		// Move issue to started state automatically, in case it's not already
@@ -4668,25 +4879,56 @@ ${taskSection}`;
 		this.logger.info(
 			`createCyrusAgentSession: passing baseBranchOverrides=${baseBranchOverrides ? `Map(size=${baseBranchOverrides.size}, keys=[${Array.from(baseBranchOverrides.keys()).join(",")}])` : "undefined"}, useCustomHandler=${!!this.config.handlers?.createWorkspace}`,
 		);
-		const workspace = this.config.handlers?.createWorkspace
-			? await this.config.handlers.createWorkspace(fullIssue, repositories, {
-					baseBranchOverrides,
-					onRepoSetupHookEvent: (activity) =>
-						this.activityPoster.postRepoSetupHookActivity(
-							sessionId,
-							linearWorkspaceId,
-							activity,
-						),
-				})
-			: await this.gitService.createGitWorktree(fullIssue, repositories, {
-					baseBranchOverrides,
-					onRepoSetupHookEvent: (activity) =>
-						this.activityPoster.postRepoSetupHookActivity(
-							sessionId,
-							linearWorkspaceId,
-							activity,
-						),
-				});
+		const preparation = new AbortController();
+		this.preparationStarts.set(sessionId, preparation);
+		const restart = () => preparation.abort();
+		this.recoveryAbort.signal.addEventListener("abort", restart, {
+			once: true,
+		});
+		let workspace: Workspace;
+		try {
+			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
+			this.recoveryAbort.signal.throwIfAborted();
+			workspace = await setupExecutionScope.run(
+				{
+					signal: preparation.signal,
+					service: this.runnerSlots,
+					capacity: {
+						identity: `${this.factoryHome}:preparation:${sessionId}`,
+						recoverable: true,
+					},
+				},
+				async () =>
+					this.config.handlers?.createWorkspace
+						? await this.config.handlers.createWorkspace(
+								fullIssue,
+								repositories,
+								{
+									childEnvironment: execution?.environment,
+									baseBranchOverrides,
+									onRepoSetupHookEvent: (activity) =>
+										this.activityPoster.postRepoSetupHookActivity(
+											sessionId,
+											linearWorkspaceId,
+											activity,
+										),
+								},
+							)
+						: await gitService.createGitWorktree(fullIssue, repositories, {
+								baseBranchOverrides,
+								onRepoSetupHookEvent: (activity) =>
+									this.activityPoster.postRepoSetupHookActivity(
+										sessionId,
+										linearWorkspaceId,
+										activity,
+									),
+							}),
+			);
+			preparation.signal.throwIfAborted();
+		} finally {
+			this.preparationStarts.delete(sessionId);
+			this.recoveryAbort.signal.removeEventListener("abort", restart);
+		}
 
 		if (
 			takeover &&
@@ -4738,6 +4980,11 @@ ${taskSection}`;
 			},
 		};
 		const createdSession = agentSessionManager.getSession(sessionId)!;
+		if (executionSnapshot)
+			createdSession.metadata = {
+				...createdSession.metadata,
+				executionSnapshot,
+			};
 		createdSession.workflowChat = launch.workflow.chat ?? false;
 		createdSession.triggerOrigin = {
 			...origin,
@@ -4806,7 +5053,7 @@ ${taskSection}`;
 		// Pre-create attachments directory even if no attachments exist yet
 		const workspaceFolderName = basename(workspace.path);
 		const attachmentsDir = join(
-			this.cyrusHome,
+			this.factoryHome,
 			workspaceFolderName,
 			"attachments",
 		);
@@ -4814,7 +5061,7 @@ ${taskSection}`;
 
 		// Write Claude settings to disable co-authored-by attribution in the workspace.
 		// This uses the SDK's "local" settings source (loaded via settingSources: ["user", "project", "local"])
-		// to ensure Cyrus sessions don't add "Co-Authored-By: Claude" trailers to git commits.
+		// to ensure Bob’s Factory sessions don't add "Co-Authored-By: Claude" trailers to git commits.
 		const claudeSettingsDir = join(workspace.path, ".claude");
 		await mkdir(claudeSettingsDir, { recursive: true });
 		await writeFile(
@@ -4868,7 +5115,7 @@ ${taskSection}`;
 	 * @param repos All available repositories for routing
 	 */
 	private getLaunchAdmission(): LaunchAdmission {
-		this.launchAdmission ??= new LaunchAdmission(this.cyrusHome);
+		this.launchAdmission ??= new LaunchAdmission(this.factoryHome);
 		return this.launchAdmission;
 	}
 
@@ -5007,6 +5254,7 @@ ${taskSection}`;
 	}
 
 	private settleTicketLaunch(sessionId: string): void {
+		this.preparationStarts.get(sessionId)?.abort();
 		for (const receipt of this.getLaunchAdmission().values()) {
 			if (receipt.sessionId !== sessionId) continue;
 			this.getLaunchAdmission().update(receipt, { phase: "settled" });
@@ -5248,7 +5496,7 @@ ${taskSection}`;
 
 			if (routingResult.type === "none") {
 				this.settleTicketLaunch(webhook.agentSession.id);
-				if (process.env.CYRUS_WEBHOOK_DEBUG === "true") {
+				if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 					this.logger.info(
 						`No repository configured for webhook from workspace ${webhook.organizationId}`,
 					);
@@ -5320,7 +5568,7 @@ ${taskSection}`;
 		const { agentSession, guidance } = webhook;
 		const commentBody = agentSession.comment?.body;
 
-		// If this issue is a sub-issue of an issue Cyrus has a session on, link the
+		// If this issue is a sub-issue of an issue Bob’s Factory has a session on, link the
 		// two so the parent is resumed when this session completes. Done before the
 		// blocked-by check so a parked child is linked as well.
 		await this.linkChildSessionToParentIssueSession(
@@ -5564,10 +5812,6 @@ ${taskSection}`;
 			const { workflow, workflowDefinitions } = sessionData.launch;
 			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 			if (workflow.id !== "simple") {
-				if (repositories.length !== 1)
-					throw new Error(
-						"Factory MVP runs use one repository; use Simple for multi-repository tasks",
-					);
 				const selectedRunner = await this.buildAgentRunnerConfig(
 					session,
 					primaryRepo,
@@ -5585,12 +5829,26 @@ ${taskSection}`;
 				this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 				const run = this.getFactoryRuntime().create({
 					id: sessionId,
+					executionSnapshot: session.metadata?.executionSnapshot
+						? ExecutionSnapshotSchema.parse(session.metadata.executionSnapshot)
+						: undefined,
 					title: fullIssue.title,
 					repositoryId: primaryRepo.id,
 					workflow,
 					workflowDefinitions,
 					triggerOrigin: session.triggerOrigin!,
 					workspace: session.workspace.path,
+					repositories: snapshotRepositories(
+						repositories,
+						session.workspace.path,
+						session.workspace.repoPaths,
+						Object.fromEntries(
+							session.repositories.map((repo) => [
+								repo.repositoryId,
+								repo.baseBranchName,
+							]),
+						),
+					),
 					input: assembly.userPrompt,
 					issueId: fullIssue.id,
 					workspaceId: linearWorkspaceId,
@@ -5602,6 +5860,9 @@ ${taskSection}`;
 							: (session.repositories[0]?.baseBranchName ??
 								primaryRepo.baseBranch),
 					name: primaryRepo.name,
+					githubUrl: primaryRepo.githubUrl,
+					gitlabUrl: primaryRepo.gitlabUrl,
+					gitProvider: primaryRepo.gitProvider,
 				};
 				run.titleGeneration = session.titleGeneration;
 				run.outputs.ticket = ticket;
@@ -5652,7 +5913,12 @@ ${taskSection}`;
 				`Label-based runner selection for new session: ${runnerType} (session ${sessionId})`,
 			);
 
-			const runner = this.createRunnerForType(runnerType, runnerConfig);
+			const runner = this.createRunnerForType(
+				runnerType,
+				runnerConfig,
+				undefined,
+				sessionId,
+			);
 			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 
 			// Store runner by comment ID
@@ -6020,7 +6286,7 @@ ${taskSection}`;
 		// Always set up attachments directory, even if no attachments in current comment
 		const workspaceFolderName = basename(session.workspace.path);
 		const attachmentsDir = join(
-			this.cyrusHome,
+			this.factoryHome,
 			workspaceFolderName,
 			"attachments",
 		);
@@ -6568,7 +6834,7 @@ ${taskSection}`;
 	 *
 	 * Skill scopes (persisted in `scope.json` sidecars by the config-updater)
 	 * match against:
-	 * - the active repository's Cyrus config ID,
+	 * - the active repository's Bob’s Factory config ID,
 	 * - the Linear team that owns the issue, and
 	 * - the Linear label IDs attached to the issue.
 	 *
@@ -6646,7 +6912,7 @@ ${taskSection}`;
 	 * Instantiate the appropriate runner for the given type.
 	 *
 	 * Every runner is wrapped so its `start()`/`startStreaming()` hold a
-	 * global concurrency slot for the session's lifetime — this is the single
+	 * instance concurrency slot for the session's lifetime — this is the single
 	 * choke point that makes `maxConcurrentSessions` cover Linear, GitHub,
 	 * GitLab, and chat sessions alike.
 	 */
@@ -6654,12 +6920,134 @@ ${taskSection}`;
 		runnerType: RunnerType,
 		config: AgentRunnerConfig,
 		signal?: AbortSignal,
+		sessionId = config.workspaceName ?? config.workingDirectory ?? randomUUID(),
 	): IAgentRunner {
 		return capRunnerStarts(
 			this.buildRunnerForType(runnerType, config),
 			this.runnerSlots,
 			signal,
+			{
+				identity: `${this.factoryHome}:session:${sessionId}`,
+				recoverable: true,
+				preserveOnShutdown: () =>
+					this.titleSession(sessionId)?.status !== AgentSessionStatus.Error,
+				remote: runnerType === "cursor",
+				onChange: () => this.emit("chatSessionChanged", sessionId),
+			},
 		);
+	}
+
+	private getExecutionResolver(): ExecutionEnvironmentResolver {
+		this.executionResolver ??= new ExecutionEnvironmentResolver(
+			join(this.factoryHome, "factory"),
+		);
+		return this.executionResolver;
+	}
+	/** Check every reachable provider and naming job before worktree hooks or ticket mutation. */
+	private async preflightExecution(
+		run: FactoryRun,
+		workflow: Workflow,
+		definitions: Workflow[],
+	): Promise<void> {
+		if (!run.executionSnapshot) return;
+		const fallback = (run.runner ??
+			this.runnerSelectionService.getDefaultRunner()) as RunnerType;
+		const requests: [RunnerType, string | undefined][] = [
+			[fallback, run.model ?? this.getDefaultModelForRunner(fallback)],
+		];
+		const visited = new Set<string>();
+		const scan = (steps: WorkflowStep[]) => {
+			for (const step of steps) {
+				if (step.type === "agent")
+					requests.push([
+						step.runner ?? fallback,
+						step.model ??
+							(step.runner && step.runner !== fallback
+								? this.getDefaultModelForRunner(step.runner)
+								: (run.model ?? this.getDefaultModelForRunner(fallback))),
+					]);
+				if (step.groups) for (const group of step.groups) scan(group);
+				if (step.workflow && !visited.has(step.workflow)) {
+					visited.add(step.workflow);
+					const nested = definitions.find((item) => item.id === step.workflow);
+					if (nested) scan(nested.steps);
+				}
+			}
+		};
+		scan(workflow.steps);
+		const title = this.getFactoryRuntime().resolveTitleSettings();
+		requests.push([title.runner, title.model]);
+		const checked = new Set<RunnerType>();
+		for (const [runner, model] of requests) {
+			validateProfileRunner(
+				{ factoryHome: this.factoryHome, model },
+				run.executionSnapshot,
+				runner,
+			);
+			if (!checked.has(runner)) await this.resolveRunExecution(run, runner);
+			checked.add(runner);
+		}
+	}
+	private async resolveRunExecution(
+		run: FactoryRun,
+		runner?: string,
+		job = "main",
+	): Promise<ResolvedExecutionEnvironment | undefined> {
+		if (!run.executionSnapshot) return undefined;
+		const repository = this.repositories.get(run.repositoryId);
+		if (!repository) throw new Error("Execution repository unavailable");
+		const type = (runner ??
+			run.runner ??
+			this.runnerSelectionService.getDefaultRunner()) as RunnerType;
+		const capability = executionCapabilities(type);
+		const resolved = await this.getExecutionResolver().resolve(
+			run.executionSnapshot,
+			run.id,
+			run.workspace && existsSync(run.workspace)
+				? run.workspace
+				: repository.repositoryPath,
+			type,
+			job,
+			this.factoryRepositories(run).map((repo) => {
+				const workspace = run.repositories?.find(
+					(retained) => retained.id === repo.id,
+				)?.workspace;
+				return workspace && existsSync(workspace)
+					? workspace
+					: repo.repositoryPath;
+			}),
+		);
+		run.executionDiagnostics = {
+			accounts: resolved.accounts,
+			git: resolved.git,
+			mcp: Object.keys(resolved.mcp),
+			runner: type,
+			binary: capability.binary,
+			version: capability.version,
+			tracking: !run.ticketReference
+				? "No associated ticket"
+				: run.ticketReference.provider === "native"
+					? "Service integration (control plane)"
+					: "Selected MCP credentials",
+		};
+		return resolved;
+	}
+	private async applyRunExecution(
+		run: FactoryRun,
+		runner: RunnerType,
+		config: AgentRunnerConfig,
+		job = "main",
+	) {
+		const resolved = await this.resolveRunExecution(run, runner, job);
+		if (resolved) {
+			validateProfileRunner(config, run.executionSnapshot!, runner);
+			this.getExecutionResolver().apply(
+				config,
+				run.executionSnapshot!,
+				resolved,
+			);
+		}
+		return resolved;
 	}
 
 	private getFactoryRuntime(): WorkflowRuntime {
@@ -6670,7 +7058,13 @@ ${taskSection}`;
 				mcp: (context, server, tool) =>
 					this.executeFactoryMcpTool(context, server, tool),
 			});
-			this.factoryRuntime = new WorkflowRuntime(this.cyrusHome, {
+			this.factoryRuntime = new WorkflowRuntime(this.factoryHome, {
+				execution: (run, runner) => this.resolveRunExecution(run, runner),
+				cleanupExecution: (run) => {
+					if (run.executionSnapshot)
+						this.getExecutionResolver().cleanupCredentials(run.id);
+				},
+				capacity: this.runnerSlots,
 				track: (run, milestone) =>
 					this.getTicketTracking().record(run, milestone),
 				retryTracking: async (run) => {
@@ -6680,7 +7074,14 @@ ${taskSection}`;
 					runner = this.runnerSelectionService.getDefaultRunner(),
 				) => ({ runner, model: this.getDefaultModelForRunner(runner) }),
 				stopTitle: (id) => this.cancelRunTitle(id),
-				prepare: (run, signal) => this.prepareFactoryRun(run, signal),
+				prepare: (run, signal) =>
+					setupExecutionScope.run(
+						{
+							signal,
+							capacity: this.getFactoryRuntime().capacityOptions(run, "setup"),
+						},
+						() => this.prepareFactoryRun(run, signal),
+					),
 				simple: (run, signal) => this.executeSimpleFactoryRun(run, signal),
 				agent: (context) => this.executeFactoryAgent(context),
 				script: (context) => {
@@ -6692,7 +7093,7 @@ ${taskSection}`;
 					return tools.tool(context);
 				},
 				question: async (run) => {
-					const body = `## Factory clarification\n\n${run.questions.map((question, index) => `${index + 1}. ${question}`).join("\n")}\n\nReply here or answer in the factory UI. The run waits for your answers.`;
+					const body = `## Factory clarification\n\n${questionNotification(run.questions, run.questionRecommendations)}`;
 					if (!run.ticketReference) await this.postFactoryComment(run, body);
 					await this.agentSessionManager.createResponseActivity(run.id, body);
 				},
@@ -6835,7 +7236,7 @@ ${taskSection}`;
 			return;
 		this.titleStarted.add(id);
 		this.titleGenerator ??= new RunTitleGenerator(
-			this.cyrusHome,
+			this.factoryHome,
 			this.runnerSlots,
 			{
 				update: (runId, result, title) => {
@@ -6877,7 +7278,7 @@ ${taskSection}`;
 						repositories: [],
 						workspace: { path: directory, isGitWorktree: false },
 					};
-					return this.runnerConfigBuilder.buildTitleConfig(
+					const titleConfig = this.runnerConfigBuilder.buildTitleConfig(
 						{
 							session: synthetic,
 							repository:
@@ -6903,7 +7304,7 @@ ${taskSection}`;
 									: this.config.linearMcpConfigs),
 							linearWorkspaceId: repository.linearWorkspaceId ?? "",
 							requireLinearWorkspaceId,
-							cyrusHome: this.cyrusHome,
+							factoryHome: this.factoryHome,
 							logger: this.logger,
 							onMessage: () => {},
 							onError: () => {},
@@ -6921,11 +7322,36 @@ ${taskSection}`;
 							this.factoryRuntime?.runs.get(jobId)?.workspace ??
 							repository.repositoryPath,
 					);
+					const sourceRun =
+						this.factoryRuntime?.runs.get(jobId) ??
+						(source?.metadata?.executionSnapshot
+							? ({
+									id: jobId,
+									repositoryId: repository.id,
+									workspace: source.workspace.path,
+									executionSnapshot: ExecutionSnapshotSchema.parse(
+										source.metadata.executionSnapshot,
+									),
+								} as FactoryRun)
+							: undefined);
+					if (sourceRun?.executionSnapshot) {
+						await this.applyRunExecution(
+							sourceRun,
+							snapshot.settings.runner,
+							titleConfig,
+							"title",
+						);
+						titleConfig.mcpConfig = titleMcpConfig(
+							titleConfig,
+							snapshot.settings.runner,
+							sourceRun.workspace,
+							this.logger,
+						);
+					}
+					return titleConfig;
 				},
 				createRunner: (snapshot, config) =>
-					snapshot.settings.runner === "claude"
-						? new ClaudeRunner(config, false)
-						: this.buildRunnerForType(snapshot.settings.runner, config),
+					this.buildRunnerForType(snapshot.settings.runner, config, true),
 			},
 		);
 		this.titleGenerator.start(id, job);
@@ -6940,8 +7366,37 @@ ${taskSection}`;
 		);
 		return this.ticketTracking;
 	}
+	private factoryRepositories(run: FactoryRun): RepositoryConfig[] {
+		return (
+			run.repositories?.length
+				? run.repositories.map((repo) => repo.id)
+				: [run.repositoryId]
+		).map((id) => {
+			const configured = this.repositories.get(id);
+			if (!configured?.isActive)
+				throw new Error(
+					`Run repository ${id} is unavailable; restore its configuration before continuing`,
+				);
+			const retained = run.repositories?.find((repo) => repo.id === id);
+			return retained
+				? {
+						...configured,
+						name: retained.name,
+						repositoryPath: retained.repositoryPath,
+						baseBranch: retained.baseBranch,
+						githubUrl: retained.githubUrl,
+						gitlabUrl: retained.gitlabUrl,
+						gitProvider: retained.gitProvider,
+					}
+				: configured;
+		});
+	}
+
 	private async factoryMcpConfig(run: FactoryRun) {
-		const repository = this.repositories.get(run.repositoryId);
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		);
 		const session =
 			this.agentSessionManager.getSession(run.id) ??
 			(run.sessionSnapshot as CyrusAgentSession | undefined);
@@ -6954,9 +7409,9 @@ ${taskSection}`;
 			repository,
 			run.id,
 			undefined,
-			this.buildAllowedTools([repository]),
-			[repository.repositoryPath],
-			this.buildDisallowedTools([repository]),
+			this.buildAllowedTools(repositories),
+			repositories.map((repo) => repo.repositoryPath),
+			this.buildDisallowedTools(repositories),
 			undefined,
 			[],
 			undefined,
@@ -6965,6 +7420,12 @@ ${taskSection}`;
 		);
 		const runnerType =
 			(run.runner as RunnerType | undefined) ?? built.runnerType;
+		const execution = await this.applyRunExecution(
+			run,
+			runnerType,
+			built.config,
+			"mcp",
+		);
 		const servers = titleMcpConfig(
 			built.config,
 			runnerType,
@@ -6974,7 +7435,7 @@ ${taskSection}`;
 		return {
 			built,
 			servers,
-			callTool: (
+			callTool: async (
 				serverName: string,
 				tool: string,
 				args: Record<string, unknown>,
@@ -6990,16 +7451,38 @@ ${taskSection}`;
 					throw new Error(
 						`MCP server ${serverName} is not configured as a process/HTTP transport`,
 					);
-				if (runnerType === "codex" && "url" in server)
-					return callCodexMcpTool(
-						{ ...built.config, workingDirectory: run.workspace },
-						serverName,
-						server,
-						tool,
-						args,
-						signal,
+				try {
+					const result =
+						runnerType === "codex" && "url" in server
+							? await callCodexMcpTool(
+									{ ...built.config, workingDirectory: run.workspace },
+									serverName,
+									server,
+									tool,
+									args,
+									signal,
+								)
+							: await callConfiguredTool(
+									"command" in server
+										? {
+												...server,
+												env: { ...server.env, ...executionEnvironment() },
+											}
+										: server,
+									tool,
+									args,
+									signal,
+									run.workspace || repository.repositoryPath,
+									built.config.childEnvironment,
+								);
+					return execution
+						? JSON.parse(execution.redact(JSON.stringify(result)))
+						: result;
+				} catch (error) {
+					throw new Error(
+						execution ? execution.redact(String(error)) : String(error),
 					);
-				return callConfiguredTool(server, tool, args, signal, run.workspace);
+				}
 			},
 		};
 	}
@@ -7192,14 +7675,17 @@ ${taskSection}`;
 		};
 	}
 
-	private sendFactoryChat(id: string, text: string): void {
+	private sendFactoryChat(
+		id: string,
+		text: string,
+		messageId?: string,
+	): void | Promise<void> {
 		const state = this.factoryChatState(id);
 		if (!state.available) throw new Error(state.reason ?? "Chat unavailable");
 		const chatHandler = this.chatHandlerForSession(id);
 		if (chatHandler) {
 			this.getFactoryRuntime().updateViewState(id, { keptOpen: true });
-			chatHandler.sendMessage(id, text);
-			return;
+			return chatHandler.sendMessage(id, text, messageId);
 		}
 		if (this.askUserQuestionHandler.hasPendingQuestion(id)) {
 			this.askUserQuestionHandler.handleUserResponse(id, text);
@@ -7261,7 +7747,7 @@ ${taskSection}`;
 				(await roleProgress(context)).currentRevision?.headSha
 		)
 			throw new Error(
-				`Output correction exhausted at ${context.step.id}; inspect persisted rejected output/issues. A new revision is required before further automatic correction.`,
+				`Output correction exhausted at ${context.step.id}; inspect persisted rejected output/issues, restore missing infrastructure if needed, then use Retry to authorize another bounded correction attempt.`,
 			);
 		const checkpoint = context.checkpointAgent;
 		context.checkpointAgent = (agent) => {
@@ -7285,6 +7771,21 @@ ${taskSection}`;
 					}
 					return output;
 				} catch (error) {
+					context.signal.throwIfAborted();
+					if (
+						error instanceof Error &&
+						/^Agent step failed:.*codex app-server produced no activity for \d+ms/.test(
+							error.message,
+						) &&
+						context.resumeAgent?.runner === "codex" &&
+						(context.resumeAgent.idleRetries ?? 0) < 1
+					) {
+						context.checkpointAgent({ ...context.resumeAgent, idleRetries: 1 });
+						context.log(
+							"Codex turn went silent; resuming the saved conversation once. Completed role work and checkpoints are retained.",
+						);
+						continue;
+					}
 					const capture = error instanceof CaptureReuseError;
 					if (!(error instanceof OutputValidationError) && !capture)
 						throw error;
@@ -7330,7 +7831,7 @@ ${taskSection}`;
 					// Increment before launching so process restarts cannot reset the budget.
 					context.checkpointAgent({
 						...context.resumeAgent,
-						rejected: { ...rejection, attempts: attempts + 1 },
+						rejected: { ...rejection, attempts: attempts + 1, reserved: true },
 					});
 				}
 			}
@@ -7344,7 +7845,10 @@ ${taskSection}`;
 	): Promise<unknown> {
 		const { run, step } = context;
 		const session = this.agentSessionManager.getSession(run.id);
-		const repository = this.repositories.get(run.repositoryId);
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		);
 		if (!session || !repository)
 			throw new Error("Run session/repository unavailable");
 		const outputCorrection = context.resumeAgent?.rejected;
@@ -7365,21 +7869,23 @@ ${taskSection}`;
 				}
 			: undefined;
 
-		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${step.askQuestions ? questionInstructions(run.id) : ""}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		// Review fixers and QA roles can request assistance without askQuestions;
+		// saved recipes must receive the same question guidance as new ones.
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${repositoryScopeInstructions(run)}\nGit provider: ${JSON.stringify(run.gitProvider ?? { gitProvider: repository.gitProvider, githubUrl: repository.githubUrl, gitlabUrl: repository.gitlabUrl })}. Use the selected provider for review, discussion resolution and CI tooling; do not assume GitHub or use gh for another provider. Runtime publication and merge retain the accepted provider. ${run.gitProvider?.type === "custom" ? (run.gitProvider.instructions ?? "") : repository.gitProvider?.type === "custom" ? (repository.gitProvider.instructions ?? "") : ""}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${questionInstructions(run.id)}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
 			repository,
 			run.id,
 			instruction,
-			this.buildAllowedTools([repository]),
+			this.buildAllowedTools(repositories),
 			[
-				repository.repositoryPath,
+				...repositories.map((repo) => repo.repositoryPath),
 				context.evidenceDir,
 				...[
-					join(this.cyrusHome, basename(run.workspace), "attachments"),
+					join(this.factoryHome, basename(run.workspace), "attachments"),
 				].filter(existsSync),
 			],
-			this.buildDisallowedTools([repository]),
+			this.buildDisallowedTools(repositories),
 			undefined,
 			[],
 			undefined,
@@ -7408,6 +7914,14 @@ ${taskSection}`;
 				serviceTier: run.serviceTier,
 			}),
 		);
+		await this.applyRunExecution(
+			run,
+			runnerType,
+			built.config,
+			createHash("sha256")
+				.update(context.stepKey ?? step.id)
+				.digest("hex"),
+		);
 		built.config.resumeSessionId = context.resumeAgent?.sessionId;
 		built.config.additionalDirectories = [
 			...(built.config.additionalDirectories ?? []),
@@ -7415,27 +7929,34 @@ ${taskSection}`;
 		];
 		built.config.onAskUserQuestion = undefined; // Clarification uses the persisted workflow checkpoint.
 		built.config.allowedTools = [
-			...(built.config.allowedTools ?? []),
+			...(step.id === "question-explanation"
+				? []
+				: (built.config.allowedTools ?? [])),
 			"mcp__factory-context__list_context",
 			"mcp__factory-context__read_context",
 		];
 		const originalMessage = built.config.onMessage;
 		let agentCheckpoint = context.resumeAgent;
+		let startupConfirmed = false;
 		built.config.onMessage = (message) => {
+			if (message.type === "assistant" || message.type === "user")
+				startupConfirmed = true;
 			if (
 				message.type === "system" &&
 				message.subtype === "init" &&
 				message.session_id &&
 				message.session_id !== "pending"
 			) {
+				startupConfirmed = true;
 				agentCheckpoint = {
 					runner: runnerType,
 					sessionId: message.session_id,
+					idleRetries: context.resumeAgent?.idleRetries,
 					...(context.resumeAgent?.result
 						? { result: context.resumeAgent.result }
 						: {}),
 					...(context.resumeAgent?.rejected
-						? { rejected: context.resumeAgent.rejected }
+						? { rejected: { ...context.resumeAgent.rejected, reserved: false } }
 						: {}),
 				};
 				context.checkpointAgent?.(agentCheckpoint);
@@ -7450,25 +7971,36 @@ ${taskSection}`;
 				context.log(JSON.stringify(message), "agent");
 		};
 		context.progress = await roleProgress(context);
+		this.refreshFactoryFeedbackContext(context);
 		const factoryContext = prepareFactoryContext({
 			...(context.input && typeof context.input === "object"
 				? context.input
 				: { input: context.input }),
 			progress: context.progress,
+			...(step.id === "ci-fix"
+				? { feedback: factoryFeedbackContext(context) }
+				: {}),
+			...(["code-fix", "visual-fix"].includes(step.id)
+				? { reviewFix: factoryReviewFixContext(context) }
+				: {}),
 			...(captureCorrection ? { captureCorrection } : {}),
 			...(outputCorrection ? { outputCorrection } : {}),
 		});
 		try {
 			built.config.mcpConfig = {
 				...built.config.mcpConfig,
-				"factory-context": factoryContext.config,
+				"factory-context": {
+					...factoryContext.config,
+					...(runnerType === "codex"
+						? { required: true, startup_timeout_sec: 45 }
+						: {}),
+				},
 			};
 			const runner = capRunnerStarts(
-				runnerType === "claude"
-					? new ClaudeRunner(built.config, false)
-					: this.buildRunnerForType(runnerType, built.config),
+				this.buildRunnerForType(runnerType, built.config, true),
 				this.runnerSlots,
 				context.signal,
+				{ ...context.capacity, remote: runnerType === "cursor" },
 			);
 			this.agentSessionManager.addAgentRunner(run.id, runner);
 			this.factoryChat ??= new SessionChat();
@@ -7487,7 +8019,7 @@ ${taskSection}`;
 						? runner.startStreaming.bind(runner)
 						: runner.start.bind(runner);
 				await start(
-					`${outputCorrection && !captureCorrection ? "Your previous output failed validation. Read /outputCorrection from the NEW factory-context connection: it contains the rejected candidate, precise issues, and revision. Correct those issues and return the COMPLETE result for this role. Preserve accepted evidence and completed work; correct only this role output and, for capture, invalid states. Do not replay other pipeline roles. This is an output correction, not a process restart.\n\n" : captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent ? "This role was interrupted by a process restart. Continue from your existing conversation and worktree. Inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
+					`${outputCorrection && !captureCorrection ? "Your previous output failed validation. Read /outputCorrection from the NEW factory-context connection: it contains the rejected candidate, precise issues, and revision. Correct those issues and return the COMPLETE result for this role. Preserve accepted evidence and completed work; correct only this role output and, for capture, invalid states. Do not replay other pipeline roles. This is an output correction, not a process restart.\n\n" : captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent ? "Continue this role from your existing conversation and worktree. Read the latest answers through the new factory-context connection and inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
 				);
 				context.signal.throwIfAborted();
 				const messages = runner.getMessages();
@@ -7496,6 +8028,7 @@ ${taskSection}`;
 					.at(-1);
 				if (result?.type === "result" && result.is_error)
 					throw new Error(`Agent step failed: ${JSON.stringify(result)}`);
+				startupConfirmed = true;
 				const assistant = messages
 					.filter((message) => message.type === "assistant")
 					.at(-1);
@@ -7523,6 +8056,7 @@ ${taskSection}`;
 					context.checkpointAgent?.({
 						runner: agentCheckpoint.runner,
 						sessionId: agentCheckpoint.sessionId,
+						idleRetries: context.resumeAgent?.idleRetries,
 						...(context.resumeAgent?.rejected
 							? { rejected: context.resumeAgent.rejected }
 							: {}),
@@ -7539,6 +8073,19 @@ ${taskSection}`;
 				unregisterChat();
 			}
 		} finally {
+			const rejected = context.resumeAgent?.rejected;
+			if (runnerType === "codex" && !startupConfirmed && rejected?.reserved) {
+				// No ready thread or model work: return the launch reservation,
+				// preserving the rejected candidate for an infrastructure retry.
+				context.checkpointAgent?.({
+					...context.resumeAgent!,
+					rejected: {
+						...rejected,
+						attempts: Math.max(0, rejected.attempts - 1),
+						reserved: false,
+					},
+				});
+			}
 			factoryContext.cleanup();
 		}
 	}
@@ -7549,7 +8096,10 @@ ${taskSection}`;
 	): unknown {
 		const { run, step } = context;
 		try {
-			let output = value;
+			let output = validateContractOutput(
+				context,
+				step.askQuestions ? normalizeQuestionResult(value) : value,
+			);
 			if (
 				step.qaContract ||
 				["factory", "takeover"].includes(run.workflow.id) ||
@@ -7557,12 +8107,18 @@ ${taskSection}`;
 					?.find((item) => item.id === "factory-pipeline")
 					?.steps.includes(step)
 			)
-				output = validateFactoryResult(step.id, output, step.qaContract);
+				output = validateFactoryResult(
+					step.id,
+					output,
+					step.qaContract,
+					step.videoContract,
+				);
 			if (step.id === "visual-scope" && step.qaContract) {
 				const issues = qaRequirementIssues(
 					output as QaScope,
-					run.outputs,
+					context.outputs ?? run.outputs,
 					run.answers,
+					aggregateForContext(context)?.baseline.inventory,
 				);
 				if (issues.length) throw new Error(issues.join("; "));
 			}
@@ -7570,9 +8126,39 @@ ${taskSection}`;
 				validateGuideGeneration(output);
 				validateGuideCoverage(context, output);
 			}
+			if (step.id === "ci-fix") {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				output = recordFeedbackAssessment(context, output);
+			}
+			if (["code-fix", "visual-fix"].includes(step.id)) {
+				this.refreshFactoryFeedbackContext(context);
+				output = validateFactoryResult(step.id, output);
+				validateReviewFix(context, output);
+			}
 			return output;
 		} catch (error) {
 			throw outputValidationError(value, error);
+		}
+	}
+
+	private refreshFactoryFeedbackContext(context: ExecutionContext): void {
+		if (!["ci-fix", "code-fix", "visual-fix"].includes(context.step.id)) return;
+		if (this.factoryRuntime) {
+			context.chatMessages = this.factoryRuntime.chatMessages(context.run.id);
+			context.input = {
+				...(context.input as Record<string, unknown>),
+				chatMessages: context.chatMessages,
+			};
+		}
+		if (context.step.id === "ci-fix") {
+			const receipt = (context.run.outputs["merge-readiness"] ??
+				context.run.outputs.ci) as MergeReadiness | undefined;
+			// Runs paused before feedback recovery was installed retain legacy
+			// receipts. Derive the exact pending versions before exposing context
+			// or validating a recovered result, without inventing assessments.
+			if (receipt && receipt.unassessedComments === undefined)
+				assessFeedback(context, receipt);
 		}
 	}
 
@@ -7582,11 +8168,30 @@ ${taskSection}`;
 	): Promise<unknown> {
 		const { run, step } = context;
 		let output = this.validateFactoryAgentOutput(context, value);
-		if (step.id === "guide") output = await finalizeGuideFiles(context, output);
-		if (step.id === "capture") output = captureEvidence(context, output);
-		if (step.id === "ci-fix")
-			output = recordFeedbackAssessment(context, output);
+		if (step.id === "guide") {
+			if (step.videoContract) {
+				const issues = await videoGateIssues(
+					context,
+					context.progress?.currentRevision?.headSha ?? "",
+				);
+				if (issues.blocked.length || issues.failures.length)
+					throw new Error(
+						"Guide video evidence is stale or incomplete: " +
+							issues.blocked.join("; "),
+					);
+			}
+			output = await finalizeGuideFiles(
+				context,
+				attachRequirementCoverage(context, output),
+			);
+		}
+		if (step.id === "capture") {
+			output = captureEvidence(context, output);
+			output = await finalizeVideoEvidence(context, output);
+		}
 		const completed = (await roleProgress(context)).currentRevision;
+		if (["code-fix", "visual-fix"].includes(step.id))
+			output = recordReviewFix(context, output, completed);
 		if (completed && step.id === "visual-review" && step.qaContract) {
 			output = {
 				...(output as Record<string, unknown>),
@@ -7601,7 +8206,7 @@ ${taskSection}`;
 		if (completed) {
 			run.roleRevisions ??= {};
 			completed.historyLength = run.history.length + 1;
-			run.roleRevisions[run.step ?? step.id] = completed;
+			run.roleRevisions[context.stepKey ?? run.step ?? step.id] = completed;
 		}
 		return output;
 	}
@@ -7686,7 +8291,51 @@ ${taskSection}`;
 		);
 		if (workflow.id === "simple" && Object.keys(customInputs).length)
 			prompt += `\n\nWorkflow launch inputs:\n${JSON.stringify(customInputs, null, 2)}`;
+		const id = `manual-${randomUUID()}`;
+		const parent = sourceRunId ? runtime.runs.get(sourceRunId) : undefined;
+		const selectedIds = input.repositoryIds ??
+			parent?.repositories?.map((repo) => repo.id) ??
+			repositoryScopes(Array.from(this.repositories.values())).find((scope) =>
+				scope.repositoryIds.includes(repository.id),
+			)?.repositoryIds ?? [repository.id];
+		if (!selectedIds.includes(repository.id))
+			throw new Error(
+				"The primary repository must belong to the selected scope",
+			);
+		const repositories = selectedIds.map((id) => {
+			const member = this.repositories.get(id);
+			if (!member?.isActive)
+				throw new Error(`Select an active repository: ${id}`);
+			return member;
+		});
+		const inherited = sourceRunId
+			? this.titleSession(sourceRunId)?.metadata?.executionSnapshot
+			: undefined;
+		const executionSnapshot = sourceRunId
+			? structuredClone(
+					parent?.executionSnapshot ??
+						(inherited ? ExecutionSnapshotSchema.parse(inherited) : undefined),
+				)
+			: runtime.executionProfiles.select(repository.id, input.execution);
+		if (executionSnapshot) {
+			// Admission has no session yet. Resolve against the source repository before fetch/hooks.
+			const temporary = {
+				id,
+				repositoryId: repository.id,
+				repositories: snapshotRepositories(repositories, ""),
+				workspace: "",
+				runner: input.runner,
+				model: input.model,
+				executionSnapshot,
+			} as FactoryRun;
+			await this.preflightExecution(temporary, workflow, workflowDefinitions);
+			if (Object.keys(executionSnapshot.identity?.runners ?? {}).length === 0)
+				throw new Error(
+					"Execution identity needs runner authentication bindings",
+				);
+		}
 		const run = runtime.create({
+			executionSnapshot,
 			triggerOrigin: {
 				type: "manual",
 				workflowId: workflow.id,
@@ -7699,8 +8348,9 @@ ${taskSection}`;
 				},
 			},
 			workflowDefinitions,
-			id: `manual-${randomUUID()}`,
+			id,
 			repositoryId: repository.id,
+			repositories: snapshotRepositories(repositories, ""),
 			workflow,
 			source: input.source,
 			workspace: "",
@@ -7712,10 +8362,12 @@ ${taskSection}`;
 			modelVariant: input.modelVariant,
 			serviceTier: input.serviceTier,
 		});
-		const parent = sourceRunId ? runtime.runs.get(sourceRunId) : undefined;
 		if (parent?.ticketReference)
 			run.ticketReference = structuredClone(parent.ticketReference);
-		run.launchRequest = structuredClone(input);
+		run.launchRequest = structuredClone({
+			...input,
+			repositoryIds: selectedIds,
+		});
 		run.setupComplete = false;
 		runtime.save(run);
 		void runtime.launch(run);
@@ -7728,8 +8380,21 @@ ${taskSection}`;
 		signal: AbortSignal,
 	): Promise<void> {
 		const runtime = this.getFactoryRuntime();
-		const repository = this.repositories.get(run.repositoryId)!;
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		)!;
 		const workflow = run.workflow;
+		run.outputs.repository = {
+			...(run.outputs.repository as Record<string, unknown>),
+			githubUrl: repository.githubUrl,
+			gitlabUrl: repository.gitlabUrl,
+			gitProvider: repository.gitProvider,
+		};
+		const execution = await this.resolveRunExecution(run);
+		const gitService = execution
+			? this.gitService.withEnvironment(execution.environment)
+			: this.gitService;
 		const prompt =
 			workflow.id === "takeover"
 				? input.prompt ||
@@ -7755,12 +8420,12 @@ ${taskSection}`;
 			const nativeSource =
 				ticketSource && !taskbotSource(ticketSource) ? ticketSource : undefined;
 			if (
-				(workflow.id === "takeover" &&
-					input.source?.startsWith("https://github.com/")) ||
+				(workflow.id === "takeover" && isPullRequestSource(input.source)) ||
 				nativeSource
 			) {
-				if (input.source?.startsWith("https://github.com/")) {
+				if (input.source && isPullRequestSource(input.source)) {
 					const setupContext: ExecutionContext = {
+						execution,
 						run: { ...run, workspace: repository.repositoryPath },
 						step: workflow.steps[0]!,
 						input: {},
@@ -7770,12 +8435,22 @@ ${taskSection}`;
 					};
 					const command = (exe: string, args: string[]) =>
 						executeCommand(setupContext, exe, args, 60000);
-					takeoverPr = await inspectPullRequest(command, input.source);
+					const provider = await resolveGitProvider(
+						setupContext,
+						command,
+						input.source,
+					);
+					run.gitProvider = setupContext.run.gitProvider;
+					takeoverPr = await inspectPullRequest(
+						command,
+						input.source,
+						provider,
+					);
 					const ref = `refs/factory/takeover/${takeoverPr.number}`;
 					await command("git", [
 						"fetch",
 						"origin",
-						`+refs/pull/${takeoverPr.number}/head:${ref}`,
+						`+refs/heads/${takeoverPr.headRefName}:${ref}`,
 					]);
 					fullIssue = { ...fullIssue, branchName: takeoverPr.headRefName };
 					baseBranchOverrides = new Map([[repository.id, ref]]);
@@ -7842,10 +8517,7 @@ ${taskSection}`;
 					const links = [
 						...new Set(
 							(snapshot.attachments ?? [])
-								.filter(
-									(a) =>
-										a.kind === "pr" && /^https:\/\/github\.com\//.test(a.url),
-								)
+								.filter((a) => a.kind === "pr" && isPullRequestSource(a.url))
 								.map((a) => a.url),
 						),
 					];
@@ -7855,6 +8527,7 @@ ${taskSection}`;
 						);
 					if (links[0]) {
 						const context: ExecutionContext = {
+							execution,
 							run: { ...run, workspace: repository.repositoryPath },
 							step: workflow.steps[0]!,
 							input: {},
@@ -7864,12 +8537,18 @@ ${taskSection}`;
 						};
 						const command = (exe: string, args: string[]) =>
 							executeCommand(context, exe, args, 60000);
-						takeoverPr = await inspectPullRequest(command, links[0]);
+						const provider = await resolveGitProvider(
+							context,
+							command,
+							links[0],
+						);
+						run.gitProvider = context.run.gitProvider;
+						takeoverPr = await inspectPullRequest(command, links[0], provider);
 						const ref = `refs/factory/takeover/${takeoverPr.number}`;
 						await command("git", [
 							"fetch",
 							"origin",
-							`+refs/pull/${takeoverPr.number}/head:${ref}`,
+							`+refs/heads/${takeoverPr.headRefName}:${ref}`,
 						]);
 						fullIssue = { ...fullIssue, branchName: takeoverPr.headRefName };
 						baseBranchOverrides = new Map([[repository.id, ref]]);
@@ -7878,9 +8557,9 @@ ${taskSection}`;
 				}
 			}
 			if (run.status === "stopped") return;
-			const workspace = await this.gitService.createGitWorktree(
+			const workspace = await gitService.createGitWorktree(
 				fullIssue,
-				[repository],
+				repositories,
 				{ baseBranchOverrides },
 			);
 			if (
@@ -7895,21 +8574,42 @@ ${taskSection}`;
 					"Another run is using this worktree; terminate it before taking over",
 				);
 			run.workspace = workspace.path;
+			run.repositories = snapshotRepositories(
+				repositories,
+				workspace.path,
+				workspace.repoPaths,
+				Object.fromEntries(
+					repositories.map((repo) => [
+						repo.id,
+						(repo.id === repository.id ? takeoverPr?.baseRefName : undefined) ??
+							workspace.resolvedBaseBranches?.[repo.id]?.branch ??
+							repo.baseBranch,
+					]),
+				),
+			);
+			if (run.gitProvider)
+				run.repositories.find(
+					(repo) => repo.id === run.repositoryId,
+				)!.providerSnapshot = run.gitProvider;
 			const session = this.agentSessionManager.createChatSession(
 				run.id,
 				workspace,
 				"manual",
-				[
-					{
-						repositoryId: repository.id,
-						branchName: fullIssue.branchName,
-						baseBranchName: takeoverPr?.baseRefName ?? repository.baseBranch,
-					},
-				],
+				repositories.map((repo) => ({
+					repositoryId: repo.id,
+					branchName: fullIssue.branchName,
+					baseBranchName:
+						(repo.id === repository.id ? takeoverPr?.baseRefName : undefined) ??
+						workspace.resolvedBaseBranches?.[repo.id]?.branch ??
+						repo.baseBranch,
+				})),
 			);
 			this.sessionRepositories.set(run.id, repository.id);
 			run.outputs.repository = {
 				name: repository.name,
+				githubUrl: repository.githubUrl,
+				gitlabUrl: repository.gitlabUrl,
+				gitProvider: repository.gitProvider,
 				baseBranch:
 					takeoverPr?.baseRefName ??
 					(workflow.id === "takeover"
@@ -7923,7 +8623,7 @@ ${taskSection}`;
 					session,
 					fullIssue,
 					repository,
-					repositories: [repository],
+					repositories,
 					userComment: prompt,
 					isNewSession: true,
 					isStreaming: false,
@@ -7946,6 +8646,11 @@ ${taskSection}`;
 	private saveFactorySession(run: FactoryRun): void {
 		const session = this.agentSessionManager.getSession(run.id);
 		if (session) {
+			if (run.executionSnapshot)
+				session.metadata = {
+					...session.metadata,
+					executionSnapshot: run.executionSnapshot,
+				};
 			const { agentRunner: _runner, ...snapshot } = session;
 			run.sessionSnapshot = structuredClone(snapshot);
 		}
@@ -7955,11 +8660,25 @@ ${taskSection}`;
 		run: FactoryRun,
 		signal: AbortSignal,
 	): Promise<void> {
-		const repository = this.repositories.get(run.repositoryId);
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		);
 		if (!repository?.isActive)
 			throw new Error(
 				"Run repository is unavailable; restore its configuration before continuing",
 			);
+		if (
+			!run.gitProvider &&
+			(repository.githubUrl || repository.gitlabUrl || repository.gitProvider)
+		)
+			run.outputs.repository = {
+				...(run.outputs.repository as Record<string, unknown>),
+				githubUrl: repository.githubUrl,
+				gitlabUrl: repository.gitlabUrl,
+				gitProvider: repository.gitProvider,
+			};
+		await this.resolveRunExecution(run);
 		if ((!run.workspace || run.setupComplete === false) && run.launchRequest)
 			await this.prepareManualFactoryRun(run, run.launchRequest, signal);
 		signal.throwIfAborted();
@@ -7970,29 +8689,65 @@ ${taskSection}`;
 				pending &&
 				run.humanDecisions?.at(-1)?.decision === "approve" &&
 				typeof url === "string" &&
-				/^https:\/\/github.com\/[\w.-]+\/[\w.-]+\/pull\/\d+\/?$/.test(url)
+				isPullRequestSource(url)
 			) {
+				if (run.repositories && run.repositories.length > 1) {
+					const evidenceDir = join(
+						this.getFactoryRuntime().directory,
+						"evidence",
+						run.id,
+					);
+					await mkdir(evidenceDir, { recursive: true });
+					const context: ExecutionContext = {
+						execution: await this.resolveRunExecution(run),
+						run,
+						step: pending.step,
+						input: {},
+						signal,
+						evidenceDir,
+						log: () => {},
+					};
+					const output = await confirmedGroupedMerge(
+						context,
+						(child, exe, args) => executeCommand(child, exe, args, 60000),
+					);
+					if (!pendingMergeConfirmation(run, output))
+						throw new Error("Grouped merge cannot complete the saved workflow");
+					run.outputs[pending.step.id] = output;
+					if (pending.checkpoint.active!.phase === "executing")
+						run.history.push({
+							step: pending.key,
+							output,
+							at: new Date().toISOString(),
+						});
+					pending.checkpoint.active!.phase = "result";
+					this.getFactoryRuntime().log(
+						run,
+						pending.key,
+						"Confirmed all approved repository PRs merged after worktree cleanup.",
+					);
+					return;
+				}
 				const evidenceDir = join(
 					this.getFactoryRuntime().directory,
 					"evidence",
 					run.id,
 				);
 				await mkdir(evidenceDir, { recursive: true });
-				const pr = JSON.parse(
-					await executeCommand(
-						{
-							run: { ...run, workspace: repository.repositoryPath },
-							step: pending.step,
-							input: {},
-							signal,
-							evidenceDir,
-							log: () => {},
-						},
-						"gh",
-						["pr", "view", url, "--json", "state,headRefOid"],
-						60000,
-					),
-				);
+				const context: ExecutionContext = {
+					execution: await this.resolveRunExecution(run),
+					run: { ...run, workspace: repository.repositoryPath },
+					step: pending.step,
+					input: {},
+					signal,
+					evidenceDir,
+					log: () => {},
+				};
+				const command = (exe: string, args: string[]) =>
+					executeCommand(context, exe, args, 60000);
+				const provider = await resolveGitProvider(context, command, url);
+				run.gitProvider = context.run.gitProvider;
+				const pr = await provider.view(url, "state,headRefOid");
 				const output = confirmedMerge(run, {
 					state: pr.state,
 					headSha: pr.headRefOid,
@@ -8022,17 +8777,23 @@ ${taskSection}`;
 		if (!session) {
 			session = this.agentSessionManager.createChatSession(
 				run.id,
-				{ path: run.workspace, isGitWorktree: true },
+				{
+					path: run.workspace,
+					isGitWorktree: true,
+					repoPaths:
+						run.repositories && run.repositories.length > 1
+							? Object.fromEntries(
+									run.repositories.map((repo) => [repo.id, repo.workspace]),
+								)
+							: undefined,
+				},
 				"manual",
-				[
-					{
-						repositoryId: run.repositoryId,
-						baseBranchName: String(
-							(run.outputs.repository as { baseBranch?: string })?.baseBranch ??
-								repository.baseBranch,
-						),
-					},
-				],
+				repositories.map((repo) => ({
+					repositoryId: repo.id,
+					baseBranchName:
+						run.repositories?.find((retained) => retained.id === repo.id)
+							?.baseBranch ?? repo.baseBranch,
+				})),
 			);
 		}
 		// The per-run checkpoint may be newer than the global session snapshot.
@@ -8068,6 +8829,153 @@ ${taskSection}`;
 		await this.getTicketTracking().flush(run);
 		this.saveFactorySession(run);
 		this.getFactoryRuntime().save(run);
+	}
+
+	private async recoverIntegrationSession(
+		session: CyrusAgentSession,
+		repository: RepositoryConfig,
+	): Promise<void> {
+		const pending = session.metadata?.pendingExecution;
+		if (!pending)
+			throw new Error(
+				"No saved integration execution input; manual recovery required",
+			);
+		const platform = session.issueContext!.trackerId as "github" | "gitlab";
+		const githubKey =
+			platform === "github"
+				? pending.replyEvent
+					? extractSessionKey(pending.replyEvent as GitHubCommentWebhookEvent)
+					: session.issue?.id
+				: undefined;
+		if (githubKey && this.activeGitHubPrSessions.has(githubKey))
+			throw new Error(
+				"This PR already has an active execution; manual recovery required",
+			);
+		// Reserve before configuration loading so incoming webhooks cannot start
+		// another writer in the recovered worktree.
+		if (githubKey) this.activeGitHubPrSessions.add(githubKey);
+		let githubSlotReleased = false;
+		const releaseGitHubSlot = () => {
+			if (githubKey && !githubSlotReleased) {
+				githubSlotReleased = true;
+				this.advanceGitHubPrQueue(githubKey);
+			}
+		};
+		const preparation = new AbortController();
+		this.preparationStarts.set(session.id, preparation);
+		const signal = AbortSignal.any([
+			preparation.signal,
+			this.recoveryAbort.signal,
+		]);
+		const cancelQueuedRecovery = () =>
+			this.runnerSlots.reconcileQueue(
+				(identity) => identity === `${this.factoryHome}:session:${session.id}`,
+			);
+		const stopped = () => {
+			void cancelQueuedRecovery().catch((error) =>
+				this.logger.error(
+					"Failed to cancel queued integration recovery",
+					error,
+				),
+			);
+		};
+		// A saved queue entry can still be parked while configuration loads.
+		// Explicit stop removes it immediately; shutdown must preserve it.
+		preparation.signal.addEventListener("abort", stopped, { once: true });
+		const ensureActive = () => {
+			signal.throwIfAborted();
+			if (session.status !== AgentSessionStatus.Active)
+				throw new Error("Integration recovery was stopped");
+		};
+		try {
+			ensureActive();
+			const nativeId =
+				session.claudeSessionId ??
+				session.codexSessionId ??
+				session.geminiSessionId ??
+				session.cursorSessionId ??
+				session.opencodeSessionId;
+			const built = await this.buildAgentRunnerConfig(
+				session,
+				repository,
+				session.id,
+				pending.systemPrompt,
+				this.toolPermissionResolver.buildGithubAllowedTools(repository),
+				[repository.repositoryPath],
+				this.buildDisallowedTools(repository),
+				nativeId,
+				undefined,
+				undefined,
+				200,
+				undefined,
+				this.buildSkillSessionContext(repository, undefined, session),
+				platform,
+				{ runnerType: pending.runner, modelOverride: pending.model },
+			);
+			ensureActive();
+			built.config.fallbackModel = this.getDefaultFallbackModelForRunner(
+				built.runnerType,
+			);
+			let replyPosted = false;
+			let runner: IAgentRunner;
+			const postReply = async () => {
+				if (replyPosted || !pending.replyEvent) return;
+				replyPosted = true;
+				if (platform === "github")
+					await this.postGitHubReply(
+						pending.replyEvent as GitHubCommentWebhookEvent,
+						runner,
+						repository,
+					);
+				else
+					await this.postGitLabReply(
+						pending.replyEvent as GitLabWebhookEvent,
+						runner,
+						repository,
+					);
+			};
+			if (githubKey) {
+				const onMessage = built.config.onMessage;
+				built.config.onMessage = async (message: SDKMessage) => {
+					try {
+						await onMessage?.(message);
+					} finally {
+						if (message.type === "result") {
+							void postReply().catch((error) =>
+								this.logger.error(
+									"Failed to post recovered GitHub reply",
+									error,
+								),
+							);
+							runner.completeStream?.();
+							releaseGitHubSlot();
+						}
+					}
+				};
+			}
+			runner = this.createRunnerForType(
+				built.runnerType,
+				built.config,
+				signal,
+				session.id,
+			);
+			this.agentSessionManager.addAgentRunner(session.id, runner);
+			await this.savePersistedState();
+			ensureActive();
+			await runner.start(pending.prompt);
+			await postReply();
+			await this.savePersistedState();
+		} finally {
+			preparation.signal.removeEventListener("abort", stopped);
+			if (this.preparationStarts.get(session.id) === preparation)
+				this.preparationStarts.delete(session.id);
+			releaseGitHubSlot();
+			if (
+				preparation.signal.aborted ||
+				session.status === AgentSessionStatus.Error
+			)
+				await cancelQueuedRecovery();
+		}
 	}
 
 	private async syncFactoryTicketTracking(
@@ -8144,7 +9052,7 @@ ${taskSection}`;
 		}
 		const admission = this.getLaunchAdmission();
 		const resumingSessions = new Set<string>();
-		// Original Simple issue sessions retain Cyrus's continuation path and timeline.
+		// Original Simple issue sessions retain Bob’s Factory's continuation path and timeline.
 		// Factory/manual Simple runs use their own checkpoint below.
 		for (const session of this.agentSessionManager.getActiveSessions()) {
 			if (
@@ -8159,7 +9067,9 @@ ${taskSection}`;
 				!session.issue ||
 				!session.workspace?.path ||
 				(session.issueContext?.trackerId &&
-					!["linear", "cli"].includes(session.issueContext.trackerId))
+					!["linear", "cli", "github", "gitlab"].includes(
+						session.issueContext.trackerId,
+					))
 			)
 				continue;
 			const repositoryId =
@@ -8170,24 +9080,36 @@ ${taskSection}`;
 				: undefined;
 			if (!repository?.isActive) continue;
 			resumingSessions.add(session.id);
-			void this.resumeAgentSession(
-				session,
-				repository,
-				session.id,
-				this.agentSessionManager,
-				"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
-				"",
-				false,
-				[],
-				repository.linearWorkspaceId,
-				undefined,
-				undefined,
-				undefined,
-				this.recoveryAbort.signal,
+			void (
+				session.issueContext?.trackerId === "github" ||
+				session.issueContext?.trackerId === "gitlab"
+					? this.recoverIntegrationSession(session, repository)
+					: this.resumeAgentSession(
+							session,
+							repository,
+							session.id,
+							this.agentSessionManager,
+							"Bob’s Factory restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
+							"",
+							false,
+							[],
+							repository.linearWorkspaceId,
+							undefined,
+							undefined,
+							undefined,
+							this.recoveryAbort.signal,
+						)
 			).catch(async (error) => {
-				if (this.stopping) return;
+				if (this.stopping || session.status !== AgentSessionStatus.Active)
+					return;
 				session.status = AgentSessionStatus.Error;
 				this.logger.error(`Session recovery failed for ${session.id}:`, error);
+				// Failed recovery may leave a saved request parked before admission.
+				// Shutdown returns above so recoverable requests retain their order.
+				await this.runnerSlots.reconcileQueue(
+					(identity) =>
+						identity === `${this.factoryHome}:session:${session.id}`,
+				);
 				await this.savePersistedState();
 				await this.agentSessionManager.createResponseActivity(
 					session.id,
@@ -8195,6 +9117,8 @@ ${taskSection}`;
 				);
 			});
 		}
+		for (const handler of this.activeChatSessionHandlers)
+			void handler.recoverQueuedSessions();
 		// Persist legacy role's conversation on the migrated unfinished leaf before
 		// the runtime upgrades its history to a graph checkpoint.
 		for (const run of runtime.runs.values()) {
@@ -8218,7 +9142,10 @@ ${taskSection}`;
 		signal: AbortSignal,
 	): Promise<void> {
 		const session = this.agentSessionManager.getSession(run.id)!;
-		const repository = this.repositories.get(run.repositoryId)!;
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		)!;
 		const execution = run.simpleExecution;
 		if (!execution) {
 			const stop = () =>
@@ -8231,7 +9158,7 @@ ${taskSection}`;
 					run.id,
 					this.agentSessionManager,
 					run.simplePrompt ??
-						"Cyrus restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
+						"Bob’s Factory restarted while this task was in progress. Continue the current task from the existing conversation and worktree. Inspect current files and prior tool results before repeating any action.",
 					"",
 					false,
 					[],
@@ -8253,9 +9180,9 @@ ${taskSection}`;
 			repository,
 			run.id,
 			execution.systemPrompt,
-			this.buildAllowedTools([repository]),
-			[repository.repositoryPath],
-			this.buildDisallowedTools([repository]),
+			this.buildAllowedTools(repositories),
+			repositories.map((repo) => repo.repositoryPath),
+			this.buildDisallowedTools(repositories),
 			execution.agent?.sessionId,
 			[],
 			undefined,
@@ -8271,6 +9198,7 @@ ${taskSection}`;
 		built.config.fallbackModel =
 			this.getDefaultFallbackModelForRunner(runnerType);
 		Object.assign(built.config, resolveAgentSettings(runnerType, run));
+		await this.applyRunExecution(run, runnerType, built.config);
 		const originalMessage = built.config.onMessage;
 		built.config.onMessage = (message) => {
 			if (
@@ -8289,6 +9217,10 @@ ${taskSection}`;
 			this.buildRunnerForType(runnerType, built.config),
 			this.runnerSlots,
 			signal,
+			{
+				...this.getFactoryRuntime().capacityOptions(run, "simple"),
+				remote: runnerType === "cursor",
+			},
 		);
 		this.agentSessionManager.addAgentRunner(run.id, runner);
 		const stop = () => runner.stop();
@@ -8320,24 +9252,46 @@ ${taskSection}`;
 		}
 	}
 
+	private managedRunnerConfig(config: AgentRunnerConfig): AgentRunnerConfig {
+		return {
+			...config,
+			appendSystemPrompt: `${config.appendSystemPrompt ?? ""}\n${capacityInstructions}`,
+			onAskUserQuestion: undefined,
+			disallowedTools: [
+				...(config.disallowedTools ?? []),
+				"Agent",
+				"Task",
+				"AskUserQuestion",
+			],
+		};
+	}
 	private buildRunnerForType(
 		runnerType: RunnerType,
 		config: AgentRunnerConfig,
+		coldClaude = false,
 	): IAgentRunner {
+		config = this.managedRunnerConfig(config);
+		if (this.config.handlers?.createAgentRunner)
+			return this.config.handlers.createAgentRunner(runnerType, config);
 		switch (runnerType) {
 			case "claude": {
 				// Inject the hosted SessionStore at the last moment so it only
 				// attaches to Claude runners (the field is Claude-specific).
-				const claudeConfig = this.claudeSessionStore
-					? { ...config, sessionStore: this.claudeSessionStore }
-					: config;
-				return new ClaudeRunner(claudeConfig, this.isWarmSessionsEnabled());
+				const claudeConfig =
+					!coldClaude && this.claudeSessionStore
+						? { ...config, sessionStore: this.claudeSessionStore }
+						: config;
+				return new ClaudeRunner(
+					claudeConfig,
+					coldClaude ? false : this.isWarmSessionsEnabled(),
+				);
 			}
 			case "gemini":
 				return new GeminiRunner(config);
 			case "codex":
 				return new CodexRunner({
 					...config,
+					configOverrides: { features: { multi_agent: false } },
 					sandbox: this.config.codexSandboxMode ?? "workspace-write",
 				});
 			case "cursor":
@@ -8642,7 +9596,7 @@ ${taskSection}`;
 	}
 
 	private async registerCyrusToolsMcpEndpoint(): Promise<void> {
-		if (this.cyrusToolsMcpRegistered) {
+		if (this.factoryToolsMcpRegistered) {
 			return;
 		}
 
@@ -8652,7 +9606,7 @@ ${taskSection}`;
 			typeof fastify.addHook !== "function"
 		) {
 			console.warn(
-				"[EdgeWorker] Skipping cyrus-tools MCP endpoint registration: Fastify instance does not support register/addHook",
+				"[EdgeWorker] Skipping bobs-factory-tools MCP endpoint registration: Fastify instance does not support register/addHook",
 			);
 			return;
 		}
@@ -8666,7 +9620,7 @@ ${taskSection}`;
 						: "";
 			const requestPath = rawUrl.split("?")[0];
 
-			if (requestPath !== this.cyrusToolsMcpEndpoint) {
+			if (requestPath !== this.factoryToolsMcpEndpoint) {
 				done();
 				return;
 			}
@@ -8677,7 +9631,7 @@ ${taskSection}`;
 				)
 			) {
 				_reply.code(401).send({
-					error: "Unauthorized cyrus-tools MCP request",
+					error: "Unauthorized bobs-factory-tools MCP request",
 				});
 				done();
 				return;
@@ -8688,44 +9642,47 @@ ${taskSection}`;
 				? rawContextHeader[0]
 				: rawContextHeader;
 
-			this.cyrusToolsMcpRequestContext.run({ contextId }, () => {
+			this.factoryToolsMcpRequestContext.run({ contextId }, () => {
 				done();
 			});
 		});
 
-		this.cyrusToolsMcpSessions.on("connected", (sessionId) => {
+		this.factoryToolsMcpSessions.on("connected", (sessionId) => {
 			console.log(
-				`[EdgeWorker] cyrus-tools MCP session connected: ${sessionId}`,
+				`[EdgeWorker] bobs-factory-tools MCP session connected: ${sessionId}`,
 			);
 		});
 
-		this.cyrusToolsMcpSessions.on("terminated", (sessionId) => {
+		this.factoryToolsMcpSessions.on("terminated", (sessionId) => {
 			console.log(
-				`[EdgeWorker] cyrus-tools MCP session terminated: ${sessionId}`,
+				`[EdgeWorker] bobs-factory-tools MCP session terminated: ${sessionId}`,
 			);
 		});
 
-		this.cyrusToolsMcpSessions.on("error", (error) => {
-			console.error("[EdgeWorker] cyrus-tools MCP session error:", error);
+		this.factoryToolsMcpSessions.on("error", (error) => {
+			console.error(
+				"[EdgeWorker] bobs-factory-tools MCP session error:",
+				error,
+			);
 		});
 
 		await fastify.register(streamableHttp, {
 			stateful: true,
-			mcpEndpoint: this.cyrusToolsMcpEndpoint,
-			sessions: this.cyrusToolsMcpSessions,
+			mcpEndpoint: this.factoryToolsMcpEndpoint,
+			sessions: this.factoryToolsMcpSessions,
 			createServer: async () => {
 				const contextId =
-					this.cyrusToolsMcpRequestContext.getStore()?.contextId;
+					this.factoryToolsMcpRequestContext.getStore()?.contextId;
 				if (!contextId) {
 					throw new Error(
-						"Missing x-cyrus-mcp-context-id header for cyrus-tools MCP request",
+						"Missing x-cyrus-mcp-context-id header for bobs-factory-tools MCP request",
 					);
 				}
 
 				const context = this.mcpConfigService.getContext(contextId);
 				if (!context) {
 					throw new Error(
-						`Unknown cyrus-tools MCP context '${contextId}'. Build MCP config before connecting.`,
+						`Unknown bobs-factory-tools MCP context '${contextId}'. Build MCP config before connecting.`,
 					);
 				}
 
@@ -8741,9 +9698,9 @@ ${taskSection}`;
 			},
 		});
 
-		this.cyrusToolsMcpRegistered = true;
+		this.factoryToolsMcpRegistered = true;
 		console.log(
-			`✅ Cyrus tools MCP endpoint registered at ${this.cyrusToolsMcpEndpoint}`,
+			`✅ Bob’s Factory tools MCP endpoint registered at ${this.factoryToolsMcpEndpoint}`,
 		);
 	}
 
@@ -8751,19 +9708,20 @@ ${taskSection}`;
 
 	/**
 	 * Lazily build the HTTP client used by `log_failure_mode` to POST to
-	 * cyrus-hosted. Uses `CYRUS_APP_URL` (the same env var the remote
+	 * cyrus-hosted. Uses `BOBS_FACTORY_APP_URL` (the same env var the remote
 	 * session-store client reads, see top of this file) so preview
 	 * environments and prod share a single way to point at a control
-	 * plane. Returns null when either the URL or the `CYRUS_API_KEY` are
+	 * plane. Returns null when either the URL or the `BOBS_FACTORY_API_KEY` are
 	 * missing — in that mode the tool is simply not registered, so
 	 * customer-mode CLI users without a control plane don't see a broken
 	 * tool.
 	 */
 	private getFailureModesClient(): FailureModesHttpClient | null {
 		if (this.failureModesClient) return this.failureModesClient;
-		const apiKey = process.env.CYRUS_API_KEY?.trim();
+		const apiKey = process.env.BOBS_FACTORY_API_KEY?.trim();
 		if (!apiKey) return null;
-		const baseUrl = getCyrusAppUrl();
+		const baseUrl = process.env.BOBS_FACTORY_APP_URL?.trim();
+		if (!baseUrl) return null;
 		this.failureModesClient = createFetchFailureModesClient({
 			baseUrl,
 			apiKey,
@@ -8779,7 +9737,7 @@ ${taskSection}`;
 	 */
 	/**
 	 * Resolve a working-directory string to the rich session bundle a
-	 * Cyrus team member needs to triage a failure-mode report: the
+	 * Bob’s Factory team member needs to triage a failure-mode report: the
 	 * internal session id (for dedup), the runner session id + runner
 	 * type (so triage can pull the Claude/Gemini/Codex/Cursor transcript),
 	 * the Linear AgentSession + source-issue identifiers (so triage can
@@ -8922,12 +9880,12 @@ ${taskSection}`;
 	}
 
 	/**
-	 * Link a newly created agent session to the most recent Cyrus session on its
+	 * Link a newly created agent session to the most recent Bob’s Factory session on its
 	 * parent issue, so that when this (child) session completes, the parent
 	 * session is resumed with the child's result.
 	 *
 	 * Parent-child *issue* relationships are the channel for child completion
-	 * messages. Any issue whose parent has a Cyrus session is linked, regardless
+	 * messages. Any issue whose parent has a Bob’s Factory session is linked, regardless
 	 * of whether that parent session is currently running: an orchestrator that
 	 * has halted to wait for its sub-issue has status "complete" and is exactly
 	 * the parent that must be woken, so this deliberately does not filter to
@@ -8936,7 +9894,7 @@ ${taskSection}`;
 	 * runner session id).
 	 *
 	 * This replaces the mapping that used to be established by the removed
-	 * `linear_agent_session_create*` cyrus-tools. Linear delegation creates
+	 * `linear_agent_session_create*` bobs-factory-tools. Linear delegation creates
 	 * exactly one session per issue, so deriving the link from the issue
 	 * hierarchy does not reintroduce concurrent child sessions on one issue.
 	 *
@@ -8977,7 +9935,7 @@ ${taskSection}`;
 				this.agentSessionManager.getSessionsByIssueId(parentIssueId);
 			if (parentSessions.length === 0) {
 				log.debug(
-					`Parent issue ${parentIssueId} has no Cyrus session; no parent callback will be sent`,
+					`Parent issue ${parentIssueId} has no Bob’s Factory session; no parent callback will be sent`,
 				);
 				return;
 			}
@@ -9132,7 +10090,7 @@ ${taskSection}`;
 			typeof server.getPort === "function"
 				? server.getPort()
 				: this.config.serverPort || this.config.webhookPort || 3456;
-		return `http://127.0.0.1:${port}${this.cyrusToolsMcpEndpoint}`;
+		return `http://127.0.0.1:${port}${this.factoryToolsMcpEndpoint}`;
 	}
 
 	/**
@@ -9520,6 +10478,7 @@ ${input.userComment}
 		 * Defaults to `"linear"` (the pre-platform-aware behavior).
 		 */
 		sessionPlatform: "linear" | "github" | "gitlab" = "linear",
+		runnerSelection?: { runnerType: RunnerType; modelOverride?: string },
 	): Promise<{ config: AgentRunnerConfig; runnerType: RunnerType }> {
 		const log = this.logger.withContext({
 			sessionId,
@@ -9553,6 +10512,7 @@ ${input.userComment}
 				this.config.sandbox?.additionalWritableDirectories,
 			labels,
 			issueDescription,
+			runnerSelection,
 			maxTurns,
 			// Per-platform MCP config paths — GitHub + GitLab share the
 			// `githubMcpConfigs` knob (single-repo PR contexts both); Linear
@@ -9567,9 +10527,9 @@ ${input.userComment}
 					: this.config.githubMcpConfigs,
 			strictMcpConfig: this.config.strictMcpConfig,
 			linearWorkspaceId,
-			cyrusHome: this.cyrusHome,
+			factoryHome: this.factoryHome,
 			// Org-matched GitHub App installation token (pushed by cyrus-hosted):
-			// exposed to the session as GH_TOKEN / CYRUS_GH_TOKEN so `gh` and
+			// exposed to the session as GH_TOKEN / BOBS_FACTORY_GH_TOKEN so `gh` and
 			// other tools authenticate against this repo's org. Undefined when
 			// no token store entry matches — zero behavior change for self-host
 			// users without the token file.
@@ -9609,6 +10569,25 @@ ${input.userComment}
 			}
 		}
 
+		if (
+			!this.factoryRuntime?.runs.has(sessionId) &&
+			session.metadata?.executionSnapshot
+		) {
+			const snapshot = ExecutionSnapshotSchema.parse(
+				session.metadata.executionSnapshot,
+			);
+			const resolved = await this.getExecutionResolver().resolve(
+				snapshot,
+				sessionId,
+				session.workspace.path,
+				result.runnerType,
+			);
+			executionCapabilities(result.runnerType);
+			validateProfileRunner(result.config, snapshot, result.runnerType);
+			this.getExecutionResolver().apply(result.config, snapshot, resolved);
+			delete (result.config as AgentRunnerConfig & { warmSession?: WarmQuery })
+				.warmSession;
+		}
 		return result;
 	}
 
@@ -9784,32 +10763,13 @@ ${input.userComment}
 	/**
 	 * Whether the warm-session feature is enabled.
 	 *
-	 * Warm sessions are an opt-in optimization that pre-spawns Claude Code
-	 * subprocesses on startup so the first query after a restart skips the
-	 * cold-start cost. Disabled by default; opt in by setting
-	 * `CYRUS_ENABLE_WARM_SESSIONS=1` (or `=true`).
+	 * Managed workers disable idle streams and prewarming until providers can
+	 * enforce admission at each turn boundary, including streamed follow-ups.
 	 */
 	private isWarmSessionsEnabled(): boolean {
-		const raw = process.env.CYRUS_ENABLE_WARM_SESSIONS;
-		if (!raw) return false;
-		const v = raw.toLowerCase().trim();
-		return v === "1" || v === "true";
-	}
-
-	/**
-	 * Whether the remote Claude session store is explicitly disabled.
-	 *
-	 * The remote store mirrors SDK transcripts to the Cyrus hosted control
-	 * plane and is on by default whenever `CYRUS_APP_URL`, `CYRUS_API_KEY`,
-	 * and `CYRUS_TEAM_ID` are all set. Operators can opt out — without
-	 * unsetting those vars (which other features depend on) — by setting
-	 * `CYRUS_DISABLE_REMOTE_SESSION_STORE=1` (or `=true`).
-	 */
-	private isRemoteSessionStoreDisabled(): boolean {
-		const raw = process.env.CYRUS_DISABLE_REMOTE_SESSION_STORE;
-		if (!raw) return false;
-		const v = raw.toLowerCase().trim();
-		return v === "1" || v === "true";
+		// Warm queries cannot await admission before each follow-up; resume the
+		// saved conversation through a fresh gated start instead.
+		return false;
 	}
 
 	/**
@@ -9944,8 +10904,18 @@ ${input.userComment}
 	/**
 	 * Save current EdgeWorker state for all repositories
 	 */
-	private savePersistedState(): Promise<void> {
-		this.stateSaveQueue = this.stateSaveQueue.then(async () => {
+	private savePersistedState(
+		requireSuccess = false,
+		update?: () => () => void,
+	): Promise<void> {
+		const coalescible = !requireSuccess && !update;
+		if (coalescible && this.pendingStateSave) return this.pendingStateSave;
+		// Transactional admission is a barrier: later lifecycle saves must wait
+		// for this mutation rather than reusing an earlier pending snapshot.
+		this.pendingStateSave = undefined;
+		const save = this.stateSaveQueue.then(async () => {
+			if (this.pendingStateSave === save) this.pendingStateSave = undefined;
+			const rollback = update?.();
 			try {
 				const state = this.serializeMappings();
 				await this.persistenceManager.saveEdgeWorkerState(state);
@@ -9953,10 +10923,16 @@ ${input.userComment}
 					`✅ Saved EdgeWorker state for ${Object.keys(state.agentSessions || {}).length} sessions`,
 				);
 			} catch (error) {
+				// Roll back before the next queued mutation or lifecycle snapshot.
+				rollback?.();
 				this.logger.error(`Failed to save persisted EdgeWorker state:`, error);
+				if (requireSuccess) throw error;
 			}
 		});
-		return this.stateSaveQueue;
+		// A failed strict save must not poison later lifecycle saves.
+		this.stateSaveQueue = save.catch(() => {});
+		if (coalescible) this.pendingStateSave = save;
+		return save;
 	}
 
 	/**
@@ -10131,7 +11107,7 @@ ${input.userComment}
 	 * 1. Check if runner is actively streaming
 	 * 2. Add to stream if streaming, OR resume session if not
 	 *
-	 * @param session The Cyrus agent session
+	 * @param session The Bob’s Factory agent session
 	 * @param repository Repository configuration
 	 * @param sessionId Linear agent activity session ID
 	 * @param agentSessionManager Agent session manager instance
@@ -10232,7 +11208,7 @@ ${input.userComment}
 	/**
 	 * Resume or create an Agent session with the given prompt
 	 * This is the core logic for handling prompted agent activities
-	 * @param session The Cyrus agent session
+	 * @param session The Bob’s Factory agent session
 	 * @param repository The repository configuration
 	 * @param sessionId The Linear agent session ID
 	 * @param agentSessionManager The agent session manager
@@ -10343,7 +11319,7 @@ ${input.userComment}
 		// Set up attachments directory
 		const workspaceFolderName = basename(session.workspace.path);
 		const attachmentsDir = join(
-			this.cyrusHome,
+			this.factoryHome,
 			workspaceFolderName,
 			"attachments",
 		);
@@ -10403,8 +11379,19 @@ ${input.userComment}
 					this.buildRunnerForType(runnerType, runnerConfig),
 					this.runnerSlots,
 					recoverySignal,
+					{
+						identity: `${this.factoryHome}:session:${sessionId}`,
+						recoverable: true,
+						remote: runnerType === "cursor",
+						onChange: () => this.emit("chatSessionChanged", sessionId),
+					},
 				)
-			: this.createRunnerForType(runnerType, runnerConfig);
+			: this.createRunnerForType(
+					runnerType,
+					runnerConfig,
+					undefined,
+					sessionId,
+				);
 
 		// Store runner
 		agentSessionManager.addAgentRunner(sessionId, runner);

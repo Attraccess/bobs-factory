@@ -5,15 +5,15 @@ import {
 } from "../src/prompts/cloudRuntimePromptAddendum.js";
 
 describe("cloud-runtime prompt addendum", () => {
-	const original = process.env.CYRUS_CLOUD_RUNTIME;
+	const original = process.env.BOBS_FACTORY_CLOUD_RUNTIME;
 
 	beforeEach(() => {
-		delete process.env.CYRUS_CLOUD_RUNTIME;
+		delete process.env.BOBS_FACTORY_CLOUD_RUNTIME;
 	});
 
 	afterEach(() => {
-		if (original === undefined) delete process.env.CYRUS_CLOUD_RUNTIME;
-		else process.env.CYRUS_CLOUD_RUNTIME = original;
+		if (original === undefined) delete process.env.BOBS_FACTORY_CLOUD_RUNTIME;
+		else process.env.BOBS_FACTORY_CLOUD_RUNTIME = original;
 	});
 
 	it("includes the packages settings link and apt/npm guidance", () => {
@@ -25,27 +25,33 @@ describe("cloud-runtime prompt addendum", () => {
 	});
 
 	it("returns the existing prompt unchanged when the env var is unset", () => {
-		expect(appendCloudRuntimeAddendum("You are Cyrus.")).toBe("You are Cyrus.");
+		expect(appendCloudRuntimeAddendum("You are Bob’s Factory.")).toBe(
+			"You are Bob’s Factory.",
+		);
 		expect(appendCloudRuntimeAddendum(undefined)).toBe("");
 		expect(appendCloudRuntimeAddendum(null)).toBe("");
 	});
 
 	it("returns the existing prompt unchanged when the env var is falsy", () => {
-		process.env.CYRUS_CLOUD_RUNTIME = "false";
-		expect(appendCloudRuntimeAddendum("You are Cyrus.")).toBe("You are Cyrus.");
-		process.env.CYRUS_CLOUD_RUNTIME = "0";
-		expect(appendCloudRuntimeAddendum("You are Cyrus.")).toBe("You are Cyrus.");
+		process.env.BOBS_FACTORY_CLOUD_RUNTIME = "false";
+		expect(appendCloudRuntimeAddendum("You are Bob’s Factory.")).toBe(
+			"You are Bob’s Factory.",
+		);
+		process.env.BOBS_FACTORY_CLOUD_RUNTIME = "0";
+		expect(appendCloudRuntimeAddendum("You are Bob’s Factory.")).toBe(
+			"You are Bob’s Factory.",
+		);
 	});
 
 	it("appends the addendum with a blank-line separator when enabled", () => {
-		process.env.CYRUS_CLOUD_RUNTIME = "true";
-		const result = appendCloudRuntimeAddendum("You are Cyrus.");
-		expect(result.startsWith("You are Cyrus.\n\n")).toBe(true);
+		process.env.BOBS_FACTORY_CLOUD_RUNTIME = "true";
+		const result = appendCloudRuntimeAddendum("You are Bob’s Factory.");
+		expect(result.startsWith("You are Bob’s Factory.\n\n")).toBe(true);
 		expect(result.endsWith(CLOUD_RUNTIME_PROMPT_ADDENDUM)).toBe(true);
 	});
 
 	it("returns the addendum verbatim when enabled with no base prompt", () => {
-		process.env.CYRUS_CLOUD_RUNTIME = "1";
+		process.env.BOBS_FACTORY_CLOUD_RUNTIME = "1";
 		expect(appendCloudRuntimeAddendum(undefined)).toBe(
 			CLOUD_RUNTIME_PROMPT_ADDENDUM,
 		);
@@ -54,7 +60,7 @@ describe("cloud-runtime prompt addendum", () => {
 
 	it("accepts common truthy spellings", () => {
 		for (const value of ["true", "1", "yes", "TRUE", " Yes "]) {
-			process.env.CYRUS_CLOUD_RUNTIME = value;
+			process.env.BOBS_FACTORY_CLOUD_RUNTIME = value;
 			expect(appendCloudRuntimeAddendum("base")).toContain(
 				CLOUD_RUNTIME_PROMPT_ADDENDUM,
 			);

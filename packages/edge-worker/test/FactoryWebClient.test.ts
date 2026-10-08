@@ -10,9 +10,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { artifactType, RenderArtifact } from "../src/factory/web/artifacts.js";
 import {
+	accessRequired,
+	accessState,
+	checkAccess,
+} from "../src/factory/web/auth-state.js";
+import {
 	api,
 	artifactsOf,
 	client,
+	refreshFactory,
 	useAction,
 	validateLiveConnection,
 } from "../src/factory/web/client.js";
@@ -27,8 +33,24 @@ import { qaExecution } from "./fixtures/qa.js";
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
 	...(await importOriginal<typeof import("@tanstack/react-query")>()),
-	useMutation: vi.fn(),
+	useMutation: vi.fn(() => ({
+		isPending: false,
+		variables: undefined,
+		error: null,
+	})),
+	useIsMutating: vi.fn(() => 0),
 	useQueryClient: vi.fn(),
+}));
+
+// These mutation-cache checks call mocked hooks outside a mounted form.
+vi.mock("../src/factory/web/form-state.js", async (importOriginal) => ({
+	...(await importOriginal<
+		typeof import("../src/factory/web/form-state.js")
+	>()),
+	useFormState: (_context: string, initial: unknown) => [
+		typeof initial === "function" ? initial() : initial,
+		vi.fn(),
+	],
 }));
 
 vi.mock("../src/factory/web/pwa.js", async (importOriginal) => {
@@ -43,6 +65,17 @@ const factoryResponse = (body: unknown, init: ResponseInit = {}) =>
 	});
 const version = () => factoryResponse({ build: uiBuild, protocol: 1 });
 beforeEach(async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => version()),
+	);
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			factoryResponse({ authenticated: true, expires: Date.now() + 60000 }),
+		),
+	);
+	await checkAccess();
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async () => version()),
@@ -192,6 +225,17 @@ it("blocks offline and stale writes without sending a mutation", async () => {
 		"fetch",
 		vi.fn(async () => version()),
 	);
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			factoryResponse({ authenticated: true, expires: Date.now() + 60000 }),
+		),
+	);
+	await checkAccess();
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => version()),
+	);
 	await checkVersion();
 	authoritativeReady();
 	vi.stubGlobal("fetch", fetch);
@@ -215,6 +259,38 @@ it("checks response versions before consuming potentially incompatible data", as
 	await expect(api("/api/config")).rejects.toThrow("version changed");
 	expect(json).not.toHaveBeenCalled();
 	expect(pwaState().status).toBe("mismatch");
+});
+
+it("reports a proxy rejection without trapping the app in an update loop", async () => {
+	const response = new Response("<html>403 Forbidden</html>", {
+		status: 403,
+		headers: { "Content-Type": "text/html" },
+	});
+	const json = vi.spyOn(response, "json");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (path) => (path === "/api/version" ? version() : response)),
+	);
+	await expect(
+		api("/api/capacity", {
+			method: "PUT",
+			body: '{"concurrency":4}',
+		}),
+	).rejects.toThrow("blocked (HTTP 403)");
+	expect(json).not.toHaveBeenCalled();
+	expect(pwaState().status).toBe("offline");
+	await checkVersion();
+	authoritativeReady();
+	expect(pwaState().status).toBe("ready");
+});
+
+it("rejects unverified successful responses without treating them as a new build", async () => {
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => Response.json({ capacity: { limit: 4 } })),
+	);
+	await expect(api("/api/config")).rejects.toThrow("could not be verified");
+	expect(pwaState().status).toBe("offline");
 });
 
 it("releases a rejected SSE response before retrying or waiting for an update", async () => {
@@ -334,6 +410,13 @@ it("settles failures only through explicit follow-up provenance, independently o
 	);
 });
 
+it("keeps capacity queues active without rendering human attention", async () => {
+	const { active, attention } = await import("../src/factory/web/client.js");
+	expect(active("capacity-waiting")).toBe(true);
+	expect(active("stopping")).toBe(true);
+	expect(attention({ status: "capacity-waiting" })).toBeUndefined();
+});
+
 it("classifies QA before screenshot artifacts, including previews, and renders zero-image receipts and observations", () => {
 	const qa = qaExecution("blocked");
 	qa.observations = [
@@ -370,4 +453,85 @@ it("classifies QA before screenshot artifacts, including previews, and renders z
 	expect(artifactsOf({ outputs: { capture: qa } })[0].title).toBe(
 		"QA and screenshots",
 	);
+});
+
+it("refreshes review deep links and their current gate before enabling writes", async () => {
+	disconnected();
+	vi.stubGlobal("location", { hash: "#/runs/run/review" });
+	const fetch = vi.fn(async (path: string) =>
+		path === "/api/version"
+			? version()
+			: factoryResponse(
+					path.startsWith("/api/runs/run?")
+						? { id: "run", reviewGate: { id: "current", status: "approve" } }
+						: [],
+				),
+	);
+	vi.stubGlobal("fetch", fetch);
+	await refreshFactory();
+	expect(fetch.mock.calls.map(([path]) => path)).toContain(
+		"/api/runs/run?view=dashboard",
+	);
+	expect(client.getQueryData(["run", "run"])).toEqual({
+		id: "run",
+		reviewGate: { id: "current", status: "approve" },
+	});
+	expect(pwaState().status).toBe("ready");
+});
+
+it("handles 401 before version errors, clears sensitive caches and prevents late response repopulation", async () => {
+	client.setQueryData(["run", "private"], { transcript: "private content" });
+	let complete!: (response: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async (path: string) =>
+			path === "/api/version"
+				? version()
+				: new Promise<Response>((resolve) => {
+						complete = resolve;
+					}),
+		),
+	);
+	const late = api("/api/runs");
+	while (!complete) await new Promise((resolve) => setTimeout(resolve, 0));
+	accessRequired("Signed out");
+	complete(factoryResponse([{ transcript: "late private content" }]));
+	await expect(late).rejects.toThrow("Session changed");
+	expect(client.getQueryData(["run", "private"])).toBeUndefined();
+	expect(accessState().status).toBe("required");
+});
+
+it("keeps credential management mounted during verified-session refresh, but clears private state on denial", async () => {
+	client.setQueryData(["run", "private"], { transcript: "private content" });
+	let respond!: (response: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					respond = resolve;
+				}),
+		),
+	);
+	const refreshed = checkAccess(true);
+	expect(accessState().status).toBe("authenticated");
+	const expires = Date.now() + 120000;
+	respond(factoryResponse({ authenticated: true, expires }));
+	await refreshed;
+	expect(accessState()).toEqual({ status: "authenticated", expires });
+	expect(client.getQueryData(["run", "private"])).toEqual({
+		transcript: "private content",
+	});
+
+	const revoked = checkAccess(true);
+	respond(factoryResponse({ authenticated: false, setupRequired: false }));
+	await revoked;
+	expect(accessState().status).toBe("required");
+	expect(client.getQueryData(["run", "private"])).toBeUndefined();
+
+	const signedOut = checkAccess(true);
+	expect(accessState().status).toBe("checking");
+	respond(factoryResponse({}, { status: 401 }));
+	await signedOut;
+	expect(accessState().status).toBe("required");
 });

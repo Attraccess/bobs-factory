@@ -6,6 +6,10 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 	query: vi.fn(),
 }));
 
+vi.mock("../src/executable.js", () => ({
+	resolveClaudeExecutable: vi.fn(() => "/prepared/claude"),
+}));
+
 // Mock file system operations
 vi.mock("fs", () => ({
 	mkdirSync: vi.fn(),
@@ -33,7 +37,7 @@ describe("ClaudeRunner", () => {
 
 	const defaultConfig: ClaudeRunnerConfig = {
 		workingDirectory: "/tmp/test",
-		cyrusHome: "/tmp/test-cyrus-home",
+		factoryHome: "/tmp/test-home",
 	};
 
 	beforeEach(() => {
@@ -148,6 +152,22 @@ describe("ClaudeRunner", () => {
 				}),
 			);
 		});
+		it.each([
+			undefined,
+			"sonnet",
+		])("omits an identical Sonnet fallback after applying defaults (%s)", async (fallbackModel) => {
+			mockQuery.mockImplementation(async function* () {});
+			const configured = new ClaudeRunner(
+				{ ...defaultConfig, model: "sonnet", fallbackModel },
+				false,
+			);
+			await configured.start("Generate a title");
+			expect(mockQuery.mock.calls.at(-1)?.[0].options).toMatchObject({
+				model: "sonnet",
+				fallbackModel: undefined,
+			});
+		});
+
 		it("should start Claude session with basic prompt", async () => {
 			// Mock successful query
 			const mockMessages: SDKMessage[] = [
@@ -177,6 +197,7 @@ describe("ClaudeRunner", () => {
 					fallbackModel: "sonnet",
 					abortController: expect.any(AbortController),
 					cwd: "/tmp/test",
+					pathToClaudeCodeExecutable: "/prepared/claude",
 					systemPrompt: { type: "preset", preset: "claude_code" },
 					settingSources: ["user", "project", "local"],
 					env: expect.objectContaining({
@@ -239,6 +260,7 @@ describe("ClaudeRunner", () => {
 					fallbackModel: "sonnet",
 					abortController: expect.any(AbortController),
 					cwd: "/tmp/test",
+					pathToClaudeCodeExecutable: "/prepared/claude",
 					systemPrompt: { type: "preset", preset: "claude_code" },
 					settingSources: ["user", "project", "local"],
 					env: expect.objectContaining({
@@ -278,6 +300,7 @@ describe("ClaudeRunner", () => {
 					fallbackModel: "sonnet",
 					abortController: expect.any(AbortController),
 					cwd: "/tmp/test",
+					pathToClaudeCodeExecutable: "/prepared/claude",
 					systemPrompt: "You are a helpful assistant",
 					settingSources: ["user", "project", "local"],
 					env: expect.objectContaining({

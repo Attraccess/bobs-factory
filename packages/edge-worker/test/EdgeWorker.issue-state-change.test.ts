@@ -1,7 +1,7 @@
 import {
 	isIssueStateIdUpdateWebhook,
 	isIssueTitleOrDescriptionUpdateWebhook,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { describe, expect, it } from "vitest";
 
 describe("isIssueStateIdUpdateWebhook type guard", () => {

@@ -11,9 +11,10 @@ import {
 	type IssueMinimal,
 	type RepositoryConfig,
 	requireLinearWorkspaceId,
+	runtimeAssetPath,
 	type WebhookAgentSession,
 	type WebhookComment,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { workflowTriggerInstructions } from "./factory/Workflow.js";
 import type { GitService } from "./GitService.js";
 
@@ -105,7 +106,10 @@ export class PromptBuilder {
 		if (!anyRepoHasLabelPrompts && hasHardcodedOrchestratorLabel) {
 			try {
 				const __filename = fileURLToPath(import.meta.url);
-				const __dirname = dirname(__filename);
+				const __dirname = runtimeAssetPath(
+					"edge-worker/dist",
+					dirname(__filename),
+				);
 				const promptPath = join(__dirname, "..", "prompts", "orchestrator.md");
 				const promptContent = await readFile(promptPath, "utf-8");
 				this.logger.debug(
@@ -208,7 +212,10 @@ export class PromptBuilder {
 		if (hasGraphiteLabel && hasOrchestratorLabel) {
 			try {
 				const __filename = fileURLToPath(import.meta.url);
-				const __dirname = dirname(__filename);
+				const __dirname = runtimeAssetPath(
+					"edge-worker/dist",
+					dirname(__filename),
+				);
 				const promptPath = join(
 					__dirname,
 					"..",
@@ -267,7 +274,10 @@ export class PromptBuilder {
 			if (matchesLabel) {
 				try {
 					const __filename = fileURLToPath(import.meta.url);
-					const __dirname = dirname(__filename);
+					const __dirname = runtimeAssetPath(
+						"edge-worker/dist",
+						dirname(__filename),
+					);
 					const promptPath = join(
 						__dirname,
 						"..",
@@ -331,7 +341,10 @@ export class PromptBuilder {
 		try {
 			// Load the label-based prompt template
 			const __filename = fileURLToPath(import.meta.url);
-			const __dirname = dirname(__filename);
+			const __dirname = runtimeAssetPath(
+				"edge-worker/dist",
+				dirname(__filename),
+			);
 			const templatePath = resolve(__dirname, "../label-prompt-template.md");
 
 			this.logger.debug(`Loading label prompt template from: ${templatePath}`);
@@ -668,6 +681,8 @@ The system evaluates routing methods in this strict priority order. The FIRST ma
 3. **Project Assignment (Priority 3)**: Add the issue to a project that routes to the target repository.
 4. **Team Selection (Priority 4 - Lowest)**: Create the issue in a Linear team that routes to the target repository.
 
+Repository selection applies to every workflow, including Factory, Takeover and Simple. A shared routing label selects every configured repository with that label. The accepted scope stays fixed through follow-ups and recovery. Grouped Factory delivery creates and reviews a PR or merge request in each changed repository; unchanged repositories remain context, approval binds every delivered revision, and completion requires all deliveries to merge.
+
 For reliable cross-repository routing, prefer Description Tags as they are explicit and unambiguous.
 
 ${workflowTriggerInstructions}
@@ -773,7 +788,10 @@ Focus on addressing the specific request in the mention. You can use the Linear 
 			// If no custom template, use the standard issue assigned user prompt template
 			if (!templatePath) {
 				const __filename = fileURLToPath(import.meta.url);
-				const __dirname = dirname(__filename);
+				const __dirname = runtimeAssetPath(
+					"edge-worker/dist",
+					dirname(__filename),
+				);
 				templatePath = resolve(
 					__dirname,
 					"../prompts/standard-issue-assigned-user-prompt.md",
@@ -1245,7 +1263,7 @@ ${reply.body}
 				{
 					headers: {
 						Accept: "application/vnd.github.v3+json",
-						"User-Agent": "Cyrus-Agent",
+						"User-Agent": "Bobs-Factory-Agent",
 					},
 				},
 			);
@@ -1284,7 +1302,7 @@ ${reply.body}
 	 */
 	async loadSharedInstructions(): Promise<string> {
 		const __filename = fileURLToPath(import.meta.url);
-		const __dirname = dirname(__filename);
+		const __dirname = runtimeAssetPath("edge-worker/dist", dirname(__filename));
 		const instructionsPath = join(
 			__dirname,
 			"..",

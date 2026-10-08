@@ -1,4 +1,6 @@
 export { CursorRunner } from "./CursorRunner.js";
+export { serveCursorWorker } from "./cursor-worker.js";
+export { resolveCursorInstallation } from "./installation.js";
 export {
 	buildAutoDenyPatterns,
 	buildCyrusPermissionsConfig,
@@ -11,6 +13,7 @@ export {
 	type CursorSandboxInput,
 	type CursorSandboxJson,
 } from "./sandbox.js";
+export { loadCursorSdk } from "./sdk.js";
 export type {
 	CursorRunnerConfig,
 	CursorRunnerEvents,

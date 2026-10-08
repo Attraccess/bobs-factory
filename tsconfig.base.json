@@ -20,19 +20,21 @@
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedIndexedAccess": true,
 		"paths": {
-			"cyrus-core": ["./packages/core"],
+			"bobs-factory-core": ["./packages/core"],
 			"cyrus-claude-parser": ["./packages/claude-parser"],
 			"cyrus-linear-client": ["./packages/linear-client"],
 			"cyrus-history-stream": ["./packages/history-stream"],
-			"cyrus-edge-worker": ["./packages/edge-worker"],
-			"cyrus-claude-runner": ["./packages/claude-runner"],
-			"cyrus-codex-runner": ["./packages/codex-runner"],
-			"cyrus-cursor-runner": ["./packages/cursor-runner"],
-			"cyrus-gemini-runner": ["./packages/gemini-runner"],
-			"cyrus-mcp-tools": ["./packages/mcp-tools"],
-			"cyrus-simple-agent-runner": ["./packages/simple-agent-runner"],
-			"cyrus-config-updater": ["./packages/config-updater"],
-			"cyrus-linear-event-transport": ["./packages/linear-event-transport"]
+			"bobs-factory-edge-worker": ["./packages/edge-worker"],
+			"bobs-factory-claude-runner": ["./packages/claude-runner"],
+			"bobs-factory-codex-runner": ["./packages/codex-runner"],
+			"bobs-factory-cursor-runner": ["./packages/cursor-runner"],
+			"bobs-factory-gemini-runner": ["./packages/gemini-runner"],
+			"bobs-factory-mcp-tools": ["./packages/mcp-tools"],
+			"bobs-factory-simple-agent-runner": ["./packages/simple-agent-runner"],
+			"bobs-factory-config-updater": ["./packages/config-updater"],
+			"bobs-factory-linear-event-transport": [
+				"./packages/linear-event-transport"
+			]
 		}
 	},
 	"exclude": ["node_modules", "dist", "build"]

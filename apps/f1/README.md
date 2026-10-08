@@ -26,7 +26,7 @@ pnpm build
 
 ### 1. Start the F1 Server
 
-The F1 server runs an EdgeWorker in CLI platform mode, providing an in-memory issue tracker and agent session management.
+The F1 server runs an EdgeWorker in CLI platform mode, providing an in-memory issue tracker and agent session management. Agents are deterministic mocks by default: no agent CLI or inference API is invoked, including for Factory roles and background titles.
 
 ```bash
 # Start server with default settings
@@ -34,7 +34,7 @@ cd apps/f1
 pnpm run server
 
 # Or with custom configuration
-CYRUS_PORT=3600 CYRUS_REPO_PATH=/path/to/your/repo pnpm run server
+BOBS_FACTORY_PORT=3600 BOBS_FACTORY_REPO_PATH=/path/to/your/repo pnpm run server
 
 # Development mode with auto-reload
 pnpm run server:dev
@@ -43,14 +43,18 @@ pnpm run server:dev
 **Server Features:**
 - 🏎️ **Fast startup** using Bun runtime
 - 🎨 **Beautiful connection info** with ANSI colors
-- 🔧 **Environment-based config** (CYRUS_PORT, CYRUS_REPO_PATH)
+- 🔧 **Environment-based config** (BOBS_FACTORY_PORT, BOBS_FACTORY_REPO_PATH)
 - 🛑 **Graceful shutdown** on SIGINT/SIGTERM
 - 📁 **Automatic directory setup** for worktrees and state
 - 🚫 **No external dependencies** (no Cloudflare tunnel, no Linear API)
 
 **Environment Variables:**
-- `CYRUS_PORT` - Server port (default: 3600)
-- `CYRUS_REPO_PATH` - Path to repository to test (default: current directory)
+- `BOBS_FACTORY_PORT` - Server port (default: 3600)
+- `BOBS_FACTORY_REPO_PATH` - Path to repository to test (default: current directory)
+- `F1_AGENT_MODE` - `mock` (default) or `live`. Live mode launches real agents and consumes provider credits; use it only for an explicitly requested live drive.
+- `F1_MOCK_RESPONSE` - Fixed mock reply (default: a message identifying the mock). Set a fixture response, such as a JSON object matching a Factory role's output contract, when needed.
+
+Mock drives exercise Bob’s Factory orchestration and activity rendering. They do not demonstrate model reasoning, tool execution, or native CLI behavior. Validate provider adapters with recorded transcript replays; live validation requires an explicit cost opt-in.
 
 Once started, the server displays:
 ```
@@ -62,7 +66,8 @@ Once started, the server displays:
   Server:    http://localhost:3600
   RPC:       http://localhost:3600/cli/rpc
   Platform:  cli
-  Cyrus Home: /tmp/cyrus-f1-1234567890
+  Agents:    mock (no API usage)
+  Factory Home: /tmp/bobs-factory-f1-1234567890
   Repository: /path/to/your/repo
 
   Press Ctrl+C to stop the server
@@ -155,7 +160,7 @@ F1 Server (server.ts)
 The CLI connects to the F1 server via JSON-RPC over HTTP:
 
 ```
-http://localhost:${CYRUS_PORT}/cli/rpc
+http://localhost:${BOBS_FACTORY_PORT}/cli/rpc
 ```
 
 The RPC endpoint URL is displayed at the start of every command for easy debugging.
@@ -164,7 +169,7 @@ The RPC endpoint URL is displayed at the start of every command for easy debuggi
 - Platform: `"cli"` (disables Cloudflare tunnel, uses in-memory issue tracker)
 - Default model: Sonnet
 - Fallback model: Haiku
-- Temporary directories: `/tmp/cyrus-f1-*`
+- Temporary directories: `/tmp/bobs-factory-f1-*`
 
 ## Development
 

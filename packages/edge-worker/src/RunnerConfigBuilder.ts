@@ -9,7 +9,7 @@ import type {
 	SDKMessage,
 	SdkPluginConfig,
 	StopHookInput,
-} from "cyrus-claude-runner";
+} from "bobs-factory-claude-runner";
 import type {
 	AgentRunnerConfig,
 	CyrusAgentSession,
@@ -19,8 +19,8 @@ import type {
 	RepositoryConfig,
 	RunnerType,
 	RunTitleJob,
-} from "cyrus-core";
-import { resolvePath } from "cyrus-core";
+} from "bobs-factory-core";
+import { resolvePath } from "bobs-factory-core";
 import { titleMcpConfig } from "./factory/TitleMcpConfig.js";
 import { buildIntentToAddHook } from "./hooks/IntentToAddHook.js";
 import { buildPrMarkerHook } from "./hooks/PrMarkerHook.js";
@@ -28,6 +28,7 @@ import { appendBrowserUseAddendum } from "./prompts/browserUsePromptAddendum.js"
 import { appendCloudRuntimeAddendum } from "./prompts/cloudRuntimePromptAddendum.js";
 import { appendFailureModeAddendum } from "./prompts/failureModePromptAddendum.js";
 import { appendGitHubCliMediaAddendum } from "./prompts/githubCliMediaPromptAddendum.js";
+import { appendHumanCommunicationAddendum } from "./prompts/humanCommunicationPromptAddendum.js";
 
 /**
  * Subset of McpConfigService consumed by RunnerConfigBuilder.
@@ -79,12 +80,12 @@ export interface ChatRunnerConfigInput {
 	systemPrompt: string;
 	sessionId: string;
 	resumeSessionId?: string;
-	cyrusHome: string;
+	factoryHome: string;
 	/** Chat platform name (e.g. "slack") — used to namespace the shared auto-memory dir */
 	platformName: string;
 	/** Linear workspace ID for building fresh MCP config at session start */
 	linearWorkspaceId?: string;
-	/** Repository whose MCP runtime servers (Linear MCP, Cyrus tools, etc.) get
+	/** Repository whose MCP runtime servers (Linear MCP, Bob’s Factory tools, etc.) get
 	 * spun up for this chat session — chat sessions are repo-agnostic at the
 	 * session level, so this just picks one repo to seed those native servers. */
 	repository?: RepositoryConfig;
@@ -112,9 +113,9 @@ export interface ChatRunnerConfigInput {
 	 * these skills into its repository discovery layout.
 	 */
 	skills?: string[] | "all";
-	/** Global OpenCode runtime config overrides from Cyrus config */
+	/** Global OpenCode runtime config overrides from Bob’s Factory config */
 	opencodeGlobalConfig?: OpenCodeConfigOverrides["config"];
-	/** Global OpenCode CLI state scope from Cyrus config */
+	/** Global OpenCode CLI state scope from Bob’s Factory config */
 	opencodeGlobalStateScope?: OpenCodeConfigOverrides["stateScope"];
 	/** Existing runner type to preserve when resuming a completed chat session */
 	runnerType?: RunnerType;
@@ -157,7 +158,7 @@ export interface IssueRunnerConfigInput {
 	/** Whether Claude should ignore ambient MCP configuration. Defaults to true. */
 	strictMcpConfig?: boolean;
 	linearWorkspaceId?: string;
-	cyrusHome: string;
+	factoryHome: string;
 	logger: ILogger;
 	onMessage: (message: SDKMessage) => void | Promise<void>;
 	onError: (error: Error) => void;
@@ -170,9 +171,9 @@ export interface IssueRunnerConfigInput {
 	requireLinearWorkspaceId: (repo: RepositoryConfig) => string;
 	/** Plugins to load for the session (provides skills, hooks, etc.) */
 	plugins?: SdkPluginConfig[];
-	/** Global OpenCode runtime config overrides from Cyrus config */
+	/** Global OpenCode runtime config overrides from Bob’s Factory config */
 	opencodeGlobalConfig?: OpenCodeConfigOverrides["config"];
-	/** Global OpenCode CLI state scope from Cyrus config */
+	/** Global OpenCode CLI state scope from Bob’s Factory config */
 	opencodeGlobalStateScope?: OpenCodeConfigOverrides["stateScope"];
 	/**
 	 * Allow-list of skill names enabled for the session (after scope filtering),
@@ -188,7 +189,7 @@ export interface IssueRunnerConfigInput {
 	/**
 	 * GitHub App installation token matched to the session repository's org
 	 * (from the cyrus-hosted-pushed token store). When set, it's exposed to
-	 * the session ONLY as `CYRUS_GH_TOKEN` — the droplet's gh wrapper maps
+	 * the session ONLY as `BOBS_FACTORY_GH_TOKEN` — the droplet's gh wrapper maps
 	 * it to `GH_TOKEN` inside the gh process. We deliberately do NOT set
 	 * `GH_TOKEN` itself: customers set their own `GH_TOKEN` (e.g. for
 	 * private npm registries on GitHub Packages) and clobbering it would
@@ -298,10 +299,10 @@ export class RunnerConfigBuilder {
 			input.runnerType ?? this.runnerSelector.getDefaultRunner();
 
 		// Shared auto-memory across all chat threads on this platform. Lives
-		// under cyrusHome (not the per-thread workspace) so memory built up in
+		// under factoryHome (not the per-thread workspace) so memory built up in
 		// one Slack thread is available to every other Slack thread.
 		const autoMemoryDirectory = join(
-			input.cyrusHome,
+			input.factoryHome,
 			`${input.platformName}-memory`,
 		);
 
@@ -317,12 +318,14 @@ export class RunnerConfigBuilder {
 				...(input.additionalWritableDirectories ?? []).map(resolvePath),
 			],
 			workspaceName: input.workspaceName,
-			cyrusHome: input.cyrusHome,
+			factoryHome: input.factoryHome,
 			autoMemoryDirectory,
 			appendSystemPrompt: appendCloudRuntimeAddendum(
 				appendGitHubCliMediaAddendum(
 					appendBrowserUseAddendum(
-						appendFailureModeAddendum(input.systemPrompt),
+						appendFailureModeAddendum(
+							appendHumanCommunicationAddendum(input.systemPrompt),
+						),
 					),
 				),
 			),
@@ -481,14 +484,16 @@ export class RunnerConfigBuilder {
 			allowedDirectories,
 			...(additionalDirectories.length > 0 && { additionalDirectories }),
 			workspaceName: input.session.issue?.identifier || input.session.issueId,
-			cyrusHome: input.cyrusHome,
+			factoryHome: input.factoryHome,
 			mcpConfigPath,
 			mcpConfig,
 			strictMcpConfig: input.strictMcpConfig ?? true,
 			appendSystemPrompt: appendCloudRuntimeAddendum(
 				appendGitHubCliMediaAddendum(
 					appendBrowserUseAddendum(
-						appendFailureModeAddendum(input.systemPrompt),
+						appendFailureModeAddendum(
+							appendHumanCommunicationAddendum(input.systemPrompt),
+						),
 					),
 				),
 			),
@@ -536,14 +541,14 @@ export class RunnerConfigBuilder {
 		// Expose the org-matched GitHub App installation token to the session
 		// env. Merged on top of any sandbox additionalEnv (CA cert vars) so
 		// both survive. Only set when a token store entry matched the repo's
-		// org — sessions without a match see zero env change. CYRUS_GH_TOKEN
+		// org — sessions without a match see zero env change. BOBS_FACTORY_GH_TOKEN
 		// only — never GH_TOKEN, which customers set themselves (e.g. private
 		// npm registries on GitHub Packages); the droplet's gh wrapper maps
-		// CYRUS_GH_TOKEN to GH_TOKEN inside the gh process.
+		// BOBS_FACTORY_GH_TOKEN to GH_TOKEN inside the gh process.
 		if (input.githubToken) {
 			config.additionalEnv = {
 				...config.additionalEnv,
-				CYRUS_GH_TOKEN: input.githubToken,
+				BOBS_FACTORY_GH_TOKEN: input.githubToken,
 			};
 		}
 
@@ -817,7 +822,7 @@ export function buildStopHook(
  *
  * Uses `--untracked-files=no` so that pre-existing untracked files in the
  * customer's worktree (scratch files, local env files, IDE artifacts) do not
- * wedge the session. Files Cyrus creates via Write/Edit are marked with
+ * wedge the session. Files Bob’s Factory creates via Write/Edit are marked with
  * `git add --intent-to-add` by `IntentToAddHook` so they still show as a
  * tracked diff and block the stop when left uncommitted.
  */

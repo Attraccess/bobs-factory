@@ -1,12 +1,12 @@
 import { EventEmitter } from "node:events";
 import { readFile } from "node:fs/promises";
-import { watch as chokidarWatch, type FSWatcher } from "chokidar";
 import type {
 	EdgeConfig,
 	EdgeWorkerConfig,
 	ILogger,
 	RepositoryConfig,
-} from "cyrus-core";
+} from "bobs-factory-core";
+import { watch as chokidarWatch, type FSWatcher } from "chokidar";
 
 // ------------------------------------------------------------------
 // Exhaustiveness guard for hot-reload key handling
@@ -365,9 +365,7 @@ export class ConfigManager extends EventEmitter {
 				// otherwise keep current or default to true
 				issueUpdateTrigger:
 					parsedConfig.issueUpdateTrigger ?? this.config.issueUpdateTrigger,
-				maxConcurrentSessions:
-					parsedConfig.maxConcurrentSessions ??
-					this.config.maxConcurrentSessions,
+				maxConcurrentSessions: parsedConfig.maxConcurrentSessions,
 				// Slack thread following: use parsed value if explicitly set,
 				// otherwise keep current or default to true
 				slackThreadFollowing:

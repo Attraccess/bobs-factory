@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentSessionStatus } from "cyrus-core";
+import { AgentSessionStatus } from "bobs-factory-core";
 import { expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager.js";
 import { ChatSessionHandler } from "../src/ChatSessionHandler.js";
@@ -46,7 +46,7 @@ function fixture() {
 	});
 	return { worker, session, run, runtime };
 }
-it("does not steer a stopped Cyrus runner while its process is still closing", () => {
+it("does not steer a stopped Bob’s Factory runner while its process is still closing", () => {
 	const { worker, session, run } = fixture();
 	worker.sendFactoryChat(session.id, "Live instruction");
 	expect(session.agentRunner.addStreamMessage).toHaveBeenCalledExactlyOnceWith(
@@ -88,7 +88,7 @@ it.each([
 				notifyBusy: async () => {},
 			},
 			{
-				cyrusHome: home,
+				factoryHome: home,
 				chatRepositoryProvider: {
 					getDefaultRepository: () => ({ id: "repo" }) as any,
 					getDefaultLinearWorkspaceId: () => undefined,
@@ -137,11 +137,10 @@ it.each([
 			available: true,
 			mode: "continue",
 		});
-		worker.sendFactoryChat(session.id, "Check reconnects too");
-		expect(() => worker.sendFactoryChat(session.id, "Duplicate")).toThrow(
-			/resuming|starting/,
-		);
-		await vi.waitFor(() => expect(starts).toHaveLength(2));
+		await worker.sendFactoryChat(session.id, "Check reconnects too");
+		await worker.sendFactoryChat(session.id, "Queued follow-up");
+		await vi.waitFor(() => expect(starts).toHaveLength(3));
+		expect(starts[2]).toBe("Queued follow-up");
 		expect(starts[1]).toBe("Check reconnects too");
 		expect(configs[1]).toMatchObject({
 			resumeSessionId: "native-chat",
@@ -217,7 +216,7 @@ it.each([
 		rmSync(home, { recursive: true, force: true });
 	}
 });
-it("continues a legacy Cyrus session once, then permits live steering in that same continuation", async () => {
+it("continues a legacy Bob’s Factory session once, then permits live steering in that same continuation", async () => {
 	const { worker, session, runtime } = fixture();
 	runtime.runs.clear();
 	session.status = AgentSessionStatus.Complete;
@@ -253,4 +252,22 @@ it("continues a legacy Cyrus session once, then permits live steering in that sa
 	finish();
 	await Promise.resolve();
 	await Promise.resolve();
+});
+
+it("surfaces failed message persistence without poisoning later state saves", async () => {
+	const worker: any = Object.create(EdgeWorker.prototype);
+	worker.stateSaveQueue = Promise.resolve();
+	worker.serializeMappings = () => ({});
+	worker.logger = { debug: vi.fn(), error: vi.fn() };
+	worker.persistenceManager = {
+		saveEdgeWorkerState: vi
+			.fn()
+			.mockRejectedValueOnce(new Error("Disk full"))
+			.mockResolvedValue(undefined),
+	};
+	await expect(worker.savePersistedState(true)).rejects.toThrow("Disk full");
+	await expect(worker.savePersistedState()).resolves.toBeUndefined();
+	expect(worker.persistenceManager.saveEdgeWorkerState).toHaveBeenCalledTimes(
+		2,
+	);
 });

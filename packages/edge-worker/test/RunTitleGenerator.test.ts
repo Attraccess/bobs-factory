@@ -13,7 +13,7 @@ import type {
 	IAgentRunner,
 	RunTitleJob,
 	SDKMessage,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import {
@@ -28,6 +28,7 @@ import {
 } from "../src/factory/RunTitleGenerator.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
+import { MachineCapacity } from "../src/MachineCapacity.js";
 import { SessionSemaphore } from "../src/RunnerConcurrency.js";
 
 const homes: string[] = [];
@@ -57,14 +58,17 @@ function deferred<T>() {
 	return { promise, resolve, reject };
 }
 function setup(deadline = 1000, slots = new SessionSemaphore(2)) {
-	const directory = home(),
-		completion = deferred<void>();
+	const directory = home();
+	let completion = deferred<void>();
 	let config!: AgentRunnerConfig;
 	const start = vi.fn(async () => {
 		await completion.promise;
 		return { sessionId: "auxiliary" };
 	});
-	const stop = vi.fn();
+	const stop = vi.fn(() => {
+		completion.resolve();
+		completion = deferred<void>();
+	});
 	const runner = { start, stop } as unknown as IAgentRunner;
 	const buildConfig = vi.fn(async () => ({ workingDirectory: directory }));
 	const update = vi.fn();
@@ -81,7 +85,9 @@ function setup(deadline = 1000, slots = new SessionSemaphore(2)) {
 	const emit = (message: unknown) => config.onMessage?.(message as SDKMessage);
 	return {
 		directory,
-		completion,
+		get completion() {
+			return completion;
+		},
 		config: () => config,
 		start,
 		stop,
@@ -338,8 +344,8 @@ it("does not create a runner when slow configuration resolves after timeout", as
 	config.resolve({ workingDirectory: directory });
 	await Promise.resolve();
 	expect(create).not.toHaveBeenCalled();
-	expect(slots.active).toBe(0);
 	await generator.shutdown();
+	expect(slots.active).toBe(0);
 });
 it("persists global settings independently of recipes and frozen run snapshots", async () => {
 	const directory = home(),
@@ -498,4 +504,46 @@ it("keeps primary launches available when inherited title provider settings beco
 	});
 	expect(run.titleGeneration?.error).toMatch(/not supported/);
 	await runtime.shutdown();
+});
+
+it("retains timed-out remote execution capacity and does not start an unsafe retry", async () => {
+	const directory = home();
+	const slots = new MachineCapacity(1, join(directory, "pool"));
+	let done!: () => void;
+	const start = vi.fn(
+		() =>
+			new Promise<void>((resolve) => {
+				done = resolve;
+			}),
+	);
+	const update = vi.fn();
+	const generator = new RunTitleGenerator(
+		directory,
+		slots,
+		{
+			buildConfig: async () => ({ workingDirectory: directory }),
+			createRunner: () =>
+				({ start, stop: () => done() }) as unknown as IAgentRunner,
+			update,
+		},
+		20,
+	);
+	generator.start("remote", {
+		...job(),
+		settings: { runner: "cursor", model: "remote" },
+	});
+	await vi.waitFor(
+		() =>
+			expect(update).toHaveBeenCalledWith(
+				"remote",
+				expect.objectContaining({
+					state: "failed",
+					error: expect.stringMatching(/remains reserved/),
+				}),
+			),
+		{ timeout: 10000 },
+	);
+	expect(start).toHaveBeenCalledOnce();
+	expect((await slots.snapshot()).stopping).toBe(1);
+	await generator.shutdown();
 });

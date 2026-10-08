@@ -1,15 +1,11 @@
 import crypto from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
-	chmodSync,
-	copyFileSync,
 	createWriteStream,
 	existsSync,
 	mkdirSync,
-	renameSync,
-	unlinkSync,
+	readFileSync,
 	type WriteStream,
-	writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { cwd } from "node:process";
@@ -22,8 +18,6 @@ import type {
 	SDKThinkingMessage as CursorSDKThinkingMessage,
 	SDKToolUseMessage as CursorSDKToolUseMessage,
 	SDKUserMessageEvent as CursorSDKUserMessageEvent,
-	Run,
-	SDKAgent,
 } from "@cursor/sdk";
 // `@cursor/sdk` is loaded lazily inside `start()` rather than at module top
 // level. Its transitive deps (`@connectrpc/connect-node` -> `undici@7.x`,
@@ -39,13 +33,20 @@ import type {
 	SDKMessage,
 	SDKResultMessage,
 	SDKUserMessage,
-} from "cyrus-core";
+} from "bobs-factory-core";
+import {
+	isPackagedExecutable,
+	ProjectArtifactLease,
+	runtimeAssetPath,
+} from "bobs-factory-core";
+import { CursorWorkerRunner } from "./CursorWorkerRunner.js";
 import { CursorMessageFormatter } from "./formatter.js";
 import {
 	buildCyrusPermissionsConfig,
 	type CyrusPermissionsConfig,
 } from "./permissions.js";
 import { buildCursorSandboxJson, buildSandboxEnv } from "./sandbox.js";
+import { type CursorAgent, type CursorRun, loadCursorSdk } from "./sdk.js";
 import type {
 	CursorRunnerConfig,
 	CursorRunnerEvents,
@@ -58,16 +59,6 @@ type SDKSystemInitMessage = Extract<
 	SDKMessage,
 	{ type: "system"; subtype: "init" }
 >;
-
-interface CursorHooksRestoreState {
-	hooksPath: string;
-	backupPath: string | null;
-}
-
-interface CursorSandboxRestoreState {
-	sandboxPath: string;
-	backupPath: string | null;
-}
 
 function safeStringify(value: unknown): string {
 	try {
@@ -192,7 +183,7 @@ function createResultUsage(
 		// Cursor's `turn-ended` delta exposes `cacheWriteTokens` as a single
 		// counter that maps onto Anthropic's `cache_creation_input_tokens`. The
 		// SDK does not split ephemeral 1h vs 5m — we report 0 for both buckets
-		// and put the full count in the parent field (which is what Cyrus
+		// and put the full count in the parent field (which is what Bob’s Factory
 		// formatters and Linear's cost display read first).
 		cache_creation_input_tokens: totals?.cacheWriteTokens ?? 0,
 		cache_read_input_tokens: totals?.cacheReadTokens ?? 0,
@@ -204,7 +195,7 @@ function createResultUsage(
 }
 
 /**
- * Convert the Cyrus inline MCP config (potentially containing in-process
+ * Convert the Bob’s Factory inline MCP config (potentially containing in-process
  * SDK servers) into the SDK's serializable McpServerConfig format. Skips
  * entries that aren't transportable.
  */
@@ -276,7 +267,7 @@ interface ToolProjection {
 
 /**
  * Project an SDK `tool_call` event into the Claude-shaped tool_use /
- * tool_result pair that the Cyrus formatter and timeline expect.
+ * tool_result pair that the Bob’s Factory formatter and timeline expect.
  *
  * MCP tool calls surface as the generic `name: "mcp"` in the SDK stream;
  * this inspects `args` to extract the actual `<server>:<tool>` and
@@ -403,11 +394,12 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	readonly supportsStreamingInput = false;
 
 	private config: CursorRunnerConfig;
+	private worker?: CursorWorkerRunner;
 	private sessionInfo: CursorSessionInfo | null = null;
 	private messages: SDKMessage[] = [];
 	private formatter: IMessageFormatter;
-	private agent: SDKAgent | null = null;
-	private currentRun: Run | null = null;
+	private agent: CursorAgent | null = null;
+	private currentRun: CursorRun | null = null;
 	private pendingResultMessage: SDKResultMessage | null = null;
 	private hasInitMessage = false;
 	private lastAssistantText: string | null = null;
@@ -423,10 +415,9 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	private errorMessages: string[] = [];
 	private emittedToolUseIds = new Set<string>();
 	private logStream: WriteStream | null = null;
-	private hooksRestoreState: CursorHooksRestoreState | null = null;
-	private sandboxRestoreState: CursorSandboxRestoreState | null = null;
 	private sandboxEnvRestoreState: Map<string, string | undefined> | null = null;
-	private permissionsArtifactsInstalled = false;
+	private artifactLease?: ProjectArtifactLease;
+	private artifactAbort?: AbortController;
 
 	constructor(config: CursorRunnerConfig) {
 		super();
@@ -439,6 +430,19 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	async start(prompt: string): Promise<CursorSessionInfo> {
+		if (this.config.childEnvironment) {
+			if (!this.worker) {
+				this.worker = new CursorWorkerRunner(this.config);
+				this.worker.on("message", (message) => this.emit("message", message));
+				this.worker.on("complete", (messages) =>
+					this.emit("complete", messages),
+				);
+				this.worker.on("error", (error) => {
+					if (this.listenerCount("error")) this.emit("error", error);
+				});
+			}
+			return this.worker.start(prompt);
+		}
 		if (this.isRunning()) {
 			throw new Error("Cursor session already running");
 		}
@@ -470,10 +474,11 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 		const workspace = resolve(this.config.workingDirectory || cwd());
 
 		try {
-			this.installPermissionsArtifacts(workspace);
+			this.artifactAbort = new AbortController();
+			await this.installPermissionsArtifacts(workspace);
 
 			// Test/CI fallback for environments where the SDK can't run.
-			if (process.env.CYRUS_CURSOR_MOCK === "1") {
+			if (process.env.BOBS_FACTORY_CURSOR_MOCK === "1") {
 				this.emitInitMessage();
 				this.pushAssistantText("Cursor mock session completed");
 				this.pendingResultMessage = this.createSuccessResultMessage(
@@ -492,7 +497,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 				apiKey,
 				...(normalizedModel ? { model: { id: normalizedModel } } : {}),
 				local: {
-					// `cwd` is passed as a string[] per Cyrus convention; the SDK
+					// `cwd` is passed as a string[] per Bob’s Factory convention; the SDK
 					// types accept `string | string[]`.
 					cwd: [workspace],
 					settingSources: ["project" as const],
@@ -507,8 +512,8 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 				...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
 			};
 
-			const { Agent } = await import("@cursor/sdk");
-			let agent: SDKAgent;
+			const { Agent } = await loadCursorSdk();
+			let agent: CursorAgent;
 			if (this.config.resumeSessionId) {
 				console.log(
 					`[CursorRunner] Resuming agent ${this.config.resumeSessionId}`,
@@ -592,6 +597,11 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	stop(): void {
+		this.artifactAbort?.abort();
+		if (this.worker) {
+			this.worker.stop();
+			return;
+		}
 		this.wasStopped = true;
 		const run = this.currentRun;
 		if (run && typeof run.cancel === "function") {
@@ -609,10 +619,12 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	isRunning(): boolean {
+		if (this.worker) return this.worker.isRunning();
 		return this.sessionInfo?.isRunning ?? false;
 	}
 
 	getMessages(): SDKMessage[] {
+		if (this.worker) return this.worker.getMessages();
 		return [...this.messages];
 	}
 
@@ -743,7 +755,7 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	private handleThinkingEvent(_event: CursorSDKThinkingMessage): void {
-		// cyrus-core's SDKAssistantMessage content blocks don't yet include
+		// bobs-factory-core's SDKAssistantMessage content blocks don't yet include
 		// "thinking"; intentionally drop these to avoid invalid shapes.
 	}
 
@@ -765,10 +777,21 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 
 	// ---------- Permission artifacts ----------
 
-	private installPermissionsArtifacts(workspace: string): void {
-		const cursorDir = join(workspace, ".cursor");
-		mkdirSync(cursorDir, { recursive: true });
-
+	private async installPermissionsArtifacts(workspace: string): Promise<void> {
+		this.artifactLease = this.config.runnerArtifactLeaseDirectory
+			? await ProjectArtifactLease.acquire(
+					workspace,
+					"cursor",
+					this.config.runnerArtifactLeaseDirectory,
+					this.artifactAbort?.signal,
+				)
+			: new ProjectArtifactLease(
+					workspace,
+					"cursor",
+					this.config.factoryHome
+						? join(this.config.factoryHome, "runner-artifact-leases")
+						: undefined,
+				);
 		// 1. Permissions config (auto-deny is merged in by the helper). Pass
 		// the SDK-shaped MCP server map so the helper can derive a logical
 		// server name (e.g. "linear") from the command/url that the
@@ -781,63 +804,57 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			disallowedTools: this.config.disallowedTools,
 			mcpServers: sdkMcpServers,
 		});
-		writeFileSync(
-			join(cursorDir, "cyrus-permissions.json"),
+		this.artifactLease.write(
+			".cursor/bobs-factory-permissions.json",
 			`${JSON.stringify(cfg, null, "\t")}\n`,
-			"utf8",
+		);
+		this.artifactLease.write(
+			".cursor/bobs-factory-permission-check.mjs",
+			isPackagedExecutable
+				? `#!/bin/sh\nexec '${process.execPath.replaceAll("'", "'\\''")}' internal cursor-permission '${join(workspace, ".cursor/bobs-factory-permissions.json").replaceAll("'", "'\\''")}'\n`
+				: readFileSync(this.locatePermissionCheckSource()),
+			0o755,
 		);
 
-		// 2. Permission helper script (copied from package's bundled .mjs)
-		const helperDst = join(cursorDir, "cyrus-permission-check.mjs");
-		const helperSrc = this.locatePermissionCheckSource();
-		copyFileSync(helperSrc, helperDst);
-		try {
-			chmodSync(helperDst, 0o755);
-		} catch {}
-
-		// 3. Hooks config (back up any existing one)
-		const hooksPath = join(cursorDir, "hooks.json");
-		const existed = existsSync(hooksPath);
-		const backupPath = existed
-			? `${hooksPath}.cyrus-backup-${Date.now()}-${process.pid}`
-			: null;
-		if (existed && backupPath) {
-			renameSync(hooksPath, backupPath);
-		}
 		const hooksConfig = {
 			version: 1,
 			hooks: {
 				preToolUse: [
-					{ command: "./.cursor/cyrus-permission-check.mjs", failClosed: true },
+					{
+						command: "./.cursor/bobs-factory-permission-check.mjs",
+						failClosed: true,
+					},
 				],
 				beforeShellExecution: [
-					{ command: "./.cursor/cyrus-permission-check.mjs", failClosed: true },
+					{
+						command: "./.cursor/bobs-factory-permission-check.mjs",
+						failClosed: true,
+					},
 				],
 				beforeReadFile: [
-					{ command: "./.cursor/cyrus-permission-check.mjs", failClosed: true },
+					{
+						command: "./.cursor/bobs-factory-permission-check.mjs",
+						failClosed: true,
+					},
 				],
 				beforeMCPExecution: [
-					{ command: "./.cursor/cyrus-permission-check.mjs", failClosed: true },
+					{
+						command: "./.cursor/bobs-factory-permission-check.mjs",
+						failClosed: true,
+					},
 				],
 			},
 		};
-		writeFileSync(
-			hooksPath,
+		this.artifactLease.write(
+			".cursor/hooks.json",
 			`${JSON.stringify(hooksConfig, null, "\t")}\n`,
-			"utf8",
-		);
-		this.hooksRestoreState = { hooksPath, backupPath };
-		this.permissionsArtifactsInstalled = true;
-
-		console.log(
-			`[CursorRunner] Installed Cyrus permission hooks at ${hooksPath} (allow=${cfg.allow.length}, deny=${cfg.deny.length}, backup=${backupPath ? "yes" : "no"})`,
 		);
 
 		// 4. Sandbox policy file (only when sandbox is enabled). Cursor's
 		// `local.sandboxOptions.enabled: true` engages Apple Seatbelt /
 		// Linux Landlock; the policy below extends the default
 		// `workspace_readwrite` profile with allow/deny lists translated
-		// from the Cyrus / Claude SandboxSettings shape.
+		// from the Bob’s Factory / Claude SandboxSettings shape.
 		this.installSandboxArtifacts(workspace);
 	}
 
@@ -850,21 +867,10 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 		});
 		if (!sandboxJson) return;
 
-		const cursorDir = join(workspace, ".cursor");
-		const sandboxPath = join(cursorDir, "sandbox.json");
-		const existed = existsSync(sandboxPath);
-		const backupPath = existed
-			? `${sandboxPath}.cyrus-backup-${Date.now()}-${process.pid}`
-			: null;
-		if (existed && backupPath) {
-			renameSync(sandboxPath, backupPath);
-		}
-		writeFileSync(
-			sandboxPath,
+		this.artifactLease!.write(
+			".cursor/sandbox.json",
 			`${JSON.stringify(sandboxJson, null, "\t")}\n`,
-			"utf8",
 		);
-		this.sandboxRestoreState = { sandboxPath, backupPath };
 
 		// Apply env vars on `process.env` so any child shell process spawned
 		// by the SDK inherits them. We snapshot the previous values and
@@ -879,28 +885,9 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			process.env[k] = env[k];
 		}
 		this.sandboxEnvRestoreState = restore;
-
-		console.log(
-			`[CursorRunner] Installed Cursor sandbox policy at ${sandboxPath} (allowReadwrite=${sandboxJson.additionalReadwritePaths.length}, allowReadonly=${sandboxJson.additionalReadonlyPaths.length}, networkAllow=${sandboxJson.networkPolicy.allow.length}, backup=${backupPath ? "yes" : "no"})`,
-		);
 	}
 
 	private uninstallSandboxArtifacts(): void {
-		const restore = this.sandboxRestoreState;
-		if (restore) {
-			try {
-				if (existsSync(restore.sandboxPath)) unlinkSync(restore.sandboxPath);
-				if (restore.backupPath && existsSync(restore.backupPath)) {
-					renameSync(restore.backupPath, restore.sandboxPath);
-				}
-			} catch (error) {
-				const detail = error instanceof Error ? error.message : String(error);
-				console.warn(
-					`[CursorRunner] Failed to restore sandbox.json at ${restore.sandboxPath}: ${detail}`,
-				);
-			}
-			this.sandboxRestoreState = null;
-		}
 		const envRestore = this.sandboxEnvRestoreState;
 		if (envRestore) {
 			for (const [k, v] of envRestore.entries()) {
@@ -917,51 +904,44 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	private locatePermissionCheckSource(): string {
 		const here = dirname(fileURLToPath(import.meta.url));
 		// When built, the .mjs sits next to the compiled JS in dist/.
-		const built = join(here, "permission-check.mjs");
+		const built = runtimeAssetPath(
+			"cursor-runner/permission-check.mjs",
+			join(here, "permission-check.mjs"),
+		);
 		if (existsSync(built)) return built;
 		// During tests against src/, fall back to the source file.
-		const fromSrc = join(here, "permission-check.mjs");
+		const fromSrc = runtimeAssetPath(
+			"cursor-runner/permission-check.mjs",
+			join(here, "permission-check.mjs"),
+		);
 		if (existsSync(fromSrc)) return fromSrc;
 		// Last-ditch: package root.
 		const pkgRoot = join(here, "..", "src", "permission-check.mjs");
 		if (existsSync(pkgRoot)) return pkgRoot;
 		throw new Error(
-			"[CursorRunner] could not locate cyrus permission-check.mjs helper",
+			"[CursorRunner] could not locate Bob’s Factory permission-check.mjs helper",
 		);
 	}
 
 	private uninstallPermissionsArtifacts(): void {
 		this.uninstallSandboxArtifacts();
-		if (!this.permissionsArtifactsInstalled) return;
-		const workspace = resolve(this.config.workingDirectory || cwd());
-		const cursorDir = join(workspace, ".cursor");
-		const cfgPath = join(cursorDir, "cyrus-permissions.json");
-		const helperPath = join(cursorDir, "cyrus-permission-check.mjs");
-
-		try {
-			if (existsSync(cfgPath)) unlinkSync(cfgPath);
-		} catch {}
-		try {
-			if (existsSync(helperPath)) unlinkSync(helperPath);
-		} catch {}
-
-		const hooks = this.hooksRestoreState;
-		if (hooks) {
+		if (this.artifactLease) {
 			try {
-				if (existsSync(hooks.hooksPath)) unlinkSync(hooks.hooksPath);
-				if (hooks.backupPath && existsSync(hooks.backupPath)) {
-					renameSync(hooks.backupPath, hooks.hooksPath);
-				}
+				this.artifactLease.release();
 			} catch (error) {
-				const detail = error instanceof Error ? error.message : String(error);
+				this.errorMessages.push(
+					"Cursor runner artifacts could not be safely restored. Inspect the private recovery journal before retrying.",
+				);
+				this.pendingResultMessage = this.createErrorResultMessage(
+					this.errorMessages.at(-1)!,
+				);
 				console.warn(
-					`[CursorRunner] Failed to restore hooks at ${hooks.hooksPath}: ${detail}`,
+					"[CursorRunner] Runner artifact recovery requires attention:",
+					error instanceof Error ? error.message : "Unknown recovery failure",
 				);
 			}
+			this.artifactLease = undefined;
 		}
-
-		this.hooksRestoreState = null;
-		this.permissionsArtifactsInstalled = false;
 	}
 
 	// ---------- Internal helpers ----------
@@ -1082,13 +1062,15 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	private pushMessage(message: SDKMessage): void {
+		if (this.config.redact)
+			message = JSON.parse(this.config.redact(JSON.stringify(message)));
 		this.messages.push(message);
 		this.emit("message", message);
 	}
 
 	private setupLogging(sessionId: string): void {
 		try {
-			const logsDir = join(this.config.cyrusHome, "logs");
+			const logsDir = join(this.config.factoryHome, "logs");
 			mkdirSync(logsDir, { recursive: true });
 			const stream = createWriteStream(
 				join(logsDir, `cursor-${sessionId}.jsonl`),
@@ -1148,6 +1130,11 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 			this.logStream = null;
 		}
 		this.currentRun = null;
+		try {
+			this.agent?.close();
+		} catch {
+			/* SDK cleanup is best effort. */
+		}
 		this.agent = null;
 		this.pendingResultMessage = null;
 	}

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
-import type { IIssueTrackerService, McpServerConfig } from "cyrus-core";
+import type { IIssueTrackerService, McpServerConfig } from "bobs-factory-core";
 import { z } from "zod";
+import { isPullRequestSource } from "./GitProviderReference.js";
 import { issueSnapshot } from "./issueSnapshot.js";
 import type { FactoryRun } from "./WorkflowRuntime.js";
 
@@ -105,7 +106,7 @@ export function originatingTicket(
 	prompt: string,
 	source?: string,
 ): string | undefined {
-	if (source && !source.startsWith("https://github.com/")) return source;
+	if (source && !isPullRequestSource(source)) return source;
 	let fenced = false;
 	const candidates = new Set<string>();
 	for (const line of prompt.split("\n")) {
@@ -122,7 +123,7 @@ export function originatingTicket(
 		const value = match?.[2];
 		if (
 			value &&
-			!value.startsWith("https://github.com/") &&
+			!isPullRequestSource(value) &&
 			(match?.[1] ||
 				taskbotSource(value) ||
 				/\/p\/[^/]+\/t\//.test(value) ||
@@ -217,7 +218,24 @@ export function taskbotAdapter(
 					"cancelled",
 				]),
 				comments: z.array(z.object({ body: z.string() }).passthrough()),
-				attachments: z.array(z.object({ url: z.string() }).passthrough()),
+				attachments: z.array(
+					z.union([
+						z.object({ url: z.string() }).passthrough(),
+						// Uploaded files have no external URL; their ID names a download
+						// on the verified Taskbot instance and project.
+						z
+							.object({
+								kind: z.literal("file"),
+								id: z.number().int().positive(),
+								url: z.null(),
+							})
+							.passthrough()
+							.transform((file) => ({
+								...file,
+								url: `${ref.instance}/api/${ref.project}/files/${file.id}`,
+							})),
+					]),
+				),
 			})
 			.passthrough()
 			.parse(raw);
@@ -541,7 +559,7 @@ export function classifyTicketRepair(input: {
 	if (input.pr?.state === "MERGED" && input.pr.mergedAt)
 		return {
 			stage: "done",
-			reason: "GitHub confirms the associated coding PR merged.",
+			reason: "The Git provider confirms the associated coding PR merged.",
 		};
 	if (input.pr?.state === "CLOSED")
 		return {

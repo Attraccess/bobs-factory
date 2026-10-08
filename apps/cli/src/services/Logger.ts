@@ -4,10 +4,10 @@ import {
 	type LogContext,
 	type LogEventAttributes,
 	type LogLevel,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
-// Re-export LogLevel from cyrus-core so existing consumers don't break
-export { LogLevel } from "cyrus-core";
+// Re-export LogLevel from bobs-factory-core so existing consumers don't break
+export { LogLevel } from "bobs-factory-core";
 
 /**
  * Logger configuration options

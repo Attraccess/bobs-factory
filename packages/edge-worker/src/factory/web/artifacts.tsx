@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 import { api, artifactsOf, friendly, screenshotUrl } from "./client";
-import { LazyImage } from "./media";
+import { LazyImage, LazyVideo } from "./media";
 import { useRestorableState } from "./restoration";
 import { GuidedReview } from "./review";
 import { Button, External, Markdown, Modal, useToast } from "./ui";
@@ -454,6 +454,34 @@ export function RenderArtifact({
 							/>
 						</>
 					)}
+					{(v.videos ?? [])
+						.filter((video: any) => video.validation)
+						.map((video: any) => (
+							<LazyVideo
+								key={video.validation.sha256}
+								runId={run.id}
+								video={{
+									taskId: video.taskId,
+									caption: video.caption,
+									transcript: video.transcript,
+									duration: video.validation.duration,
+									mime: video.validation.mime,
+									sha256: video.validation.sha256,
+									captions: Boolean(video.validation.captions),
+									available: true,
+								}}
+							/>
+						))}
+					{v.videoUnavailable?.length > 0 && (
+						<>
+							<h3>Demonstration limitations</h3>
+							<List
+								items={v.videoUnavailable.map(
+									(gap: any) => `${gap.taskId}: ${gap.reason}`,
+								)}
+							/>
+						</>
+					)}
 					{v.screenshots?.length > 0 && (
 						<ScreenshotGallery
 							shots={v.screenshots}
@@ -636,8 +664,26 @@ export function RenderArtifact({
 		case "review":
 			return (
 				<>
+					{v.stamp && (
+						<p className="muted">
+							{v.stamp.reviewer} · round {v.stamp.round} · inventory v
+							{v.stamp.inventoryVersion}
+						</p>
+					)}
 					<Markdown>{v.summary}</Markdown>
 					<Findings items={v.findings} />
+					{v.coverage && (
+						<details>
+							<summary>Requirement coverage ({v.coverage.length})</summary>
+							<List items={v.coverage} />
+						</details>
+					)}
+					{v.disagreements?.length > 0 && (
+						<>
+							<h3>Disagreements</h3>
+							<List items={v.disagreements} />
+						</>
+					)}
 				</>
 			);
 		case "gate":
@@ -660,6 +706,20 @@ export function RenderArtifact({
 							<h3>Optional improvements</h3>
 							<List items={v.observations} />
 						</>
+					)}
+					{v.reviewers && (
+						<details>
+							<summary>Specialist receipts and complete coverage</summary>
+							{v.reviewers.map((r: any) => (
+								<section key={r.stamp.stepKey}>
+									<strong>{r.stamp.reviewer}</strong>
+									<p>{r.summary}</p>
+									<Findings items={r.findings} />
+								</section>
+							))}
+							<List items={v.coverage} />
+							<List items={v.disagreements} />
+						</details>
 					)}
 					<List items={v.feedback} />
 					{v.findings && (!v.captureBlocked || v.findings.length > 0) && (
@@ -837,7 +897,8 @@ export function Inspector({
 			description={`from ${artifact?.name ?? "step"} · ${run.title}`}
 			className="inspector"
 			onKeyDown={(event: any) => {
-				if (event.target.closest("input,textarea,select")) return;
+				if (event.target.closest("input,textarea,select,video,.evidence-video"))
+					return;
 				if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
 					event.preventDefault();
 					move(event.key === "ArrowLeft" ? -1 : 1);

@@ -1,13 +1,17 @@
+import { createHash } from "node:crypto";
+import { executionEnvironment } from "bobs-factory-core";
 import type { CodexConfigValue } from "../types.js";
+import { waitWithAbort } from "./abort.js";
 import {
 	AppServerClient,
 	type AppServerClientFactory,
 	type IAppServerClient,
 } from "./appServerClient.js";
 import { resolveCodexAppServerLaunch } from "./codexBinary.js";
+import { buildCodexThreadConfig } from "./threadConfig.js";
 import type { ResolvedCodexConfig } from "./types.js";
 
-const CLIENT_INFO = { name: "cyrus-codex-runner", version: "1.0.0" };
+const CLIENT_INFO = { name: "bobs-factory-codex-runner", version: "1.0.0" };
 const DEFAULT_IDLE_CLOSE_MS = 30_000;
 
 export interface AppServerThreadHandler {
@@ -65,7 +69,8 @@ class PooledAppServerProcess {
 		return this.disposed;
 	}
 
-	async acquireLease(): Promise<AppServerProcessLease> {
+	async acquireLease(signal?: AbortSignal): Promise<AppServerProcessLease> {
+		signal?.throwIfAborted();
 		if (this.disposed) {
 			throw new Error(
 				"Cannot acquire a lease on a disposed app-server process",
@@ -76,10 +81,12 @@ class PooledAppServerProcess {
 
 		let released = false;
 		try {
-			await this.ensureStarted();
+			const started = this.ensureStarted();
+			await (signal ? waitWithAbort(started, signal) : started);
+			signal?.throwIfAborted();
 		} catch (error) {
 			released = true;
-			await this.releaseRef();
+			await this.releaseRef(true);
 			throw error;
 		}
 
@@ -125,11 +132,11 @@ class PooledAppServerProcess {
 	}
 
 	private async ensureStarted(): Promise<void> {
-		if (this.client) {
-			return;
-		}
 		if (this.startPromise) {
 			await this.startPromise;
+			return;
+		}
+		if (this.client) {
 			return;
 		}
 
@@ -157,11 +164,12 @@ class PooledAppServerProcess {
 				capabilities: { experimentalApi: true },
 			})
 			.then(() => undefined)
-			.catch((error) => {
+			.catch(async (error) => {
 				// Failed to initialize — tear down so the pool re-creates cleanly.
 				if (this.client === client) {
 					this.client = null;
 					this.markDisposed();
+					await client.close();
 				}
 				throw error;
 			})
@@ -218,10 +226,10 @@ class PooledAppServerProcess {
 		}
 	}
 
-	private async releaseRef(): Promise<void> {
+	private async releaseRef(failedStartup = false): Promise<void> {
 		this.leaseCount = Math.max(0, this.leaseCount - 1);
 		if (this.leaseCount === 0) {
-			if (this.idleCloseMs <= 0) {
+			if (failedStartup || this.idleCloseMs <= 0) {
 				await this.close();
 				return;
 			}
@@ -289,12 +297,35 @@ export class AppServerProcessManager {
 		this.idleCloseMs = options?.idleCloseMs ?? DEFAULT_IDLE_CLOSE_MS;
 	}
 
-	async acquire(config: ResolvedCodexConfig): Promise<AppServerProcessLease> {
-		const { command, args } = resolveCodexAppServerLaunch(config.codexPath);
+	async acquire(
+		config: ResolvedCodexConfig,
+		signal?: AbortSignal,
+	): Promise<AppServerProcessLease> {
+		signal?.throwIfAborted();
+		// Codex account routing rebuilds config using the process's CLI layer.
+		// A thread-only profile definition disappears there while its selection
+		// survives, causing "failed to load workspace requirements" before inference.
+		// Define it at launch too; args fence differently permissioned processes.
+		const { command, args } = resolveCodexAppServerLaunch(
+			config.codexPath,
+			config.sandbox.kind === "profile"
+				? {
+						permissions: buildCodexThreadConfig(config).permissions!,
+						default_permissions: config.sandbox.profileId,
+					}
+				: {},
+		);
 		const launchOptions: LaunchOptions = {
 			command,
 			args,
-			...(config.env ? { env: config.env } : {}),
+			...(config.env || Object.keys(executionEnvironment()).length
+				? {
+						env: {
+							...(config.env ?? (process.env as Record<string, string>)),
+							...executionEnvironment(),
+						},
+					}
+				: {}),
 			// A live thread/resume rejoins cached thread resources. Changed MCP
 			// endpoints need a fresh process so the resumed thread loads the new tools.
 			...(config.configOverrides?.mcp_servers !== undefined
@@ -313,7 +344,10 @@ export class AppServerProcessManager {
 				this.clientFactory,
 				// MCP endpoints can be ephemeral. Release cached transports and the
 				// thread's writer lock before a later invocation resumes from disk.
-				launchOptions.mcpServers ? 0 : this.idleCloseMs,
+				launchOptions.mcpServers ||
+					launchOptions.env?.BOBS_FACTORY_EXECUTION_LEASE
+					? 0
+					: this.idleCloseMs,
 				() => {
 					// Only drop the entry if it still points at this instance — a
 					// replacement may already have taken its place.
@@ -326,7 +360,7 @@ export class AppServerProcessManager {
 			proc = created;
 		}
 
-		return proc.acquireLease();
+		return proc.acquireLease(signal);
 	}
 
 	/** Tear down every pooled process (e.g. on shutdown or in tests). */
@@ -354,13 +388,17 @@ function extractThreadId(params: unknown): string | undefined {
 }
 
 function buildLaunchKey(options: LaunchOptions): string {
-	return JSON.stringify({
-		command: options.command,
-		args: options.args,
-		env: options.env ? sortRecord(options.env) : null,
-		requestTimeoutMs: options.requestTimeoutMs ?? null,
-		mcpServers: options.mcpServers ? sortConfig(options.mcpServers) : null,
-	});
+	return createHash("sha256")
+		.update(
+			JSON.stringify({
+				command: options.command,
+				args: options.args,
+				env: options.env ? sortRecord(options.env) : null,
+				requestTimeoutMs: options.requestTimeoutMs ?? null,
+				mcpServers: options.mcpServers ? sortConfig(options.mcpServers) : null,
+			}),
+		)
+		.digest("hex");
 }
 
 function sortConfig(value: CodexConfigValue): CodexConfigValue {

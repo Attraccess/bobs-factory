@@ -119,7 +119,7 @@ export function formatActivities(run) {
 			Date.parse(steps[stepIndex + 1].at) <= Date.parse(at)
 		)
 			stepIndex++;
-		return steps[stepIndex]?.step ?? run.step ?? "Cyrus";
+		return steps[stepIndex]?.step ?? run.step ?? "Bob’s Factory";
 	};
 	const add = (entry, at, step, key, cursor = entry.activityCursor) => {
 		const runner =
@@ -277,7 +277,7 @@ export function formatActivities(run) {
 				? "Agent error"
 				: {
 						response: "Response",
-						thought: "Agent",
+						thought: "Bob’s Factory",
 						user: "You",
 						system: "Workflow",
 					}[type],
@@ -553,7 +553,7 @@ export function renderConversation(activities) {
 				const body = String(item.body ?? "");
 				return `<details class="chat-system ${item.status === "error" ? "activity-error" : ""}" data-chat-key="${key}" data-detail-key="system/${key}"><summary><span class="system-preview">${escapeHtml(body.split("\n")[0].slice(0, 160) || "Workflow update")}</span>${meta}</summary><div class="activity-text">${renderContent(body)}</div>${rawDetails(item)}</details>`;
 			}
-			return `<article class="chat-message ${group.type === "user" ? "chat-user" : "chat-assistant"} ${item.status === "error" ? "activity-error" : ""}" data-chat-key="${key}"><div class="chat-meta"><span>${group.type === "user" ? "You" : `Agent · ${escapeHtml(item.stepLabel || item.step || "Cyrus")}`}${item.status === "error" ? " · Error" : ""}</span>${meta}</div><div class="activity-text">${renderContent(item.body)}</div>${rawDetails(item)}</article>`;
+			return `<article class="chat-message ${group.type === "user" ? "chat-user" : "chat-assistant"} ${item.status === "error" ? "activity-error" : ""}" data-chat-key="${key}"><div class="chat-meta"><span>${group.type === "user" ? "You" : `Agent · ${escapeHtml(item.stepLabel || item.step || "Bob’s Factory")}`}${item.status === "error" ? " · Error" : ""}</span>${meta}</div><div class="activity-text">${renderContent(item.body)}</div>${rawDetails(item)}</article>`;
 		})
 		.join("");
 }

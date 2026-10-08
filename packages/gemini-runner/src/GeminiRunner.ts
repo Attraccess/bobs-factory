@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
 import { join } from "node:path";
@@ -6,12 +6,14 @@ import { createInterface } from "node:readline";
 import {
 	type IAgentRunner,
 	type IMessageFormatter,
+	ProjectArtifactLease,
 	type SDKAssistantMessage,
 	type SDKMessage,
 	type SDKResultMessage,
 	type SDKUserMessage,
 	StreamingPrompt,
-} from "cyrus-core";
+	spawnExecution as spawn,
+} from "bobs-factory-core";
 import { extractSessionId, geminiEventToSDKMessage } from "./adapters.js";
 import { GeminiMessageFormatter } from "./formatter.js";
 import {
@@ -60,7 +62,7 @@ export declare interface GeminiRunner {
  * @example
  * ```typescript
  * const runner = new GeminiRunner({
- *   cyrusHome: '/home/user/.cyrus',
+ *   factoryHome: '/home/user/.bobs-factory',
  *   workingDirectory: '/path/to/repo',
  *   model: 'gemini-2.5-flash',
  *   autoApprove: true
@@ -90,13 +92,14 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 	private readableLogStream: WriteStream | null = null;
 	private messages: SDKMessage[] = [];
 	private streamingPrompt: StreamingPrompt | null = null;
-	private cyrusHome: string;
+	private factoryHome: string;
 	// Delta message accumulation
 	private accumulatingMessage: SDKMessage | null = null;
 	private accumulatingRole: "user" | "assistant" | null = null;
 	// Track last assistant message for result coercion
 	private lastAssistantMessage: SDKAssistantMessage | null = null;
 	// Settings cleanup function
+	private artifactAbort?: AbortController;
 	private settingsCleanup: (() => void) | null = null;
 	// System prompt manager
 	private systemPromptManager: SystemPromptManager;
@@ -110,11 +113,11 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 	constructor(config: GeminiRunnerConfig) {
 		super();
 		this.config = config;
-		this.cyrusHome = config.cyrusHome;
+		this.factoryHome = config.factoryHome;
 		// Use workspaceName for unique system prompt file paths (supports parallel execution)
 		const workspaceName = config.workspaceName || "default";
 		this.systemPromptManager = new SystemPromptManager(
-			config.cyrusHome,
+			config.factoryHome,
 			workspaceName,
 		);
 		// Use GeminiMessageFormatter for Gemini-specific tool names
@@ -228,38 +231,54 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 		// Reset messages array
 		this.messages = [];
 
-		// Build MCP servers configuration
-		const mcpServers = this.buildMcpServers();
-
-		// Setup Gemini settings with MCP servers and maxTurns
-		const settingsOptions: GeminiSettingsOptions = {};
-
-		if (this.config.maxTurns) {
-			settingsOptions.maxSessionTurns = this.config.maxTurns;
-		}
-
-		if (Object.keys(mcpServers).length > 0) {
-			settingsOptions.mcpServers = mcpServers;
-		}
-
-		if (this.config.allowMCPServers) {
-			settingsOptions.allowMCPServers = this.config.allowMCPServers;
-		}
-
-		if (this.config.excludeMCPServers) {
-			settingsOptions.excludeMCPServers = this.config.excludeMCPServers;
-		}
-
-		// Only setup settings if we have something to configure
-		if (Object.keys(settingsOptions).length > 0) {
-			// Use project-scoped .gemini/settings.json when a working directory is set.
-			this.settingsCleanup = setupGeminiSettings(
-				settingsOptions,
-				this.config.workingDirectory,
-			);
-		}
-
 		try {
+			// Build MCP servers configuration
+			const mcpServers = this.buildMcpServers();
+
+			// Setup Gemini settings with MCP servers and maxTurns
+			const settingsOptions: GeminiSettingsOptions = {};
+			if (this.config.runnerSettings)
+				settingsOptions.ordinarySettings = this.config.runnerSettings;
+
+			if (this.config.maxTurns) {
+				settingsOptions.maxSessionTurns = this.config.maxTurns;
+			}
+
+			if (Object.keys(mcpServers).length > 0) {
+				settingsOptions.mcpServers = mcpServers;
+			}
+
+			if (this.config.allowMCPServers) {
+				settingsOptions.allowMCPServers = this.config.allowMCPServers;
+			}
+
+			if (this.config.excludeMCPServers) {
+				settingsOptions.excludeMCPServers = this.config.excludeMCPServers;
+			}
+
+			// Only setup settings if we have something to configure
+			if (Object.keys(settingsOptions).length > 0) {
+				// Use project-scoped .gemini/settings.json when a working directory is set.
+				this.artifactAbort = new AbortController();
+				const lease =
+					this.config.runnerArtifactLeaseDirectory &&
+					this.config.workingDirectory
+						? await ProjectArtifactLease.acquire(
+								this.config.workingDirectory,
+								"gemini",
+								this.config.runnerArtifactLeaseDirectory,
+								this.artifactAbort.signal,
+							)
+						: undefined;
+				this.settingsCleanup = setupGeminiSettings(
+					settingsOptions,
+					this.config.workingDirectory,
+					this.config.runnerArtifactLeaseDirectory ??
+						join(this.factoryHome, "runner-artifact-leases"),
+					lease,
+				);
+			}
+
 			// Build Gemini CLI command
 			const geminiPath = this.config.geminiPath || "gemini";
 			const args: string[] = ["--output-format", "stream-json"];
@@ -325,7 +344,10 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 			}
 
 			// Prepare environment variables for Gemini CLI
-			const geminiEnv = { ...process.env };
+			const geminiEnv: NodeJS.ProcessEnv = {
+				...(this.config.childEnvironment ?? process.env),
+				...(this.config.childEnvironment ? this.config.additionalEnv : {}),
+			};
 
 			if (this.config.appendSystemPrompt) {
 				try {
@@ -390,14 +412,17 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 				} else {
 					console.error(
 						"[GeminiRunner] Failed to parse/validate JSON event:",
-						line,
+						this.config.redact?.(line) ?? line,
 					);
 				}
 			});
 
 			// Handle stderr
+			let privateStderr = "";
 			this.process.stderr?.on("data", (data: Buffer) => {
-				console.error("[GeminiRunner] stderr:", data.toString());
+				if (this.config.redact)
+					privateStderr = (privateStderr + data.toString()).slice(-1000000);
+				else console.error("[GeminiRunner] stderr:", data.toString());
 			});
 
 			// Wait for process to complete
@@ -408,6 +433,11 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 				}
 
 				this.process.on("close", (code: number) => {
+					if (privateStderr)
+						console.error(
+							"[GeminiRunner] stderr:",
+							this.config.redact?.(privateStderr),
+						);
 					console.log(`[GeminiRunner] Process exited with code ${code}`);
 					if (code === 0) {
 						resolve();
@@ -417,7 +447,10 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 				});
 
 				this.process.on("error", (err: Error) => {
-					console.error("[GeminiRunner] Process error:", err);
+					console.error(
+						"[GeminiRunner] Process error:",
+						this.config.redact ? this.config.redact(err.message) : err,
+					);
 					reject(err);
 				});
 			});
@@ -439,7 +472,16 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 			}
 
 			this.emit("complete", this.messages);
-		} catch (error) {
+		} catch (caughtError) {
+			const error = this.config.redact
+				? new Error(
+						this.config.redact(
+							caughtError instanceof Error
+								? caughtError.message
+								: String(caughtError),
+						),
+					)
+				: caughtError;
 			console.error("[GeminiRunner] Session error:", error);
 
 			if (this.sessionInfo) {
@@ -668,6 +710,8 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 	 * Emit a message (add to messages array, log, and emit event)
 	 */
 	private emitMessage(message: SDKMessage): void {
+		if (this.config.redact)
+			message = JSON.parse(this.config.redact(JSON.stringify(message)));
 		this.messages.push(message);
 
 		// Log to detailed JSON log
@@ -693,6 +737,7 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 	 * Stop the current Gemini session
 	 */
 	stop(): void {
+		this.artifactAbort?.abort();
 		// Flush any accumulated message before stopping
 		this.flushAccumulatedMessage();
 
@@ -770,7 +815,9 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 		const configPaths: string[] = [];
 
 		// 1. Auto-detect .mcp.json in working directory
-		const autoDetectedPath = autoDetectMcpConfig(this.config.workingDirectory);
+		const autoDetectedPath = this.config.childEnvironment
+			? undefined
+			: autoDetectMcpConfig(this.config.workingDirectory);
 		if (autoDetectedPath) {
 			configPaths.push(autoDetectedPath);
 		}
@@ -795,6 +842,10 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 
 		// Convert each server to Gemini format
 		for (const [serverName, serverConfig] of Object.entries(allServers)) {
+			if (this.config.childEnvironment && !("command" in serverConfig))
+				throw new Error(
+					`Explicit Gemini execution does not support MCP transport for ${serverName}; use a supported stdio server`,
+				);
 			const geminiConfig = convertToGeminiMcpConfig(serverName, serverConfig);
 			if (geminiConfig) {
 				geminiMcpServers[serverName] = geminiConfig;
@@ -814,7 +865,7 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 	 * Set up logging streams for this session
 	 */
 	private setupLogging(): void {
-		const logsDir = join(this.cyrusHome, "logs");
+		const logsDir = join(this.factoryHome, "logs");
 		const workspaceName =
 			this.config.workspaceName ||
 			(this.config.workingDirectory

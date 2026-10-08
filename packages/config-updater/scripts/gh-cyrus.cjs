@@ -2,7 +2,7 @@
 /**
  * gh-cyrus — per-invocation GitHub token resolution for the `gh` CLI.
  *
- * Installed by Cyrus at `<cyrusHome>/scripts/gh-cyrus.cjs`; the droplet's
+ * Installed by Cyrus at `<factoryHome>/scripts/gh-cyrus.cjs`; the droplet's
  * `~/.local/bin/gh` wrapper execs into it. Multi-repo agent sessions can
  * span repositories from DIFFERENT GitHub orgs, so a session-wide token is
  * not enough — each gh invocation must authenticate with the installation
@@ -14,10 +14,10 @@
  *   2. A positional repository for `repo view`, `clone`, or `fork`.
  *   3. GH_REPO, then the cwd's `remote.origin.url` (how gh infers "the current
  *      repository").
- * Then the token, from `<cyrusHome>/github-tokens.json` (pushed by
+ * Then the token, from `<factoryHome>/github-tokens.json` (pushed by
  * cyrus-hosted):
  *   3. The org-matched token.
- *   4. `CYRUS_GH_TOKEN` from the session env (set to the session's primary
+ *   4. `BOBS_FACTORY_GH_TOKEN` from the session env (set to the session's primary
  *      repository's org token — covers repo-less commands like `gh api`).
  *   5. The single valid token, when exactly one exists.
  *   6. No token: fall through to gh's own stored auth (hosts.yml).
@@ -120,8 +120,9 @@ function ownerFromCwd() {
 
 /** Non-expired tokens from the Cyrus token store file. */
 function loadValidTokens() {
-	const cyrusHome = process.env.CYRUS_HOME || path.join(os.homedir(), ".cyrus");
-	const tokensFile = path.join(cyrusHome, "github-tokens.json");
+	const factoryHome =
+		process.env.BOBS_FACTORY_HOME || path.join(os.homedir(), ".bobs-factory");
+	const tokensFile = path.join(factoryHome, "github-tokens.json");
 	let tokens = [];
 	try {
 		const parsed = JSON.parse(fs.readFileSync(tokensFile, "utf8"));
@@ -153,7 +154,8 @@ function resolveToken(args) {
 		);
 		if (match) return match.token;
 	}
-	if (process.env.CYRUS_GH_TOKEN) return process.env.CYRUS_GH_TOKEN;
+	if (process.env.BOBS_FACTORY_GH_TOKEN)
+		return process.env.BOBS_FACTORY_GH_TOKEN;
 	if (valid.length === 1) return valid[0].token;
 	return undefined;
 }
@@ -169,7 +171,7 @@ function main() {
 	const token = resolveToken(args);
 	if (token) env.GH_TOKEN = token;
 
-	const ghBin = process.env.CYRUS_GH_REAL_BIN || "/usr/bin/gh";
+	const ghBin = process.env.BOBS_FACTORY_GH_REAL_BIN || "/usr/bin/gh";
 	const result = spawnSync(ghBin, args, { stdio: "inherit", env });
 	if (result.error) {
 		console.error(`gh-cyrus: failed to run ${ghBin}: ${result.error.message}`);

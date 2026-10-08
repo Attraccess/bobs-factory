@@ -1,12 +1,12 @@
-import type { IAgentRunner, ILogger } from "cyrus-core";
-import { createLogger } from "cyrus-core";
+import type { IAgentRunner, ILogger } from "bobs-factory-core";
+import { createLogger } from "bobs-factory-core";
 import {
 	buildPromptText,
 	type ZulipDestination,
 	type ZulipMessage,
 	ZulipMessageService,
 	type ZulipWebhookEvent,
-} from "cyrus-zulip-event-transport";
+} from "bobs-factory-zulip-event-transport";
 import type { ChatRepositoryProvider } from "./ChatRepositoryProvider.js";
 import type { ChatPlatformAdapter } from "./ChatSessionHandler.js";
 import { workflowTriggerInstructions } from "./factory/Workflow.js";
@@ -55,7 +55,7 @@ const CURSOR_WIDTH = 20;
  * `<stream_id>:<topic>`; a DM conversation keys on its participants instead.
  *
  * Unlike Slack, an outgoing webhook bot is only notified about messages that
- * address it (an @mention or a DM), so every event Cyrus sees is directed at
+ * address it (an @mention or a DM), so every event Bob’s Factory sees is directed at
  * it. That removes the whole "decide whether this message was meant for you"
  * apparatus the Slack prompt needs — and it is why the catch-up read matters:
  * it is the only way anything said in the topic between two mentions reaches
@@ -64,6 +64,17 @@ const CURSOR_WIDTH = 20;
 export class ZulipChatAdapter
 	implements ChatPlatformAdapter<ZulipWebhookEvent>
 {
+	restoreReplyEvent(event: unknown): ZulipWebhookEvent {
+		return {
+			...(event as ZulipWebhookEvent),
+			credentials: {
+				site: process.env.ZULIP_SITE!,
+				botEmail: process.env.ZULIP_BOT_EMAIL!,
+				apiKey: process.env.ZULIP_API_KEY!,
+			},
+		};
+	}
+
 	readonly platformName = "zulip" as const;
 	private repositoryProvider: ChatRepositoryProvider;
 	private repositoryRoutingContext: string;
@@ -114,13 +125,13 @@ export class ZulipChatAdapter
 	}
 
 	/**
-	 * What was said in this topic since Cyrus last had context.
+	 * What was said in this topic since Bob’s Factory last had context.
 	 *
 	 * One request either way: the newest window of the topic, from which the
 	 * cursor selects what the agent has not seen. A resumed session already
 	 * holds its own replies in memory, so those are dropped from a catch-up —
 	 * but a fresh session has no memory at all and gets the whole window,
-	 * Cyrus's own past replies included.
+	 * Bob’s Factory's own past replies included.
 	 *
 	 * Returns "" when there is nothing to add, `null` when the read failed —
 	 * the caller only advances its cursor on a non-null result, so a failure
@@ -247,21 +258,21 @@ ${repositoryAccessSection}
 ${this.repositoryRoutingContext ? `\n\n${this.repositoryRoutingContext}` : ""}
 
 ## Self-Knowledge
-- If the user asks about your capabilities, features, how you work, what you can do, setup instructions, or anything related to Cyrus documentation, use the \`mcp__cyrus-docs__search_documentation\` tool to look up the answer from the official Cyrus docs.
-- Always prefer searching the docs over guessing or relying on your training data for Cyrus-specific questions.
+- If the user asks about your capabilities, features, how you work, what you can do, setup instructions, or anything related to Bob’s Factory documentation, use the \`mcp__cyrus-docs__search_documentation\` tool to look up the answer from the official Bob’s Factory docs.
+- Always prefer searching the docs over guessing or relying on your training data for Bob’s Factory-specific questions.
 
 ## Orchestration Notes
 ${workflowTriggerInstructions}
 - If the user asks you to make repo code changes immediately, use these steps:
   - First run \`mcp__linear__get_user\` with \`query: "me"\` to get your Linear identity.
   - Create an Issue in the user's tracker for the requested work (for example using \`mcp__linear__save_issue\`), including enough context and acceptance criteria to execute it. Default the issue status/state to "Backlog". **IMPORTANT: Never set the status to "Triage".**
-  - To route the issue to a specific repository, add \`[repo=repo-name]\` to the issue description. To target a specific branch, use \`[repo=repo-name#branch-name]\`. For multiple repos: \`repos=repo1,repo2\`.
+  - To route the issue to a specific repository, add \`[repo=repo-name]\` to the issue description. To target a specific branch, use \`[repo=repo-name#branch-name]\`. For multiple repos: \`repos=repo1,repo2\`. Shared routing labels select every matching repository in any workflow. Factory reviews and publishes one PR/MR per changed repository, with approval bound to all revisions and completion after every delivery merges.
   - To choose a specific execution harness, add \`[agent=claude]\`, \`[agent=gemini]\`, \`[agent=codex]\`, \`[agent=cursor]\`, or \`[agent=opencode]\` to the issue description.
   - To choose both execution harness and model from Linear labels, apply a \`<provider>/<model>\` label such as \`openai/gpt-5.5\`. For OpenCode, use \`opencode/<provider>/<model>\`, such as \`opencode/openai/gpt-5.5\`.
   - Assign that Issue to that same user (your own Linear user).
   - That assignment starts work only if the selected workflow permits ticket-assignment. A rejected selection posts actionable feedback.
-  - Track execution progress by searching \`mcp__cyrus-tools__linear_get_agent_sessions\` for the active session, then opening it with \`mcp__cyrus-tools__linear_get_agent_session\`.
-  - To send mid-flight feedback or corrections to a running child session, use \`mcp__cyrus-tools__linear_agent_give_feedback\` with the session ID returned by \`linear_get_agent_sessions\`. This is the ONLY way to directly prompt a running child agent. \`mcp__linear__save_comment\` does NOT trigger or notify the agent in any way — it just writes a comment on the issue, which the running session will not see. Always prefer \`linear_agent_give_feedback\` when the child agent is actively working.
+  - Track execution progress by searching \`mcp__bobs-factory-tools__linear_get_agent_sessions\` for the active session, then opening it with \`mcp__bobs-factory-tools__linear_get_agent_session\`.
+  - To send mid-flight feedback or corrections to a running child session, use \`mcp__bobs-factory-tools__linear_agent_give_feedback\` with the session ID returned by \`linear_get_agent_sessions\`. This is the ONLY way to directly prompt a running child agent. \`mcp__linear__save_comment\` does NOT trigger or notify the agent in any way — it just writes a comment on the issue, which the running session will not see. Always prefer \`linear_agent_give_feedback\` when the child agent is actively working.
 
 ## Zulip Message Formatting
 Your response is posted as a Zulip message. Zulip uses Markdown, so ordinary Markdown is correct — including \`[text](url)\` links, \`**bold**\`, tables, and fenced code blocks (give them a language, e.g. \`\`\`python).

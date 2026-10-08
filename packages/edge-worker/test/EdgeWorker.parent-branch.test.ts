@@ -2,19 +2,38 @@ import { rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
-import { ClaudeRunner } from "cyrus-claude-runner";
-import type { LinearAgentSessionCreatedWebhook } from "cyrus-core";
+import { ClaudeRunner } from "bobs-factory-claude-runner";
+import type { LinearAgentSessionCreatedWebhook } from "bobs-factory-core";
 import {
 	isAgentSessionCreatedWebhook,
 	isAgentSessionPromptedWebhook,
-} from "cyrus-core";
-import { LinearEventTransport } from "cyrus-linear-event-transport";
+} from "bobs-factory-core";
+import { LinearEventTransport } from "bobs-factory-linear-event-transport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager.js";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { SharedApplicationServer } from "../src/SharedApplicationServer.js";
 import type { EdgeWorkerConfig, RepositoryConfig } from "../src/types.js";
-import { TEST_CYRUS_HOME } from "./test-dirs.js";
+import { TEST_BOBS_FACTORY_HOME } from "./test-dirs.js";
+
+// Routing tests use an in-memory gate; real storage/process coordination is
+// exercised by MachineCapacity.test.ts, outside these filesystem mocks.
+vi.mock("../src/MachineCapacity.js", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("../src/MachineCapacity.js")>();
+	const { SessionSemaphore } = await import("../src/RunnerConcurrency.js");
+	return {
+		...actual,
+		MachineCapacity: class extends SessionSemaphore {
+			constructor(limit = 4) {
+				super(limit);
+			}
+			async ready() {}
+			async reconcileQueue() {}
+			async shutdown() {}
+		},
+	};
+});
 
 // Mock fs/promises
 vi.mock("fs/promises", () => ({
@@ -25,13 +44,13 @@ vi.mock("fs/promises", () => ({
 }));
 
 // Mock dependencies
-vi.mock("cyrus-claude-runner");
-vi.mock("cyrus-codex-runner");
-vi.mock("cyrus-linear-event-transport");
+vi.mock("bobs-factory-claude-runner");
+vi.mock("bobs-factory-codex-runner");
+vi.mock("bobs-factory-linear-event-transport");
 vi.mock("@linear/sdk");
 vi.mock("../src/SharedApplicationServer.js");
 vi.mock("../src/AgentSessionManager.js");
-vi.mock("cyrus-core", async (importOriginal) => {
+vi.mock("bobs-factory-core", async (importOriginal) => {
 	const actual = (await importOriginal()) as any;
 	return {
 		...actual,
@@ -72,7 +91,7 @@ describe("EdgeWorker - Parent Branch Handling", () => {
 	};
 
 	beforeEach(() => {
-		rmSync(join(TEST_CYRUS_HOME, "factory", "ticket-deliveries.json"), {
+		rmSync(join(TEST_BOBS_FACTORY_HOME, "factory", "ticket-deliveries.json"), {
 			force: true,
 		});
 		vi.clearAllMocks();
@@ -188,7 +207,7 @@ Base Branch: {{base_branch}}`;
 
 		mockConfig = {
 			proxyUrl: "http://localhost:3000",
-			cyrusHome: TEST_CYRUS_HOME,
+			factoryHome: TEST_BOBS_FACTORY_HOME,
 			repositories: [mockRepository],
 			linearWorkspaces: {
 				"test-workspace": { linearToken: "test-token" },
@@ -262,7 +281,9 @@ Base Branch: {{base_branch}}`;
 		expect(capturedClaudeRunnerConfig).toBeDefined();
 
 		// Check that startStreaming was called with a prompt containing the correct base branch
-		expect(mockClaudeRunner.startStreaming).toHaveBeenCalled();
+		await vi.waitFor(() =>
+			expect(mockClaudeRunner.startStreaming).toHaveBeenCalled(),
+		);
 		const promptArg = mockClaudeRunner.startStreaming.mock.calls[0][0];
 		expect(promptArg).toContain("Base Branch: main"); // Should contain the repository's base branch
 	});
@@ -315,7 +336,9 @@ Base Branch: {{base_branch}}`;
 		expect(capturedClaudeRunnerConfig).toBeDefined();
 
 		// Check that startStreaming was called with a prompt containing the parent branch
-		expect(mockClaudeRunner.startStreaming).toHaveBeenCalled();
+		await vi.waitFor(() =>
+			expect(mockClaudeRunner.startStreaming).toHaveBeenCalled(),
+		);
 		const promptArg = mockClaudeRunner.startStreaming.mock.calls[0][0];
 		expect(promptArg).toContain("Base Branch: parent-feature-branch"); // Should contain the parent's branch
 	});
@@ -369,7 +392,9 @@ Base Branch: {{base_branch}}`;
 		expect(capturedClaudeRunnerConfig).toBeDefined();
 
 		// Check that startStreaming was called with a prompt containing the generated parent branch name
-		expect(mockClaudeRunner.startStreaming).toHaveBeenCalled();
+		await vi.waitFor(() =>
+			expect(mockClaudeRunner.startStreaming).toHaveBeenCalled(),
+		);
 		const promptArg = mockClaudeRunner.startStreaming.mock.calls[0][0];
 		expect(promptArg).toContain("Base Branch: TEST-456-parent-issue-title"); // Should use generated branch name
 	});
@@ -427,7 +452,9 @@ Base Branch: {{base_branch}}`;
 		expect(capturedClaudeRunnerConfig).toBeDefined();
 
 		// Check that startStreaming was called with a prompt containing the immediate parent branch
-		expect(mockClaudeRunner.startStreaming).toHaveBeenCalled();
+		await vi.waitFor(() =>
+			expect(mockClaudeRunner.startStreaming).toHaveBeenCalled(),
+		);
 		const promptArg = mockClaudeRunner.startStreaming.mock.calls[0][0];
 		expect(promptArg).toContain("Base Branch: parent-branch-456"); // Should use immediate parent
 		expect(promptArg).not.toContain("grandparent-branch-789"); // Should not contain grandparent

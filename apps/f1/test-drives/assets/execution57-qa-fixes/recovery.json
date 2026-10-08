@@ -1,0 +1,14 @@
+{
+	"runId": "qa57-recovery",
+	"status": "completed",
+	"restarted": true,
+	"acceptedSnapshotUnchanged": true,
+	"deletedDefinitions": true,
+	"newDefaults": {
+		"identityProfile": "native-claude",
+		"toolProfile": "shared"
+	},
+	"account": "bobs-factory",
+	"author": "Bob author",
+	"committer": "Bob committer"
+}

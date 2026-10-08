@@ -139,7 +139,9 @@ describe("PersistenceManager", () => {
 			// Verify writeFile was called with v4.0 version
 			expect(writeFile).toHaveBeenCalled();
 			const savedData = JSON.parse(
-				vi.mocked(writeFile).mock.calls[0][1] as string,
+				Array.from(
+					vi.mocked(writeFile).mock.calls[0][1] as Iterable<string>,
+				).join(""),
 			);
 			expect(savedData.version).toBe(PERSISTENCE_VERSION);
 		});
@@ -345,7 +347,9 @@ describe("PersistenceManager", () => {
 
 			expect(writeFile).toHaveBeenCalled();
 			const savedData = JSON.parse(
-				vi.mocked(writeFile).mock.calls[0][1] as string,
+				Array.from(
+					vi.mocked(writeFile).mock.calls[0][1] as Iterable<string>,
+				).join(""),
 			);
 			expect(savedData.version).toBe("4.0");
 		});

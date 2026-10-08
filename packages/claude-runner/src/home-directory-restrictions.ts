@@ -13,10 +13,10 @@ import { join, relative, resolve } from "node:path";
  * worktree, the attachments directory, repository base paths, and any other
  * directories Claude legitimately needs to read.
  *
- * Example: cwd = /Users/alice/.cyrus/worktrees/ENG-1/repo
- *          additionalAllowedPaths = [/Users/alice/.cyrus/ENG-1/attachments]
- * Allows:  ~/.cyrus/worktrees/ENG-1/repo  (cwd)
- *          ~/.cyrus/ENG-1/attachments      (additional allowed path)
+ * Example: cwd = /Users/alice/.bobs-factory/worktrees/ENG-1/repo
+ *          additionalAllowedPaths = [/Users/alice/.bobs-factory/ENG-1/attachments]
+ * Allows:  ~/.bobs-factory/worktrees/ENG-1/repo  (cwd)
+ *          ~/.bobs-factory/ENG-1/attachments      (additional allowed path)
  * Denies:  ~/.ssh/**, ~/.aws/**, ~/.gitconfig, ~/Documents/**, etc.
  *          and siblings at each intermediate level that lead nowhere useful.
  *

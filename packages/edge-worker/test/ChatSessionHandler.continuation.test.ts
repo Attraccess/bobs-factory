@@ -1,9 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { AgentSessionStatus } from "cyrus-core";
+import { AgentSessionStatus, PersistenceManager } from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { ChatSessionHandler } from "../src/ChatSessionHandler.js";
+import { EdgeWorker } from "../src/EdgeWorker.js";
 import { capRunnerStarts, SessionSemaphore } from "../src/RunnerConcurrency.js";
 
 const homes: string[] = [];
@@ -33,6 +34,22 @@ async function fixture(
 	let threadReads = 0;
 	const notifyBusy = vi.fn(async () => {});
 	const onNewSession = vi.fn();
+	const persistence = new PersistenceManager(join(home, "state"));
+	const persistMessage = vi.fn(
+		persistence.saveEdgeWorkerState.bind(persistence),
+	);
+	const worker: any = Object.assign(Object.create(EdgeWorker.prototype), {
+		stateSaveQueue: Promise.resolve(),
+		persistenceManager: { saveEdgeWorkerState: persistMessage },
+		logger: { debug: () => {}, error: () => {} },
+		serializeMappings: () => {
+			const saved = handler.serializeState();
+			return {
+				agentSessions: saved.sessions,
+				agentSessionEntries: saved.entries,
+			};
+		},
+	});
 	const handler = new ChatSessionHandler<{ text: string }>(
 		{
 			platformName: platform,
@@ -53,7 +70,7 @@ async function fixture(
 			notifyBusy,
 		},
 		{
-			cyrusHome: home,
+			factoryHome: home,
 			chatRepositoryProvider: {
 				getDefaultRepository: () => undefined,
 				getDefaultLinearWorkspaceId: () => undefined,
@@ -117,6 +134,7 @@ async function fixture(
 			onWebhookStart: () => {},
 			onWebhookEnd: () => {},
 			onStateChange: async () => {},
+			persistMessage: (update) => worker.savePersistedState(true, update),
 			onClaudeError: () => {},
 		},
 	);
@@ -133,6 +151,9 @@ async function fixture(
 		runners,
 		notifyBusy,
 		onNewSession,
+		persistMessage,
+		persistence,
+		worker,
 	};
 }
 
@@ -149,12 +170,9 @@ it.each([
 					: f.handler.handleEvent({ text: "First continuation" });
 			await f.reached.promise;
 			expect(f.handler.chatState(f.session.id)).toMatchObject({
-				available: false,
-				reason: "The conversation is resuming.",
+				available: true,
+				mode: "queue",
 			});
-			expect(() =>
-				f.handler.sendMessage(f.session.id, "Duplicate dashboard start"),
-			).toThrow("resuming");
 			await f.handler.handleEvent({ text: "Queued platform reply 1" });
 			await f.handler.handleEvent({ text: "Queued platform reply 2" });
 			expect(f.starts).toEqual(["Initial task"]);
@@ -219,4 +237,171 @@ it("does not redispatch a queued reply when stopped immediately after a result",
 	await new Promise(setImmediate);
 	expect(f.starts).toEqual(["Initial task", "First continuation"]);
 	expect(f.session.status).toBe(AgentSessionStatus.Error);
+});
+
+it.each([
+	"config",
+	"catchup",
+	"admission",
+] as const)("accepts and persists dashboard messages during %s without overlapping turns", async (stage) => {
+	const f = await fixture("slack", stage);
+	await f.handler.sendMessage(f.session.id, "First continuation", "first");
+	await f.reached.promise;
+	await f.handler.sendMessage(f.session.id, "Follow-up one", "one");
+	await f.handler.sendMessage(f.session.id, "Follow-up two", "two");
+	expect(f.handler.chatState(f.session.id)).toMatchObject({
+		available: true,
+		mode: "queue",
+		queuedMessageIds: expect.arrayContaining(["one", "two"]),
+	});
+	const saved = f.handler.serializeState();
+	expect(saved.sessions[f.session.id].metadata?.pendingChatMessages).toEqual([
+		{ id: "one", text: "Follow-up one" },
+		{ id: "two", text: "Follow-up two" },
+	]);
+	expect(saved.sessions[f.session.id].metadata?.pendingExecution?.prompt).toBe(
+		"First continuation",
+	);
+	expect(f.starts).toEqual(["Initial task"]);
+	f.gate.resolve();
+	await vi.waitFor(() => expect(f.starts).toHaveLength(2));
+	await f.runners[1].finish();
+	await vi.waitFor(() => expect(f.starts).toHaveLength(3));
+	expect(f.starts[2]).toBe("Follow-up one\n\nFollow-up two");
+	expect(f.session.metadata?.pendingChatMessages).toEqual([]);
+	await f.runners[2].finish();
+	expect(f.handler.chatState(f.session.id).queuedMessageIds).toEqual([]);
+});
+
+it("cancels accepted dashboard messages when a queued continuation is stopped", async () => {
+	const f = await fixture("zulip", "admission");
+	await f.handler.sendMessage(f.session.id, "First continuation");
+	await f.reached.promise;
+	await f.handler.sendMessage(f.session.id, "Never execute this");
+	f.handler.stopSession(f.session.id);
+	f.gate.resolve();
+	await new Promise(setImmediate);
+	expect(f.starts).toEqual(["Initial task"]);
+	expect(f.session.metadata?.pendingChatMessages).toBeUndefined();
+});
+
+it("recovers saved dashboard messages after a completed turn without replaying it", async () => {
+	const f = await fixture("slack", "catchup");
+	f.session.metadata ??= {};
+	f.session.metadata.chatSystemPrompt = "Chat instructions";
+	f.session.metadata.pendingChatMessages = [
+		{ id: "saved-one", text: "Saved follow-up one" },
+		{ id: "saved-two", text: "Saved follow-up two" },
+	];
+	f.gate.resolve();
+	const saved = f.handler.serializeState();
+	f.handler.restoreState(saved.sessions, saved.entries);
+	await f.handler.recoverQueuedSessions();
+	await vi.waitFor(() => expect(f.starts).toHaveLength(2));
+	expect(f.starts).toEqual([
+		"Initial task",
+		"Saved follow-up one\n\nSaved follow-up two",
+	]);
+	await f.runners[1].finish();
+});
+
+it("does not deliver an unpersisted message when the current turn completes", async () => {
+	const f = await fixture("slack", "config");
+	await f.handler.sendMessage(f.session.id, "First continuation");
+	await f.reached.promise;
+	f.gate.resolve();
+	await vi.waitFor(() => expect(f.starts).toHaveLength(2));
+	const save = deferred();
+	f.persistMessage.mockImplementationOnce(async () => {
+		await save.promise;
+		throw new Error("Disk full");
+	});
+	const delivery = f.handler.sendMessage(f.session.id, "Unpersisted message");
+	const rejected = expect(delivery).rejects.toThrow("Disk full");
+	await f.runners[1].finish();
+	await new Promise(setImmediate);
+	expect(f.starts).toHaveLength(2);
+	save.resolve();
+	await rejected;
+	expect(f.session.metadata?.pendingChatMessages).toEqual([]);
+	expect(f.starts).toHaveLength(2);
+});
+
+it("does not recover a rejected concurrent submission saved by another request", async () => {
+	const f = await fixture("slack", "config");
+	await f.handler.sendMessage(f.session.id, "First continuation", "first");
+	await f.reached.promise;
+	const saving = deferred();
+	const save = deferred();
+	let firstSavedMessages: unknown;
+	f.persistMessage
+		.mockImplementationOnce(async (state) => {
+			saving.resolve();
+			await save.promise;
+			await f.persistence.saveEdgeWorkerState(state);
+			firstSavedMessages = (await f.persistence.loadEdgeWorkerState())!
+				.agentSessions![f.session.id].metadata?.pendingChatMessages;
+		})
+		.mockRejectedValueOnce(new Error("Disk full"));
+	const accepted = f.handler.sendMessage(
+		f.session.id,
+		"Accepted input",
+		"accepted",
+	);
+	await saving.promise;
+	const rejected = f.handler.sendMessage(
+		f.session.id,
+		"Rejected input",
+		"rejected",
+	);
+	const rejection = expect(rejected).rejects.toThrow("Disk full");
+	await new Promise(setImmediate);
+	// Lifecycle saves use the same state file and must observe rollback too.
+	const lifecycle = f.worker.savePersistedState();
+	save.resolve();
+	await accepted;
+	await rejection;
+	await lifecycle;
+	expect(firstSavedMessages).toEqual([
+		{ id: "accepted", text: "Accepted input" },
+	]);
+	const saved = await f.persistence.loadEdgeWorkerState();
+	expect(
+		saved!.agentSessions![f.session.id].metadata?.pendingChatMessages,
+	).toEqual([{ id: "accepted", text: "Accepted input" }]);
+	expect(f.session.metadata?.pendingChatMessages).toEqual([
+		{ id: "accepted", text: "Accepted input" },
+	]);
+
+	// A later retry can succeed; neither it nor recovery resurrects rejected input.
+	await f.handler.sendMessage(f.session.id, "Retried input", "retry");
+	const retrySaved = await f.persistence.loadEdgeWorkerState();
+	f.handler.stopSession(f.session.id);
+	f.gate.resolve();
+	await new Promise(setImmediate);
+	const restored = new ChatSessionHandler(
+		(f.handler as any).adapter,
+		(f.handler as any).deps,
+	);
+	f.worker.serializeMappings = () => {
+		const state = restored.serializeState();
+		return {
+			agentSessions: state.sessions,
+			agentSessionEntries: state.entries,
+		};
+	};
+	restored.restoreState(
+		retrySaved!.agentSessions!,
+		retrySaved!.agentSessionEntries!,
+	);
+	await restored.recoverQueuedSessions();
+	await vi.waitFor(() => expect(f.starts).toHaveLength(2));
+	await f.runners[1].finish();
+	await vi.waitFor(() => expect(f.starts).toHaveLength(3));
+	expect(f.starts).toEqual([
+		"Initial task",
+		"First continuation",
+		"Accepted input\n\nRetried input",
+	]);
+	await f.runners[2].finish();
 });

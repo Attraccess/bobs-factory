@@ -1,17 +1,24 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getReadOnlyTools } from "cyrus-claude-runner";
-import type { RepositoryConfig } from "cyrus-core";
+import { getReadOnlyTools } from "bobs-factory-claude-runner";
+import type { RepositoryConfig } from "bobs-factory-core";
 import {
 	type SlackMessageAttachment,
 	SlackMessageService,
 	SlackReactionService,
 	type SlackWebhookEvent,
-} from "cyrus-slack-event-transport";
+} from "bobs-factory-slack-event-transport";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatRepositoryProvider } from "../src/ChatRepositoryProvider.js";
 import { LiveChatRepositoryProvider } from "../src/ChatRepositoryProvider.js";
 import type { ChatPlatformAdapter } from "../src/ChatSessionHandler.js";
 import { ChatSessionHandler } from "../src/ChatSessionHandler.js";
+import { MachineCapacity } from "../src/MachineCapacity.js";
+import {
+	capRunnerStarts,
+	waitForRunnerCapacity,
+} from "../src/RunnerConcurrency.js";
 import type { RunnerConfigBuilder } from "../src/RunnerConfigBuilder.js";
 import {
 	BEHAVIOURS_PAGE_ROUTE,
@@ -20,7 +27,7 @@ import {
 	SLACK_NO_RESPONSE_SENTINEL,
 	SlackChatAdapter,
 } from "../src/SlackChatAdapter.js";
-import { TEST_CYRUS_CHAT } from "./test-dirs.js";
+import { TEST_BOBS_FACTORY_CHAT } from "./test-dirs.js";
 
 function createMockRunnerConfigBuilder(): RunnerConfigBuilder {
 	let defaultRunner: "claude" | "opencode" = "claude";
@@ -38,7 +45,7 @@ function createMockRunnerConfigBuilder(): RunnerConfigBuilder {
 				disallowedTools: [],
 				allowedDirectories: [input.workspacePath, ...repositoryPaths],
 				workspaceName: input.workspaceName,
-				cyrusHome: input.cyrusHome,
+				factoryHome: input.factoryHome,
 				appendSystemPrompt: input.systemPrompt,
 				...(input.resumeSessionId
 					? { resumeSessionId: input.resumeSessionId }
@@ -122,7 +129,7 @@ describe("ChatSessionHandler chat session permissions", () => {
 			eventId: "test-event",
 			threadKey: "test-thread",
 		};
-		const cyrusHome = TEST_CYRUS_CHAT;
+		const factoryHome = TEST_BOBS_FACTORY_CHAT;
 		const chatRepositoryPaths = ["/repo/chat-one", "/repo/chat-two"];
 		let capturedConfig: any;
 
@@ -149,7 +156,7 @@ describe("ChatSessionHandler chat session permissions", () => {
 		});
 
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome,
+			factoryHome,
 			chatRepositoryProvider: createStaticProvider(chatRepositoryPaths),
 			runnerConfigBuilder: createMockRunnerConfigBuilder(),
 			createRunner: createRunner,
@@ -175,7 +182,11 @@ describe("ChatSessionHandler chat session permissions", () => {
 		expect(capturedConfig.allowedTools).toContain("Bash(git -C * pull)");
 		expect(capturedConfig.allowedTools).not.toContain("Edit(**)");
 
-		const expectedWorkspace = join(cyrusHome, "slack-workspaces", "thread-key");
+		const expectedWorkspace = join(
+			factoryHome,
+			"slack-workspaces",
+			"thread-key",
+		);
 		expect(capturedConfig.allowedDirectories).toContain(expectedWorkspace);
 		for (const path of chatRepositoryPaths) {
 			expect(capturedConfig.allowedDirectories).toContain(path);
@@ -187,7 +198,7 @@ describe("ChatSessionHandler chat session permissions", () => {
 			eventId: "test-event",
 			threadKey: "test-thread",
 		};
-		const cyrusHome = TEST_CYRUS_CHAT;
+		const factoryHome = TEST_BOBS_FACTORY_CHAT;
 		const repository = {
 			id: "repo-a",
 			name: "Repo A",
@@ -217,7 +228,7 @@ describe("ChatSessionHandler chat session permissions", () => {
 		});
 
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome,
+			factoryHome,
 			chatRepositoryProvider: createStaticProvider(
 				chatRepositoryPaths,
 				repository,
@@ -270,7 +281,7 @@ describe("ChatSessionHandler chat session permissions", () => {
 		});
 
 		const handler = new ChatSessionHandler(new TestChatAdapter("thread-key"), {
-			cyrusHome: TEST_CYRUS_CHAT,
+			factoryHome: TEST_BOBS_FACTORY_CHAT,
 			chatRepositoryProvider: createStaticProvider(
 				["/repo/chat-one"],
 				repository,
@@ -317,7 +328,7 @@ describe("ChatSessionHandler session-initiation gate", () => {
 				}) as any,
 		);
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome: TEST_CYRUS_CHAT,
+			factoryHome: TEST_BOBS_FACTORY_CHAT,
 			chatRepositoryProvider: createStaticProvider([]),
 			runnerConfigBuilder: createMockRunnerConfigBuilder(),
 			createRunner,
@@ -385,7 +396,7 @@ describe("ChatSessionHandler processed acknowledgement", () => {
 			} as any;
 		});
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome: TEST_CYRUS_CHAT,
+			factoryHome: TEST_BOBS_FACTORY_CHAT,
 			chatRepositoryProvider: createStaticProvider([]),
 			runnerConfigBuilder: createMockRunnerConfigBuilder(),
 			createRunner,
@@ -439,7 +450,7 @@ describe("ChatSessionHandler processed acknowledgement", () => {
 			} as any;
 		});
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome: TEST_CYRUS_CHAT,
+			factoryHome: TEST_BOBS_FACTORY_CHAT,
 			chatRepositoryProvider: createStaticProvider([]),
 			runnerConfigBuilder: createMockRunnerConfigBuilder(),
 			createRunner,
@@ -512,7 +523,7 @@ describe("ChatSessionHandler busy follow-up queueing", () => {
 			} as any;
 		});
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome: TEST_CYRUS_CHAT,
+			factoryHome: TEST_BOBS_FACTORY_CHAT,
 			chatRepositoryProvider: createStaticProvider([]),
 			runnerConfigBuilder: createMockRunnerConfigBuilder(),
 			createRunner,
@@ -713,7 +724,7 @@ describe("SlackChatAdapter responding policy", () => {
 			.mockResolvedValue({} as any);
 
 		await adapter.postReply(
-			slackEvent("Cyrus, what does this function do?"),
+			slackEvent("Bob’s Factory, what does this function do?"),
 			runnerWithReply("It memoizes the result."),
 		);
 
@@ -814,9 +825,9 @@ describe("SlackChatAdapter system prompt", () => {
 		},
 	} as any;
 
-	it("includes stop-listening guidance with the Behaviours page link when a Cyrus app base URL is configured", () => {
+	it("includes stop-listening guidance with the Behaviours page link when a Bob’s Factory app base URL is configured", () => {
 		const adapter = new SlackChatAdapter(createStaticProvider([]), undefined, {
-			cyrusAppBaseUrl: "https://app.atcyrus.com/",
+			factoryAppBaseUrl: "https://app.atcyrus.com/",
 		});
 		const systemPrompt = adapter.buildSystemPrompt(appMentionEvent);
 
@@ -827,7 +838,7 @@ describe("SlackChatAdapter system prompt", () => {
 		expect(systemPrompt).toContain("until someone asks you a direct question");
 	});
 
-	it("omits stop-listening guidance when no Cyrus app base URL is configured (community)", () => {
+	it("omits stop-listening guidance when no Bob’s Factory app base URL is configured (community)", () => {
 		const adapter = new SlackChatAdapter(createStaticProvider([]));
 		const systemPrompt = adapter.buildSystemPrompt(appMentionEvent);
 
@@ -893,7 +904,7 @@ describe("ChatRepositoryProvider runtime updates", () => {
 	});
 
 	it("ChatSessionHandler reads live repository paths from provider at session build time", async () => {
-		const cyrusHome = TEST_CYRUS_CHAT;
+		const factoryHome = TEST_BOBS_FACTORY_CHAT;
 		const paths = ["/repo/A"];
 		const provider: ChatRepositoryProvider = {
 			getRepositoryPaths: () => [...paths],
@@ -917,7 +928,7 @@ describe("ChatRepositoryProvider runtime updates", () => {
 
 		const adapter = new TestChatAdapter("runtime-thread");
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome,
+			factoryHome,
 			chatRepositoryProvider: provider,
 			runnerConfigBuilder: createMockRunnerConfigBuilder(),
 			createRunner,
@@ -940,7 +951,7 @@ describe("ChatRepositoryProvider runtime updates", () => {
 	});
 
 	it("ChatSessionHandler excludes removed repos from allowedDirectories", async () => {
-		const cyrusHome = TEST_CYRUS_CHAT;
+		const factoryHome = TEST_BOBS_FACTORY_CHAT;
 		const paths = ["/repo/A", "/repo/B"];
 		const provider: ChatRepositoryProvider = {
 			getRepositoryPaths: () => [...paths],
@@ -964,7 +975,7 @@ describe("ChatRepositoryProvider runtime updates", () => {
 
 		const adapter = new TestChatAdapter("remove-thread");
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome,
+			factoryHome,
 			chatRepositoryProvider: provider,
 			runnerConfigBuilder: createMockRunnerConfigBuilder(),
 			createRunner,
@@ -989,7 +1000,7 @@ describe("ChatRepositoryProvider runtime updates", () => {
 
 describe("ChatSessionHandler session resume", () => {
 	it("resumes with the stored OpenCode session id even if the default runner changes", async () => {
-		const cyrusHome = TEST_CYRUS_CHAT;
+		const factoryHome = TEST_BOBS_FACTORY_CHAT;
 		const builder = createMockRunnerConfigBuilder() as RunnerConfigBuilder & {
 			setDefaultRunner: (runnerType: "claude" | "opencode") => void;
 		};
@@ -1017,7 +1028,7 @@ describe("ChatSessionHandler session resume", () => {
 
 		const adapter = new TestChatAdapter("resume-thread");
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome,
+			factoryHome,
 			chatRepositoryProvider: createStaticProvider([]),
 			runnerConfigBuilder: builder,
 			createRunner,
@@ -1356,7 +1367,7 @@ describe("ChatSessionHandler thread catch-up", () => {
 		});
 
 		const handler = new ChatSessionHandler(adapter, {
-			cyrusHome: TEST_CYRUS_CHAT,
+			factoryHome: TEST_BOBS_FACTORY_CHAT,
 			chatRepositoryProvider: createStaticProvider([]),
 			runnerConfigBuilder: createMockRunnerConfigBuilder(),
 			createRunner,
@@ -1635,4 +1646,115 @@ describe("ChatSessionHandler thread catch-up", () => {
 
 		expect(prompts).toEqual([TASK, TASK]);
 	});
+});
+
+it.each([
+	"slack",
+	"zulip",
+] as const)("rejoins saved %s queue order and input after shutdown, before any native session exists", async (platform) => {
+	const home = mkdtempSync(join(tmpdir(), "chat-capacity-recovery-"));
+	let slots = new MachineCapacity(1, join(home, "pool"));
+	const blocker = await slots.acquireLease();
+	let shuttingDown = false;
+	const builder = createMockRunnerConfigBuilder();
+	const providers: any[] = [];
+	const configs: any[] = [];
+	const createRunner = vi.fn(
+		(config: any, _type: any, signal: any, id: string) => {
+			configs.push(config);
+			const provider = {
+				start: vi.fn(async () => ({ sessionId: "native" })),
+				stop: vi.fn(),
+				isRunning: () => false,
+				getMessages: () => [],
+			};
+			providers.push(provider);
+			return capRunnerStarts(provider as any, slots, signal, {
+				identity: `${home}:session:${id}`,
+				recoverable: true,
+			});
+		},
+	);
+	const adapter = Object.assign(new TestChatAdapter("saved-thread"), {
+		platformName: platform,
+	});
+	const deps = {
+		factoryHome: home,
+		chatRepositoryProvider: createStaticProvider([]),
+		runnerConfigBuilder: builder,
+		createRunner,
+		isShuttingDown: () => shuttingDown,
+		onWebhookStart: vi.fn(),
+		onWebhookEnd: vi.fn(),
+		onStateChange: vi.fn().mockResolvedValue(undefined),
+		onClaudeError: vi.fn(),
+	};
+	const original = new ChatSessionHandler(adapter, deps);
+	try {
+		await original.handleEvent({
+			eventId: "saved-event",
+			threadKey: "saved-thread",
+			slackBotToken: "test-secret",
+			credentials: { apiKey: "test-secret" },
+		} as any);
+		await vi.waitFor(async () =>
+			expect((await slots.snapshot()).queued).toBe(1),
+		);
+		const queued = (await slots.snapshot()).requests.find(
+			(r) => r.recoverable,
+		)!;
+		expect(providers[0].start).not.toHaveBeenCalled();
+		shuttingDown = true;
+		await slots.shutdown();
+		await waitForRunnerCapacity(
+			original.getRunnerForThread("saved-thread")!,
+		).catch(() => {});
+		const saved = original.serializeState();
+		const id = original.listThreads()[0]!.sessionId;
+		expect(
+			JSON.stringify(saved.sessions[id].metadata!.pendingExecution),
+		).not.toContain("test-secret");
+		expect(saved.sessions[id].metadata!.pendingExecution!.prompt).toBe(
+			"Inspect repository configuration",
+		);
+		slots = new MachineCapacity(undefined, slots.directory);
+		shuttingDown = false;
+		const restored = new ChatSessionHandler(adapter, deps);
+		restored.restoreState(saved.sessions, saved.entries);
+		await restored.recoverQueuedSessions();
+		await vi.waitFor(async () => {
+			const current = (await slots.snapshot()).requests.find(
+				(r) => r.identity === queued.identity,
+			)!;
+			expect(current.id).toBe(queued.id);
+			expect(current.sequence).toBe(queued.sequence);
+			expect(current.parked).toBe(false);
+		});
+		expect(configs[1].resumeSessionId).toBeUndefined();
+		expect(providers[1].start).not.toHaveBeenCalled();
+		await blocker.release();
+		await vi.waitFor(
+			() =>
+				expect(providers[1].start).toHaveBeenCalledWith(
+					"Inspect repository configuration",
+				),
+			{ timeout: 10000 },
+		);
+		await vi.waitFor(
+			async () => expect((await slots.snapshot()).requests).toEqual([]),
+			{ timeout: 10000 },
+		);
+		// Only the restored owner executes; stopping it remains terminal on another restart.
+		expect(providers[0].start).not.toHaveBeenCalled();
+		restored.stopSession(id);
+		const stopped = restored.serializeState();
+		const again = new ChatSessionHandler(adapter, deps);
+		again.restoreState(stopped.sessions, stopped.entries);
+		await again.recoverQueuedSessions();
+		expect(createRunner).toHaveBeenCalledTimes(2);
+	} finally {
+		await slots.shutdown();
+		await blocker.release();
+		rmSync(home, { recursive: true, force: true });
+	}
 });

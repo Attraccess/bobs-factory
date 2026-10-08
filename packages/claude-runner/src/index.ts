@@ -20,6 +20,7 @@ export {
 	type ToolName,
 	writeTools,
 } from "./config.js";
+export { resolveClaudeExecutable } from "./executable.js";
 export {
 	ClaudeMessageFormatter,
 	type IMessageFormatter,
@@ -37,8 +38,8 @@ export {
 	type SandboxRequirementsResult,
 } from "./sandbox-requirements.js";
 export {
+	BOBS_FACTORY_SESSION_ENV,
 	buildBaseSessionEnv,
-	CYRUS_SESSION_ENV,
 	normalizeMcpHttpTransport,
 } from "./session-env.js";
 export type {

@@ -17,7 +17,7 @@ interface DispatchChatResponse {
 }
 
 function getDispatchUrl(): string {
-	const port = process.env.CYRUS_PORT || "3600";
+	const port = process.env.BOBS_FACTORY_PORT || "3600";
 	return `http://localhost:${port}/cli/dispatch-chat`;
 }
 

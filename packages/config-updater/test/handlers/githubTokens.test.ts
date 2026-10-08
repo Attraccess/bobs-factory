@@ -45,26 +45,26 @@ function validPayload() {
 }
 
 describe("handleGitHubTokens", () => {
-	let cyrusHome: string;
+	let factoryHome: string;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		cyrusHome = mkdtempSync(join(tmpdir(), "cyrus-github-tokens-"));
+		factoryHome = mkdtempSync(join(tmpdir(), "cyrus-github-tokens-"));
 	});
 
 	afterEach(() => {
-		rmSync(cyrusHome, { recursive: true, force: true });
+		rmSync(factoryHome, { recursive: true, force: true });
 	});
 
 	it("persists tokens to github-tokens.json and returns success", async () => {
-		const response = await handleGitHubTokens(validPayload(), cyrusHome);
+		const response = await handleGitHubTokens(validPayload(), factoryHome);
 
 		expect(response.success).toBe(true);
 		if (response.success) {
 			expect(response.data?.tokensCount).toBe(2);
 		}
 
-		const filePath = join(cyrusHome, "github-tokens.json");
+		const filePath = join(factoryHome, "github-tokens.json");
 		expect(existsSync(filePath)).toBe(true);
 		const written = JSON.parse(readFileSync(filePath, "utf-8"));
 		expect(written.version).toBe(1);
@@ -73,143 +73,60 @@ describe("handleGitHubTokens", () => {
 		expect(written.tokens[1].organization).toBeNull();
 	});
 
-	it("installs the credential helper script and configures git", async () => {
-		const response = await handleGitHubTokens(validPayload(), cyrusHome);
+	it("preserves host Git and gh authentication without installing Node helpers", async () => {
+		const response = await handleGitHubTokens(validPayload(), factoryHome);
 		expect(response.success).toBe(true);
-
-		// The per-invocation gh token resolver is installed alongside.
-		expect(existsSync(join(cyrusHome, "scripts", "gh-cyrus.cjs"))).toBe(true);
-
-		const scriptPath = join(cyrusHome, "scripts", "git-credential-cyrus.cjs");
-		expect(existsSync(scriptPath)).toBe(true);
-		// Executable bit set
-		expect(statSync(scriptPath).mode & 0o111).not.toBe(0);
-
-		expect(mockedExecFileSync).toHaveBeenCalledTimes(4);
-		expect(mockedExecFileSync).toHaveBeenNthCalledWith(
-			1,
-			"git",
-			[
-				"config",
-				"--global",
-				"credential.https://github.com.useHttpPath",
-				"true",
-			],
-			expect.anything(),
-		);
-		expect(mockedExecFileSync).toHaveBeenNthCalledWith(
-			2,
-			"git",
-			[
-				"config",
-				"--global",
-				"--replace-all",
-				"credential.https://github.com.helper",
-				"",
-			],
-			expect.anything(),
-		);
-		expect(mockedExecFileSync).toHaveBeenNthCalledWith(
-			3,
-			"git",
-			[
-				"config",
-				"--global",
-				"--add",
-				"credential.https://github.com.helper",
-				`!node "${scriptPath}"`,
-			],
-			expect.anything(),
-		);
-	});
-
-	it("refreshes gh CLI auth with the first pushed token", async () => {
-		const payload = validPayload();
-		const response = await handleGitHubTokens(payload, cyrusHome);
-		expect(response.success).toBe(true);
-		if (response.success) {
-			expect(response.data?.ghAuthConfigured).toBe(true);
-		}
-		expect(mockedExecFileSync).toHaveBeenNthCalledWith(
-			4,
-			"gh",
-			["auth", "login", "--with-token"],
-			expect.objectContaining({ input: payload.tokens[0].token }),
-		);
-	});
-
-	it("succeeds even when gh CLI auth fails (gh not installed)", async () => {
-		// First 3 calls (git config) succeed; the gh call throws.
-		mockedExecFileSync.mockImplementation((cmd: unknown) => {
-			if (cmd === "gh") throw new Error("gh: command not found");
-			return Buffer.from("");
-		});
-		const response = await handleGitHubTokens(validPayload(), cyrusHome);
-		expect(response.success).toBe(true);
-		if (response.success) {
-			expect(response.data?.ghAuthConfigured).toBe(false);
-		}
+		if (response.success) expect(response.data?.ghAuthConfigured).toBe(false);
+		expect(existsSync(join(factoryHome, "scripts"))).toBe(false);
+		expect(mockedExecFileSync).not.toHaveBeenCalled();
 	});
 
 	it("is idempotent across repeated pushes", async () => {
-		const first = await handleGitHubTokens(validPayload(), cyrusHome);
-		const second = await handleGitHubTokens(validPayload(), cyrusHome);
+		const first = await handleGitHubTokens(validPayload(), factoryHome);
+		const second = await handleGitHubTokens(validPayload(), factoryHome);
 		expect(first.success).toBe(true);
 		expect(second.success).toBe(true);
 		// Each push re-runs the same replace-all + add + gh auth sequence
 		// (3 git calls + 1 gh call each)
-		expect(mockedExecFileSync).toHaveBeenCalledTimes(8);
+		expect(mockedExecFileSync).not.toHaveBeenCalled();
 	});
 
 	it("rejects a payload without a tokens array", async () => {
-		const response = await handleGitHubTokens({ nope: true }, cyrusHome);
+		const response = await handleGitHubTokens({ nope: true }, factoryHome);
 		expect(response.success).toBe(false);
 		if (!response.success) {
 			expect(response.error).toBe("GitHub tokens payload validation failed");
 		}
-		expect(existsSync(join(cyrusHome, "github-tokens.json"))).toBe(false);
+		expect(existsSync(join(factoryHome, "github-tokens.json"))).toBe(false);
 		expect(mockedExecFileSync).not.toHaveBeenCalled();
 	});
 
 	it("rejects token entries missing required fields", async () => {
 		const response = await handleGitHubTokens(
 			{ tokens: [{ installationId: "111", organization: "OrgOne" }] },
-			cyrusHome,
+			factoryHome,
 		);
 		expect(response.success).toBe(false);
-		expect(existsSync(join(cyrusHome, "github-tokens.json"))).toBe(false);
-	});
-
-	it("returns an error when git configuration fails", async () => {
-		mockedExecFileSync.mockImplementationOnce(() => {
-			throw new Error("git not found");
-		});
-		const response = await handleGitHubTokens(validPayload(), cyrusHome);
-		expect(response.success).toBe(false);
-		if (!response.success) {
-			expect(response.error).toBe("Failed to configure git credential helper");
-		}
-		// Tokens were still persisted before git config failed
-		expect(existsSync(join(cyrusHome, "github-tokens.json"))).toBe(true);
+		expect(existsSync(join(factoryHome, "github-tokens.json"))).toBe(false);
 	});
 });
 
 describe("ensureGitHubCredentialHelper", () => {
-	let cyrusHome: string;
+	let factoryHome: string;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
-		cyrusHome = mkdtempSync(join(tmpdir(), "cyrus-cred-helper-"));
+		factoryHome = mkdtempSync(join(tmpdir(), "cyrus-cred-helper-"));
 	});
 
 	afterEach(() => {
-		rmSync(cyrusHome, { recursive: true, force: true });
+		rmSync(factoryHome, { recursive: true, force: true });
 	});
 
 	it("returns the installed script path", () => {
-		const scriptPath = ensureGitHubCredentialHelper(cyrusHome);
+		const scriptPath = ensureGitHubCredentialHelper(factoryHome);
 		expect(scriptPath).toBe(
-			join(cyrusHome, "scripts", "git-credential-cyrus.cjs"),
+			join(factoryHome, "scripts", "git-credential-cyrus.cjs"),
 		);
 		expect(existsSync(scriptPath)).toBe(true);
 	});
@@ -238,22 +155,22 @@ exec env -u GITHUB_TOKEN -u GH_TOKEN /usr/bin/gh "$@"
 		return wrapperPath;
 	}
 
-	it("rewrites an old strip-everything wrapper to honor CYRUS_GH_TOKEN", () => {
+	it("rewrites an old strip-everything wrapper to honor BOBS_FACTORY_GH_TOKEN", () => {
 		const wrapperPath = writeWrapper(OLD_WRAPPER);
 
 		expect(ensureGhWrapperSupportsCyrusToken(home)).toBe(true);
 
 		const updated = readFileSync(wrapperPath, "utf8");
-		expect(updated).toContain("CYRUS_GH_TOKEN");
-		expect(updated).toContain('GH_TOKEN="$CYRUS_GH_TOKEN"');
+		expect(updated).toContain("BOBS_FACTORY_GH_TOKEN");
+		expect(updated).toContain('GH_TOKEN="$BOBS_FACTORY_GH_TOKEN"');
 		expect(updated).toContain("-u GITHUB_TOKEN");
 		expect(statSync(wrapperPath).mode & 0o111).not.toBe(0);
 	});
 
-	it("upgrades the interim CYRUS_GH_TOKEN-only wrapper to the resolver", () => {
+	it("upgrades the interim BOBS_FACTORY_GH_TOKEN-only wrapper to the resolver", () => {
 		const interim = `#!/usr/bin/env bash
-if [ -n "\${CYRUS_GH_TOKEN:-}" ]; then
-  exec env -u GITHUB_TOKEN GH_TOKEN="$CYRUS_GH_TOKEN" /usr/bin/gh "$@"
+if [ -n "\${BOBS_FACTORY_GH_TOKEN:-}" ]; then
+  exec env -u GITHUB_TOKEN GH_TOKEN="$BOBS_FACTORY_GH_TOKEN" /usr/bin/gh "$@"
 fi
 exec env -u GITHUB_TOKEN -u GH_TOKEN /usr/bin/gh "$@"
 `;
@@ -284,9 +201,9 @@ exec env -u GITHUB_TOKEN -u GH_TOKEN /usr/bin/gh "$@"
 		expect(ensureGhWrapperSupportsCyrusToken(home)).toBe(false);
 	});
 
-	it("runs during a token push when cyrusHome sits inside the home dir", async () => {
+	it("preserves the host gh wrapper during a token push", async () => {
 		const wrapperPath = writeWrapper(OLD_WRAPPER);
-		const nestedCyrusHome = join(home, ".cyrus");
+		const nestedCyrusHome = join(home, ".bobs-factory");
 		mkdirSync(nestedCyrusHome, { recursive: true });
 
 		const response = await handleGitHubTokens(
@@ -305,6 +222,6 @@ exec env -u GITHUB_TOKEN -u GH_TOKEN /usr/bin/gh "$@"
 		);
 
 		expect(response.success).toBe(true);
-		expect(readFileSync(wrapperPath, "utf8")).toContain("CYRUS_GH_TOKEN");
+		expect(readFileSync(wrapperPath, "utf8")).toBe(OLD_WRAPPER);
 	});
 });

@@ -18,11 +18,15 @@ interface HelperResult {
 	status: number | null;
 }
 
-function runHelper(op: string, stdin: string, cyrusHome: string): HelperResult {
+function runHelper(
+	op: string,
+	stdin: string,
+	factoryHome: string,
+): HelperResult {
 	const result = spawnSync(process.execPath, [SCRIPT_PATH, op], {
 		input: stdin,
 		encoding: "utf-8",
-		env: { ...process.env, CYRUS_HOME: cyrusHome },
+		env: { ...process.env, BOBS_FACTORY_HOME: factoryHome },
 	});
 	return {
 		stdout: result.stdout ?? "",
@@ -32,11 +36,11 @@ function runHelper(op: string, stdin: string, cyrusHome: string): HelperResult {
 }
 
 function writeTokensFile(
-	cyrusHome: string,
+	factoryHome: string,
 	tokens: Array<Record<string, unknown>>,
 ): void {
 	writeFileSync(
-		join(cyrusHome, "github-tokens.json"),
+		join(factoryHome, "github-tokens.json"),
 		JSON.stringify({
 			version: 1,
 			updatedAt: new Date().toISOString(),
@@ -49,18 +53,18 @@ const future = () => new Date(Date.now() + 3600_000).toISOString();
 const past = () => new Date(Date.now() - 3600_000).toISOString();
 
 describe("git-credential-cyrus helper script", () => {
-	let cyrusHome: string;
+	let factoryHome: string;
 
 	beforeEach(() => {
-		cyrusHome = mkdtempSync(join(tmpdir(), "cyrus-cred-script-"));
+		factoryHome = mkdtempSync(join(tmpdir(), "cyrus-cred-script-"));
 	});
 
 	afterEach(() => {
-		rmSync(cyrusHome, { recursive: true, force: true });
+		rmSync(factoryHome, { recursive: true, force: true });
 	});
 
 	it("prints credentials for a case-insensitive org match", () => {
-		writeTokensFile(cyrusHome, [
+		writeTokensFile(factoryHome, [
 			{
 				installationId: "1",
 				organization: "MyOrg",
@@ -80,7 +84,7 @@ describe("git-credential-cyrus helper script", () => {
 		const result = runHelper(
 			"get",
 			"protocol=https\nhost=github.com\npath=myorg/repo.git\n",
-			cyrusHome,
+			factoryHome,
 		);
 
 		expect(result.status).toBe(0);
@@ -89,7 +93,7 @@ describe("git-credential-cyrus helper script", () => {
 	});
 
 	it("falls back to the single valid token when the org does not match", () => {
-		writeTokensFile(cyrusHome, [
+		writeTokensFile(factoryHome, [
 			{
 				installationId: "1",
 				organization: "SomeUser",
@@ -102,7 +106,7 @@ describe("git-credential-cyrus helper script", () => {
 		const result = runHelper(
 			"get",
 			"protocol=https\nhost=github.com\npath=unrelated/repo.git\n",
-			cyrusHome,
+			factoryHome,
 		);
 
 		expect(result.status).toBe(0);
@@ -110,7 +114,7 @@ describe("git-credential-cyrus helper script", () => {
 	});
 
 	it("exits silently when multiple tokens exist and none match", () => {
-		writeTokensFile(cyrusHome, [
+		writeTokensFile(factoryHome, [
 			{
 				installationId: "1",
 				organization: "OrgA",
@@ -128,7 +132,7 @@ describe("git-credential-cyrus helper script", () => {
 		const result = runHelper(
 			"get",
 			"protocol=https\nhost=github.com\npath=unrelated/repo.git\n",
-			cyrusHome,
+			factoryHome,
 		);
 
 		expect(result.status).toBe(0);
@@ -137,7 +141,7 @@ describe("git-credential-cyrus helper script", () => {
 	});
 
 	it("ignores expired tokens", () => {
-		writeTokensFile(cyrusHome, [
+		writeTokensFile(factoryHome, [
 			{
 				installationId: "1",
 				organization: "MyOrg",
@@ -149,7 +153,7 @@ describe("git-credential-cyrus helper script", () => {
 		const result = runHelper(
 			"get",
 			"protocol=https\nhost=github.com\npath=myorg/repo.git\n",
-			cyrusHome,
+			factoryHome,
 		);
 
 		expect(result.status).toBe(0);
@@ -157,7 +161,7 @@ describe("git-credential-cyrus helper script", () => {
 	});
 
 	it("exits silently for non-github.com hosts", () => {
-		writeTokensFile(cyrusHome, [
+		writeTokensFile(factoryHome, [
 			{
 				installationId: "1",
 				organization: "MyOrg",
@@ -169,7 +173,7 @@ describe("git-credential-cyrus helper script", () => {
 		const result = runHelper(
 			"get",
 			"protocol=https\nhost=gitlab.com\npath=myorg/repo.git\n",
-			cyrusHome,
+			factoryHome,
 		);
 
 		expect(result.status).toBe(0);
@@ -178,7 +182,7 @@ describe("git-credential-cyrus helper script", () => {
 	});
 
 	it("does nothing for non-get operations", () => {
-		writeTokensFile(cyrusHome, [
+		writeTokensFile(factoryHome, [
 			{
 				installationId: "1",
 				organization: "MyOrg",
@@ -190,7 +194,7 @@ describe("git-credential-cyrus helper script", () => {
 		const result = runHelper(
 			"store",
 			"protocol=https\nhost=github.com\npath=myorg/repo.git\n",
-			cyrusHome,
+			factoryHome,
 		);
 
 		expect(result.status).toBe(0);
@@ -201,7 +205,7 @@ describe("git-credential-cyrus helper script", () => {
 		const result = runHelper(
 			"get",
 			"protocol=https\nhost=github.com\npath=myorg/repo.git\n",
-			cyrusHome,
+			factoryHome,
 		);
 
 		expect(result.status).toBe(0);

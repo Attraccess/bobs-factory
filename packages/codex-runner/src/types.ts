@@ -8,7 +8,7 @@ import type {
 	AgentRunnerConfig,
 	AgentSessionInfo,
 	SDKMessage,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import type { CyrusSandboxFilesystem } from "./config/sandboxPolicy.js";
 
 export type CodexConfigValue =

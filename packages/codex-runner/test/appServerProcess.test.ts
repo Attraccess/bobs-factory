@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { executionScope } from "bobs-factory-core";
 import { describe, expect, it, vi } from "vitest";
 import type {
 	IAppServerClient,
@@ -65,6 +66,61 @@ function recordingFactory() {
 }
 
 describe("AppServerProcessManager pool", () => {
+	it("retains permission definitions at launch and isolates different filesystem grants", async () => {
+		const launches: { args?: string[] }[] = [];
+		const { clients, factory } = recordingFactory();
+		const manager = new AppServerProcessManager(
+			(options) => {
+				launches.push(options);
+				return factory();
+			},
+			{ idleCloseMs: 0 },
+		);
+		const config: ResolvedCodexConfig = {
+			...configWithEnv(),
+			sandbox: {
+				kind: "profile",
+				profileId: "cyrus-sandbox",
+				extends: ":workspace",
+				workspaceRoots: ["/tmp/repo"],
+				filesystem: { ":root": "read", "/tmp/repo/.git": "write" },
+				networkAccess: true,
+			},
+		};
+		const first = await manager.acquire(config);
+		const resumed = await manager.acquire({
+			...config,
+			resumeSessionId: "saved-thread",
+		});
+		expect(clients).toHaveLength(1);
+		expect(launches[0]?.args).toEqual([
+			"app-server",
+			"--listen",
+			"stdio://",
+			"-c",
+			'default_permissions="cyrus-sandbox"',
+			"-c",
+			'permissions={"cyrus-sandbox" = {"extends" = ":workspace", "filesystem" = {":root" = "read", "/tmp/repo/.git" = "write"}, "network" = {"enabled" = true}, "workspace_roots" = {"/tmp/repo" = true}}}',
+		]);
+		const restricted = await manager.acquire({
+			...config,
+			sandbox: {
+				...config.sandbox,
+				filesystem: { ":root": "deny", "/tmp/other/.git": "write" },
+			},
+		});
+		const native = await manager.acquire(configWithEnv());
+		expect(clients).toHaveLength(3);
+		await first.release();
+		await resumed.release();
+		expect(clients[0]!.closeCalls).toBe(1);
+		expect(clients[1]!.closeCalls).toBe(0);
+		expect(clients[2]!.closeCalls).toBe(0);
+		await restricted.release();
+		await native.release();
+		await manager.closeAll();
+	});
+
 	it("isolates changed MCP endpoints while sharing equivalent configurations", async () => {
 		const { clients, factory } = recordingFactory();
 		const manager = new AppServerProcessManager(factory, {
@@ -142,6 +198,26 @@ describe("AppServerProcessManager pool", () => {
 		await resumed.release();
 		await manager.closeAll();
 	});
+	it("closes failed initialization and allows the next acquisition to start fresh", async () => {
+		const { clients, factory } = recordingFactory();
+		const manager = new AppServerProcessManager(() => {
+			const client = factory();
+			if (clients.length === 1)
+				vi.spyOn(client, "request").mockRejectedValue(
+					new Error("initialize failed"),
+				);
+			return client;
+		});
+		await expect(manager.acquire(configWithEnv())).rejects.toThrow(
+			"initialize failed",
+		);
+		expect(clients[0]!.closeCalls).toBe(1);
+		const lease = await manager.acquire(configWithEnv());
+		expect(clients).toHaveLength(2);
+		await lease.release();
+		await manager.closeAll();
+	});
+
 	it("shares one process for identical launch configs", async () => {
 		const { clients, factory } = recordingFactory();
 		const manager = new AppServerProcessManager(factory, { idleCloseMs: 0 });
@@ -243,3 +319,24 @@ function handlerSpy() {
 	};
 	return { handler, notifications };
 }
+
+it("fences managed executions by lease and closes only the completing execution's server", async () => {
+	const { clients, factory } = recordingFactory();
+	const manager = new AppServerProcessManager(factory);
+	const first = await executionScope.run({ token: "first" }, () =>
+		manager.acquire(configWithEnv()),
+	);
+	const second = await executionScope.run({ token: "second" }, () =>
+		manager.acquire(configWithEnv()),
+	);
+	const thread = handlerSpy();
+	second.registerThread("second-thread", thread.handler);
+	expect(clients).toHaveLength(2);
+	await first.release();
+	expect(clients[0]!.closeCalls).toBe(1);
+	expect(clients[1]!.closeCalls).toBe(0);
+	clients[1]!.push("turn/completed", { threadId: "second-thread" });
+	expect(thread.notifications).toHaveLength(1);
+	await second.release();
+	expect(clients[1]!.closeCalls).toBe(1);
+});

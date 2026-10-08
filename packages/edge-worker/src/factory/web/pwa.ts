@@ -92,7 +92,7 @@ export function assertWritable() {
 	if (state.updating || state.status !== "ready")
 		throw new Error(
 			state.status === "mismatch"
-				? "Factory updated. Preserve drafts and update before sending."
+				? "Factory updated. Update before sending. Unsent edits will be discarded."
 				: "Actions are paused until the factory reconnects and refreshes current state.",
 		);
 }
@@ -148,6 +148,25 @@ export function startPwa(refreshData: () => Promise<void>) {
 	);
 	window.addEventListener("offline", () => disconnected());
 	window.addEventListener("online", () => void reconnect());
+	const refreshRoute = () => {
+		if (state.status !== "mismatch") change({ status: "checking" });
+		void reconnect();
+	};
+	window.addEventListener("hashchange", refreshRoute);
+	if ("serviceWorker" in navigator)
+		navigator.serviceWorker.addEventListener("message", (event) => {
+			if (event.data?.type !== "FACTORY_NOTIFICATION") return;
+			const destination = event.data.destination;
+			if (
+				typeof destination !== "string" ||
+				!/^\/#\/(?:runs\/[A-Za-z0-9_-]{1,200}(?:\/review)?)?$/.test(destination)
+			)
+				return;
+			if (state.status !== "mismatch") change({ status: "checking" });
+			const hash = destination.slice(1);
+			if (location.hash === hash) refreshRoute();
+			else location.hash = hash;
+		});
 	document.addEventListener("visibilitychange", () => {
 		if (document.visibilityState === "visible") void reconnect();
 	});

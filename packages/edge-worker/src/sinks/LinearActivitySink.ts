@@ -2,7 +2,7 @@ import {
 	type AgentActivityContent,
 	AgentActivitySignal,
 	type IIssueTrackerService,
-} from "cyrus-core";
+} from "bobs-factory-core";
 import type {
 	ActivityPostOptions,
 	ActivityPostResult,

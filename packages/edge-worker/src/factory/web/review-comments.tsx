@@ -7,36 +7,29 @@ import {
 	useEffect,
 	useId,
 	useLayoutEffect,
-	useMemo,
 	useRef,
 	useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import { useRestorableState } from "./restoration";
+import { useFormState } from "./form-state";
 import { type FeedbackTarget, orderedComments } from "./review-feedback";
 import { feedbackSession } from "./review-feedback-session";
 import { Button } from "./ui";
 
 export function useFeedbackController(key: string, revision?: string) {
-	const session = useMemo(() => feedbackSession(key), [key]);
+	const context = `${key}/${revision ?? ""}`;
+	const [session] = useFormState(context, () => feedbackSession(key));
 	const state = useSyncExternalStore(session.subscribe, session.getSnapshot);
-	const draftKey = `feedback/draft/${key}`;
-	const [, setSnapshot, staleFeedback] = useRestorableState(
-		draftKey,
-		() => state.draft,
-		revision,
-	);
-	useEffect(() => setSnapshot(state.draft), [setSnapshot, state.draft]);
 	return {
 		...state,
-		draftKey,
-		staleFeedback,
+		context,
 		update: session.update,
 		lock: session.lock,
 		unlock: session.unlock,
 		clear: session.clear,
 	};
 }
+
 export type FeedbackController = ReturnType<typeof useFeedbackController>;
 export const FeedbackContext = createContext<FeedbackController | null>(null);
 export const useReviewFeedback = () => useContext(FeedbackContext);
@@ -295,7 +288,7 @@ export function Commentable({
 									Remove
 								</Button>
 							)}
-							<span className="muted">Saved as draft</span>
+							<span className="muted">Comment added</span>
 							<Button variant="secondary" disabled={busy} onClick={close}>
 								Done
 							</Button>
@@ -315,7 +308,8 @@ export function CollectedFeedback({
 	const controller = useReviewFeedback();
 	if (!controller) return null;
 	const { draft, update, busy } = controller,
-		items = orderedComments(draft, true);
+		items = orderedComments(draft, true),
+		count = items.filter((i) => i.text.trim()).length;
 	return (
 		<details
 			className="collected-feedback"
@@ -327,8 +321,7 @@ export function CollectedFeedback({
 			}}
 		>
 			<summary>
-				Collected feedback · {items.filter((i) => i.text.trim()).length} item{" "}
-				{items.length === 1 ? "comment" : "comments"}
+				Collected feedback · {count} {count === 1 ? "comment" : "comments"}
 				{draft.feedback.trim() ? " + additional feedback" : ""}
 			</summary>
 			<p className="muted">

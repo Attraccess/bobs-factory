@@ -3,8 +3,8 @@ import {
 	EdgeConfigSchema,
 	type EdgeWorkerConfig,
 	type RepositoryConfig,
-} from "cyrus-core";
-import type { GitService } from "cyrus-edge-worker";
+} from "bobs-factory-core";
+import type { GitService } from "bobs-factory-edge-worker";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConfigService } from "./ConfigService.js";
 import type { Logger } from "./Logger.js";
@@ -16,7 +16,7 @@ const edgeWorkerInstances: Array<{
 	start: ReturnType<typeof vi.fn>;
 }> = [];
 
-vi.mock("cyrus-edge-worker", () => ({
+vi.mock("bobs-factory-edge-worker", () => ({
 	EdgeWorker: vi.fn().mockImplementation(function (config: EdgeWorkerConfig) {
 		const instance = {
 			config,
@@ -29,11 +29,11 @@ vi.mock("cyrus-edge-worker", () => ({
 	}),
 }));
 
-vi.mock("cyrus-cloudflare-tunnel-client", () => ({
+vi.mock("bobs-factory-cloudflare-tunnel-client", () => ({
 	getCyrusAppUrl: vi.fn(),
 }));
 
-vi.mock("cyrus-slack-event-transport", () => ({
+vi.mock("bobs-factory-slack-event-transport", () => ({
 	SlackEventTransport: vi.fn(),
 }));
 
@@ -195,8 +195,11 @@ describe("WorkerService", () => {
 	});
 
 	it("prefers OpenCode model environment defaults over config defaults", async () => {
-		vi.stubEnv("CYRUS_OPENCODE_DEFAULT_MODEL", "openai/gpt-5.5");
-		vi.stubEnv("CYRUS_OPENCODE_DEFAULT_FALLBACK_MODEL", "openai/gpt-5-mini");
+		vi.stubEnv("BOBS_FACTORY_OPENCODE_DEFAULT_MODEL", "openai/gpt-5.5");
+		vi.stubEnv(
+			"BOBS_FACTORY_OPENCODE_DEFAULT_FALLBACK_MODEL",
+			"openai/gpt-5-mini",
+		);
 
 		const config = await startService({
 			repositories: [],
@@ -209,7 +212,10 @@ describe("WorkerService", () => {
 	});
 
 	it("prefers OpenCode provider/model inference environment default over config default", async () => {
-		vi.stubEnv("CYRUS_INFER_OPENCODE_RUNNER_FROM_PROVIDER_MODEL", "true");
+		vi.stubEnv(
+			"BOBS_FACTORY_INFER_OPENCODE_RUNNER_FROM_PROVIDER_MODEL",
+			"true",
+		);
 
 		const config = await startService({
 			repositories: [],

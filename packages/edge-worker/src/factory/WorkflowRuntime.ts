@@ -13,7 +13,12 @@ import type {
 	RunTitleJob,
 	WorkflowTrigger,
 	WorkflowTriggerOrigin,
-} from "cyrus-core";
+} from "bobs-factory-core";
+import type {
+	CapacityOptions,
+	CapacityRequest,
+	ExecutionCapacity,
+} from "../MachineCapacity.js";
 import { activityMarkers } from "./ActivityPage.js";
 import {
 	type AgentSettings,
@@ -25,9 +30,36 @@ import {
 	upgradeHandoffReadiness,
 	upgradeWorkflows,
 } from "./defaultWorkflows.js";
+import type { ResolvedExecutionEnvironment } from "./ExecutionEnvironment.js";
+import {
+	ExecutionProfileStore,
+	type ExecutionSelection,
+	type ExecutionSnapshot,
+} from "./ExecutionProfiles.js";
+import type { GitProviderSnapshot } from "./GitProvider.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
+import {
+	isExplanationRequest,
+	normalizeQuestionResult,
+	type QuestionRecommendation,
+	questionNotification,
+} from "./Questions.js";
+import { deliveryRevisions } from "./RepositoryScope.js";
+import { reviewRecoveryQuestions } from "./ReviewRecovery.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
+	aggregateReview,
+	frozenReviewContext,
+	type Inventory,
+	latestAggregate,
+	type ReviewBaseline,
+	reviewedRunRevision,
+	scopeContextDigest,
+	stampSpecialist,
+	validateContractOutput,
+} from "./SpecialistReview.js";
+import {
+	isComputeIntensive,
 	readPath,
 	requireTrigger,
 	validateWorkflows,
@@ -59,6 +91,8 @@ export interface WorkflowCall {
 	workflowId: string;
 }
 export interface AgentCheckpoint {
+	/** Persisted per-role budget for resuming a silent provider turn. */
+	idleRetries?: number;
 	runner: NonNullable<WorkflowStep["runner"]>;
 	sessionId: string;
 	result?: {
@@ -77,24 +111,47 @@ export interface AgentCheckpoint {
 		}[];
 		revision?: RoleRevision;
 		attempts: number;
+		/** Reserved before launch; a proven pre-turn startup failure returns it. */
+		reserved?: boolean;
 		exhausted?: boolean;
 		screenshots?: { path: string; area: string; state?: string }[];
 	};
 }
 export interface GraphCheckpoint {
+	// Inherited by called workflows and fanout branches; calls return it to their caller.
+	reviewKey?: string;
 	current: string;
 	visits: Record<string, number>;
 	additionalVisits?: Record<string, number>;
 	active?: {
 		phase: "executing" | "result" | "waiting" | "answered";
+		questionDisplay?: {
+			source?: {
+				questions: string[];
+				recommendations?: QuestionRecommendation[];
+			};
+			questions: string[];
+			recommendations?: QuestionRecommendation[];
+		};
+		questionExplanation?: {
+			source?: {
+				questions: string[];
+				recommendations?: QuestionRecommendation[];
+			};
+			text: string;
+			questions: string[];
+			agent?: AgentCheckpoint;
+		};
 		agent?: AgentCheckpoint;
 		children?: GraphCheckpoint[];
 		call?: WorkflowCall;
+		reviewBaseline?: ReviewBaseline;
 	};
 	// Only fanout branches own separate outputs; nested workflows share their parent's.
 	outputs?: Record<string, unknown>;
 }
 export interface HumanDecision {
+	repositories?: import("./RepositoryScope.js").ApprovedRepository[];
 	reviewId: string;
 	headSha: string;
 	decision: "approve" | "reject";
@@ -102,6 +159,7 @@ export interface HumanDecision {
 	at: string;
 }
 export interface ReviewGate {
+	repositories?: import("./RepositoryScope.js").ApprovedRepository[];
 	id: string;
 	headSha: string;
 	url: string;
@@ -112,7 +170,25 @@ export interface RunViewState {
 	keptOpen?: boolean;
 	seenAt?: string;
 }
+
+import { cleanupVideoEvidence } from "./Video.js";
+
 export interface FactoryRun {
+	repositories?: import("./RepositoryScope.js").RunRepository[];
+	/** Durable per-repository receipts, including partial publication and merges. */
+	repositoryOutputs?: Record<string, Record<string, unknown>>;
+	/** Accepted forge coordinates/adapter, retained across retry and configuration changes. */
+	gitProvider?: GitProviderSnapshot;
+	executionSnapshot?: ExecutionSnapshot;
+	executionDiagnostics?: {
+		accounts: ResolvedExecutionEnvironment["accounts"];
+		git?: ResolvedExecutionEnvironment["git"];
+		mcp: string[];
+		runner: string;
+		binary: string;
+		version: string;
+		tracking: string;
+	};
 	ticketReference?: import("./TicketTracking.js").TicketReference;
 	ticketSync?: import("./TicketTracking.js").TicketSync;
 	triggerOrigin?: WorkflowTriggerOrigin;
@@ -140,6 +216,18 @@ export interface FactoryRun {
 	workspaceId?: string;
 	step?: string;
 	checkpoint?: GraphCheckpoint;
+	capacityLeaves?: Record<
+		string,
+		{
+			phase:
+				| "queued"
+				| "executing"
+				| "stopping"
+				| "waiting-ci"
+				| "waiting-human";
+			request?: CapacityRequest;
+		}
+	>;
 	simplePrompt?: string;
 	simpleExecution?: {
 		userPrompt: string;
@@ -149,14 +237,18 @@ export interface FactoryRun {
 	};
 	launchRequest?: import("./LaunchFields.js").ResolvedLaunchRequest;
 	setupComplete?: boolean;
-	sessionSnapshot?: import("cyrus-core").SerializedCyrusAgentSession;
+	sessionSnapshot?: import("bobs-factory-core").SerializedCyrusAgentSession;
 	reviewGate?: ReviewGate;
 	humanDecisions?: HumanDecision[];
 	roleRevisions?: Record<string, RoleRevision>;
+	reviewRounds?: ReviewBaseline[];
 	outputs: Record<string, unknown>;
 	history: { step: string; output: unknown; at: string; call?: WorkflowCall }[];
 	answers: { questions: string[]; answer: string; at: string }[];
+	questionRequests?: { questions: string[]; text: string; at: string }[];
 	questions: string[];
+	questionRecommendations?: QuestionRecommendation[];
+	questionBatchId?: string;
 	events: RunEvent[];
 	activitySteps?: { at: string; step: string }[];
 	iterationLimit?: { step: string; visits: number; limit: number };
@@ -169,8 +261,14 @@ export interface ChatMessage {
 	step: string;
 }
 export interface ExecutionContext {
+	reviewKey?: string;
+	execution?: ResolvedExecutionEnvironment;
 	stepKey?: string;
+	reviewBaseline?: ReviewBaseline;
+	currentScope?: () => unknown;
+	capacity?: CapacityOptions;
 	chat?: boolean;
+	chatMessages?: ChatMessage[];
 	progress?: RoleProgress;
 	run: FactoryRun;
 	step: WorkflowStep;
@@ -181,8 +279,16 @@ export interface ExecutionContext {
 	evidenceDir: string;
 	resumeAgent?: AgentCheckpoint;
 	checkpointAgent?: (agent: AgentCheckpoint) => void;
+	/** Persist per-repository side effects before the whole step completes. */
+	save?: () => void;
+	allowUnchangedRepository?: boolean;
 }
 export interface RuntimeHooks {
+	execution?(
+		run: FactoryRun,
+		runner?: string,
+	): Promise<ResolvedExecutionEnvironment | undefined>;
+	capacity?: ExecutionCapacity;
 	track?(
 		run: FactoryRun,
 		milestone: import("./TicketTracking.js").TicketMilestone,
@@ -199,6 +305,7 @@ export interface RuntimeHooks {
 	simple?(run: FactoryRun, signal: AbortSignal): Promise<void>;
 	prepare?(run: FactoryRun, signal: AbortSignal): Promise<void>;
 	finished?(run: FactoryRun): Promise<void>;
+	cleanupExecution?(run: FactoryRun): void;
 }
 
 export class WorkflowRuntime {
@@ -234,6 +341,14 @@ export class WorkflowRuntime {
 	private viewStates: Record<string, RunViewState> = {};
 	private chats = new Map<string, ChatMessage[]>();
 	readonly directory: string;
+	get executionProfiles(): ExecutionProfileStore {
+		return new ExecutionProfileStore(this.directory);
+	}
+	updateExecutionProfiles(value: unknown, revision: number) {
+		const saved = this.executionProfiles.save(value, revision);
+		this.changed({ config: true });
+		return saved;
+	}
 
 	constructor(
 		home: string,
@@ -279,6 +394,7 @@ export class WorkflowRuntime {
 				run.workflow.chat = true;
 			this.runs.set(run.id, run);
 		}
+		cleanupVideoEvidence(join(this.directory, "evidence"), this.runs.values());
 	}
 
 	chatMessages(id: string): ChatMessage[] {
@@ -294,9 +410,14 @@ export class WorkflowRuntime {
 		}
 		return messages!;
 	}
-	recordChatMessage(id: string, text: string, step: string): ChatMessage {
+	recordChatMessage(
+		id: string,
+		text: string,
+		step: string,
+		messageId: string = randomUUID(),
+	): ChatMessage {
 		const message = {
-			id: randomUUID(),
+			id: messageId,
 			text,
 			step,
 			at: new Date().toISOString(),
@@ -322,7 +443,9 @@ export class WorkflowRuntime {
 			run.status !== "completed" ||
 			this.isExecuting(id)
 		)
-			throw new Error("Only a finished Cyrus session can continue here");
+			throw new Error(
+				"Only a finished Bob’s Factory session can continue here",
+			);
 		if (run.simpleExecution) {
 			if (!run.simpleExecution.agent)
 				throw new Error("Session conversation unavailable");
@@ -469,6 +592,9 @@ export class WorkflowRuntime {
 		};
 	}
 	create(options: {
+		repositories?: import("./RepositoryScope.js").RunRepository[];
+		executionSnapshot?: ExecutionSnapshot;
+		executionSelection?: ExecutionSelection;
 		triggerOrigin: WorkflowTriggerOrigin;
 		workflowDefinitions?: Workflow[];
 		id?: string;
@@ -507,6 +633,12 @@ export class WorkflowRuntime {
 				options.workflowDefinitions ?? this.listWorkflows(),
 			),
 			contractVersion: 2,
+			executionSnapshot: Object.hasOwn(options, "executionSnapshot")
+				? options.executionSnapshot
+				: this.executionProfiles.select(
+						options.repositoryId,
+						options.executionSelection,
+					),
 			id,
 			title: id,
 			titleGeneration: {
@@ -580,7 +712,7 @@ export class WorkflowRuntime {
 		if (this.controllers.has(run.id))
 			throw new Error("Run is already executing");
 		const controller = new AbortController();
-		if (run.ticketReference && run.status === "waiting") run.status = "running";
+		if (run.status === "waiting") run.status = "running";
 		this.controllers.set(run.id, controller);
 		const execution = this.execute(run, controller, task);
 		this.executions.set(run.id, execution);
@@ -667,6 +799,15 @@ export class WorkflowRuntime {
 		} finally {
 			this.controllers.delete(run.id);
 			this.pendingAnswers.delete(run.id);
+			try {
+				this.hooks.cleanupExecution?.(run);
+			} catch {
+				this.log(
+					run,
+					"run",
+					"Private auth-cache cleanup failed; retained state needs operator cleanup.",
+				);
+			}
 			this.save(run);
 			if (
 				!this.shuttingDown &&
@@ -690,6 +831,31 @@ export class WorkflowRuntime {
 					);
 				}
 		}
+	}
+	capacityOptions(run: FactoryRun, key: string, visit = 1): CapacityOptions {
+		return {
+			identity: `${this.directory}:run:${run.id}:${key}:${visit}`,
+			recoverable: true,
+			preserveOnShutdown: () => run.status !== "stopped",
+			onChange: (request) => {
+				run.capacityLeaves ??= {};
+				const previous = run.capacityLeaves[key]?.phase;
+				if (request && request.phase !== previous)
+					this.log(
+						run,
+						key,
+						request.phase === "queued"
+							? "Waiting for instance capacity."
+							: request.phase === "stopping"
+								? "Stopping execution; capacity remains reserved until it settles."
+								: "Instance capacity admitted execution.",
+					);
+				if (request)
+					run.capacityLeaves[key] = { phase: request.phase, request };
+				else delete run.capacityLeaves[key];
+				this.save(run);
+			},
+		};
 	}
 	private async track(
 		run: FactoryRun,
@@ -715,6 +881,7 @@ export class WorkflowRuntime {
 		workflowId: string,
 		chat = false,
 		parallel = false,
+		reviewBaseline?: ReviewBaseline,
 	): Promise<Record<string, unknown>> {
 		while (checkpoint.current !== "end") {
 			signal.throwIfAborted();
@@ -738,60 +905,119 @@ export class WorkflowRuntime {
 			}
 			run.step = key;
 			this.log(run, key, `Starting ${step.name} (pass ${count})`);
-			const input = step.inputs
-				? {
-						...(run.ticketReference
-							? {
-									ticketReference: structuredClone(run.ticketReference),
-									ticketSync: structuredClone(run.ticketSync),
-								}
-							: {}),
-						...Object.fromEntries(
-							step.inputs.map((name) => [name, outputs[name]]),
-						),
-						...(step.askQuestions ||
-						(step.id === "capture" &&
-							(step.qaContract === "qa-v1" ||
-								readPath(outputs, "visual-gate.captureBlocked") === true ||
-								readPath(outputs, "visual-gate.qaBlocked") === true))
-							? { answers: structuredClone(run.answers) }
-							: {}),
-					}
-				: {
-						originalInput: run.input,
-						...(run.ticketReference
-							? {
-									ticketReference: structuredClone(run.ticketReference),
-									ticketSync: structuredClone(run.ticketSync),
-								}
-							: {}),
-						launchInputs: structuredClone(run.launchInputs ?? {}),
-						outputs: structuredClone(outputs),
-						answers: structuredClone(run.answers),
-						chatMessages: structuredClone(this.chatMessages(run.id)),
-						history: structuredClone(run.history),
-						humanDecisions: structuredClone(run.humanDecisions ?? []),
-					};
+			const input = reviewBaseline
+				? structuredClone({
+						...(reviewBaseline.context as Record<string, unknown>),
+						reviewBaseline,
+					})
+				: step.inputs
+					? {
+							...(run.ticketReference
+								? {
+										ticketReference: structuredClone(run.ticketReference),
+										ticketSync: structuredClone(run.ticketSync),
+									}
+								: {}),
+							...Object.fromEntries(
+								step.inputs.map((name) => [name, outputs[name]]),
+							),
+							...(step.askQuestions ||
+							(step.id === "capture" &&
+								(step.qaContract === "qa-v1" ||
+									readPath(outputs, "visual-gate.captureBlocked") === true ||
+									readPath(outputs, "visual-gate.qaBlocked") === true))
+								? { answers: structuredClone(run.answers) }
+								: {}),
+						}
+					: {
+							originalInput: run.input,
+							...(run.ticketReference
+								? {
+										ticketReference: structuredClone(run.ticketReference),
+										ticketSync: structuredClone(run.ticketSync),
+									}
+								: {}),
+							launchInputs: structuredClone(run.launchInputs ?? {}),
+							outputs: structuredClone(outputs),
+							answers: structuredClone(run.answers),
+							chatMessages: structuredClone(this.chatMessages(run.id)),
+							history: structuredClone(run.history),
+							humanDecisions: structuredClone(run.humanDecisions ?? []),
+						};
+			const execution = this.hooks.execution
+				? await this.hooks.execution(run, step.runner ?? run.runner)
+				: undefined;
 			const context: ExecutionContext = {
+				execution,
+				reviewKey: checkpoint.reviewKey,
 				run,
 				step,
 				stepKey: key,
-				chat: step.chat ?? chat,
+				reviewBaseline,
+				currentScope: () => ({
+					originalInput: run.input,
+					outputs,
+					answers: run.answers,
+					chatMessages: this.chatMessages(run.id),
+					humanDecisions: run.humanDecisions ?? [],
+				}),
+				capacity: this.capacityOptions(run, key, count),
+				chat: reviewBaseline ? false : (step.chat ?? chat),
+				chatMessages: structuredClone(this.chatMessages(run.id)),
 				input,
 				outputs,
 				signal,
-				log: (message, source) => this.log(run, key, message, source),
+				log: (message, source) =>
+					this.log(run, key, execution?.redact(message) ?? message, source),
 				evidenceDir: join(this.directory, "evidence", run.id),
 				resumeAgent: state.agent,
 				checkpointAgent: (agent) => {
 					state.agent = agent;
 					this.save(run);
 				},
+				save: () => this.save(run),
 			};
 			mkdirSync(context.evidenceDir, { recursive: true });
 			let output: unknown = outputs[step.id];
 			if (state.phase === "executing") {
-				if (step.type === "fanout") {
+				if (step.tool === "review-gate" && step.review) {
+					const fanoutKey = `${prefix}${step.review.fanout}`;
+					const baseline = [...(run.reviewRounds ?? [])]
+						.reverse()
+						.find((r) => r.key === fanoutKey);
+					if (!baseline)
+						throw new Error("Configured review baseline is unavailable");
+					const inventory = outputs[step.review.inventory] as
+						| Inventory
+						| undefined;
+					if (
+						inventory?.digest !== baseline.inventory.digest ||
+						inventory?.version !== baseline.inventory.version ||
+						inventory?.sourceContextDigest !==
+							baseline.inventory.sourceContextDigest
+					)
+						throw new Error(
+							"Requirement inventory changed without a new specialist round",
+						);
+					const revision = await reviewedRunRevision(run, baseline);
+					if (revision.headSha !== baseline.headSha)
+						throw new Error("Revision changed during specialist review");
+					output = aggregateReview(
+						baseline,
+						outputs[step.review.fanout!] as Record<string, unknown>[],
+						latestAggregate(run, fanoutKey),
+					);
+					const questions = reviewRecoveryQuestions(context, output, {
+						headSha: revision.headSha,
+						dirty: false,
+					});
+					if (questions.length)
+						output = {
+							...(output as Record<string, unknown>),
+							reviewBlocked: true,
+							questions,
+						};
+				} else if (step.type === "fanout") {
 					if (
 						step.groups?.some((group) =>
 							group.some(
@@ -800,26 +1026,126 @@ export class WorkflowRuntime {
 						)
 					)
 						throw new Error("Human checkpoints belong outside fanout branches");
+					if (step.review && !state.reviewBaseline) {
+						const inventory = outputs[step.review.inventory] as
+							| Inventory
+							| undefined;
+						if (
+							!inventory?.digest ||
+							inventory.questions.length ||
+							inventory.conflicts.length ||
+							inventory.sourceReceipt.unavailable.length
+						)
+							throw new Error(
+								"Requirement extraction is missing or has unresolved scope/source blockers",
+							);
+						if (inventory.sourceContextDigest !== scopeContextDigest(input)) {
+							checkpoint.current = step.review.inventory;
+							checkpoint.active = undefined;
+							this.log(
+								run,
+								key,
+								"Scope changed after extraction; extracting a fresh inventory before starting reviewers.",
+							);
+							continue;
+						}
+						const repo = outputs.repository as
+							| { baseBranch?: string }
+							| undefined;
+						const source = outputs.source as
+							| { baseRefName?: string }
+							| undefined;
+						const revision = await reviewedRunRevision(
+							run,
+							`refs/remotes/origin/${source?.baseRefName ?? repo?.baseBranch ?? "main"}`,
+						);
+						run.reviewRounds ??= [];
+						state.reviewBaseline = {
+							schemaVersion: 1,
+							round: run.reviewRounds.length + 1,
+							key,
+							inventory: structuredClone(inventory),
+							...revision,
+							historyLength: run.history.length,
+							at: new Date().toISOString(),
+							reviewers: (step.groups ?? []).flatMap((group, i) =>
+								group.map((s) => ({
+									id: s.id,
+									key: `${key}/${i}/${s.id}`,
+									group: i,
+									contract: s.reviewContract!,
+								})),
+							),
+							context: frozenReviewContext(input),
+						};
+						run.reviewRounds.push(state.reviewBaseline);
+					}
+					if (state.reviewBaseline)
+						checkpoint.reviewKey = state.reviewBaseline.key;
 					state.children ??= (step.groups ?? []).map((group) => ({
 						...this.newCheckpoint(group),
-						outputs: structuredClone(outputs),
+						outputs: step.review ? {} : structuredClone(outputs),
 					}));
+					// Also fill older resumed branches, preserving reviews established within them.
+					for (const child of state.children)
+						child.reviewKey ??= checkpoint.reviewKey;
 					this.save(run);
-					output = await Promise.all(
+					const branchController = new AbortController();
+					const cancelBranches = () => branchController.abort(signal.reason);
+					signal.addEventListener("abort", cancelBranches, { once: true });
+					if (signal.aborted) cancelBranches();
+					let failure: unknown;
+					const branchResults = await Promise.allSettled(
 						(step.groups ?? []).map((group, index) =>
 							this.graph(
 								run,
 								group,
 								state.children![index]!.outputs!,
-								signal,
+								branchController.signal,
 								`${key}/${index}/`,
 								state.children![index]!,
 								workflowId,
 								chat,
 								true,
-							),
+								state.reviewBaseline ?? reviewBaseline,
+							).catch((error) => {
+								failure ??= error;
+								branchController.abort(error);
+								throw error;
+							}),
 						),
 					);
+					signal.removeEventListener("abort", cancelBranches);
+					if (failure) throw failure;
+					if (state.reviewBaseline) {
+						// All runner hooks have returned and cleaned up their temporary
+						// project configuration. Reject any remaining edits before
+						// accepting the round, without exempting runner directories.
+						const revision = await reviewedRunRevision(
+							run,
+							state.reviewBaseline,
+						);
+						if (revision.headSha !== state.reviewBaseline.headSha)
+							throw new Error("Revision changed during specialist review");
+					}
+					output = branchResults.map((result, index) =>
+						result.status === "fulfilled"
+							? step.review
+								? Object.fromEntries(
+										(step.groups?.[index] ?? []).map((s) => [
+											s.id,
+											result.value[s.id],
+										]),
+									)
+								: result.value
+							: undefined,
+					);
+					if (state.reviewBaseline)
+						for (const reviewer of state.reviewBaseline.reviewers) {
+							run.outputs[reviewer.key] = (output as Record<string, unknown>[])[
+								reviewer.group
+							]![reviewer.id];
+						}
 				} else if (step.type === "workflow") {
 					const definition = run.workflowDefinitions?.find(
 						(item) => item.id === step.workflow,
@@ -852,6 +1178,7 @@ export class WorkflowRuntime {
 						);
 					}
 					state.children ??= [this.newCheckpoint(definition.steps)];
+					state.children[0]!.reviewKey ??= checkpoint.reviewKey;
 					this.save(run);
 					await this.graph(
 						run,
@@ -865,11 +1192,83 @@ export class WorkflowRuntime {
 						parallel,
 					);
 					output = { workflow: definition.id, completed: true };
+					checkpoint.reviewKey = state.children[0]!.reviewKey;
 				} else {
-					output = await this.hooks[step.type](context);
+					run.capacityLeaves ??= {};
+					run.capacityLeaves[key] = {
+						phase:
+							step.tool === "ci" ||
+							step.tool === "merge-readiness" ||
+							step.tool === "handoff"
+								? "waiting-ci"
+								: step.tool === "human-review"
+									? "waiting-human"
+									: "executing",
+					};
+					this.save(run);
+					try {
+						if (
+							step.type !== "agent" &&
+							isComputeIntensive(step) &&
+							this.hooks.capacity
+						) {
+							const lease = await this.hooks.capacity.acquireLease(signal, {
+								...context.capacity,
+								remote: step.tool?.startsWith("mcp__"),
+							});
+							try {
+								signal.throwIfAborted();
+								output = await lease.run(() =>
+									this.hooks[step.type as "script" | "tool"](context),
+								);
+							} finally {
+								await lease.release();
+							}
+						} else output = await this.hooks[step.type](context);
+						if (step.reviewContract) {
+							output = validateContractOutput(context, output);
+							if (step.reviewContract === "inventory-v1")
+								output = {
+									...(output as Inventory),
+									sourceContextDigest: scopeContextDigest(context.input),
+								};
+							if (step.reviewContract !== "inventory-v1") {
+								const revision = await reviewedRunRevision(
+									run,
+									reviewBaseline,
+									// Sibling runners may still own temporary project files.
+									// The fanout join checks cleanliness after every cleanup.
+									{ requireClean: false },
+								);
+								if (
+									!reviewBaseline ||
+									revision.headSha !== reviewBaseline.headSha
+								)
+									throw new Error(
+										"Reviewer changed the reviewed revision; review invalidated",
+									);
+								output = stampSpecialist(context, output);
+							}
+						}
+					} catch (error) {
+						if (!execution) throw error;
+						throw new Error(
+							execution.redact(
+								error instanceof Error ? error.message : String(error),
+							),
+						);
+					} finally {
+						if (!this.shuttingDown || run.status === "stopped")
+							delete run.capacityLeaves[key];
+						this.save(run);
+					}
 				}
 				signal.throwIfAborted();
+				if (execution && output !== undefined)
+					output = JSON.parse(execution.redact(JSON.stringify(output)));
 				outputs[step.id] = output;
+				if (step.reviewContract && step.reviewContract !== "inventory-v1")
+					run.outputs[key] = output;
 				run.history.push({
 					step: key,
 					output,
@@ -878,6 +1277,28 @@ export class WorkflowRuntime {
 				});
 				state.phase = "result";
 				this.save(run);
+			}
+			// Restored waits must use current gate logic, retaining all role evidence.
+			if (
+				step.tool === "visual-gate" &&
+				state.phase === "waiting" &&
+				step.qaContract
+			) {
+				output = outputs[step.id] = await this.hooks.tool(context);
+				// Keep the restored wait until its questions and suggestions are compared
+				// below. Gate revalidation alone does not create a new question batch.
+				this.save(run);
+			}
+			if (
+				step.tool === "visual-gate" &&
+				readPath(output, "reviewBlocked") !== true &&
+				Array.isArray(readPath(output, "findings")) &&
+				(readPath(output, "findings") as unknown[]).length
+			) {
+				// Review assistance retains its saved questions for waitForAnswers to
+				// compare after restart. Findings without a wait proceed to correction.
+				run.status = "running";
+				run.questions = [];
 			}
 			if (
 				step.tool === "draft-pr" ||
@@ -924,7 +1345,7 @@ export class WorkflowRuntime {
 						.filter((check) => typeof check === "string")
 						.map((check) => `- ${check}`)
 						.join("\n")}`;
-				if (run.ticketReference && this.hooks.track)
+				if (run.ticketReference && this.hooks.track) {
 					await this.track(run, {
 						key: `${key}:${count}:${readPath(output, "headSha") ?? "result"}`,
 						stage,
@@ -932,11 +1353,23 @@ export class WorkflowRuntime {
 						...(typeof pr === "string" ? { pr } : {}),
 						...(merged ? { merged: true } : {}),
 					});
+					for (const delivery of deliveryRevisions(output).slice(1))
+						await this.track(run, {
+							key: `${key}:${count}:${delivery.repositoryId}:${delivery.headSha}`,
+							pr: delivery.url,
+							body: `${delivery.name}: ${delivery.url}. ${body}`,
+						});
+				}
 			}
 			if (
 				step.tool === "visual-gate" &&
 				(readPath(output, "captureBlocked") === true ||
-					readPath(output, "qaBlocked") === true)
+					readPath(output, "qaBlocked") === true ||
+					readPath(output, "qaRetry") === true) &&
+				!(
+					Array.isArray(readPath(output, "findings")) &&
+					(readPath(output, "findings") as unknown[]).length
+				)
 			) {
 				// Existing runs keep their frozen graph. Recover inside that graph rather
 				// than replacing its recipe or rerunning implementation/code fixes.
@@ -957,6 +1390,18 @@ export class WorkflowRuntime {
 					throw new Error(
 						"QA or visual evidence is incomplete and this recipe has no capture → visual-review → visual-gate recovery path. Configure that path for a new run; missing evidence cannot be approved.",
 					);
+				if (readPath(output, "qaRetry") === true) {
+					checkpoint.current = capture.id;
+					checkpoint.active = undefined;
+					run.questions = [];
+					run.status = "running";
+					this.log(
+						run,
+						key,
+						`Retrying invalid QA evidence: ${JSON.stringify(readPath(output, "evidenceIssues"))}`,
+					);
+					continue;
+				}
 				const questions = readPath(output, "questions");
 				if (
 					!Array.isArray(questions) ||
@@ -965,7 +1410,16 @@ export class WorkflowRuntime {
 				)
 					throw new Error("QA/capture assistance requires a question");
 				if (state.phase !== "answered")
-					await this.waitForAnswers(run, questions, signal, state);
+					await this.waitForAnswers(
+						run,
+						questions,
+						signal,
+						state,
+						normalizeQuestionResult(output).questionRecommendations as
+							| QuestionRecommendation[]
+							| undefined,
+						context,
+					);
 				checkpoint.current = capture.id;
 				checkpoint.active = undefined;
 				this.log(
@@ -975,7 +1429,64 @@ export class WorkflowRuntime {
 				);
 				continue;
 			}
-			if (step.askQuestions) {
+			if (
+				step.tool === "review-after-fix" &&
+				Array.isArray(readPath(output, "questions")) &&
+				(readPath(output, "questions") as unknown[]).length
+			) {
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
+				if (!steps.some((item) => item.id === "ci-fix"))
+					throw new Error("CI assistance has no configured fixer");
+				if (state.phase !== "answered")
+					await this.waitForAnswers(
+						run,
+						readPath(output, "questions") as string[],
+						signal,
+						state,
+						undefined,
+						context,
+					);
+				checkpoint.current = "ci-fix";
+				checkpoint.active = undefined;
+				continue;
+			}
+			if (
+				["review-gate", "visual-gate"].includes(step.tool ?? "") &&
+				readPath(output, "reviewBlocked") === true
+			) {
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
+				const fixer = this.nextStep(steps, step, output);
+				if (
+					!steps.some(
+						(item) =>
+							item.id === fixer && ["agent", "script"].includes(item.type),
+					)
+				)
+					throw new Error(
+						"Review assistance has no configured fixer recovery path",
+					);
+				if (state.phase !== "answered")
+					await this.waitForAnswers(
+						run,
+						readPath(output, "questions") as string[],
+						signal,
+						state,
+						normalizeQuestionResult(output).questionRecommendations as
+							| QuestionRecommendation[]
+							| undefined,
+						context,
+					);
+				checkpoint.current = fixer;
+				checkpoint.active = undefined;
+				continue;
+			}
+			if (
+				step.askQuestions ||
+				(["ci-fix", "code-fix", "visual-fix"].includes(step.id) &&
+					Array.isArray(readPath(output, "questions")))
+			) {
 				const questions = readPath(output, "questions");
 				if (
 					!Array.isArray(questions) ||
@@ -983,12 +1494,45 @@ export class WorkflowRuntime {
 				)
 					throw new Error("Clarifier must return a questions array");
 				if (questions.length) {
+					if (parallel)
+						throw new Error("Human checkpoints belong outside fanout branches");
 					if (state.phase !== "answered")
-						await this.waitForAnswers(run, questions, signal, state);
-					checkpoint.active = undefined;
+						await this.waitForAnswers(
+							run,
+							questions,
+							signal,
+							state,
+							normalizeQuestionResult(output).questionRecommendations as
+								| QuestionRecommendation[]
+								| undefined,
+							context,
+						);
+					// Answers start a new turn in the same conversation. Discard the
+					// completed result so unchanged-code recovery cannot replay it.
+					checkpoint.active = state.agent
+						? {
+								phase: "executing",
+								agent: {
+									runner: state.agent.runner,
+									sessionId: state.agent.sessionId,
+								},
+							}
+						: undefined;
+					if (state.agent) checkpoint.visits[step.id] = count + 1;
 					this.save(run);
 					continue;
 				}
+			}
+			if (step.tool === "human-review" && readPath(output, "rework") === true) {
+				const next = this.nextStep(steps, step, output);
+				if (next === step.next || next === "end")
+					throw new Error(
+						"Changed review scope needs an explicit rework route before human approval",
+					);
+				checkpoint.current = next;
+				checkpoint.active = undefined;
+				this.save(run);
+				continue;
 			}
 			if (step.tool === "human-review") {
 				if (state.phase !== "answered")
@@ -1030,34 +1574,140 @@ export class WorkflowRuntime {
 		questions: string[],
 		signal: AbortSignal,
 		state: NonNullable<GraphCheckpoint["active"]>,
+		recommendations: QuestionRecommendation[] | undefined,
+		context: ExecutionContext,
 	): Promise<void> {
-		const restored = state.phase === "waiting";
+		const source = structuredClone({
+			questions,
+			...(recommendations === undefined ? {} : { recommendations }),
+		});
+		// A rephrasing belongs to the decision it explained. Revalidated gates
+		// may change while waiting; legacy displays without provenance cannot
+		// establish that the decision is still the same.
+		if (
+			state.questionDisplay &&
+			!isDeepStrictEqual(state.questionDisplay.source, source)
+		) {
+			state.questionDisplay = undefined;
+			state.questionExplanation = undefined;
+		}
+		if (
+			state.questionExplanation &&
+			!isDeepStrictEqual(state.questionExplanation.source, source)
+		)
+			state.questionExplanation = undefined;
+		questions = state.questionDisplay?.questions ?? questions;
+		recommendations = state.questionDisplay
+			? state.questionDisplay.recommendations
+			: recommendations;
+		const restored =
+			state.phase === "waiting" &&
+			isDeepStrictEqual(run.questions, questions) &&
+			isDeepStrictEqual(run.questionRecommendations, recommendations);
 		state.phase = "waiting";
 		run.questions = questions;
+		run.questionRecommendations = recommendations;
+		if (!restored || !run.questionBatchId) run.questionBatchId = randomUUID();
 		run.status = "waiting";
-		const waiting = new Promise<void>((resolve, reject) =>
-			this.pendingAnswers.set(run.id, { resolve, reject }),
-		);
-		// A ticket post may still be pending when termination rejects this promise.
-		void waiting.catch(() => {});
-		const abort = () =>
-			this.pendingAnswers.get(run.id)?.reject(new Error("Run terminated"));
-		signal.addEventListener("abort", abort, { once: true });
-		this.log(run, run.step ?? "clarify", questions.join("\n"));
-		try {
-			if (run.ticketReference && this.hooks.track)
-				await this.track(run, {
-					key: `questions:${run.step}:${run.answers.length}`,
-					body: `Factory needs assistance:\n\n${questions.map((q, i) => `${i + 1}. ${q}`).join("\n")}\n\nReply on the ticket or answer in the Factory UI to resume.`,
-				});
-			if (!restored) await this.hooks.question?.(run);
+		let notify = !restored;
+		while (true) {
 			signal.throwIfAborted();
-			await waiting;
-		} finally {
-			signal.removeEventListener("abort", abort);
-			this.pendingAnswers.delete(run.id);
+			if (state.questionExplanation) {
+				// This is a separate explanation turn, never an answered checkpoint or
+				// another execution of the blocked fixer/capture/implementation role.
+				const request = state.questionExplanation;
+				run.status = "running";
+				this.save(run);
+				const explained = normalizeQuestionResult(
+					await this.hooks.agent({
+						...context,
+						step: {
+							id: "question-explanation",
+							name: "Explain the pending decision",
+							type: "agent",
+							branches: [],
+							maxVisits: 1,
+							askQuestions: true,
+							runner: context.step.runner,
+							model: context.step.model,
+							reasoningEffort: context.step.reasoningEffort,
+							modelVariant: context.step.modelVariant,
+							serviceTier: context.step.serviceTier,
+							prompt:
+								"Explain the pending questions using only the supplied context. The user has not answered or authorized any work. Do not implement, run checks, spend credits on tests, publish, change files or clear blockers. Use only factory-context tools. Return a questions array with one clearer question for each original question, preserving the same decisions, constraints and authorization requirements. Optional questionRecommendations must preserve the existing choices. Return no other role results.",
+						},
+						chat: false,
+						stepKey: `${context.stepKey}/question-explanation`,
+						input: {
+							questions: request.questions,
+							request: request.text,
+							recommendations,
+							blocker: context.outputs?.[context.step.id],
+							answers: structuredClone(run.answers),
+						},
+						resumeAgent: request.agent,
+						checkpointAgent: (agent) => {
+							request.agent = agent;
+							this.save(run);
+						},
+					}),
+				);
+				signal.throwIfAborted();
+				const clarified = explained.questions as string[];
+				if (clarified.length !== questions.length)
+					throw new Error(
+						"An explanation must preserve every pending decision",
+					);
+				questions = clarified;
+				recommendations = explained.questionRecommendations as
+					| QuestionRecommendation[]
+					| undefined;
+				notify = true;
+				state.questionDisplay = { source, questions, recommendations };
+				state.questionExplanation = undefined;
+				run.questions = questions;
+				run.questionRecommendations = recommendations;
+				run.questionBatchId = randomUUID();
+				this.save(run);
+			}
+			run.status = "waiting";
+			const waiting = new Promise<void>((resolve, reject) =>
+				this.pendingAnswers.set(run.id, { resolve, reject }),
+			);
+			void waiting.catch(() => {});
+			const abort = () =>
+				this.pendingAnswers.get(run.id)?.reject(new Error("Run terminated"));
+			signal.addEventListener("abort", abort, { once: true });
+			this.log(run, run.step ?? "clarify", questions.join("\n"));
+			try {
+				if (run.ticketReference && this.hooks.track) {
+					const body = `Factory needs assistance:\n\n${questionNotification(questions, run.questionRecommendations)}`;
+					const legacyKey = `questions:${run.step}:${run.answers.length}${state.questionDisplay ? `:explanation:${run.questionBatchId}` : ""}`;
+					const batchKey = `questions:${run.step}:${run.answers.length}:${run.questionBatchId}`;
+					// Reuse unchanged receipts from before all waits used batch identities.
+					const receipts = run.ticketSync?.receipts ?? [];
+					const legacyReceipt =
+						!notify &&
+						!receipts.some((receipt) => receipt.key === batchKey) &&
+						receipts.some(
+							(receipt) => receipt.key === legacyKey && receipt.body === body,
+						);
+					await this.track(run, {
+						key: legacyReceipt ? legacyKey : batchKey,
+						body,
+					});
+				}
+				if (notify) await this.hooks.question?.(run);
+				signal.throwIfAborted();
+				await waiting;
+			} finally {
+				signal.removeEventListener("abort", abort);
+				this.pendingAnswers.delete(run.id);
+			}
+			if (!state.questionExplanation) return;
 		}
 	}
+
 	private async waitForHuman(
 		run: FactoryRun,
 		result: { headSha: string; url: string },
@@ -1069,11 +1719,14 @@ export class WorkflowRuntime {
 				id: randomUUID(),
 				headSha: result.headSha,
 				url: result.url,
+				repositories: deliveryRevisions(result),
 				status: "pending",
 			};
 		state.phase = "waiting";
 		run.status = "waiting";
 		run.questions = [];
+		run.questionRecommendations = undefined;
+		run.questionBatchId = undefined;
 		const waiting = new Promise<void>((resolve, reject) =>
 			this.pendingAnswers.set(run.id, { resolve, reject }),
 		);
@@ -1113,7 +1766,11 @@ export class WorkflowRuntime {
 		if (decision.decision === "reject" && !decision.feedback?.trim())
 			throw new Error("Explain what Bob should change");
 		run.humanDecisions ??= [];
-		run.humanDecisions.push({ ...decision, at: new Date().toISOString() });
+		run.humanDecisions.push({
+			...decision,
+			repositories: structuredClone(gate.repositories),
+			at: new Date().toISOString(),
+		});
 		gate.status = decision.decision;
 		const answered = (frame?: GraphCheckpoint): void => {
 			if (frame?.active?.phase === "waiting") frame.active.phase = "answered";
@@ -1129,7 +1786,7 @@ export class WorkflowRuntime {
 		);
 		pending.resolve();
 	}
-	answer(id: string, answer: string): void {
+	answer(id: string, answer: string, kind?: "answer" | "explanation"): void {
 		const run = this.get(id);
 		const pending = this.pendingAnswers.get(id);
 		if (
@@ -1139,6 +1796,53 @@ export class WorkflowRuntime {
 		)
 			throw new Error("Run is not waiting for an answer");
 		if (!answer.trim()) throw new Error("Enter an answer");
+		if (
+			kind === "explanation" ||
+			(kind === undefined && isExplanationRequest(answer, run.questions))
+		) {
+			const locate = (frame?: GraphCheckpoint): GraphCheckpoint["active"] => {
+				if (
+					frame?.active?.phase === "waiting" &&
+					!frame.active.children?.length
+				)
+					return frame.active;
+				for (const child of frame?.active?.children ?? []) {
+					const found = locate(child);
+					if (found) return found;
+				}
+				return undefined;
+			};
+			const state = locate(run.checkpoint);
+			if (!state) throw new Error("Pending question checkpoint unavailable");
+			run.questionRequests ??= [];
+			run.questionRequests.push({
+				questions: [...run.questions],
+				text: answer,
+				at: new Date().toISOString(),
+			});
+			run.status = "running";
+			state.questionExplanation = {
+				source: structuredClone(
+					state.questionDisplay?.source ?? {
+						questions: run.questions,
+						...(run.questionRecommendations === undefined
+							? {}
+							: {
+									recommendations: run.questionRecommendations,
+								}),
+					},
+				),
+				text: answer,
+				questions: [...run.questions],
+			};
+			this.log(
+				run,
+				run.step ?? "clarify",
+				`Human explanation request: ${answer}`,
+			);
+			pending.resolve();
+			return;
+		}
 		run.answers.push({
 			questions: [...run.questions],
 			answer,
@@ -1150,6 +1854,8 @@ export class WorkflowRuntime {
 		};
 		markAnswered(run.checkpoint);
 		run.questions = [];
+		run.questionRecommendations = undefined;
+		run.questionBatchId = undefined;
 		run.status = "running";
 		this.log(run, run.step ?? "clarify", `Human answer: ${answer}`);
 		pending.resolve();
@@ -1243,6 +1949,35 @@ export class WorkflowRuntime {
 		) => {
 			const step = steps.find((item) => item.id === frame.current);
 			if (!step) return;
+			const key = `${prefix}${step.id}`;
+			const agent =
+				frame.active?.phase === "executing" ? frame.active.agent : undefined;
+			if (step.type === "agent" && agent?.rejected?.exhausted) {
+				// Explicit Retry authorizes a fresh bounded budget for this role.
+				// Keep the candidate, issues, revision and native conversation.
+				agent.rejected = {
+					...agent.rejected,
+					attempts: 0,
+					reserved: false,
+					exhausted: false,
+				};
+				this.log(
+					run,
+					"run",
+					`Retry authorized another bounded output-correction cycle for ${key}; rejected output, issues and completed work retained.`,
+				);
+			}
+			if (
+				frame.active?.phase === "executing" &&
+				this.isUnstartedCodexAgent(run, frame.active.agent, key)
+			) {
+				delete frame.active.agent;
+				this.log(
+					run,
+					"run",
+					`Removed invalid Codex startup checkpoint for ${key}; retry starts this role with saved context, work and evidence retained.`,
+				);
+			}
 			const limit = step.maxVisits + (frame.additionalVisits?.[step.id] ?? 0);
 			if ((frame.visits[step.id] ?? 0) > limit) {
 				frame.additionalVisits ??= {};
@@ -1274,6 +2009,68 @@ export class WorkflowRuntime {
 		this.log(run, "run", "Retry requested; continuing from saved progress.");
 		void this.launch(run);
 		return run;
+	}
+	private isUnstartedCodexAgent(
+		run: FactoryRun,
+		agent: AgentCheckpoint | undefined,
+		key: string,
+	): boolean {
+		if (!agent || agent.runner !== "codex" || agent.result || agent.rejected)
+			return false;
+		const parse = (text: string) => {
+			try {
+				return JSON.parse(text);
+			} catch {
+				return undefined;
+			}
+		};
+		const failure = parse(
+			run.error?.replace(/^Agent(?: step)? failed: /, "") ?? "",
+		);
+		const missing = `thread/resume failed: no rollout found for thread id ${agent.sessionId}`;
+		const isStartupTimeout = (error: unknown) =>
+			typeof error === "string" &&
+			/^initialize timed out after \d+ms$/.test(error);
+		if (
+			failure?.type !== "result" ||
+			failure.is_error !== true ||
+			failure.session_id !== agent.sessionId ||
+			!Array.isArray(failure.errors) ||
+			!failure.errors.includes(missing)
+		)
+			return false;
+		// Older runners emitted synthetic init IDs even when initialize failed.
+		// Require that exact startup receipt as well as the missing-rollout error;
+		// never discard an established conversation or a saved output/correction.
+		let startupFailed = false;
+		const completedAt =
+			[...run.history].reverse().find((receipt) => receipt.step === key)?.at ??
+			run.createdAt;
+		for (const event of run.events) {
+			if (
+				event.step !== key ||
+				event.source !== "agent" ||
+				event.at < completedAt
+			)
+				continue;
+			const message = parse(event.message);
+			// Truncated activity cannot establish that the conversation never ran.
+			if (!message) return false;
+			if (message?.session_id !== agent.sessionId) continue;
+			if (message.type === "system" && message.subtype === "init") continue;
+			if (
+				message.type !== "result" ||
+				message.is_error !== true ||
+				!Array.isArray(message.errors) ||
+				!message.errors.length ||
+				!message.errors.every(
+					(error: unknown) => isStartupTimeout(error) || error === missing,
+				)
+			)
+				return false;
+			if (message.errors.some(isStartupTimeout)) startupFailed = true;
+		}
+		return startupFailed;
 	}
 	isShuttingDown(): boolean {
 		return this.shuttingDown;
@@ -1430,4 +2227,14 @@ export class WorkflowRuntime {
 		writeFileSync(temporary, JSON.stringify(data, null, 2));
 		renameSync(temporary, path);
 	}
+}
+
+/** Durable run status remains compatible; API derives queueing from all active leaves. */
+export function capacityRunStatus(run: FactoryRun): string {
+	const leaves = Object.values(run.capacityLeaves ?? {});
+	return run.status === "running" &&
+		leaves.length &&
+		leaves.every((leaf) => leaf.phase === "queued")
+		? "capacity-waiting"
+		: run.status;
 }

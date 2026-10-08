@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { callConfiguredTool } from "./callConfiguredTool.js";
 
 const server = `
@@ -6,7 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 const server = new McpServer({name:'fixture',version:'1'});
-server.registerTool('echo',{inputSchema:{value:z.string()}},async ({value}) => ({content:[{type:'text',text:value}],structuredContent:{value,cwd:process.cwd(),configured:process.env.FACTORY_MCP_FIXTURE}}));
+server.registerTool('echo',{inputSchema:{value:z.string()}},async ({value}) => ({content:[{type:'text',text:value}],structuredContent:{value,cwd:process.cwd(),configured:process.env.FACTORY_MCP_FIXTURE,ambient:process.env.FACTORY_AMBIENT_CANARY}}));
 server.registerTool('fail',{},async () => ({isError:true,content:[{type:'text',text:'fixture failure'}]}));
 server.registerTool('mixed_failure',{},async () => ({isError:true,content:[{type:'text',text:' Taskbot provider unavailable '},{type:'image',data:'AA==',mimeType:'image/png'},{type:'text',text:' '},{type:'text',text:'Try again later.'}]}));
 server.registerTool('nontext_failure',{},async () => ({isError:true,content:[{type:'image',data:'AA==',mimeType:'image/png'}]}));
@@ -70,4 +70,27 @@ it("does not spawn a configured tool after termination", async () => {
 			process.cwd(),
 		),
 	).rejects.toThrow("Run terminated");
+});
+
+afterEach(() => vi.unstubAllEnvs());
+it("passes an explicit complete environment to real MCP grandchildren", async () => {
+	vi.stubEnv("FACTORY_AMBIENT_CANARY", "host-secret");
+	const result = await callConfiguredTool(
+		{
+			command: process.execPath,
+			args: ["--input-type=module", "-e", server],
+			env: { FACTORY_MCP_FIXTURE: "selected" },
+		},
+		"echo",
+		{ value: "private" },
+		new AbortController().signal,
+		process.cwd(),
+		{ PATH: process.env.PATH ?? "", HOME: "/tmp/selected-home" },
+	);
+	expect(result).toEqual({
+		value: "private",
+		cwd: process.cwd(),
+		configured: "selected",
+	});
+	expect(process.env.FACTORY_AMBIENT_CANARY).toBe("host-secret");
 });

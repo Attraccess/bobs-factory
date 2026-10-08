@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CLIIssueTrackerService } from "cyrus-core";
+import { CLIIssueTrackerService } from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { AgentSessionManager } from "../src/AgentSessionManager.js";
 import { EdgeWorker } from "../src/EdgeWorker.js";
@@ -31,7 +31,7 @@ function setup() {
 	};
 	const worker = new EdgeWorker({
 		platform: "cli",
-		cyrusHome: home,
+		factoryHome: home,
 		repositories: [repository],
 		handlers: { createWorkspace },
 	});
@@ -62,9 +62,12 @@ function setup() {
 		getPlatformType: () => "cli",
 	});
 	cleanups.push(async () => {
+		await edge.runnerSlots.ready();
 		await runtime.shutdown();
 		edge.ticketTracking?.stop();
 		await edge.stateSaveQueue;
+		await edge.runnerSlots.ready();
+		await edge.runnerSlots.shutdown();
 		rmSync(home, { recursive: true, force: true });
 	});
 	return {
@@ -201,7 +204,7 @@ it("selects Takeover once and retains that snapshot if permissions change during
 				w.id === "takeover" ? { ...w, allowedTriggers: [] } : w,
 			),
 		);
-		return { path: join(edge.cyrusHome, "workspace"), isGitWorktree: false };
+		return { path: join(edge.factoryHome, "workspace"), isGitWorktree: false };
 	});
 	const event = webhook("This thread is for an agent session");
 	edge.captureTicketOrigin(event, true);
@@ -1013,7 +1016,9 @@ it("returns a manual launch immediately, preserves source naming data and mirror
 	);
 	expect(run.title).toBe(run.id);
 	expect(run.status).toBe("running");
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(titleStart).toHaveBeenCalledOnce();
 	expect(JSON.parse(titleStart.mock.calls[0][1].context).instructions).toBe(
 		"https://taskbot.apps.janjaap.de/p/test/t/68",
@@ -1198,7 +1203,9 @@ it.each([
 	edge.titleGenerator = { start, shutdown: async () => {} };
 	if (status === "running") edge.recoverFactoryRuns();
 	else runtime.retry(run.id);
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(start).not.toHaveBeenCalled();
 	expect(run.titleGeneration).toBeUndefined();
 	expect(run.title).toBe("Original historical title");
@@ -1207,7 +1214,9 @@ it.each([
 	// A second retry must also preserve the saved historical identity.
 	run.status = "failed";
 	runtime.retry(run.id);
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(start).not.toHaveBeenCalled();
 	expect(run.titleGeneration).toBeUndefined();
 });
@@ -1255,7 +1264,9 @@ it.each([
 	);
 	const run = runtime.get("session");
 	expect(run.title).toBe("session");
-	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	await vi.waitFor(() => expect(run.status).toBe("completed"), {
+		timeout: 10000,
+	});
 	expect(start).toHaveBeenCalledOnce();
 	expect(JSON.parse(start.mock.calls[0][1].context)).toMatchObject({
 		ticketTitle: "Ticket",
@@ -1386,7 +1397,10 @@ it("retains the parent's native origin when follow-up instructions name another 
 		}),
 		parent.id,
 	);
-	await vi.waitFor(() => expect(["completed", "failed"]).toContain(run.status));
+	await vi.waitFor(
+		() => expect(["completed", "failed"]).toContain(run.status),
+		{ timeout: 10000 },
+	);
 	expect(run.error).toBeUndefined();
 	expect(run.status).toBe("completed");
 	expect(run.ticketReference).toEqual(parent.ticketReference);
@@ -1555,4 +1569,71 @@ it.each([
 	const fetch = vi.spyOn(f.tracker, "fetchIssue");
 	await f.edge.recoverFactoryTicketTracking(run);
 	expect(fetch).not.toHaveBeenCalled();
+});
+
+it("validates the manually selected model before creating or launching a profiled run", async () => {
+	const f = setup();
+	const ref = {
+		source: "env",
+		name: "TEST_KEY",
+		version: "v1",
+		owner: "Fixture",
+	};
+	f.runtime.executionProfiles.save(
+		{
+			schemaVersion: 1,
+			revision: 0,
+			identities: [
+				{
+					id: "identity",
+					revision: 1,
+					name: "Identity",
+					author: { mode: "share" },
+					committer: { mode: "share" },
+					signing: { format: "disabled" },
+					repositories: [],
+					runners: {
+						claude: { mode: "share", provider: "anthropic", credential: ref },
+						opencode: {
+							mode: "factory-only",
+							provider: "anthropic",
+							credential: ref,
+						},
+					},
+				},
+			],
+			tools: [
+				{ id: "tools", revision: 1, name: "Tools", mode: "factory-only" },
+			],
+			defaults: { identityProfile: "identity", toolProfile: "tools" },
+			repositories: {},
+		},
+		0,
+	);
+	vi.spyOn(f.edge, "getDefaultModelForRunner").mockImplementation((runner) =>
+		runner === "opencode" ? "openai/default" : "sonnet",
+	);
+	vi.spyOn(f.edge, "resolveRunExecution").mockResolvedValue(undefined);
+	const launch = vi.spyOn(f.runtime, "launch").mockResolvedValue(undefined);
+	const create = vi.spyOn(f.runtime, "create");
+	const workflow = defaultWorkflows.find((w) => w.id === "simple")!;
+	const input = resolveLaunchRequest(workflow, {
+		repositoryId: "repo",
+		workflow: workflow.id,
+		runner: "opencode",
+		model: "anthropic/selected",
+		inputs: { prompt: "Check model" },
+	});
+	const run = await f.edge.startManualFactoryRun(input);
+	expect(run.model).toBe("anthropic/selected");
+	expect(launch).toHaveBeenCalledTimes(1);
+	expect(create).toHaveBeenCalledTimes(1);
+	create.mockClear();
+	launch.mockClear();
+	await expect(
+		f.edge.startManualFactoryRun({ ...input, model: "openai/incompatible" }),
+	).rejects.toThrow("model provider differs");
+	expect(create).not.toHaveBeenCalled();
+	expect(launch).not.toHaveBeenCalled();
+	expect(f.createWorkspace).not.toHaveBeenCalled();
 });

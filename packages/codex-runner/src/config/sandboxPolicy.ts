@@ -5,11 +5,11 @@ import type {
 	ResolvedCodexSandbox,
 } from "../backend/types.js";
 
-/** Stable id for the per-thread permission profile Cyrus builds. */
-export const CYRUS_SANDBOX_PROFILE_ID = "cyrus-sandbox";
+/** Stable id for the per-thread permission profile Bob’s Factory builds. */
+export const BOBS_FACTORY_SANDBOX_PROFILE_ID = "cyrus-sandbox";
 
 /**
- * Cyrus filesystem sandbox intent (subset of the agent SDK `SandboxSettings`).
+ * Bob’s Factory filesystem sandbox intent (subset of the agent SDK `SandboxSettings`).
  * Paths are expected absolute by the time they reach here (the EdgeWorker layer
  * resolves `~`/`.`/relative entries before plumbing them in).
  *
@@ -18,7 +18,7 @@ export const CYRUS_SANDBOX_PROFILE_ID = "cyrus-sandbox";
  * `allowRead`/`allowWrite`. Anything else (e.g. the home directory) is denied.
  * `denyRead` is honored by omission — a denied path simply never appears in the
  * allow-list. Sub-path denies inside an allowed root are not expressible (and
- * not needed by Cyrus's deny-broad / allow-narrow posture).
+ * not needed by Bob’s Factory's deny-broad / allow-narrow posture).
  */
 export interface CyrusSandboxFilesystem {
 	allowRead?: string[];
@@ -33,6 +33,8 @@ export interface SandboxResolveInput {
 	workingDirectory?: string;
 	/** Extra writable roots (e.g. multi-repo sub-worktrees), already absolute. */
 	writableRoots: string[];
+	/** Resolved Git metadata for the accepted workspace and extra repositories. */
+	gitMetadataRoots?: string[];
 	networkAccess: boolean;
 	/** When present, produces a granular `profile`; otherwise a `workspace-mode`. */
 	sandboxSettings?: CyrusSandboxFilesystem;
@@ -45,20 +47,23 @@ function uniqueAbsolute(paths: string[]): string[] {
 /**
  * Resolve the per-thread sandbox decision.
  *
- * - Explicit read-only/full-access modes or no `sandboxSettings` use the
- *   corresponding native Codex mode.
- * - Workspace-write with `sandboxSettings` uses a granular `profile` that restricts
- *   reads to an allow-list (worktree + platform defaults + explicit reads) and
- *   writes to the worktree + explicit writable roots.
+ * Explicit read-only/full-access modes retain native policies. Workspace-write
+ * uses a profile when Git metadata needs explicit writes or egress restricts
+ * reads. Git profiles inherit workspace protections, reopening only metadata;
+ * broad reads remain the default unless sandboxSettings requests an allow-list.
  */
 export function resolveCodexSandbox(
 	input: SandboxResolveInput,
 ): ResolvedCodexSandbox {
 	const { mode, workingDirectory, writableRoots, networkAccess } = input;
 
+	const gitMetadataRoots = uniqueAbsolute(input.gitMetadataRoots ?? []);
 	// Explicit native modes take precedence over generated filesystem profiles.
 	// A root-writable profile still applies OS sandbox restrictions on macOS.
-	if (!input.sandboxSettings || mode !== "workspace-write") {
+	if (
+		mode !== "workspace-write" ||
+		(!input.sandboxSettings && gitMetadataRoots.length === 0)
+	) {
 		return {
 			kind: "workspace-mode",
 			mode,
@@ -70,20 +75,41 @@ export function resolveCodexSandbox(
 		};
 	}
 
-	const { allowRead = [], allowWrite = [] } = input.sandboxSettings;
+	const { allowRead = [], allowWrite = [] } = input.sandboxSettings ?? {};
 	const cwd = workingDirectory;
 	// Extra writable roots beyond the worktree (cwd is covered by :workspace_roots).
-	const writableAbs = uniqueAbsolute([...writableRoots, ...allowWrite]).filter(
-		(p) => p !== cwd,
-	);
+	const writableAbs = uniqueAbsolute([
+		...writableRoots,
+		...allowWrite,
+		...gitMetadataRoots,
+	]).filter((p) => p !== cwd);
 	// Readable-only roots: explicit reads not already writable / the worktree.
 	const readableAbs = uniqueAbsolute(allowRead).filter(
 		(p) => p !== cwd && !writableAbs.includes(p),
 	);
 
-	const filesystem: Record<string, CodexFileSystemAccess> = {
+	const filesystem: Record<
+		string,
+		CodexFileSystemAccess | Record<string, CodexFileSystemAccess>
+	> = {
+		// Inherit native workspace protections, then explicitly permit mutable
+		// Git metadata. Broad reads remain the default unless egress restricts them.
+		...(gitMetadataRoots.length > 0 && {
+			":root": input.sandboxSettings ? ("deny" as const) : ("read" as const),
+		}),
 		":minimal": "read",
-		":workspace_roots": "write",
+		// Spell out protected subpaths: some supported Codex versions do not
+		// carry these through `extends`. Exact metadata grants override .git only.
+		":workspace_roots":
+			gitMetadataRoots.length > 0
+				? {
+						".": "write",
+						".git": "read",
+						".codex": "read",
+						".agents": "read",
+						".aws": "read",
+					}
+				: "write",
 		":tmpdir": "write",
 		":slash_tmp": "write",
 		...Object.fromEntries(writableAbs.map((p) => [p, "write" as const])),
@@ -92,7 +118,11 @@ export function resolveCodexSandbox(
 
 	return {
 		kind: "profile",
-		profileId: CYRUS_SANDBOX_PROFILE_ID,
+		profileId: BOBS_FACTORY_SANDBOX_PROFILE_ID,
+		...(gitMetadataRoots.length > 0 && { extends: ":workspace" as const }),
+		...(gitMetadataRoots.length > 0 && {
+			workspaceRoots: uniqueAbsolute(writableRoots),
+		}),
 		filesystem,
 		networkAccess,
 	};

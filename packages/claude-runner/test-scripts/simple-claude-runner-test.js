@@ -36,7 +36,7 @@ async function main() {
 		workingDirectory: "/Users/agentops/code/hello-world-project",
 
 		// Cyrus home directory for logs and state
-		cyrusHome: "/tmp/simple-test-cyrus-home",
+		factoryHome: "/tmp/simple-test-home",
 
 		// Use tools matching hello-world config
 		allowedTools: [

@@ -2,7 +2,7 @@ import type {
 	AgentRunnerConfig,
 	AgentSessionInfo,
 	SDKMessage,
-} from "cyrus-core";
+} from "bobs-factory-core";
 
 export type OpenCodeJsonEvent =
 	| OpenCodeStepStartEvent

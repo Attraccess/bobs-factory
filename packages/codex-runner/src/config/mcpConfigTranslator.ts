@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { McpServerConfig } from "cyrus-core";
+import type { McpServerConfig } from "bobs-factory-core";
 import type { CodexConfigOverrides } from "../types.js";
 
 const CODEX_MCP_DOCS_URL = "https://platform.openai.com/docs/docs-mcp";
@@ -13,10 +13,12 @@ interface McpAllowedToolsFilter {
 
 /** Inputs the MCP translator needs from a runner config. */
 export interface McpTranslationInput {
+	childEnvironment?: Record<string, string>;
 	workingDirectory?: string;
 	mcpConfigPath?: string | string[];
 	mcpConfig?: Record<string, McpServerConfig>;
 	allowedTools?: string[];
+	disallowedTools?: string[];
 }
 
 function autoDetectMcpConfigPath(
@@ -199,7 +201,7 @@ function applyCyrusMcpAllowedToolsSemantics(
 		mapped.enabled_tools = allowedToolsFilter.tools;
 	}
 
-	// Codex separates tool visibility (`enabled_tools`) from MCP approval. Cyrus
+	// Codex separates tool visibility (`enabled_tools`) from MCP approval. Bob’s Factory
 	// allowedTools are already the operator's allow-list, so generated allowances
 	// must also be approved for non-interactive Codex exec runs.
 	if (!Object.hasOwn(mapped, "default_tools_approval_mode")) {
@@ -263,7 +265,7 @@ function copyConfigObject(
 }
 
 /**
- * Translate Cyrus MCP server configs (file-based + inline) and Cyrus
+ * Translate Bob’s Factory MCP server configs (file-based + inline) and Bob’s Factory
  * `allowedTools` semantics into Codex-native `mcp_servers` config overrides.
  *
  * Reference: {@link https://platform.openai.com/docs/docs-mcp}
@@ -271,7 +273,9 @@ function copyConfigObject(
 export function buildCodexMcpServersConfig(
 	input: McpTranslationInput,
 ): Record<string, CodexConfigOverrides> | undefined {
-	const autoDetectedPath = autoDetectMcpConfigPath(input.workingDirectory);
+	const autoDetectedPath = input.childEnvironment
+		? undefined
+		: autoDetectMcpConfigPath(input.workingDirectory);
 	const configPaths = autoDetectedPath ? [autoDetectedPath] : ([] as string[]);
 	if (input.mcpConfigPath) {
 		const explicitPaths = Array.isArray(input.mcpConfigPath)
@@ -346,10 +350,22 @@ export function buildCodexMcpServersConfig(
 		}
 		// If the MCP config already contains Codex-native enabled_tools or
 		// disabled_tools, keep those exact filters. They are more specific to
-		// Codex than Claude-style Cyrus allowedTools entries. A bare
+		// Codex than Claude-style Bob’s Factory allowedTools entries. A bare
 		// `mcp__server` intentionally emits no enabled_tools filter because it
 		// means "allow every tool exposed by this configured server".
 
+		for (const denied of input.disallowedTools ?? []) {
+			const parts = denied.split("__");
+			if (parts[0] !== "mcp" || parts[1] !== serverName) continue;
+			if (parts.length === 2) mapped.enabled = false;
+			else
+				mapped.disabled_tools = [
+					...(Array.isArray(mapped.disabled_tools)
+						? mapped.disabled_tools
+						: []),
+					parts.slice(2).join("__"),
+				];
+		}
 		codexServers[serverName] = mapped;
 	}
 

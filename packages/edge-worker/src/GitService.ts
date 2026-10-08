@@ -1,4 +1,13 @@
-import { execSync, spawn } from "node:child_process";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { spawnExecution as spawn } from "bobs-factory-core";
+import type { CapacityOptions, ExecutionCapacity } from "./MachineCapacity.js";
+export const setupExecutionScope = new AsyncLocalStorage<{
+	signal: AbortSignal;
+	service?: ExecutionCapacity;
+	capacity?: CapacityOptions;
+}>();
+
+import { execFile, execSync } from "node:child_process";
 import {
 	existsSync,
 	mkdirSync,
@@ -9,6 +18,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve as pathResolve } from "node:path";
+import { promisify } from "node:util";
 
 import type {
 	BaseBranchResolution,
@@ -16,8 +26,13 @@ import type {
 	RepoSetupHookEventHandler,
 	RepositoryConfig,
 	Workspace,
-} from "cyrus-core";
-import { createLogger, getDefaultWorktreesDir, type ILogger } from "cyrus-core";
+} from "bobs-factory-core";
+import {
+	createLogger,
+	executionEnvironment,
+	getDefaultWorktreesDir,
+	type ILogger,
+} from "bobs-factory-core";
 import { WorktreeIncludeService } from "./WorktreeIncludeService.js";
 
 export interface CreateGitWorktreeOptions {
@@ -37,13 +52,16 @@ export interface CreateGitWorktreeOptions {
 }
 
 export interface GitServiceOptions {
-	cyrusHome?: string;
+	capacity?: () => ExecutionCapacity;
+	factoryHome?: string;
+	/** Complete process environment for a single accepted execution context. */
+	childEnvironment?: Record<string, string>;
 }
 
 export interface DeleteWorktreeOptions {
 	/**
 	 * Repositories involved with this issue's workspace. When provided, each
-	 * repo's `cyrus-teardown.sh` (if present) is invoked before worktree removal,
+	 * repo's `bobs-factory-teardown.sh` (if present) is invoked before worktree removal,
 	 * with `cwd` set to that repo's worktree subdirectory.
 	 *
 	 * In the single-repo layout, the worktree subdirectory is the workspace root.
@@ -52,10 +70,10 @@ export interface DeleteWorktreeOptions {
 	repositories?: RepositoryConfig[];
 }
 
-/** Timeout for repo setup scripts (cyrus-setup.*). */
+/** Timeout for repo setup scripts (bobs-factory-setup.*). */
 const SETUP_TIMEOUT_MS = 5 * 60 * 1000;
 
-/** Timeout for repo teardown scripts (cyrus-teardown.*). */
+/** Timeout for repo teardown scripts (bobs-factory-teardown.*). */
 const TEARDOWN_TIMEOUT_MS = 2 * 60 * 1000;
 
 const HOOK_OUTPUT_TAIL_MAX_BYTES = 64 * 1024;
@@ -214,12 +232,31 @@ class HookOutputCollector {
 export class GitService {
 	private logger: ILogger;
 	private worktreeIncludeService: WorktreeIncludeService;
-	private cyrusHome: string;
+	private factoryHome: string;
+	private childEnvironment?: Record<string, string>;
 
-	constructor(options?: GitServiceOptions, logger?: ILogger) {
+	constructor(
+		private options?: GitServiceOptions,
+		logger?: ILogger,
+	) {
 		this.logger = logger ?? createLogger({ component: "GitService" });
 		this.worktreeIncludeService = new WorktreeIncludeService(this.logger);
-		this.cyrusHome = options?.cyrusHome ?? join(homedir(), ".cyrus");
+		this.factoryHome = options?.factoryHome ?? join(homedir(), ".bobs-factory");
+		this.childEnvironment = options?.childEnvironment
+			? { ...options.childEnvironment }
+			: undefined;
+	}
+
+	/** A scoped service avoids account/env switches on the shared service instance. */
+	withEnvironment(environment: Record<string, string>): GitService {
+		return new GitService(
+			{
+				...this.options,
+				factoryHome: this.factoryHome,
+				childEnvironment: environment,
+			},
+			this.logger,
+		);
 	}
 
 	/**
@@ -229,6 +266,7 @@ export class GitService {
 		try {
 			// Check if branch exists locally
 			execSync(`git rev-parse --verify "${branchName}"`, {
+				env: this.childEnvironment,
 				cwd: repoPath,
 				stdio: "pipe",
 			});
@@ -239,6 +277,7 @@ export class GitService {
 				const remoteOutput = execSync(
 					`git ls-remote --heads origin "${branchName}"`,
 					{
+						env: this.childEnvironment,
 						cwd: repoPath,
 						stdio: "pipe",
 					},
@@ -281,6 +320,7 @@ export class GitService {
 		): string | null => {
 			try {
 				const output = execSync(`git rev-parse ${flag}`, {
+					env: this.childEnvironment,
 					cwd: workingDirectory,
 					encoding: "utf8",
 					stdio: "pipe",
@@ -341,6 +381,7 @@ export class GitService {
 	findWorktreeByBranch(branchName: string, repoPath: string): string | null {
 		try {
 			const output = execSync("git worktree list --porcelain", {
+				env: this.childEnvironment,
 				cwd: repoPath,
 				encoding: "utf-8",
 			});
@@ -665,6 +706,7 @@ export class GitService {
 					);
 				}
 			} catch (error) {
+				if (this.childEnvironment) throw error;
 				this.logger.error(
 					`Failed to create worktree for repo '${repository.name}': ${(error as Error).message}`,
 				);
@@ -713,6 +755,7 @@ export class GitService {
 			// Verify this is a git repository
 			try {
 				execSync("git rev-parse --git-dir", {
+					env: this.childEnvironment,
 					cwd: repository.repositoryPath,
 					stdio: "pipe",
 				});
@@ -755,6 +798,7 @@ export class GitService {
 			// Check if worktree already exists
 			try {
 				const worktrees = execSync("git worktree list --porcelain", {
+					env: this.childEnvironment,
 					cwd: repository.repositoryPath,
 					encoding: "utf-8",
 				});
@@ -785,6 +829,7 @@ export class GitService {
 					);
 					try {
 						execSync("git worktree prune", {
+							env: this.childEnvironment,
 							cwd: repository.repositoryPath,
 							stdio: "pipe",
 						});
@@ -800,6 +845,7 @@ export class GitService {
 			let createBranch = true;
 			try {
 				execSync(`git rev-parse --verify "${branchName}"`, {
+					env: this.childEnvironment,
 					cwd: repository.repositoryPath,
 					stdio: "pipe",
 				});
@@ -830,11 +876,39 @@ export class GitService {
 			this.logger.debug("Fetching latest changes from remote...");
 			let hasRemote = true;
 			try {
-				execSync("git fetch origin", {
-					cwd: repository.repositoryPath,
-					stdio: "pipe",
-				});
+				if (this.executionCapacity()) {
+					const scope = setupExecutionScope.getStore();
+					const lease = await this.executionCapacity()!.acquireLease(
+						scope?.signal,
+						scope?.capacity,
+					);
+					try {
+						await lease.run(() =>
+							promisify(execFile)("git", ["fetch", "origin"], {
+								cwd: repository.repositoryPath,
+								env: {
+									...(this.childEnvironment ?? process.env),
+									...executionEnvironment(),
+								},
+								signal: scope?.signal,
+							}),
+						);
+					} finally {
+						await lease.release();
+					}
+				} else {
+					execSync("git fetch origin", {
+						cwd: repository.repositoryPath,
+						env: this.childEnvironment,
+						stdio: "pipe",
+					});
+				}
 			} catch (e) {
+				setupExecutionScope.getStore()?.signal.throwIfAborted();
+				if (this.childEnvironment)
+					throw new Error(
+						"Selected execution account could not fetch the repository. Restore authentication or connectivity before retrying.",
+					);
 				this.logger.warn(
 					"Warning: git fetch failed, proceeding with local branch:",
 					(e as Error).message,
@@ -852,6 +926,7 @@ export class GitService {
 						const remoteOutput = execSync(
 							`git ls-remote --heads origin "${baseBranch}"`,
 							{
+								env: this.childEnvironment,
 								cwd: repository.repositoryPath,
 								stdio: "pipe",
 							},
@@ -882,6 +957,7 @@ export class GitService {
 						// Check if base branch exists locally
 						try {
 							execSync(`git rev-parse --verify "${baseBranch}"`, {
+								env: this.childEnvironment,
 								cwd: repository.repositoryPath,
 								stdio: "pipe",
 							});
@@ -915,6 +991,7 @@ export class GitService {
 			}
 
 			execSync(worktreeCmd, {
+				env: this.childEnvironment,
 				cwd: repository.repositoryPath,
 				stdio: "pipe",
 			});
@@ -950,6 +1027,10 @@ export class GitService {
 				resolvedBaseBranches: { [repository.id]: resolution },
 			};
 		} catch (error) {
+			if (this.childEnvironment)
+				throw new Error(
+					`Failed to prepare the selected execution worktree. No fallback workspace was created. ${redactHookOutput(error instanceof Error ? error.message : "Git preparation failed", { cwd: repository.repositoryPath, env: this.childEnvironment })}`,
+				);
 			const errorMessage = (error as Error).message;
 			this.logger.error("Failed to create git worktree:", errorMessage);
 
@@ -990,7 +1071,7 @@ export class GitService {
 	 * directory is the root in both cases.
 	 *
 	 * If `options.repositories` is supplied, each repo's per-repo
-	 * `cyrus-teardown.sh` (if present in its repo root) is invoked **before**
+	 * `bobs-factory-teardown.sh` (if present in its repo root) is invoked **before**
 	 * the worktrees are removed, with `cwd` set to that repo's worktree
 	 * subdirectory. A failure in one repo's teardown does not block the others
 	 * or the final `rmSync`.
@@ -1003,7 +1084,7 @@ export class GitService {
 		options: DeleteWorktreeOptions = {},
 	): Promise<void> {
 		const workspacePath = join(
-			getDefaultWorktreesDir(this.cyrusHome),
+			getDefaultWorktreesDir(this.factoryHome),
 			issueIdentifier,
 		);
 
@@ -1045,6 +1126,7 @@ export class GitService {
 				// Fall back to the worktree path itself (git reads its .git file to find the parent)
 				const cwd = mainRepoPath ?? wtPath;
 				execSync(`git worktree remove --force "${wtPath}"`, {
+					env: this.childEnvironment,
 					cwd,
 					stdio: "pipe",
 					timeout: 30_000,
@@ -1073,6 +1155,7 @@ export class GitService {
 		for (const repoPath of parentRepoPaths) {
 			try {
 				execSync("git worktree prune", {
+					env: this.childEnvironment,
 					cwd: repoPath,
 					stdio: "pipe",
 					timeout: 10_000,
@@ -1214,7 +1297,7 @@ export class GitService {
 	}
 
 	/**
-	 * Find and run a repository-specific setup script (cyrus-setup.sh/.ps1/.cmd/.bat)
+	 * Find and run a repository-specific setup script (bobs-factory-setup.sh/.ps1/.cmd/.bat)
 	 */
 	private async runRepoSetupScript(
 		workspacePath: string,
@@ -1238,7 +1321,7 @@ export class GitService {
 	}
 
 	/**
-	 * Find and run a repository-specific teardown script (cyrus-teardown.sh/.ps1/.cmd/.bat).
+	 * Find and run a repository-specific teardown script (bobs-factory-teardown.sh/.ps1/.cmd/.bat).
 	 *
 	 * Mirrors {@link runRepoSetupScript} but is invoked from {@link deleteWorktree}
 	 * immediately before the worktree subdirectory is removed. Only
@@ -1261,7 +1344,7 @@ export class GitService {
 
 	/**
 	 * Shared discovery+dispatch for repo-scoped hook scripts (setup and teardown).
-	 * Looks in `workspacePath` for `cyrus-<hook>.{sh,ps1,cmd,bat}` and runs the
+	 * Looks in `workspacePath` for `bobs-factory-<hook>.{sh,ps1,cmd,bat}` and runs the
 	 * first compatible variant with `cwd` set to `workspacePath`.
 	 */
 	private async runRepoHookScript(opts: {
@@ -1275,10 +1358,10 @@ export class GitService {
 	}): Promise<void> {
 		const isWindows = process.platform === "win32";
 		const candidates = [
-			{ file: `cyrus-${opts.hook}.sh`, platform: "unix" as const },
-			{ file: `cyrus-${opts.hook}.ps1`, platform: "windows" as const },
-			{ file: `cyrus-${opts.hook}.cmd`, platform: "windows" as const },
-			{ file: `cyrus-${opts.hook}.bat`, platform: "windows" as const },
+			{ file: `bobs-factory-${opts.hook}.sh`, platform: "unix" as const },
+			{ file: `bobs-factory-${opts.hook}.ps1`, platform: "windows" as const },
+			{ file: `bobs-factory-${opts.hook}.cmd`, platform: "windows" as const },
+			{ file: `bobs-factory-${opts.hook}.bat`, platform: "windows" as const },
 		];
 
 		const available = candidates.find((c) => {
@@ -1333,7 +1416,25 @@ export class GitService {
 	 * Run a hook script (setup or teardown) with proper error handling and logging.
 	 * Failure is non-blocking — errors are logged and execution continues.
 	 */
+	private executionCapacity(): ExecutionCapacity | undefined {
+		return (
+			setupExecutionScope.getStore()?.service ?? this.options?.capacity?.()
+		);
+	}
 	private async runHookScript(opts: HookScriptOptions): Promise<void> {
+		const service = this.executionCapacity();
+		if (!service) return this.runHookScriptUnlocked(opts);
+		const scope = setupExecutionScope.getStore();
+		const lease = await service.acquireLease(scope?.signal, scope?.capacity);
+		try {
+			scope?.signal.throwIfAborted();
+			await lease.run(() => this.runHookScriptUnlocked(opts));
+			scope?.signal.throwIfAborted();
+		} finally {
+			await lease.release();
+		}
+	}
+	private async runHookScriptUnlocked(opts: HookScriptOptions): Promise<void> {
 		const {
 			scriptPath,
 			hook,
@@ -1389,7 +1490,7 @@ export class GitService {
 							durationMs: Date.now() - startedAt,
 							errorMessage: "Repository setup hook is not executable",
 							stderrTail:
-								"Make cyrus-setup.sh executable in the repository and commit the executable bit: git update-index --chmod=+x cyrus-setup.sh",
+								"Make bobs-factory-setup.sh executable in the repository and commit the executable bit: git update-index --chmod=+x bobs-factory-setup.sh",
 							truncated: false,
 						});
 					}
@@ -1417,7 +1518,13 @@ export class GitService {
 		}
 
 		try {
-			if (!shouldPostRepoSetupActivity) {
+			// Standalone callers retain the inherited-stdio contract. EdgeWorker
+			// always supplies capacity and uses asynchronous cancellable execution.
+			if (
+				!this.executionCapacity() &&
+				!shouldPostRepoSetupActivity &&
+				!this.childEnvironment
+			) {
 				this.runHookScriptInherited({
 					scriptPath,
 					expandedPath,
@@ -1425,11 +1532,9 @@ export class GitService {
 					env,
 					timeoutMs,
 				});
-
 				this.logger.info(`✅ ${labelTitle} script completed successfully`);
 				return;
 			}
-
 			let command: string;
 			let args: string[];
 			let shell = false;
@@ -1454,25 +1559,42 @@ export class GitService {
 			await new Promise<void>((resolve, reject) => {
 				const child = spawn(command, args, {
 					cwd,
+					detached: process.platform !== "win32",
 					env: {
-						...process.env,
+						...(this.childEnvironment ?? process.env),
 						...env,
 					},
 					shell,
 				});
 				let timedOut = false;
+				const signal = setupExecutionScope.getStore()?.signal;
+				let killTimer: ReturnType<typeof setTimeout> | undefined;
+				const kill = (how: NodeJS.Signals) => {
+					try {
+						if (child.pid && process.platform !== "win32")
+							process.kill(-child.pid, how);
+						else child.kill(how);
+					} catch {}
+				};
+				const terminate = () => {
+					kill("SIGTERM");
+					killTimer ??= setTimeout(() => kill("SIGKILL"), 2000);
+					killTimer.unref();
+				};
+				signal?.addEventListener("abort", terminate, { once: true });
+				if (signal?.aborted) terminate();
 				const timeout = setTimeout(() => {
 					timedOut = true;
-					child.kill("SIGTERM");
+					terminate();
 				}, timeoutMs);
 
 				child.stdout?.on("data", (chunk: Buffer) => {
 					stdoutCollector.append(chunk);
-					process.stdout.write(chunk);
+					if (!this.childEnvironment) process.stdout.write(chunk);
 				});
 				child.stderr?.on("data", (chunk: Buffer) => {
 					stderrCollector.append(chunk);
-					process.stderr.write(chunk);
+					if (!this.childEnvironment) process.stderr.write(chunk);
 				});
 				child.on("error", (error) => {
 					clearTimeout(timeout);
@@ -1480,6 +1602,10 @@ export class GitService {
 					reject(error);
 				});
 				child.on("close", (code, signal) => {
+					setupExecutionScope
+						.getStore()
+						?.signal.removeEventListener("abort", terminate);
+					if (killTimer) clearTimeout(killTimer);
 					clearTimeout(timeout);
 					if (code === 0) {
 						resolve();
@@ -1493,8 +1619,14 @@ export class GitService {
 						NodeExecError & { stdoutTail?: string; stderrTail?: string };
 					error.code = code === null ? undefined : code;
 					error.signal = timedOut ? "SIGTERM" : (signal ?? undefined);
-					const stdoutTail = stdoutCollector.tail({ cwd, env });
-					const stderrTail = stderrCollector.tail({ cwd, env });
+					const stdoutTail = stdoutCollector.tail({
+						cwd,
+						env: { ...this.childEnvironment, ...env },
+					});
+					const stderrTail = stderrCollector.tail({
+						cwd,
+						env: { ...this.childEnvironment, ...env },
+					});
 					error.stdoutTail = stdoutTail.text;
 					error.stderrTail = stderrTail.text;
 					(
@@ -1557,6 +1689,10 @@ export class GitService {
 		}
 	}
 
+	/**
+	 * Find and run a global setup script (path resolved from EdgeConfig).
+	 * Kept as a thin wrapper to preserve the existing call sites.
+	 */
 	private runHookScriptInherited(opts: {
 		scriptPath: string;
 		expandedPath: string;
@@ -1581,17 +1717,13 @@ export class GitService {
 			cwd,
 			stdio: "inherit",
 			env: {
-				...process.env,
+				...(this.childEnvironment ?? process.env),
 				...env,
 			},
 			timeout: timeoutMs,
 		});
 	}
 
-	/**
-	 * Find and run a global setup script (path resolved from EdgeConfig).
-	 * Kept as a thin wrapper to preserve the existing call sites.
-	 */
 	private async runSetupScript(
 		scriptPath: string,
 		scriptType: "global" | "repository",

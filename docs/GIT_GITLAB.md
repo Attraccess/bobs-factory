@@ -1,20 +1,20 @@
 # Git & GitLab Setup
 
-Cyrus uses your local Git and GitLab CLI (`glab`) authentication to create commits and merge requests. This guide explains how to configure these tools and what permissions Cyrus will have.
+Bob’s Factory uses your local Git and GitLab CLI (`glab`) authentication to create commits and merge requests. This guide explains how to configure these tools and what permissions Bob’s Factory will have.
 
 ---
 
 ## Understanding Permissions
 
-**Important:** Cyrus operates with the same permissions as your authenticated Git and GitLab CLI user.
+**Important:** Bob’s Factory operates with the same permissions as your authenticated Git and GitLab CLI user.
 
-When Cyrus creates commits and MRs:
+When Bob’s Factory creates commits and MRs:
 - All commits are attributed to your Git user (`git config user.name` and `user.email`)
 - All MRs are created under your GitLab account
 - Your repository access permissions apply to all operations
 - Co-authored-by attribution is disabled by default (configured via `.claude/settings.json`)
 
-This means Cyrus can access any repository your authenticated user can access. Configure authentication carefully based on what repositories you want Cyrus to work with.
+This means Bob’s Factory can access any repository your authenticated user can access. Configure authentication carefully based on what repositories you want Bob’s Factory to work with.
 
 ---
 
@@ -101,7 +101,7 @@ glab auth status
 
 ## Security Considerations
 
-- **Use a dedicated account** for Cyrus if you want to limit its access
+- **Use a dedicated account** for Bob’s Factory if you want to limit its access
 - **Repository access** is determined by your SSH key and GitLab token permissions
-- **Review permissions** before adding repositories to Cyrus
-- **Audit commits** - Cyrus-authored MRs include a `<!-- generated-by-cyrus -->` marker for traceability
+- **Review permissions** before adding repositories to Bob’s Factory
+- **Audit commits** - Bob’s Factory-authored MRs include a `<!-- generated-by-bobs-factory -->` marker for traceability
