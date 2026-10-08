@@ -12,6 +12,7 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnExecution as spawn } from "bobs-factory-core";
 import { z } from "zod";
 import { feedbackInstructionFingerprint } from "./FeedbackPolicy.js";
+import { type GitProvider, resolveGitProvider } from "./GitProvider.js";
 import { dependencyCovers, dependencyHashes } from "./Incremental.js";
 import {
 	assessFeedback,
@@ -467,9 +468,9 @@ export class FactoryTools {
 			context.step.tool === "exec" ? context : { ...context, log: () => {} };
 		const command = (exe: string, args: string[], timeout?: number) => {
 			// Merge provider calls specify the PR explicitly. Keep their cwd outside
-			// the worktree: issue cleanup can remove it while GitHub completes a merge.
+			// the worktree: issue cleanup can remove it while the provider completes a merge.
 			const ctx =
-				exe === "gh" && context.step.tool === "merge" && context.evidenceDir
+				exe !== "git" && context.step.tool === "merge" && context.evidenceDir
 					? {
 							...commandContext,
 							run: { ...run, workspace: context.evidenceDir },
@@ -479,6 +480,10 @@ export class FactoryTools {
 				? this.hooks.command(ctx, exe, args, timeout)
 				: executeCommand(ctx, exe, args, timeout);
 		};
+		let selected: Promise<GitProvider> | undefined;
+		const provider = (url?: string) =>
+			(selected ??= resolveGitProvider(context, command, url));
+
 		switch (context.step.tool) {
 			case "inspect-existing": {
 				const branch = await command("git", ["branch", "--show-current"]);
@@ -486,32 +491,24 @@ export class FactoryTools {
 					| Awaited<ReturnType<typeof inspectPullRequest>>
 					| undefined;
 				if (!pr?.url) {
-					const candidates: { url: string }[] = JSON.parse(
-						await command("gh", [
-							"pr",
-							"list",
-							"--head",
-							branch,
-							"--state",
-							"open",
-							"--json",
-							"url",
-						]),
-					);
+					const candidates = await (await provider()).list(branch);
 					if (candidates.length > 1)
 						throw new Error(
 							"Multiple PRs for this branch; start Takeover with an explicit PR URL",
 						);
 					if (candidates[0])
-						pr = await inspectPullRequest(command, candidates[0].url);
+						pr = await inspectPullRequest(
+							command,
+							candidates[0].url,
+							await provider(),
+						);
 				}
 				if (pr) {
 					if (branch !== pr.headRefName)
 						throw new Error(
 							"Takeover worktree does not match the existing PR branch",
 						);
-					if (!pr.isDraft)
-						await command("gh", ["pr", "ready", pr.url, "--undo"]);
+					if (!pr.isDraft) await (await provider(pr.url)).draft(pr.url, true);
 					run.outputs.source = { ...pr, isDraft: true };
 					run.outputs.repository = {
 						...(run.outputs.repository as Record<string, unknown>),
@@ -554,18 +551,12 @@ export class FactoryTools {
 				if (readPath(run.outputs, "source.url")) {
 					if (readPath(run.outputs, "source.headRefName") !== branch)
 						throw new Error("Takeover must publish to the original PR branch");
-					const pr = JSON.parse(
-						await command("gh", [
-							"pr",
-							"view",
-							String(readPath(run.outputs, "source.url")),
-							"--json",
-							"state,isDraft",
-						]),
-					);
+					const url = String(readPath(run.outputs, "source.url"));
+					const pr = await (await provider(url)).view(url, "state,isDraft");
 					if (pr.state !== "OPEN" || !pr.isDraft)
 						throw new Error("Takeover PR must remain open and draft");
 				}
+				const forge = await provider();
 				if (await command("git", ["status", "--porcelain"])) {
 					await command("git", ["add", "-A"]);
 					// Ticket titles are not commit messages; conventional-commit hooks
@@ -605,18 +596,11 @@ export class FactoryTools {
 						`No implementation changes to publish against ${baseBranch}. ${String(readPath(run.outputs, "implement.summary") ?? "The worktree has no deliverable changes.")} Resolve the implementation blocker before delivery; retrying PR creation cannot fix an empty branch.`,
 					);
 				await command("git", ["push", "-u", "origin", "HEAD"]);
-				const existing: { url: string; isDraft: boolean }[] = JSON.parse(
-					await command("gh", [
-						"pr",
-						"list",
-						"--head",
-						branch,
-						"--state",
-						"open",
-						"--json",
-						"url,isDraft",
-					]),
-				);
+				const existing = await forge.list(branch);
+				if (existing.length > 1)
+					throw new Error(
+						"Multiple pull/merge requests for this branch; supply an explicit takeover source",
+					);
 				let url =
 					String(readPath(run.outputs, "source.url") ?? "") || existing[0]?.url;
 
@@ -629,19 +613,12 @@ export class FactoryTools {
 						"Existing PR is not draft; refusing to change its state automatically",
 					);
 				if (!url) {
-					url = await command("gh", [
-						"pr",
-						"create",
-						"--draft",
-						"--base",
-						baseBranch,
-						"--head",
+					url = await forge.create({
 						branch,
-						"--title",
-						run.title,
-						"--body",
-						`Software factory run ${run.id}. Review and validation in progress.\n\n<!-- generated-by-bobs-factory -->`,
-					]);
+						baseBranch,
+						title: run.title,
+						body: `Software factory run ${run.id}. Review and validation in progress.\n\n<!-- generated-by-bobs-factory -->`,
+					});
 				}
 				return {
 					url,
@@ -800,7 +777,7 @@ export class FactoryTools {
 						? {
 								questions: [
 									unchangedRevision
-										? `The same revision mismatch remains after the CI fixer's synchronization attempt: GitHub reports ${readiness.headSha}, while the worktree is at ${headSha}. Restore synchronization between this PR and its branch, then reply to resume. Checks for the older revision remain insufficient; your answer does not approve or waive review and CI.`
+										? `The same revision mismatch remains after the CI fixer's synchronization attempt: The provider reports ${readiness.headSha}, while the worktree is at ${headSha}. Restore synchronization between this PR and its branch, then reply to resume. Checks for the older revision remain insufficient; your answer does not approve or waive review and CI.`
 										: unchangedFailures
 											? `The CI fixer made no revision change and these same checks still fail: ${readiness.checks
 													.filter((check) => check.bucket === "fail")
@@ -903,23 +880,19 @@ export class FactoryTools {
 					if (snapshot.state !== "OPEN")
 						throw new Error("PR closed without merging");
 					if (snapshot.isDraft) {
-						await command("gh", ["pr", "ready", url]);
+						await (await provider(url)).draft(url, false);
 						continue;
 					}
 					if (snapshot.fix) return { ...snapshot, fix: true };
 					if (snapshot.approved && !snapshot.queued && !submitted) {
-						// GitHub CLI enters a required merge queue automatically. Never use --admin.
-						await command("gh", [
-							"pr",
-							"merge",
+						await (await provider(url)).merge(
 							url,
-							`--${snapshot.mergeMethod}`,
-							"--match-head-commit",
 							approved.headSha,
-						]);
+							snapshot.mergeMethod,
+						);
 						submitted = true;
 						context.log(
-							"Merge requested; waiting for GitHub to confirm merge or queue completion.",
+							"Merge requested; waiting for the provider to confirm merge or queue completion.",
 						);
 					}
 					await delay(context.signal);
@@ -928,14 +901,9 @@ export class FactoryTools {
 			case "handoff": {
 				const headSha = await command("git", ["rev-parse", "HEAD"]);
 				const url = String(readPath(run.outputs, "draft-pr.url"));
-				const pr = JSON.parse(
-					await command("gh", [
-						"pr",
-						"view",
-						url,
-						"--json",
-						"headRefOid,isDraft,state",
-					]),
+				const pr = await (await provider(url)).view(
+					url,
+					"headRefOid,isDraft,state",
 				);
 				if (await command("git", ["status", "--porcelain"]))
 					throw new Error("Worktree changed after review; handoff blocked");
@@ -1007,7 +975,7 @@ export class FactoryTools {
 						);
 					}
 					if (readiness.reviewReady) break;
-					// GitHub may recalculate mergeability or start checks while the
+					// The provider may recalculate mergeability or start checks while the
 					// guide is being written. Wait as CI does, without replaying roles.
 					await delay(context.signal);
 				}
@@ -1030,7 +998,7 @@ export class FactoryTools {
 						);
 				}
 				const guide = reviewGuideMarkdown(run.outputs.guide, headSha);
-				await command("gh", ["pr", "edit", url, "--body", guide]);
+				await (await provider(url)).description(url, guide);
 				if (!run.ticketReference)
 					await this.hooks.postComment(
 						run.id,

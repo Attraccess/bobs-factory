@@ -297,6 +297,7 @@ it("retries transient readiness errors without a fixer and cancels waiting promp
 		const cmd = command();
 		cmd.mockRejectedValueOnce(new Error("Command timed out: gh"));
 		const ctx = {
+			run: { outputs: { "draft-pr": { url } } },
 			signal: new AbortController().signal,
 			log: vi.fn(),
 		} as unknown as ExecutionContext;

@@ -191,6 +191,11 @@ import {
 } from "./factory/FactoryTools.js";
 import { factoryFeedbackContext } from "./factory/FeedbackPolicy.js";
 import {
+	normalizeGitProviderConfig,
+	resolveGitProvider,
+} from "./factory/GitProvider.js";
+import { isPullRequestSource } from "./factory/GitProviderReference.js";
+import {
 	validateGuideCoverage,
 	validateGuideGeneration,
 } from "./factory/Guide.js";
@@ -632,6 +637,7 @@ export class EdgeWorker extends EventEmitter {
 				const resolvedRepo: RepositoryConfig = {
 					...repo,
 					repositoryPath: resolvePath(repo.repositoryPath),
+					gitProvider: normalizeGitProviderConfig(repo.gitProvider),
 					workspaceBaseDir: resolvePath(repo.workspaceBaseDir),
 					mcpConfigPath: Array.isArray(repo.mcpConfigPath)
 						? repo.mcpConfigPath.map(resolvePath)
@@ -3584,6 +3590,7 @@ ${taskSection}`;
 				const resolvedRepo: RepositoryConfig = {
 					...repo,
 					repositoryPath: resolvePath(repo.repositoryPath),
+					gitProvider: normalizeGitProviderConfig(repo.gitProvider),
 					workspaceBaseDir: resolvePath(repo.workspaceBaseDir),
 					mcpConfigPath: Array.isArray(repo.mcpConfigPath)
 						? repo.mcpConfigPath.map(resolvePath)
@@ -3627,6 +3634,7 @@ ${taskSection}`;
 				const resolvedRepo: RepositoryConfig = {
 					...repo,
 					repositoryPath: resolvePath(repo.repositoryPath),
+					gitProvider: normalizeGitProviderConfig(repo.gitProvider),
 					workspaceBaseDir: resolvePath(repo.workspaceBaseDir),
 					mcpConfigPath: Array.isArray(repo.mcpConfigPath)
 						? repo.mcpConfigPath.map(resolvePath)
@@ -5808,6 +5816,9 @@ ${taskSection}`;
 							: (session.repositories[0]?.baseBranchName ??
 								primaryRepo.baseBranch),
 					name: primaryRepo.name,
+					githubUrl: primaryRepo.githubUrl,
+					gitlabUrl: primaryRepo.gitlabUrl,
+					gitProvider: primaryRepo.gitProvider,
 				};
 				run.titleGeneration = session.titleGeneration;
 				run.outputs.ticket = ticket;
@@ -7776,7 +7787,7 @@ ${taskSection}`;
 
 		// Review fixers and QA roles can request assistance without askQuestions;
 		// saved recipes must receive the same question guidance as new ones.
-		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${questionInstructions(run.id)}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\nGit provider: ${JSON.stringify(run.gitProvider ?? { gitProvider: repository.gitProvider, githubUrl: repository.githubUrl, gitlabUrl: repository.gitlabUrl })}. Use the selected provider for review, discussion resolution and CI tooling; do not assume GitHub or use gh for another provider. Runtime publication and merge retain the accepted provider. ${run.gitProvider?.type === "custom" ? (run.gitProvider.instructions ?? "") : repository.gitProvider?.type === "custom" ? (repository.gitProvider.instructions ?? "") : ""}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${questionInstructions(run.id)}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
 			repository,
@@ -8216,6 +8227,12 @@ ${taskSection}`;
 		const runtime = this.getFactoryRuntime();
 		const repository = this.repositories.get(run.repositoryId)!;
 		const workflow = run.workflow;
+		run.outputs.repository = {
+			...(run.outputs.repository as Record<string, unknown>),
+			githubUrl: repository.githubUrl,
+			gitlabUrl: repository.gitlabUrl,
+			gitProvider: repository.gitProvider,
+		};
 		const execution = await this.resolveRunExecution(run);
 		const gitService = execution
 			? this.gitService.withEnvironment(execution.environment)
@@ -8245,11 +8262,10 @@ ${taskSection}`;
 			const nativeSource =
 				ticketSource && !taskbotSource(ticketSource) ? ticketSource : undefined;
 			if (
-				(workflow.id === "takeover" &&
-					input.source?.startsWith("https://github.com/")) ||
+				(workflow.id === "takeover" && isPullRequestSource(input.source)) ||
 				nativeSource
 			) {
-				if (input.source?.startsWith("https://github.com/")) {
+				if (input.source && isPullRequestSource(input.source)) {
 					const setupContext: ExecutionContext = {
 						execution,
 						run: { ...run, workspace: repository.repositoryPath },
@@ -8261,12 +8277,22 @@ ${taskSection}`;
 					};
 					const command = (exe: string, args: string[]) =>
 						executeCommand(setupContext, exe, args, 60000);
-					takeoverPr = await inspectPullRequest(command, input.source);
+					const provider = await resolveGitProvider(
+						setupContext,
+						command,
+						input.source,
+					);
+					run.gitProvider = setupContext.run.gitProvider;
+					takeoverPr = await inspectPullRequest(
+						command,
+						input.source,
+						provider,
+					);
 					const ref = `refs/factory/takeover/${takeoverPr.number}`;
 					await command("git", [
 						"fetch",
 						"origin",
-						`+refs/pull/${takeoverPr.number}/head:${ref}`,
+						`+refs/heads/${takeoverPr.headRefName}:${ref}`,
 					]);
 					fullIssue = { ...fullIssue, branchName: takeoverPr.headRefName };
 					baseBranchOverrides = new Map([[repository.id, ref]]);
@@ -8333,10 +8359,7 @@ ${taskSection}`;
 					const links = [
 						...new Set(
 							(snapshot.attachments ?? [])
-								.filter(
-									(a) =>
-										a.kind === "pr" && /^https:\/\/github\.com\//.test(a.url),
-								)
+								.filter((a) => a.kind === "pr" && isPullRequestSource(a.url))
 								.map((a) => a.url),
 						),
 					];
@@ -8356,12 +8379,18 @@ ${taskSection}`;
 						};
 						const command = (exe: string, args: string[]) =>
 							executeCommand(context, exe, args, 60000);
-						takeoverPr = await inspectPullRequest(command, links[0]);
+						const provider = await resolveGitProvider(
+							context,
+							command,
+							links[0],
+						);
+						run.gitProvider = context.run.gitProvider;
+						takeoverPr = await inspectPullRequest(command, links[0], provider);
 						const ref = `refs/factory/takeover/${takeoverPr.number}`;
 						await command("git", [
 							"fetch",
 							"origin",
-							`+refs/pull/${takeoverPr.number}/head:${ref}`,
+							`+refs/heads/${takeoverPr.headRefName}:${ref}`,
 						]);
 						fullIssue = { ...fullIssue, branchName: takeoverPr.headRefName };
 						baseBranchOverrides = new Map([[repository.id, ref]]);
@@ -8402,6 +8431,9 @@ ${taskSection}`;
 			this.sessionRepositories.set(run.id, repository.id);
 			run.outputs.repository = {
 				name: repository.name,
+				githubUrl: repository.githubUrl,
+				gitlabUrl: repository.gitlabUrl,
+				gitProvider: repository.gitProvider,
 				baseBranch:
 					takeoverPr?.baseRefName ??
 					(workflow.id === "takeover"
@@ -8457,6 +8489,16 @@ ${taskSection}`;
 			throw new Error(
 				"Run repository is unavailable; restore its configuration before continuing",
 			);
+		if (
+			!run.gitProvider &&
+			(repository.githubUrl || repository.gitlabUrl || repository.gitProvider)
+		)
+			run.outputs.repository = {
+				...(run.outputs.repository as Record<string, unknown>),
+				githubUrl: repository.githubUrl,
+				gitlabUrl: repository.gitlabUrl,
+				gitProvider: repository.gitProvider,
+			};
 		await this.resolveRunExecution(run);
 		if ((!run.workspace || run.setupComplete === false) && run.launchRequest)
 			await this.prepareManualFactoryRun(run, run.launchRequest, signal);
@@ -8468,7 +8510,7 @@ ${taskSection}`;
 				pending &&
 				run.humanDecisions?.at(-1)?.decision === "approve" &&
 				typeof url === "string" &&
-				/^https:\/\/github.com\/[\w.-]+\/[\w.-]+\/pull\/\d+\/?$/.test(url)
+				isPullRequestSource(url)
 			) {
 				const evidenceDir = join(
 					this.getFactoryRuntime().directory,
@@ -8476,22 +8518,20 @@ ${taskSection}`;
 					run.id,
 				);
 				await mkdir(evidenceDir, { recursive: true });
-				const pr = JSON.parse(
-					await executeCommand(
-						{
-							execution: await this.resolveRunExecution(run),
-							run: { ...run, workspace: repository.repositoryPath },
-							step: pending.step,
-							input: {},
-							signal,
-							evidenceDir,
-							log: () => {},
-						},
-						"gh",
-						["pr", "view", url, "--json", "state,headRefOid"],
-						60000,
-					),
-				);
+				const context: ExecutionContext = {
+					execution: await this.resolveRunExecution(run),
+					run: { ...run, workspace: repository.repositoryPath },
+					step: pending.step,
+					input: {},
+					signal,
+					evidenceDir,
+					log: () => {},
+				};
+				const command = (exe: string, args: string[]) =>
+					executeCommand(context, exe, args, 60000);
+				const provider = await resolveGitProvider(context, command, url);
+				run.gitProvider = context.run.gitProvider;
+				const pr = await provider.view(url, "state,headRefOid");
 				const output = confirmedMerge(run, {
 					state: pr.state,
 					headSha: pr.headRefOid,

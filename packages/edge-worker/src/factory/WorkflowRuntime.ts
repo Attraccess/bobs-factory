@@ -36,6 +36,7 @@ import {
 	type ExecutionSelection,
 	type ExecutionSnapshot,
 } from "./ExecutionProfiles.js";
+import type { GitProviderSnapshot } from "./GitProvider.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
 import {
 	isExplanationRequest,
@@ -150,6 +151,8 @@ export interface RunViewState {
 	seenAt?: string;
 }
 export interface FactoryRun {
+	/** Accepted forge coordinates/adapter, retained across retry and configuration changes. */
+	gitProvider?: GitProviderSnapshot;
 	executionSnapshot?: ExecutionSnapshot;
 	executionDiagnostics?: {
 		accounts: ResolvedExecutionEnvironment["accounts"];
