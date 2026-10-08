@@ -66,6 +66,61 @@ function recordingFactory() {
 }
 
 describe("AppServerProcessManager pool", () => {
+	it("retains permission definitions at launch and isolates different filesystem grants", async () => {
+		const launches: { args?: string[] }[] = [];
+		const { clients, factory } = recordingFactory();
+		const manager = new AppServerProcessManager(
+			(options) => {
+				launches.push(options);
+				return factory();
+			},
+			{ idleCloseMs: 0 },
+		);
+		const config: ResolvedCodexConfig = {
+			...configWithEnv(),
+			sandbox: {
+				kind: "profile",
+				profileId: "cyrus-sandbox",
+				extends: ":workspace",
+				workspaceRoots: ["/tmp/repo"],
+				filesystem: { ":root": "read", "/tmp/repo/.git": "write" },
+				networkAccess: true,
+			},
+		};
+		const first = await manager.acquire(config);
+		const resumed = await manager.acquire({
+			...config,
+			resumeSessionId: "saved-thread",
+		});
+		expect(clients).toHaveLength(1);
+		expect(launches[0]?.args).toEqual([
+			"app-server",
+			"--listen",
+			"stdio://",
+			"-c",
+			'default_permissions="cyrus-sandbox"',
+			"-c",
+			'permissions={"cyrus-sandbox" = {"extends" = ":workspace", "filesystem" = {":root" = "read", "/tmp/repo/.git" = "write"}, "network" = {"enabled" = true}, "workspace_roots" = {"/tmp/repo" = true}}}',
+		]);
+		const restricted = await manager.acquire({
+			...config,
+			sandbox: {
+				...config.sandbox,
+				filesystem: { ":root": "deny", "/tmp/other/.git": "write" },
+			},
+		});
+		const native = await manager.acquire(configWithEnv());
+		expect(clients).toHaveLength(3);
+		await first.release();
+		await resumed.release();
+		expect(clients[0]!.closeCalls).toBe(1);
+		expect(clients[1]!.closeCalls).toBe(0);
+		expect(clients[2]!.closeCalls).toBe(0);
+		await restricted.release();
+		await native.release();
+		await manager.closeAll();
+	});
+
 	it("isolates changed MCP endpoints while sharing equivalent configurations", async () => {
 		const { clients, factory } = recordingFactory();
 		const manager = new AppServerProcessManager(factory, {

@@ -69,6 +69,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve specialist review and cleanup safeguards when integrating Codex permission-profile registration at app-server launch. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
 - Preserve specialist requirement coverage and reviewer cleanup checks when integrating provider-neutral PR tooling and opt-in Web Push. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve frozen specialist review, requirement coverage and redacted execution results when integrating independent execution profiles and dedicated Settings pages. Wait for all concurrent reviewers to clean up temporary runner configuration before checking worktree cleanliness; remaining product edits still invalidate review. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
@@ -81,6 +83,7 @@ All notable changes to this project will be documented in this file.
 - Retain generated recommendations on requirement-extraction questions while enforcing specialist inventory validation and explicit human submission. Notify the originating ticket when restored questions or recommendations change, without duplicating unchanged waits. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve resolved specialist disagreements, their rationale and supporting evidence in exported review guide Markdown. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Prevent recurring Codex `failed to load workspace requirements` errors by retaining generated permission profiles through native configuration reloads; isolate different grants while preserving existing conversations and workflow checkpoints. ([#50](https://github.com/Attraccess/bobs-factory/pull/50))
 
 - Recognize GitLab merged-results CI when it tests the current source and target revisions, without accepting stale checks or changing the human-approved source revision. ([#49](https://github.com/Attraccess/bobs-factory/pull/49))
 
