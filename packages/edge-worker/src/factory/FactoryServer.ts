@@ -842,16 +842,18 @@ export class FactoryServer {
 								area: string;
 								state: string;
 								caption: string;
+								context?: string;
 								imageSha256?: string;
 							}[];
 					  }
 					| undefined;
 				return {
 					screenshots: (capture?.screenshots ?? []).map(
-						({ area, state, caption, imageSha256 }, index) => ({
+						({ area, state, caption, context, imageSha256 }, index) => ({
 							area,
 							state,
 							caption,
+							context,
 							imageSha256,
 							index,
 						}),

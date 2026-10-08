@@ -228,6 +228,7 @@ export function filterReview(
 }
 
 const screenshotSchema = z.object({
+	context: z.string().max(600).optional(),
 	path: z.string(),
 	caption: z.string(),
 	revision: z.string().optional(),
