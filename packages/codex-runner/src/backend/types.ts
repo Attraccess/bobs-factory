@@ -95,8 +95,8 @@ export type CodexFileSystemAccess = "read" | "write" | "deny";
  *   read/write/deny, where keys are either absolute paths or Codex special-path
  *   tokens (`:minimal` = platform defaults, `:workspace_roots` = cwd/worktree,
  *   `:tmpdir`, `:slash_tmp`). Sent via `thread/start.permissions` (the profile id)
- *   + `config.permissions.<id>` (the profile body); the profile persists per-thread
- *   and cannot be combined with `thread/start.sandbox`.
+ *   + `config.permissions.<id>` (the profile body), also registered at app-server
+ *   launch so native config reloads retain it. Cannot combine with `thread/start.sandbox`.
  */
 export type ResolvedCodexSandbox =
 	| {

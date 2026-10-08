@@ -71,6 +71,8 @@ All notable changes to this project will be documented in this file.
 
 - Reconcile feature-video evidence with the current guide layout, form resets, independent execution profiles, Web Push and Git provider support, preserving capability guidance, video styling and runtime validation. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 - Reject malformed caption timestamps, reversed intervals and out-of-order cues before accepting recorded audio evidence. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Prevent recurring Codex `failed to load workspace requirements` errors by retaining generated permission profiles through native configuration reloads; isolate different grants while preserving existing conversations and workflow checkpoints. ([#50](https://github.com/Attraccess/bobs-factory/pull/50))
+
 - Recognize GitLab merged-results CI when it tests the current source and target revisions, without accepting stale checks or changing the human-approved source revision. ([#49](https://github.com/Attraccess/bobs-factory/pull/49))
 
 - Allow autonomous Codex runs to fetch and commit in Git worktrees by granting writes to their linked and shared Git metadata, while retaining protected agent settings, filesystem read restrictions, and explicit read-only modes. ([#48](https://github.com/Attraccess/bobs-factory/pull/48))
