@@ -1008,8 +1008,16 @@ correction. Older saved guides remain readable without migration or invented
 compact text or risk levels.
 
 Optional `flow: {title, steps: [{label, detail}]}` reveals one of 2–8 stages at a
-time. Optional `system: {lanes, parts, before, after}` supplies an overview lane
-map. Lanes use `{id, name}`; parts use `{id, label, laneId, status}` with status
+time. Newly authored guides declare `scope: {kind: "purely-visual" | "nonvisual",
+rationale, files}` from the complete PR diff and accepted requirements. The files
+must match the whole-PR inventory exactly. Screenshots alone never establish the
+purely visual exemption. Technical, logic, structural, nonvisual supporting and
+mixed guides require `system: {lanes, parts, before, after}` with 3–6 meaningful
+lanes and nonempty chapter `systemPartIds` for every changed or logic chapter.
+Empty connection sets are allowed when truthful. Runtime instructions and
+validation apply even to older frozen/custom authoring definitions; saved older
+artifacts retain their permissive reading schema. Lanes use `{id, name}`; parts
+use `{id, label, laneId, status}` with status
 `new`, `changed`, `unchanged` or `legacy`. Connections use `{source, target,
 label?, weak?}` and are identified by directed endpoints. Chapter
 `systemPartIds` must reference existing parts. Before/After toggles work
@@ -1017,6 +1025,19 @@ independently; route hover or focus highlights relevant parts. Screenshot
 references retain accepted area/state/caption, with optional known `device`
 (`Desktop`, `Mobile`, `Email`, `Reader`) and `language`. Mixed chapters show
 one visual mode at a time. Image and diff dialogs support arrows and Escape.
+
+The page card follows the progress segments directly. On mobile, segments remain
+through 14 pages; larger guides use a compact selector. The sticky feedback count
+opens the collected comments on Decide, including an empty list. Item comments,
+drafts and checks remain available throughout; collected-feedback submission,
+additional feedback and page-level PR/diff links live on Decide. Heading focus
+moves after navigation with an outline only for keyboard use. Screenshot device
+tags use accepted capture context or an honest unknown-device fallback.
+
+Maps use direct curves with separate endpoints, supplied labels and sample legends.
+Six lanes fit desktop; narrow screens scroll within the map. Individual apps,
+nested plugins, packages and libraries have distinct stable area identities and a
+separate palette. Areas owned by one chapter show ONLY THIS STEP.
 
 Changed files loads a runtime-owned, immutable snapshot of the guide’s complete
 PR merge-base/head pair. The file inventory and bounded per-file patches live
@@ -1027,7 +1048,9 @@ appear in each group but overall counts include them once. Unassigned files are
 shown defensively for old/incomplete guides; new guide coverage still rejects
 omitted files. Trees distinguish tests, renames and line counts. Split and unified
 diffs preserve hunk numbers, empty lines and no-final-newline markers; long diffs
-initially display 500 rows and can reveal the rest.
+initially display 500 rows and can reveal the rest. The desktop diff header collects
+status, full path, counts, mode, navigation and PR link in one row. Patch content
+starts at the first hunk; metadata-only and unavailable changes keep explicit messages.
 
 Historical guides without snapshots reconstruct only from retained CI/readiness
 and handoff receipts establishing the original revision. The reconstructed
