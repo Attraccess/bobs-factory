@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import { qaDigest } from "./Qa.js";
 import { QuestionFieldsSchema } from "./Questions.js";
+import { runRepositories, scopeRevision } from "./RepositoryScope.js";
 import type { WorkflowStep } from "./Workflow.js";
 import type { ExecutionContext, FactoryRun } from "./WorkflowRuntime.js";
 
@@ -94,6 +95,12 @@ export type ReviewBaseline = {
 	inventory: Inventory;
 	headSha: string;
 	baseSha: string;
+	repositories?: {
+		repositoryId: string;
+		name: string;
+		headSha: string;
+		baseSha: string;
+	}[];
 	historyLength: number;
 	reviewers: { id: string; key: string; group: number; contract: string }[];
 	context: unknown;
@@ -384,6 +391,56 @@ export async function reviewedRevision(
 		);
 	const baseSha = await git("rev-parse", base ?? "refs/remotes/origin/main");
 	return { headSha, baseSha };
+}
+/** Freeze every Git root; group fingerprints are never passed to Git as commits. */
+export async function reviewedRunRevision(
+	run: FactoryRun,
+	baseline?: Pick<ReviewBaseline, "baseSha" | "repositories"> | string,
+	options: { requireClean?: boolean } = {},
+) {
+	const scope = runRepositories(run);
+	const source = run.outputs.source as { baseRefName?: string } | undefined;
+	const primaryBase = source?.baseRefName ?? scope[0]!.baseBranch;
+	if (scope.length === 1)
+		return reviewedRevision(
+			run.workspace,
+			typeof baseline === "string"
+				? baseline
+				: (baseline?.baseSha ?? `refs/remotes/origin/${primaryBase}`),
+			options,
+		);
+	const repositories = await Promise.all(
+		scope.map(async (repository) => {
+			const retained =
+				typeof baseline === "object"
+					? baseline.repositories?.find(
+							(item) => item.repositoryId === repository.id,
+						)
+					: undefined;
+			if (typeof baseline === "object" && !retained)
+				throw new Error("Specialist baseline is missing a scoped repository");
+			const base =
+				retained?.baseSha ??
+				(repository.id === run.repositoryId && typeof baseline === "string"
+					? baseline
+					: `refs/remotes/origin/${repository.baseBranch}`);
+			return {
+				repositoryId: repository.id,
+				name: repository.name,
+				...(await reviewedRevision(repository.workspace, base, options)),
+			};
+		}),
+	);
+	return {
+		headSha: scopeRevision(repositories),
+		baseSha: scopeRevision(
+			repositories.map((repository) => ({
+				...repository,
+				headSha: repository.baseSha,
+			})),
+		),
+		repositories,
+	};
 }
 export function latestAggregate(
 	run: FactoryRun,

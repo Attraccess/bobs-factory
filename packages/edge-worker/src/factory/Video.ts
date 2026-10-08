@@ -16,6 +16,7 @@ import { z } from "zod";
 import { qaDigest } from "./EvidenceDigest.js";
 import { dependencyCovers, dependencyHashes } from "./Incremental.js";
 import { OutputValidationError } from "./OutputValidation.js";
+import { runRepositories } from "./RepositoryScope.js";
 import type { ExecutionContext, FactoryRun } from "./WorkflowRuntime.js";
 
 export const VIDEO_CONTRACT = "video-v1" as const;
@@ -422,6 +423,7 @@ export async function finalizeVideoEvidence(
 			const sources = dependencyHashes(
 					context.run.workspace,
 					task.dependencies,
+					runRepositories(context.run),
 				),
 				dependencyFingerprint = qaDigest(sources),
 				taskDigest = videoTaskDigest(task, scope),
@@ -597,7 +599,13 @@ export async function videoGateIssues(
 				throw new Error("Video/poster/caption bytes changed");
 			if (
 				v.dependencyFingerprint !==
-				qaDigest(dependencyHashes(context.run.workspace, task.dependencies))
+				qaDigest(
+					dependencyHashes(
+						context.run.workspace,
+						task.dependencies,
+						runRepositories(context.run),
+					),
+				)
 			)
 				throw new Error("Recording source dependencies changed");
 			if (

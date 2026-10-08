@@ -47,7 +47,12 @@ interface ServerHooks {
 	message?(id: string, text: string, messageId?: string): void | Promise<void>;
 	defaultRunner?(): string;
 	subscribe?(listener: (id: string) => void): () => void;
-	repositories(): { id: string; name: string }[];
+	repositories(): {
+		id: string;
+		name: string;
+		repositoryIds?: string[];
+		members?: { id: string; name: string }[];
+	}[];
 	sessions(): {
 		triggerOrigin?: import("bobs-factory-core").WorkflowTriggerOrigin;
 		id: string;

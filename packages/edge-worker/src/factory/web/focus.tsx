@@ -44,7 +44,11 @@ export const labels: Record<string, string> = {
 	review: "🎁 Ready to review",
 };
 export function RunMeta({ run, config }: { run: any; config: any }) {
-	const repo = config.repositories.find((r: any) => r.id === run.repositoryId),
+	const repo = config.repositories.find(
+			(r: any) =>
+				r.id === run.repositoryId ||
+				r.repositoryIds?.includes(run.repositoryId),
+		),
 		workflow = workflowOf(run, config);
 	return (
 		<span className="run-meta">

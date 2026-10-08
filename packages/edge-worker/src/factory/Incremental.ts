@@ -11,6 +11,13 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { feedbackPolicyInstructions } from "./FeedbackPolicy.js";
 import { guideMapInstructions } from "./GuideAuthoring.js";
+import {
+	type RepositoryRevision,
+	type RunRepository,
+	repositoryRun,
+	runRepositories,
+	scopeRevision,
+} from "./RepositoryScope.js";
 import { reviewFixInstructions } from "./ReviewRecovery.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
@@ -20,6 +27,7 @@ export interface RoleRevision {
 	dirty: boolean;
 	historyLength: number;
 	at: string;
+	repositories?: RepositoryRevision[];
 }
 export interface RoleProgress {
 	visit: number;
@@ -38,11 +46,121 @@ export interface RoleProgress {
 		files: string[];
 		diffStat: string;
 		source: "whole-pr";
+		repositories?: (NonNullable<RoleProgress["reviewScope"]> & {
+			repositoryId: string;
+			name: string;
+			workspace: string;
+		})[];
 	};
 }
 export async function roleProgress(
 	context: ExecutionContext,
 ): Promise<RoleProgress> {
+	const repositories = runRepositories(context.run);
+	if (repositories.length > 1) {
+		const parts = await Promise.all(
+			repositories.map(async (repository) => ({
+				repository,
+				progress: await roleProgress({
+					...context,
+					run: repositoryRun(context.run, repository),
+				}),
+			})),
+		);
+		const first = parts[0]!.progress;
+		const key = context.stepKey ?? context.run.step ?? context.step.id;
+		const previousRevision = context.run.roleRevisions?.[key];
+		const revisions = parts.flatMap(({ repository, progress }) =>
+			progress.currentRevision
+				? [
+						{
+							repositoryId: repository.id,
+							name: repository.name,
+							headSha: progress.currentRevision.headSha,
+							dirty: progress.currentRevision.dirty,
+						},
+					]
+				: [],
+		);
+		const scopes = parts.flatMap(({ repository, progress }) =>
+			progress.reviewScope
+				? [
+						{
+							...progress.reviewScope,
+							repositoryId: repository.id,
+							name: repository.name,
+							workspace: repository.workspace,
+						},
+					]
+				: [],
+		);
+		return {
+			...first,
+			previousRevision,
+			previousOutput: [...context.run.history]
+				.reverse()
+				.find((item) => item.step === key)?.output,
+			newHistory: context.step.inputs
+				? []
+				: (context.reviewBaseline
+						? context.run.history.slice(0, context.reviewBaseline.historyLength)
+						: context.run.history
+					).slice(previousRevision?.historyLength ?? 0),
+			currentRevision:
+				revisions.length === repositories.length
+					? {
+							...first.currentRevision!,
+							headSha: scopeRevision(revisions),
+							dirty: revisions.some((item) => item.dirty),
+							repositories: revisions,
+						}
+					: undefined,
+			changedFiles: parts.flatMap(({ repository, progress }) =>
+				progress.changedFiles.map((file) => `${repository.name}/${file}`),
+			),
+			diff: parts
+				.map(
+					({ repository, progress }) =>
+						`${repository.name}:\n${progress.diff ?? ""}`,
+				)
+				.join("\n"),
+			uncertain: parts.some(({ progress }) => progress.uncertain),
+			unchangedCode: parts.every(({ progress }) => progress.unchangedCode),
+			approvalDelta: parts.some(({ progress }) => progress.approvalDelta)
+				? {
+						headSha:
+							context.run.humanDecisions
+								?.filter((item) => item.decision === "approve")
+								.at(-1)?.headSha ?? "",
+						files: parts.flatMap(({ repository, progress }) =>
+							(progress.approvalDelta?.files ?? []).map(
+								(file) => `${repository.name}/${file}`,
+							),
+						),
+					}
+				: undefined,
+			reviewScope:
+				scopes.length && revisions.length === repositories.length
+					? {
+							baseSha: scopeRevision(
+								scopes.map((scope) => ({
+									repositoryId: scope.repositoryId,
+									headSha: scope.baseSha,
+								})),
+							),
+							headSha: scopeRevision(revisions),
+							source: "whole-pr",
+							repositories: scopes,
+							files: scopes.flatMap((scope) =>
+								scope.files.map((file) => `${scope.name}/${file}`),
+							),
+							diffStat: scopes
+								.map((scope) => `${scope.name}:\n${scope.diffStat}`)
+								.join("\n"),
+						}
+					: undefined,
+		};
+	}
 	const { run } = context,
 		key = context.stepKey ?? run.step ?? context.step.id;
 	const previousRevision = run.roleRevisions?.[key];
@@ -144,6 +262,7 @@ export async function roleProgress(
 export function dependencyHashes(
 	workspace: string,
 	paths: string[],
+	repositories: RunRepository[] = [],
 ): Record<string, string> {
 	if (!paths.length)
 		throw new Error("An unchanged area needs explicit file dependencies");
@@ -152,13 +271,23 @@ export function dependencyHashes(
 	// Git supplies source membership, including deleted tracked files. Explicit file
 	// dependencies still include ignored runtime assets when requested by the scope.
 	const sourceFiles = new Set(
-		execFileSync(
-			"git",
-			["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-			{ cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
-		)
-			.split("\0")
-			.filter(Boolean),
+		(repositories.length > 1 ? repositories : [{ workspace: root }]).flatMap(
+			(repository) =>
+				execFileSync(
+					"git",
+					["ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+					{
+						cwd: repository.workspace,
+						encoding: "utf8",
+						maxBuffer: 32 * 1024 * 1024,
+					},
+				)
+					.split("\0")
+					.filter(Boolean)
+					.map((file) =>
+						relative(root, resolve(realpathSync(repository.workspace), file)),
+					),
+		),
 	);
 	const membership = new Set(sourceFiles);
 	for (const file of sourceFiles) {

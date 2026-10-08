@@ -226,6 +226,7 @@ export class ExecutionEnvironmentResolver {
 		cwd: string,
 		runner: RunnerType,
 		job = "main",
+		repositoryWorkspaces: string[] = [cwd],
 	): Promise<ResolvedExecutionEnvironment> {
 		if (!/^[\w-]+$/.test(id)) throw new Error("Invalid execution root ID");
 		if (!/^[\w-]+$/.test(job)) throw new Error("Invalid execution job ID");
@@ -318,6 +319,7 @@ export class ExecutionEnvironmentResolver {
 			}
 		}
 		if (identity) {
+			const gitCwd = repositoryWorkspaces[0] ?? cwd;
 			env.GIT_TERMINAL_PROMPT = "0";
 			const overrides: [string, string][] = [["user.useConfigOnly", "true"]];
 			for (const [kind, setting] of [
@@ -326,7 +328,7 @@ export class ExecutionEnvironmentResolver {
 			] as const) {
 				const effectiveIdentity =
 					setting.mode === "share"
-						? run("git", ["var", `GIT_${kind}_IDENT`], cwd, this.host)
+						? run("git", ["var", `GIT_${kind}_IDENT`], gitCwd, this.host)
 						: undefined;
 				const match = effectiveIdentity?.match(/^(.*) <([^<>]*)> \d+ [+-]\d+$/);
 				if (effectiveIdentity && !match)
@@ -340,32 +342,34 @@ export class ExecutionEnvironmentResolver {
 			env.GIT_CONFIG_NOSYSTEM = "1";
 			env.GIT_CONFIG_GLOBAL = join(root, "gitconfig");
 			privateFile(env.GIT_CONFIG_GLOBAL, "");
-			const localKeys = run(
-				"git",
-				["config", "--name-only", "--list"],
-				cwd,
-				env,
-			).split("\n");
-			if (
-				localKeys.some((key) =>
-					/^(include|includeif|url\.|http\.|credential\.|core\.sshcommand|gpg\.|user\.signingkey)/i.test(
-						key,
-					),
+			for (const repositoryWorkspace of repositoryWorkspaces) {
+				const localKeys = run(
+					"git",
+					["config", "--name-only", "--list"],
+					repositoryWorkspace,
+					env,
+				).split("\n");
+				if (
+					localKeys.some((key) =>
+						/^(include|includeif|url\.|http\.|credential\.|core\.sshcommand|gpg\.|user\.signingkey)/i.test(
+							key,
+						),
+					)
 				)
-			)
-				throw new Error(
-					"Repository-local Git authentication, includes, headers or signing conflict with the selected execution profile. Remove the conflicting settings or use Legacy execution.",
+					throw new Error(
+						"Repository-local Git authentication, includes, headers or signing conflict with the selected execution profile. Remove the conflicting settings or use Legacy execution.",
+					);
+				const commonGitDirectory = run(
+					"git",
+					["rev-parse", "--path-format=absolute", "--git-common-dir"],
+					repositoryWorkspace,
+					env,
 				);
-			const commonGitDirectory = run(
-				"git",
-				["rev-parse", "--path-format=absolute", "--git-common-dir"],
-				cwd,
-				env,
-			);
-			if (existsSync(join(commonGitDirectory, "glab-cli", "config.yml")))
-				throw new Error(
-					"Repository-local glab authentication/configuration conflicts with the selected profile",
-				);
+				if (existsSync(join(commonGitDirectory, "glab-cli", "config.yml")))
+					throw new Error(
+						"Repository-local glab authentication/configuration conflicts with the selected profile",
+					);
+			}
 			const aliases = identity.repositories.flatMap((binding) =>
 				binding.ssh ? [binding.ssh.alias] : [],
 			);
@@ -383,62 +387,68 @@ export class ExecutionEnvironmentResolver {
 					"SSH aliases must identify exactly one repository host binding",
 				);
 			const destinations: { host: string; project: string }[] = [];
-			const remotes = run("git", ["remote"], cwd, env)
-				.split("\n")
-				.filter(Boolean);
-			for (const name of remotes)
-				for (const url of [false, true].flatMap((push) =>
-					run(
-						"git",
-						["remote", "get-url", ...(push ? ["--push"] : []), "--all", name],
-						cwd,
-						env,
-					).split("\n"),
-				)) {
-					const parsed = url.startsWith("https://") ? new URL(url) : undefined;
-					const host =
-						parsed?.hostname ??
-						(url.startsWith("ssh://")
-							? new URL(url).hostname
-							: /^(?:[^@]+@)?([^:]+):/.exec(url)?.[1]);
-					if (parsed?.username || parsed?.password)
-						throw new Error(
-							"Remote URLs containing credentials are unsupported for execution profiles.",
-						);
-					if (
-						!host ||
-						!identity.repositories.some(
-							(binding) => binding.host === host || binding.ssh?.alias === host,
+			for (const repositoryWorkspace of repositoryWorkspaces) {
+				const remotes = run("git", ["remote"], repositoryWorkspace, env)
+					.split("\n")
+					.filter(Boolean);
+				for (const name of remotes)
+					for (const url of [false, true].flatMap((push) =>
+						run(
+							"git",
+							["remote", "get-url", ...(push ? ["--push"] : []), "--all", name],
+							repositoryWorkspace,
+							env,
+						).split("\n"),
+					)) {
+						const parsed = url.startsWith("https://")
+							? new URL(url)
+							: undefined;
+						const host =
+							parsed?.hostname ??
+							(url.startsWith("ssh://")
+								? new URL(url).hostname
+								: /^(?:[^@]+@)?([^:]+):/.exec(url)?.[1]);
+						if (parsed?.username || parsed?.password)
+							throw new Error(
+								"Remote URLs containing credentials are unsupported for execution profiles.",
+							);
+						if (
+							!host ||
+							!identity.repositories.some(
+								(binding) =>
+									binding.host === host || binding.ssh?.alias === host,
+							)
 						)
-					)
-						throw new Error(
-							"Repository has an unbound remote destination. Add an explicit host binding before starting.",
-						);
-					const binding = identity.repositories.find(
-						(b) => b.host === host || b.ssh?.alias === host,
-					)!;
-					if (!parsed && !binding.ssh)
-						throw new Error(
-							"SSH remotes require an explicit key/agent, host mapping and known_hosts binding",
-						);
-					if (
-						url.startsWith("ssh://") &&
-						new URL(url).port &&
-						Number(new URL(url).port) !== binding.ssh?.port
-					)
-						throw new Error(
-							"SSH remote port differs from the selected host binding",
-						);
-					const project = (
-						parsed?.pathname ??
-						(url.startsWith("ssh://")
-							? new URL(url).pathname
-							: url.slice(url.indexOf(":") + 1))
-					)
-						.replace(/^\//, "")
-						.replace(/\.git$/, "");
-					destinations.push({ host: binding.host, project });
-				}
+							throw new Error(
+								"Repository has an unbound remote destination. Add an explicit host binding before starting.",
+							);
+						const binding = identity.repositories.find(
+							(b) => b.host === host || b.ssh?.alias === host,
+						)!;
+						if (!parsed && !binding.ssh)
+							throw new Error(
+								"SSH remotes require an explicit key/agent, host mapping and known_hosts binding",
+							);
+						if (
+							url.startsWith("ssh://") &&
+							new URL(url).port &&
+							Number(new URL(url).port) !== binding.ssh?.port
+						)
+							throw new Error(
+								"SSH remote port differs from the selected host binding",
+							);
+						const project = (
+							parsed?.pathname ??
+							(url.startsWith("ssh://")
+								? new URL(url).pathname
+								: url.slice(url.indexOf(":") + 1))
+						)
+							.replace(/^\//, "")
+							.replace(/\.git$/, "");
+						destinations.push({ host: binding.host, project });
+					}
+			}
+
 			if (
 				new Set(identity.repositories.map((binding) => binding.host)).size !==
 				identity.repositories.length
@@ -681,7 +691,7 @@ export class ExecutionEnvironmentResolver {
 								],
 								{
 									env: this.host,
-									cwd,
+									cwd: gitCwd,
 									encoding: "utf8",
 									stdio: ["ignore", "pipe", "pipe"],
 								},

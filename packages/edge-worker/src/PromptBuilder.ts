@@ -681,6 +681,8 @@ The system evaluates routing methods in this strict priority order. The FIRST ma
 3. **Project Assignment (Priority 3)**: Add the issue to a project that routes to the target repository.
 4. **Team Selection (Priority 4 - Lowest)**: Create the issue in a Linear team that routes to the target repository.
 
+Repository selection applies to every workflow, including Factory, Takeover and Simple. A shared routing label selects every configured repository with that label. The accepted scope stays fixed through follow-ups and recovery. Grouped Factory delivery creates and reviews a PR or merge request in each changed repository; unchanged repositories remain context, approval binds every delivered revision, and completion requires all deliveries to merge.
+
 For reliable cross-repository routing, prefer Description Tags as they are explicit and unambiguous.
 
 ${workflowTriggerInstructions}

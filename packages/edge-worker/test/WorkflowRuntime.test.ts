@@ -1540,6 +1540,122 @@ it("grants a bounded persisted retry budget only to the exhausted nested step", 
 it.each([
 	"workflow",
 	"fanout",
+])("explicit Retry reopens only an exhausted %s correction and retains its evidence", async (type) => {
+	let recovered = false;
+	const calls: ExecutionContext[] = [];
+	const hooks = {
+		agent: async (ctx: ExecutionContext) => {
+			calls.push(ctx);
+			expect(ctx.resumeAgent?.sessionId).toBe("saved-guide-thread");
+			expect(ctx.resumeAgent?.rejected).toMatchObject({
+				attempts: 0,
+				exhausted: false,
+				output: { chapters: [], requirements: [] },
+				issues: [{ path: "/chapters", message: "Missing chapters" }],
+			});
+			if (!recovered) {
+				ctx.checkpointAgent?.({
+					...ctx.resumeAgent!,
+					rejected: {
+						...ctx.resumeAgent!.rejected!,
+						attempts: 2,
+						exhausted: true,
+					},
+				});
+				throw new Error("Output correction exhausted");
+			}
+			return { summary: "Guide recovered" };
+		},
+		script: async () => ({}),
+		tool: async () => ({}),
+	};
+	const { runtime, home } = create(hooks);
+	const child = { ...workflow([agent("guide", { next: "end" })]), id: "child" };
+	runtime.updateWorkflows([...defaultWorkflows, child]);
+	const parent = workflow(
+		[
+			{
+				id: "pipeline",
+				name: "Pipeline",
+				type,
+				...(type === "workflow"
+					? { workflow: "child" }
+					: { groups: [[agent("guide", { next: "end" })]] }),
+			},
+		],
+		[child],
+	);
+	const run = start(runtime, parent);
+	run.status = "failed";
+	run.outputs.implementation = { summary: "Accepted implementation" };
+	run.history.push({
+		step: "implementation",
+		at: run.createdAt,
+		output: run.outputs.implementation,
+	});
+	const retained = structuredClone(run.history);
+	run.checkpoint = {
+		current: "pipeline",
+		visits: { pipeline: 1 },
+		active: {
+			phase: "executing",
+			children: [
+				{
+					current: "guide",
+					visits: { guide: 1 },
+					...(type === "fanout"
+						? { outputs: structuredClone(run.outputs) }
+						: {}),
+					active: {
+						phase: "executing",
+						agent: {
+							runner: "codex",
+							sessionId: "saved-guide-thread",
+							rejected: {
+								attempts: 2,
+								exhausted: true,
+								output: { chapters: [], requirements: [] },
+								issues: [{ path: "/chapters", message: "Missing chapters" }],
+								revision: {
+									headSha: "unchanged",
+									dirty: false,
+									historyLength: 1,
+									at: run.createdAt,
+								},
+							},
+						},
+					},
+				},
+			],
+		},
+	};
+	runtime.save(run);
+	const restarted = new WorkflowRuntime(home, hooks);
+	const restored = restarted.get(run.id);
+	restarted.retry(run.id);
+	await vi.waitFor(() => expect(restored.status).toBe("failed"));
+	expect(calls).toHaveLength(1);
+	// Automatic restart cannot replenish an exhausted budget.
+	const again = new WorkflowRuntime(home, {
+		...hooks,
+		agent: async (ctx) => {
+			expect(ctx.resumeAgent?.rejected?.exhausted).toBe(true);
+			throw new Error("Output correction exhausted");
+		},
+	});
+	again.resumeAll();
+	expect(again.get(run.id).status).toBe("failed");
+	recovered = true;
+	restarted.retry(run.id);
+	await vi.waitFor(() => expect(restored.status).toBe("completed"));
+	expect(calls).toHaveLength(2);
+	expect(restored.history.slice(0, retained.length)).toEqual(retained);
+	expect(restored.outputs.implementation).toEqual(run.outputs.implementation);
+});
+
+it.each([
+	"workflow",
+	"fanout",
 ])("repairs a saved Codex startup ID in a %s leaf without replaying completed work", async (type) => {
 	const calls: ExecutionContext[] = [];
 	const hooks = {

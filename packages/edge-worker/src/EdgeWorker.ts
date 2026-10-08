@@ -196,6 +196,7 @@ import {
 	resolveGitProvider,
 } from "./factory/GitProvider.js";
 import { isPullRequestSource } from "./factory/GitProviderReference.js";
+import { confirmedGroupedMerge } from "./factory/GroupedTools.js";
 import {
 	attachRequirementCoverage,
 	validateGuideCoverage,
@@ -233,6 +234,11 @@ import {
 	questionInstructions,
 	questionNotification,
 } from "./factory/Questions.js";
+import {
+	repositoryScopeInstructions,
+	repositoryScopes,
+	snapshotRepositories,
+} from "./factory/RepositoryScope.js";
 import { finalizeGuideFiles } from "./factory/ReviewFiles.js";
 import {
 	factoryReviewFixContext,
@@ -953,9 +959,7 @@ export class EdgeWorker extends EventEmitter {
 				capacity: this.runnerSlots,
 				defaultRunner: () => this.runnerSelectionService.getDefaultRunner(),
 				repositories: () =>
-					Array.from(this.repositories.values())
-						.filter((repo) => repo.isActive)
-						.map((repo) => ({ id: repo.id, name: repo.name })),
+					repositoryScopes(Array.from(this.repositories.values())),
 				sessions: () =>
 					this.getAllKnownSessions().map((session) => ({
 						id: session.id,
@@ -4801,10 +4805,6 @@ ${taskSection}`;
 				fullIssue,
 				linearWorkspaceId,
 			);
-			if (launch.workflow.id !== "simple" && repositories.length !== 1)
-				throw new Error(
-					"Factory MVP runs use one repository; use Simple for multi-repository tasks",
-				);
 		} catch (error) {
 			const tracker = this.issueTrackers.get(linearWorkspaceId);
 			if (tracker)
@@ -4829,8 +4829,6 @@ ${taskSection}`;
 		).select(primaryRepo.id);
 		let execution: ResolvedExecutionEnvironment | undefined;
 		if (executionSnapshot) {
-			if (repositories.length !== 1)
-				throw new Error("Execution profiles require one repository per root");
 			const labels = await this.fetchIssueLabels(fullIssue);
 			const selection = this.runnerSelectionService.determineRunnerSelection(
 				labels,
@@ -4840,6 +4838,7 @@ ${taskSection}`;
 				{
 					id: sessionId,
 					repositoryId: primaryRepo.id,
+					repositories: snapshotRepositories(repositories, ""),
 					workspace: "",
 					runner: selection.runnerType,
 					model: selection.modelOverride,
@@ -4854,6 +4853,8 @@ ${taskSection}`;
 				sessionId,
 				primaryRepo.repositoryPath,
 				selection.runnerType,
+				"main",
+				repositories.map((repo) => repo.repositoryPath),
 			);
 		}
 		const gitService = execution
@@ -4863,8 +4864,8 @@ ${taskSection}`;
 		this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 		if (takeover && fullIssue.branchName) {
 			baseBranchOverrides = new Map(baseBranchOverrides);
-			for (const repo of repositories)
-				baseBranchOverrides.set(repo.id, fullIssue.branchName);
+			if (!baseBranchOverrides.has(primaryRepo.id))
+				baseBranchOverrides.set(primaryRepo.id, fullIssue.branchName);
 		}
 
 		// Move issue to started state automatically, in case it's not already
@@ -5811,10 +5812,6 @@ ${taskSection}`;
 			const { workflow, workflowDefinitions } = sessionData.launch;
 			this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 			if (workflow.id !== "simple") {
-				if (repositories.length !== 1)
-					throw new Error(
-						"Factory MVP runs use one repository; use Simple for multi-repository tasks",
-					);
 				const selectedRunner = await this.buildAgentRunnerConfig(
 					session,
 					primaryRepo,
@@ -5841,6 +5838,17 @@ ${taskSection}`;
 					workflowDefinitions,
 					triggerOrigin: session.triggerOrigin!,
 					workspace: session.workspace.path,
+					repositories: snapshotRepositories(
+						repositories,
+						session.workspace.path,
+						session.workspace.repoPaths,
+						Object.fromEntries(
+							session.repositories.map((repo) => [
+								repo.repositoryId,
+								repo.baseBranchName,
+							]),
+						),
+					),
 					input: assembly.userPrompt,
 					issueId: fullIssue.id,
 					workspaceId: linearWorkspaceId,
@@ -7000,6 +7008,14 @@ ${taskSection}`;
 				: repository.repositoryPath,
 			type,
 			job,
+			this.factoryRepositories(run).map((repo) => {
+				const workspace = run.repositories?.find(
+					(retained) => retained.id === repo.id,
+				)?.workspace;
+				return workspace && existsSync(workspace)
+					? workspace
+					: repo.repositoryPath;
+			}),
 		);
 		run.executionDiagnostics = {
 			accounts: resolved.accounts,
@@ -7350,8 +7366,37 @@ ${taskSection}`;
 		);
 		return this.ticketTracking;
 	}
+	private factoryRepositories(run: FactoryRun): RepositoryConfig[] {
+		return (
+			run.repositories?.length
+				? run.repositories.map((repo) => repo.id)
+				: [run.repositoryId]
+		).map((id) => {
+			const configured = this.repositories.get(id);
+			if (!configured?.isActive)
+				throw new Error(
+					`Run repository ${id} is unavailable; restore its configuration before continuing`,
+				);
+			const retained = run.repositories?.find((repo) => repo.id === id);
+			return retained
+				? {
+						...configured,
+						name: retained.name,
+						repositoryPath: retained.repositoryPath,
+						baseBranch: retained.baseBranch,
+						githubUrl: retained.githubUrl,
+						gitlabUrl: retained.gitlabUrl,
+						gitProvider: retained.gitProvider,
+					}
+				: configured;
+		});
+	}
+
 	private async factoryMcpConfig(run: FactoryRun) {
-		const repository = this.repositories.get(run.repositoryId);
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		);
 		const session =
 			this.agentSessionManager.getSession(run.id) ??
 			(run.sessionSnapshot as CyrusAgentSession | undefined);
@@ -7364,9 +7409,9 @@ ${taskSection}`;
 			repository,
 			run.id,
 			undefined,
-			this.buildAllowedTools([repository]),
-			[repository.repositoryPath],
-			this.buildDisallowedTools([repository]),
+			this.buildAllowedTools(repositories),
+			repositories.map((repo) => repo.repositoryPath),
+			this.buildDisallowedTools(repositories),
 			undefined,
 			[],
 			undefined,
@@ -7702,7 +7747,7 @@ ${taskSection}`;
 				(await roleProgress(context)).currentRevision?.headSha
 		)
 			throw new Error(
-				`Output correction exhausted at ${context.step.id}; inspect persisted rejected output/issues. A new revision is required before further automatic correction.`,
+				`Output correction exhausted at ${context.step.id}; inspect persisted rejected output/issues, restore missing infrastructure if needed, then use Retry to authorize another bounded correction attempt.`,
 			);
 		const checkpoint = context.checkpointAgent;
 		context.checkpointAgent = (agent) => {
@@ -7786,7 +7831,7 @@ ${taskSection}`;
 					// Increment before launching so process restarts cannot reset the budget.
 					context.checkpointAgent({
 						...context.resumeAgent,
-						rejected: { ...rejection, attempts: attempts + 1 },
+						rejected: { ...rejection, attempts: attempts + 1, reserved: true },
 					});
 				}
 			}
@@ -7800,7 +7845,10 @@ ${taskSection}`;
 	): Promise<unknown> {
 		const { run, step } = context;
 		const session = this.agentSessionManager.getSession(run.id);
-		const repository = this.repositories.get(run.repositoryId);
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		);
 		if (!session || !repository)
 			throw new Error("Run session/repository unavailable");
 		const outputCorrection = context.resumeAgent?.rejected;
@@ -7823,21 +7871,21 @@ ${taskSection}`;
 
 		// Review fixers and QA roles can request assistance without askQuestions;
 		// saved recipes must receive the same question guidance as new ones.
-		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\nGit provider: ${JSON.stringify(run.gitProvider ?? { gitProvider: repository.gitProvider, githubUrl: repository.githubUrl, gitlabUrl: repository.gitlabUrl })}. Use the selected provider for review, discussion resolution and CI tooling; do not assume GitHub or use gh for another provider. Runtime publication and merge retain the accepted provider. ${run.gitProvider?.type === "custom" ? (run.gitProvider.instructions ?? "") : repository.gitProvider?.type === "custom" ? (repository.gitProvider.instructions ?? "") : ""}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${questionInstructions(run.id)}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${repositoryScopeInstructions(run)}\nGit provider: ${JSON.stringify(run.gitProvider ?? { gitProvider: repository.gitProvider, githubUrl: repository.githubUrl, gitlabUrl: repository.gitlabUrl })}. Use the selected provider for review, discussion resolution and CI tooling; do not assume GitHub or use gh for another provider. Runtime publication and merge retain the accepted provider. ${run.gitProvider?.type === "custom" ? (run.gitProvider.instructions ?? "") : repository.gitProvider?.type === "custom" ? (repository.gitProvider.instructions ?? "") : ""}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${questionInstructions(run.id)}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
 			repository,
 			run.id,
 			instruction,
-			this.buildAllowedTools([repository]),
+			this.buildAllowedTools(repositories),
 			[
-				repository.repositoryPath,
+				...repositories.map((repo) => repo.repositoryPath),
 				context.evidenceDir,
 				...[
 					join(this.factoryHome, basename(run.workspace), "attachments"),
 				].filter(existsSync),
 			],
-			this.buildDisallowedTools([repository]),
+			this.buildDisallowedTools(repositories),
 			undefined,
 			[],
 			undefined,
@@ -7889,13 +7937,17 @@ ${taskSection}`;
 		];
 		const originalMessage = built.config.onMessage;
 		let agentCheckpoint = context.resumeAgent;
+		let startupConfirmed = false;
 		built.config.onMessage = (message) => {
+			if (message.type === "assistant" || message.type === "user")
+				startupConfirmed = true;
 			if (
 				message.type === "system" &&
 				message.subtype === "init" &&
 				message.session_id &&
 				message.session_id !== "pending"
 			) {
+				startupConfirmed = true;
 				agentCheckpoint = {
 					runner: runnerType,
 					sessionId: message.session_id,
@@ -7904,7 +7956,7 @@ ${taskSection}`;
 						? { result: context.resumeAgent.result }
 						: {}),
 					...(context.resumeAgent?.rejected
-						? { rejected: context.resumeAgent.rejected }
+						? { rejected: { ...context.resumeAgent.rejected, reserved: false } }
 						: {}),
 				};
 				context.checkpointAgent?.(agentCheckpoint);
@@ -7937,7 +7989,12 @@ ${taskSection}`;
 		try {
 			built.config.mcpConfig = {
 				...built.config.mcpConfig,
-				"factory-context": factoryContext.config,
+				"factory-context": {
+					...factoryContext.config,
+					...(runnerType === "codex"
+						? { required: true, startup_timeout_sec: 45 }
+						: {}),
+				},
 			};
 			const runner = capRunnerStarts(
 				this.buildRunnerForType(runnerType, built.config, true),
@@ -7971,6 +8028,7 @@ ${taskSection}`;
 					.at(-1);
 				if (result?.type === "result" && result.is_error)
 					throw new Error(`Agent step failed: ${JSON.stringify(result)}`);
+				startupConfirmed = true;
 				const assistant = messages
 					.filter((message) => message.type === "assistant")
 					.at(-1);
@@ -8015,6 +8073,19 @@ ${taskSection}`;
 				unregisterChat();
 			}
 		} finally {
+			const rejected = context.resumeAgent?.rejected;
+			if (runnerType === "codex" && !startupConfirmed && rejected?.reserved) {
+				// No ready thread or model work: return the launch reservation,
+				// preserving the rejected candidate for an infrastructure retry.
+				context.checkpointAgent?.({
+					...context.resumeAgent!,
+					rejected: {
+						...rejected,
+						attempts: Math.max(0, rejected.attempts - 1),
+						reserved: false,
+					},
+				});
+			}
 			factoryContext.cleanup();
 		}
 	}
@@ -8222,6 +8293,21 @@ ${taskSection}`;
 			prompt += `\n\nWorkflow launch inputs:\n${JSON.stringify(customInputs, null, 2)}`;
 		const id = `manual-${randomUUID()}`;
 		const parent = sourceRunId ? runtime.runs.get(sourceRunId) : undefined;
+		const selectedIds = input.repositoryIds ??
+			parent?.repositories?.map((repo) => repo.id) ??
+			repositoryScopes(Array.from(this.repositories.values())).find((scope) =>
+				scope.repositoryIds.includes(repository.id),
+			)?.repositoryIds ?? [repository.id];
+		if (!selectedIds.includes(repository.id))
+			throw new Error(
+				"The primary repository must belong to the selected scope",
+			);
+		const repositories = selectedIds.map((id) => {
+			const member = this.repositories.get(id);
+			if (!member?.isActive)
+				throw new Error(`Select an active repository: ${id}`);
+			return member;
+		});
 		const inherited = sourceRunId
 			? this.titleSession(sourceRunId)?.metadata?.executionSnapshot
 			: undefined;
@@ -8236,6 +8322,7 @@ ${taskSection}`;
 			const temporary = {
 				id,
 				repositoryId: repository.id,
+				repositories: snapshotRepositories(repositories, ""),
 				workspace: "",
 				runner: input.runner,
 				model: input.model,
@@ -8263,6 +8350,7 @@ ${taskSection}`;
 			workflowDefinitions,
 			id,
 			repositoryId: repository.id,
+			repositories: snapshotRepositories(repositories, ""),
 			workflow,
 			source: input.source,
 			workspace: "",
@@ -8276,7 +8364,10 @@ ${taskSection}`;
 		});
 		if (parent?.ticketReference)
 			run.ticketReference = structuredClone(parent.ticketReference);
-		run.launchRequest = structuredClone(input);
+		run.launchRequest = structuredClone({
+			...input,
+			repositoryIds: selectedIds,
+		});
 		run.setupComplete = false;
 		runtime.save(run);
 		void runtime.launch(run);
@@ -8289,7 +8380,10 @@ ${taskSection}`;
 		signal: AbortSignal,
 	): Promise<void> {
 		const runtime = this.getFactoryRuntime();
-		const repository = this.repositories.get(run.repositoryId)!;
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		)!;
 		const workflow = run.workflow;
 		run.outputs.repository = {
 			...(run.outputs.repository as Record<string, unknown>),
@@ -8465,7 +8559,7 @@ ${taskSection}`;
 			if (run.status === "stopped") return;
 			const workspace = await gitService.createGitWorktree(
 				fullIssue,
-				[repository],
+				repositories,
 				{ baseBranchOverrides },
 			);
 			if (
@@ -8480,17 +8574,35 @@ ${taskSection}`;
 					"Another run is using this worktree; terminate it before taking over",
 				);
 			run.workspace = workspace.path;
+			run.repositories = snapshotRepositories(
+				repositories,
+				workspace.path,
+				workspace.repoPaths,
+				Object.fromEntries(
+					repositories.map((repo) => [
+						repo.id,
+						(repo.id === repository.id ? takeoverPr?.baseRefName : undefined) ??
+							workspace.resolvedBaseBranches?.[repo.id]?.branch ??
+							repo.baseBranch,
+					]),
+				),
+			);
+			if (run.gitProvider)
+				run.repositories.find(
+					(repo) => repo.id === run.repositoryId,
+				)!.providerSnapshot = run.gitProvider;
 			const session = this.agentSessionManager.createChatSession(
 				run.id,
 				workspace,
 				"manual",
-				[
-					{
-						repositoryId: repository.id,
-						branchName: fullIssue.branchName,
-						baseBranchName: takeoverPr?.baseRefName ?? repository.baseBranch,
-					},
-				],
+				repositories.map((repo) => ({
+					repositoryId: repo.id,
+					branchName: fullIssue.branchName,
+					baseBranchName:
+						(repo.id === repository.id ? takeoverPr?.baseRefName : undefined) ??
+						workspace.resolvedBaseBranches?.[repo.id]?.branch ??
+						repo.baseBranch,
+				})),
 			);
 			this.sessionRepositories.set(run.id, repository.id);
 			run.outputs.repository = {
@@ -8511,7 +8623,7 @@ ${taskSection}`;
 					session,
 					fullIssue,
 					repository,
-					repositories: [repository],
+					repositories,
 					userComment: prompt,
 					isNewSession: true,
 					isStreaming: false,
@@ -8548,7 +8660,10 @@ ${taskSection}`;
 		run: FactoryRun,
 		signal: AbortSignal,
 	): Promise<void> {
-		const repository = this.repositories.get(run.repositoryId);
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		);
 		if (!repository?.isActive)
 			throw new Error(
 				"Run repository is unavailable; restore its configuration before continuing",
@@ -8576,6 +8691,43 @@ ${taskSection}`;
 				typeof url === "string" &&
 				isPullRequestSource(url)
 			) {
+				if (run.repositories && run.repositories.length > 1) {
+					const evidenceDir = join(
+						this.getFactoryRuntime().directory,
+						"evidence",
+						run.id,
+					);
+					await mkdir(evidenceDir, { recursive: true });
+					const context: ExecutionContext = {
+						execution: await this.resolveRunExecution(run),
+						run,
+						step: pending.step,
+						input: {},
+						signal,
+						evidenceDir,
+						log: () => {},
+					};
+					const output = await confirmedGroupedMerge(
+						context,
+						(child, exe, args) => executeCommand(child, exe, args, 60000),
+					);
+					if (!pendingMergeConfirmation(run, output))
+						throw new Error("Grouped merge cannot complete the saved workflow");
+					run.outputs[pending.step.id] = output;
+					if (pending.checkpoint.active!.phase === "executing")
+						run.history.push({
+							step: pending.key,
+							output,
+							at: new Date().toISOString(),
+						});
+					pending.checkpoint.active!.phase = "result";
+					this.getFactoryRuntime().log(
+						run,
+						pending.key,
+						"Confirmed all approved repository PRs merged after worktree cleanup.",
+					);
+					return;
+				}
 				const evidenceDir = join(
 					this.getFactoryRuntime().directory,
 					"evidence",
@@ -8625,17 +8777,23 @@ ${taskSection}`;
 		if (!session) {
 			session = this.agentSessionManager.createChatSession(
 				run.id,
-				{ path: run.workspace, isGitWorktree: true },
+				{
+					path: run.workspace,
+					isGitWorktree: true,
+					repoPaths:
+						run.repositories && run.repositories.length > 1
+							? Object.fromEntries(
+									run.repositories.map((repo) => [repo.id, repo.workspace]),
+								)
+							: undefined,
+				},
 				"manual",
-				[
-					{
-						repositoryId: run.repositoryId,
-						baseBranchName: String(
-							(run.outputs.repository as { baseBranch?: string })?.baseBranch ??
-								repository.baseBranch,
-						),
-					},
-				],
+				repositories.map((repo) => ({
+					repositoryId: repo.id,
+					baseBranchName:
+						run.repositories?.find((retained) => retained.id === repo.id)
+							?.baseBranch ?? repo.baseBranch,
+				})),
 			);
 		}
 		// The per-run checkpoint may be newer than the global session snapshot.
@@ -8984,7 +9142,10 @@ ${taskSection}`;
 		signal: AbortSignal,
 	): Promise<void> {
 		const session = this.agentSessionManager.getSession(run.id)!;
-		const repository = this.repositories.get(run.repositoryId)!;
+		const repositories = this.factoryRepositories(run);
+		const repository = repositories.find(
+			(repo) => repo.id === run.repositoryId,
+		)!;
 		const execution = run.simpleExecution;
 		if (!execution) {
 			const stop = () =>
@@ -9019,9 +9180,9 @@ ${taskSection}`;
 			repository,
 			run.id,
 			execution.systemPrompt,
-			this.buildAllowedTools([repository]),
-			[repository.repositoryPath],
-			this.buildDisallowedTools([repository]),
+			this.buildAllowedTools(repositories),
+			repositories.map((repo) => repo.repositoryPath),
+			this.buildDisallowedTools(repositories),
 			execution.agent?.sessionId,
 			[],
 			undefined,

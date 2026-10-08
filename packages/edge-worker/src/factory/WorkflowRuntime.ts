@@ -44,6 +44,7 @@ import {
 	type QuestionRecommendation,
 	questionNotification,
 } from "./Questions.js";
+import { deliveryRevisions } from "./RepositoryScope.js";
 import { reviewRecoveryQuestions } from "./ReviewRecovery.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
@@ -52,7 +53,7 @@ import {
 	type Inventory,
 	latestAggregate,
 	type ReviewBaseline,
-	reviewedRevision,
+	reviewedRunRevision,
 	scopeContextDigest,
 	stampSpecialist,
 	validateContractOutput,
@@ -110,6 +111,8 @@ export interface AgentCheckpoint {
 		}[];
 		revision?: RoleRevision;
 		attempts: number;
+		/** Reserved before launch; a proven pre-turn startup failure returns it. */
+		reserved?: boolean;
 		exhausted?: boolean;
 		screenshots?: { path: string; area: string; state?: string }[];
 	};
@@ -148,6 +151,7 @@ export interface GraphCheckpoint {
 	outputs?: Record<string, unknown>;
 }
 export interface HumanDecision {
+	repositories?: import("./RepositoryScope.js").ApprovedRepository[];
 	reviewId: string;
 	headSha: string;
 	decision: "approve" | "reject";
@@ -155,6 +159,7 @@ export interface HumanDecision {
 	at: string;
 }
 export interface ReviewGate {
+	repositories?: import("./RepositoryScope.js").ApprovedRepository[];
 	id: string;
 	headSha: string;
 	url: string;
@@ -169,6 +174,9 @@ export interface RunViewState {
 import { cleanupVideoEvidence } from "./Video.js";
 
 export interface FactoryRun {
+	repositories?: import("./RepositoryScope.js").RunRepository[];
+	/** Durable per-repository receipts, including partial publication and merges. */
+	repositoryOutputs?: Record<string, Record<string, unknown>>;
 	/** Accepted forge coordinates/adapter, retained across retry and configuration changes. */
 	gitProvider?: GitProviderSnapshot;
 	executionSnapshot?: ExecutionSnapshot;
@@ -271,6 +279,9 @@ export interface ExecutionContext {
 	evidenceDir: string;
 	resumeAgent?: AgentCheckpoint;
 	checkpointAgent?: (agent: AgentCheckpoint) => void;
+	/** Persist per-repository side effects before the whole step completes. */
+	save?: () => void;
+	allowUnchangedRepository?: boolean;
 }
 export interface RuntimeHooks {
 	execution?(
@@ -581,6 +592,7 @@ export class WorkflowRuntime {
 		};
 	}
 	create(options: {
+		repositories?: import("./RepositoryScope.js").RunRepository[];
 		executionSnapshot?: ExecutionSnapshot;
 		executionSelection?: ExecutionSelection;
 		triggerOrigin: WorkflowTriggerOrigin;
@@ -963,6 +975,7 @@ export class WorkflowRuntime {
 					state.agent = agent;
 					this.save(run);
 				},
+				save: () => this.save(run),
 			};
 			mkdirSync(context.evidenceDir, { recursive: true });
 			let output: unknown = outputs[step.id];
@@ -986,10 +999,7 @@ export class WorkflowRuntime {
 						throw new Error(
 							"Requirement inventory changed without a new specialist round",
 						);
-					const revision = await reviewedRevision(
-						run.workspace,
-						baseline.baseSha,
-					);
+					const revision = await reviewedRunRevision(run, baseline);
 					if (revision.headSha !== baseline.headSha)
 						throw new Error("Revision changed during specialist review");
 					output = aggregateReview(
@@ -1045,8 +1055,8 @@ export class WorkflowRuntime {
 						const source = outputs.source as
 							| { baseRefName?: string }
 							| undefined;
-						const revision = await reviewedRevision(
-							run.workspace,
+						const revision = await reviewedRunRevision(
+							run,
 							`refs/remotes/origin/${source?.baseRefName ?? repo?.baseBranch ?? "main"}`,
 						);
 						run.reviewRounds ??= [];
@@ -1111,9 +1121,9 @@ export class WorkflowRuntime {
 						// All runner hooks have returned and cleaned up their temporary
 						// project configuration. Reject any remaining edits before
 						// accepting the round, without exempting runner directories.
-						const revision = await reviewedRevision(
-							run.workspace,
-							state.reviewBaseline.baseSha,
+						const revision = await reviewedRunRevision(
+							run,
+							state.reviewBaseline,
 						);
 						if (revision.headSha !== state.reviewBaseline.headSha)
 							throw new Error("Revision changed during specialist review");
@@ -1223,9 +1233,9 @@ export class WorkflowRuntime {
 									sourceContextDigest: scopeContextDigest(context.input),
 								};
 							if (step.reviewContract !== "inventory-v1") {
-								const revision = await reviewedRevision(
-									run.workspace,
-									reviewBaseline?.baseSha,
+								const revision = await reviewedRunRevision(
+									run,
+									reviewBaseline,
 									// Sibling runners may still own temporary project files.
 									// The fanout join checks cleanliness after every cleanup.
 									{ requireClean: false },
@@ -1335,7 +1345,7 @@ export class WorkflowRuntime {
 						.filter((check) => typeof check === "string")
 						.map((check) => `- ${check}`)
 						.join("\n")}`;
-				if (run.ticketReference && this.hooks.track)
+				if (run.ticketReference && this.hooks.track) {
 					await this.track(run, {
 						key: `${key}:${count}:${readPath(output, "headSha") ?? "result"}`,
 						stage,
@@ -1343,6 +1353,13 @@ export class WorkflowRuntime {
 						...(typeof pr === "string" ? { pr } : {}),
 						...(merged ? { merged: true } : {}),
 					});
+					for (const delivery of deliveryRevisions(output).slice(1))
+						await this.track(run, {
+							key: `${key}:${count}:${delivery.repositoryId}:${delivery.headSha}`,
+							pr: delivery.url,
+							body: `${delivery.name}: ${delivery.url}. ${body}`,
+						});
+				}
 			}
 			if (
 				step.tool === "visual-gate" &&
@@ -1702,6 +1719,7 @@ export class WorkflowRuntime {
 				id: randomUUID(),
 				headSha: result.headSha,
 				url: result.url,
+				repositories: deliveryRevisions(result),
 				status: "pending",
 			};
 		state.phase = "waiting";
@@ -1748,7 +1766,11 @@ export class WorkflowRuntime {
 		if (decision.decision === "reject" && !decision.feedback?.trim())
 			throw new Error("Explain what Bob should change");
 		run.humanDecisions ??= [];
-		run.humanDecisions.push({ ...decision, at: new Date().toISOString() });
+		run.humanDecisions.push({
+			...decision,
+			repositories: structuredClone(gate.repositories),
+			at: new Date().toISOString(),
+		});
 		gate.status = decision.decision;
 		const answered = (frame?: GraphCheckpoint): void => {
 			if (frame?.active?.phase === "waiting") frame.active.phase = "answered";
@@ -1928,6 +1950,23 @@ export class WorkflowRuntime {
 			const step = steps.find((item) => item.id === frame.current);
 			if (!step) return;
 			const key = `${prefix}${step.id}`;
+			const agent =
+				frame.active?.phase === "executing" ? frame.active.agent : undefined;
+			if (step.type === "agent" && agent?.rejected?.exhausted) {
+				// Explicit Retry authorizes a fresh bounded budget for this role.
+				// Keep the candidate, issues, revision and native conversation.
+				agent.rejected = {
+					...agent.rejected,
+					attempts: 0,
+					reserved: false,
+					exhausted: false,
+				};
+				this.log(
+					run,
+					"run",
+					`Retry authorized another bounded output-correction cycle for ${key}; rejected output, issues and completed work retained.`,
+				);
+			}
 			if (
 				frame.active?.phase === "executing" &&
 				this.isUnstartedCodexAgent(run, frame.active.agent, key)

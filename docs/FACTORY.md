@@ -719,7 +719,9 @@ compact contract.
 
 ### Authentic demonstration videos
 
-New stock Factory and Takeover runs opt into `video-v1`. QA scope selects up to
+New stock Factory and Takeover runs opt into `video-v1`. Grouped runs validate
+recording sources across every retained repository, including changes in secondary
+repositories. QA scope selects up to
 three demonstrations linked to existing story/criterion IDs, independently of
 visual changes. Usually one 30–90 second clip explains the main changed flow.
 Backend-only changes can select none with a concrete reason. Short authentic
@@ -1045,9 +1047,27 @@ local checkpoint recovery, not exactly-once execution or cross-machine migration
 Termination cancels active runners and script process groups; retained worktrees
 and draft PRs stay available for inspection.
 
-Factory delivery currently targets one GitHub repository per run using `gh`.
-The Simple path keeps existing multi-repository and platform support. Readiness distinguishes passing CI from a repository with no configured checks;
-GitHub must still permit its merge. Loop limits, invalid agent results,
+Every workflow uses the same repository selection. Shared routing labels select
+all matching repositories; identical nonempty label sets within a workspace
+appear as one project in the composer, named after the first repository in config.
+Manual API launches may pass `repositoryIds` alongside the primary `repositoryId`.
+The accepted scope and each repository's worktree, base branch and provider survive
+retries and recovery. Existing single-repository runs retain their original scope.
+
+Factory and Takeover publish one PR/MR in each changed repository; unchanged
+repositories remain context. Reviews and QA cover the complete scope, CI and
+handoff inspect every delivery, and the combined human gate retains all exact PR
+URLs and head revisions. A changed revision invalidates approval. Each confirmed
+merge is persisted independently, and coding tickets become Done only when all
+deliveries are confirmed merged. GitHub, GitLab and configured custom providers
+use their existing adapters and native credentials.
+
+Scripts and custom exec steps run once in the shared parent workspace. Use
+`FACTORY_REPOSITORIES` or the tool-input `repositories` collection to find the
+individual Git worktrees; the parent directory is not itself a Git repository.
+The Simple path keeps its existing agent-managed multi-repository delivery.
+Readiness distinguishes passing CI from a repository with no configured checks;
+the provider must still permit its merge. Loop limits, invalid agent results,
 missing screenshots and delivery errors stop with an explicit failure. Human
 review remains necessary; an automated green pipeline is evidence, not a
 guarantee of flawless software.

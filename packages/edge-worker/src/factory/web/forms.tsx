@@ -239,6 +239,9 @@ export function Composer({
 				path: "/api/runs",
 				body: {
 					repositoryId: repo,
+					repositoryIds: config.repositories.find(
+						(item: any) => item.id === repo,
+					)?.repositoryIds,
 					workflow: workflow.id,
 					inputs,
 					...settings,

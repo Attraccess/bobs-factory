@@ -286,6 +286,66 @@ it("validates actual media, stamps provenance, preserves original capture revisi
 		finalizeVideoEvidence(f.ctx, structuredClone(capture)),
 	).rejects.toThrow("Reuse lacks");
 });
+it("validates grouped recording sources and rejects changes in a secondary repository", async () => {
+	const f = setup();
+	const primary = f.run.workspace;
+	const secondary = join(f.home, "api");
+	mkdirSync(secondary);
+	const git = (...args: string[]) =>
+		execFileSync("git", args, { cwd: secondary, encoding: "utf8" }).trim();
+	git("init", "-b", "main");
+	git("config", "user.email", "fixture@example.test");
+	git("config", "user.name", "Fixture");
+	git("config", "commit.gpgsign", "false");
+	writeFileSync(join(secondary, "view.txt"), "API fixture");
+	git("add", ".");
+	git("commit", "-m", "fixture");
+	f.run.workspace = f.home;
+	f.run.repositories = [primary, secondary].map((workspace, i) => ({
+		id: `repository-${i}`,
+		name: i ? "api" : "repo",
+		workspace,
+		repositoryPath: workspace,
+		baseBranch: "main",
+	}));
+	f.task.dependencies = ["repo/view.txt", "api/view.txt"];
+	const capture = (await finalizeVideoEvidence(
+		f.ctx,
+		f.output,
+	)) as VideoCapture;
+	const video = capture.videos![0];
+	f.run.outputs.capture = capture;
+	f.run.outputs["visual-review"] = {
+		acceptedVideos: [
+			{
+				taskId: video.taskId,
+				sha256: video.validation!.sha256,
+				inspectedPlayback: true,
+			},
+		],
+	};
+	const head = f.ctx.progress!.currentRevision!.headSha;
+	expect(await videoGateIssues(f.ctx, head)).toEqual({
+		blocked: [],
+		failures: [],
+	});
+	f.ctx.progress!.previousOutput = structuredClone(capture);
+	expect(
+		(
+			(await finalizeVideoEvidence(
+				f.ctx,
+				structuredClone(capture),
+			)) as VideoCapture
+		).videos![0].reused,
+	).toBe(true);
+	writeFileSync(join(secondary, "view.txt"), "Changed API fixture");
+	expect((await videoGateIssues(f.ctx, head)).blocked).toEqual([
+		"save-demo: Recording source dependencies changed",
+	]);
+	await expect(
+		finalizeVideoEvidence(f.ctx, structuredClone(capture)),
+	).rejects.toThrow("Reuse lacks");
+});
 it("requires fresh recordings after linked scenario changes but permits unrelated story changes", async () => {
 	const f = setup();
 	const capture = (await finalizeVideoEvidence(

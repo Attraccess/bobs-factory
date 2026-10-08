@@ -122,7 +122,18 @@ async function fixture() {
 	};
 	const worker = Object.assign(Object.create(EdgeWorker.prototype), {
 		agentSessionManager: { getSession: () => ({}), addAgentRunner: vi.fn() },
-		repositories: new Map([["repo", { repositoryPath: workspace }]]),
+		repositories: new Map([
+			[
+				"repo",
+				{
+					id: "repo",
+					name: "Fixture",
+					isActive: true,
+					baseBranch: "main",
+					repositoryPath: workspace,
+				},
+			],
+		]),
 		factoryHome: workspace,
 		runnerSlots: new SessionSemaphore(1),
 		buildAgentRunnerConfig: vi.fn(async () => ({
@@ -540,16 +551,47 @@ it("corrects fresh malformed JSON and missing PR files through the same boundary
 	});
 });
 
-it("persists correction across interruption and bounds repeated validation rejection", async () => {
+it("preserves a correction through pre-turn infrastructure failure without spending its budget", async () => {
 	const f = await guideFixture();
 	f.runner.start.mockRejectedValueOnce(new Error("Transport offline"));
 	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
 		"Transport offline",
 	);
 	const checkpoint = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
-	expect(checkpoint.rejected).toMatchObject({ attempts: 1, output: f.invalid });
+	expect(checkpoint.rejected).toMatchObject({
+		attempts: 0,
+		reserved: false,
+		output: f.invalid,
+	});
 	f.ctx.resumeAgent = checkpoint;
-	f.runner.start.mockResolvedValue(undefined);
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		f.guide,
+	);
+	expect(f.getConfig().mcpConfig["factory-context"]).toMatchObject({
+		required: true,
+		startup_timeout_sec: 45,
+	});
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+});
+
+it("persists correction after confirmed startup and bounds repeated validation rejection", async () => {
+	const f = await guideFixture();
+	const start = f.runner.start.getMockImplementation()!;
+	f.runner.start.mockImplementationOnce(async (...args) => {
+		await start(...args);
+		throw new Error("Transport offline after startup");
+	});
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"Transport offline after startup",
+	);
+	const checkpoint = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
+	expect(checkpoint.rejected).toMatchObject({
+		attempts: 1,
+		reserved: false,
+		output: f.invalid,
+	});
+	f.ctx.resumeAgent = checkpoint;
+	f.runner.start.mockImplementation(start);
 	f.runner.getMessages = () => [
 		{ type: "result", result: JSON.stringify(f.invalid) },
 	];

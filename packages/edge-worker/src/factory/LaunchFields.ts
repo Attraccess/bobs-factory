@@ -85,6 +85,15 @@ export const LaunchRequestSchema = z.object({
 	source: z.string().trim().max(1000).optional(),
 	inputs: z.record(z.string(), z.string().max(100000)).default({}),
 	repositoryId: z.string().min(1),
+	repositoryIds: z
+		.array(z.string().min(1))
+		.min(1)
+		.max(50)
+		.refine(
+			(ids) => new Set(ids).size === ids.length,
+			"Repository scope contains duplicates",
+		)
+		.optional(),
 	workflow: z.string().min(1),
 	...agentSettings,
 });

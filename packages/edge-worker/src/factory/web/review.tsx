@@ -19,6 +19,7 @@ import {
 	useFeedbackController,
 	useReviewFeedback,
 } from "./review-comments";
+import { reviewFileTarget } from "./review-context";
 import { type FeedbackTarget, feedbackKey } from "./review-feedback";
 import { ChangedFiles, FileLink, useReviewFiles } from "./review-files";
 import { useReviewInput } from "./review-input";
@@ -247,8 +248,7 @@ function ReviewReader({
 			staleTime: Infinity,
 		}),
 		inventory = evidence.data?.screenshots ?? [],
-		fileQuery = useReviewFiles(run, guide),
-		url = run.reviewGate?.url ?? run.outputs["draft-pr"]?.url;
+		fileQuery = useReviewFiles(run, guide);
 	useReadingPosition(
 		documentPage ? `${storageKey}/position/${page}` : undefined,
 		!explicit.current,
@@ -1034,7 +1034,7 @@ function ReviewReader({
 											"File",
 											file,
 											[8, i],
-											<FileLink path={file} url={url} />,
+											<FileLink {...reviewFileTarget(run, file)} />,
 										)}
 									</li>
 								))}
