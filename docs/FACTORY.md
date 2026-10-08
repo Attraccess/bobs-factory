@@ -13,6 +13,9 @@ Install a verified macOS/Linux binary and prepare Git, `gh` and your selected
 agent CLI. Authenticate the agent and GitHub CLI. The repository needs a checked-out
 base branch and writable origin for delivery. The factory needs no separate Node,
 npm or Bun. See [binary distribution](distribution/README.md) for availability.
+Verified preview binaries are available from native CI. Follow the complete
+[binary installation](../README.md#install-and-start) for downloads, verification,
+PATH setup and first-passkey enrollment.
 
 ```sh
 bobs-factory --repo /absolute/path/to/repo --agent codex --model gpt-6.1-sol
@@ -62,6 +65,11 @@ or a registration is cancelled:
 ```sh
 bobs-factory --home /absolute/path/to/the/effective/factory-home factory-auth
 ```
+
+Checkout users can run `bun run scripts/factory.ts factory-auth` from the Bob’s
+Factory checkout in a second terminal after `pnpm factory` has started. Add
+`--home /absolute/path/to/the/effective/factory-home` if the server uses another
+state directory.
 
 An installed CLI also supports `bobs-factory --home /absolute/home factory-auth`
 and `bobs-factory --home /absolute/home factory-auth --recover --confirm

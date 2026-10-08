@@ -2,6 +2,7 @@ import { motion, useScroll, useSpring, useTransform } from "motion/react";
 import { useRef, useState } from "react";
 import { Bob, type Mood } from "./Bob";
 import { CopyCommand } from "./CopyCommand";
+import { LAUNCH_COMMAND } from "./GetStarted";
 import { BrowserFrame, ease, Video } from "./ui";
 
 const chips = [
@@ -127,7 +128,7 @@ export function Hero() {
 							→
 						</span>
 					</a>
-					<CopyCommand command="pnpm factory --repo . --agent claude" />
+					<CopyCommand command={LAUNCH_COMMAND} label="Copy launch command" />
 				</motion.div>
 			</div>
 
