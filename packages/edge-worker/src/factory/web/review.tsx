@@ -756,6 +756,68 @@ function ReviewReader({
 								</section>
 							))}
 						</details>
+						{guide.requirementCoverage && (
+							<details {...disclosure("coverage")}>
+								<summary>Requirement coverage and specialist evidence</summary>
+								{guide.requirementCoverage.assessments.map((a) => (
+									<section key={a.requirementId}>
+										<strong>
+											{a.requirementId} · {a.status.replaceAll("_", " ")}
+										</strong>
+										<p>{a.criterion}</p>
+										<p>{a.reason}</p>
+										<ul>
+											{a.evidence.map((e, i) => (
+												<li key={i}>{e}</li>
+											))}
+										</ul>
+										{a.decision && (
+											<p>
+												Accepted skip: {a.decision.acceptedBy} ·{" "}
+												{a.decision.rationale} ({a.decision.source.reference})
+											</p>
+										)}
+									</section>
+								))}
+								{guide.requirementCoverage.reviewers.map((r) => (
+									<details key={r.reviewer}>
+										<summary>
+											{r.reviewer}: {r.summary}
+										</summary>
+										{r.findings.map((f) => (
+											<p key={f.id}>
+												{r.reviewer}:{f.id} · rating {f.rating} · {f.status}:{" "}
+												{f.summary}
+												<br />
+												{f.evidence}
+												{f.reason && (
+													<>
+														<br />
+														{f.reason}
+													</>
+												)}
+											</p>
+										))}
+										{r.disagreements.map((d, i) => (
+											<p key={i}>Disagreement: {d}</p>
+										))}
+										{r.disputeResolutions?.map((d, i) => (
+											<p key={`resolved-${i}`}>
+												Resolved disagreement: {d.disagreement}
+												<br />
+												{d.reason}
+												<br />
+												{d.evidence}
+											</p>
+										))}
+									</details>
+								))}
+								<p className="muted">
+									Inventory version {guide.requirementCoverage.inventoryVersion}{" "}
+									· {guide.requirementCoverage.headSha}
+								</p>
+							</details>
+						)}
 						<details {...disclosure("verification")}>
 							<summary>Verification evidence ({guide.checks.length})</summary>
 							{lines(guide.checks, "/checks", [3])}

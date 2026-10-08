@@ -664,8 +664,26 @@ export function RenderArtifact({
 		case "review":
 			return (
 				<>
+					{v.stamp && (
+						<p className="muted">
+							{v.stamp.reviewer} · round {v.stamp.round} · inventory v
+							{v.stamp.inventoryVersion}
+						</p>
+					)}
 					<Markdown>{v.summary}</Markdown>
 					<Findings items={v.findings} />
+					{v.coverage && (
+						<details>
+							<summary>Requirement coverage ({v.coverage.length})</summary>
+							<List items={v.coverage} />
+						</details>
+					)}
+					{v.disagreements?.length > 0 && (
+						<>
+							<h3>Disagreements</h3>
+							<List items={v.disagreements} />
+						</>
+					)}
 				</>
 			);
 		case "gate":
@@ -688,6 +706,20 @@ export function RenderArtifact({
 							<h3>Optional improvements</h3>
 							<List items={v.observations} />
 						</>
+					)}
+					{v.reviewers && (
+						<details>
+							<summary>Specialist receipts and complete coverage</summary>
+							{v.reviewers.map((r: any) => (
+								<section key={r.stamp.stepKey}>
+									<strong>{r.stamp.reviewer}</strong>
+									<p>{r.summary}</p>
+									<Findings items={r.findings} />
+								</section>
+							))}
+							<List items={v.coverage} />
+							<List items={v.disagreements} />
+						</details>
 					)}
 					<List items={v.feedback} />
 					{v.findings && (!v.captureBlocked || v.findings.length > 0) && (

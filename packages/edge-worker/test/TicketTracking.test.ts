@@ -14,6 +14,7 @@ import {
 	taskbotServer,
 	taskbotSource,
 } from "../src/factory/TicketTracking.js";
+import { validateWorkflows } from "../src/factory/Workflow.js";
 import {
 	type FactoryRun,
 	WorkflowRuntime,
@@ -97,6 +98,113 @@ function fixture() {
 		home,
 	};
 }
+it.each([
+	"question",
+	"answer",
+	"reason",
+	"removed",
+	"unchanged",
+	"legacy",
+] as const)("delivers restored assistance once per question batch (%s)", async (changed) => {
+	const f = fixture();
+	const output = {
+		approved: false,
+		qaBlocked: true,
+		questions: ["Which fixture account is ready?"],
+		questionRecommendations: [
+			{ questionIndex: 0, answer: "Restore access", reason: "QA needs access" },
+		],
+	};
+	let trackedWaits = 0;
+	const hooks = {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => structuredClone(output),
+		track: async (
+			run: FactoryRun,
+			milestone: Parameters<TicketTracking["record"]>[1],
+		) => {
+			await f.service.record(run, milestone);
+			if (milestone.key.startsWith("questions:")) trackedWaits++;
+		},
+	};
+	let runtime = new WorkflowRuntime(f.home, hooks);
+	const definition = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "qa-assistance",
+			name: "QA assistance",
+			steps: [
+				{ id: "capture", name: "Capture", type: "agent", prompt: "Mock" },
+				{ id: "visual-review", name: "Review", type: "agent", prompt: "Mock" },
+				{
+					id: "visual-gate",
+					name: "Gate",
+					type: "tool",
+					tool: "visual-gate",
+					qaContract: "qa-v1",
+					next: "end",
+				},
+			],
+		},
+	]).at(-1)!;
+	const run = runtime.create({
+		repositoryId: "repo",
+		workspace: f.home,
+		input: source,
+		workflow: definition,
+		triggerOrigin: {
+			type: "manual",
+			workflowId: definition.id,
+			at: new Date().toISOString(),
+		},
+	});
+	run.ticketReference = ref;
+	const comments = () =>
+		f.ticket.comments.filter((c) =>
+			c.body.startsWith("Factory needs assistance:"),
+		);
+	const wait = (count: number) =>
+		vi.waitFor(() => {
+			expect(runtime.get(run.id).status).toBe("waiting");
+			expect(trackedWaits).toBe(count);
+			expect(
+				runtime.get(run.id).ticketSync?.receipts.every((r) => r.delivered),
+			).toBe(true);
+		});
+	try {
+		void runtime.launch(run);
+		await wait(1);
+		expect(comments()).toHaveLength(1);
+		const original = run.questionBatchId;
+		await runtime.shutdown();
+		if (changed === "legacy") {
+			run.ticketSync!.receipts.find((r) =>
+				r.key.startsWith("questions:"),
+			)!.key = `questions:${run.step}:${run.answers.length}`;
+			runtime.save(run);
+		} else if (changed === "question")
+			output.questions[0] = "Which replacement account is ready?";
+		else if (changed === "removed") output.questionRecommendations = [];
+		else if (changed !== "unchanged")
+			output.questionRecommendations[0]![changed] = "Updated guidance";
+		for (let restart = 0; restart < 2; restart++) {
+			runtime = new WorkflowRuntime(f.home, hooks);
+			runtime.resumeAll();
+			await wait(restart + 2);
+			const replaced = !["unchanged", "legacy"].includes(changed);
+			expect(comments()).toHaveLength(replaced ? 2 : 1);
+			if (replaced) {
+				expect(runtime.get(run.id).questionBatchId).not.toBe(original);
+				expect(comments().at(-1)!.body).not.toBe(comments()[0]!.body);
+			} else expect(runtime.get(run.id).questionBatchId).toBe(original);
+			expect(runtime.get(run.id).answers).toEqual([]);
+			await runtime.shutdown();
+		}
+	} finally {
+		await runtime.shutdown();
+	}
+});
 it("resolves only designated origins, preserves instance/project, and rejects ambiguity", () => {
 	expect(originatingTicket(source)).toBe(source);
 	expect(originatingTicket(`Task source: ${source}`)).toBe(source);

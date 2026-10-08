@@ -960,7 +960,9 @@ function RunPage({
 								Boolean(run.capacityLeaves?.[step.key]) ||
 								current === step.key ||
 								!steps.length,
-							artifact = artifacts.find((a) => a.name === step.id),
+							artifact =
+								artifacts.find((a) => a.name === step.key) ??
+								artifacts.find((a) => a.name === step.id),
 							isOpen = open[step.key] ?? (!current && i === rows.length - 1);
 						return (
 							<li

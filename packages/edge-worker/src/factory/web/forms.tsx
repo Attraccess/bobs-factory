@@ -439,14 +439,14 @@ export function Composer({
 }
 function ownRoles(
 	steps: any[],
-	path: number[] = [],
-): { step: any; path: number[] }[] {
+	path: (string | number)[] = [],
+): { step: any; path: (string | number)[] }[] {
 	return steps.flatMap((step, i) =>
 		step.type === "agent"
 			? [{ step, path: [...path, i] }]
 			: step.type === "fanout"
 				? (step.groups ?? []).flatMap((group: any[], j: number) =>
-						ownRoles(group, [...path, i, j]),
+						ownRoles(group, [...path, i, "groups", j]),
 					)
 				: [],
 	);
@@ -707,7 +707,7 @@ export function Recipes() {
 							<section>
 								<small>METHOD</small>
 								<div className="recipe-method">
-									{workflow.steps.map((step: any) => (
+									{workflow.steps.map((step: any, stepIndex: number) => (
 										<div key={step.id}>
 											<span>
 												{step.type === "workflow"
@@ -724,6 +724,7 @@ export function Recipes() {
 														setRole({
 															workflowId: workflow.id,
 															stepId: step.id,
+															path: [stepIndex],
 															value: structuredClone(step),
 														})
 													}
@@ -738,7 +739,7 @@ export function Recipes() {
 												</small>
 											)}
 											{step.type === "fanout" &&
-												ownRoles([step]).map(({ step: child }) => (
+												ownRoles([step]).map(({ step: child, path }) => (
 													<Button
 														key={child.id}
 														variant="agent-pill"
@@ -746,6 +747,7 @@ export function Recipes() {
 															setRole({
 																workflowId: workflow.id,
 																stepId: child.id,
+																path: [stepIndex, ...path.slice(1)],
 																value: structuredClone(child),
 															})
 														}
@@ -917,27 +919,84 @@ export function Recipes() {
 							onChange={(value) => setRole({ ...role, value })}
 						/>
 					)}
+					{role && (
+						<>
+							<label>
+								Role prompt
+								<textarea
+									value={role.value.prompt ?? ""}
+									onChange={(e) =>
+										setRole({
+											...role,
+											value: { ...role.value, prompt: e.target.value },
+										})
+									}
+									rows={8}
+								/>
+							</label>
+							<label>
+								Output contract
+								<select
+									value={role.value.reviewContract ?? ""}
+									onChange={(e) =>
+										setRole({
+											...role,
+											value: {
+												...role.value,
+												reviewContract: e.target.value || undefined,
+											},
+										})
+									}
+								>
+									<option value="">Legacy / custom output</option>
+									<option value="inventory-v1">Requirement inventory</option>
+									<option value="specialist-v1">Specialist findings</option>
+									<option value="coverage-v1">
+										Findings and complete requirement coverage
+									</option>
+								</select>
+							</label>
+							<label>
+								<input
+									type="checkbox"
+									checked={role.value.json !== false}
+									onChange={(e) =>
+										setRole({
+											...role,
+											value: { ...role.value, json: e.target.checked },
+										})
+									}
+								/>{" "}
+								Structured JSON output
+							</label>
+							{role.value.reviewContract && (
+								<p className="muted">
+									Review contracts require structured JSON. Replace the coverage
+									supplier before removing it. Add or remove reviewers in the
+									recipe JSON; up to eight fanout groups.
+								</p>
+							)}
+						</>
+					)}
+					{action.error && (
+						<p className="error" role="alert">
+							{action.error.message}
+						</p>
+					)}
 					<Button
 						requiresConnection
 						disabled={action.isPending}
 						busy={action.isPending}
 						onClick={() => {
-							if (action.isPending || !role) return;
-							const replace = (steps: any[]): any[] =>
-								steps.map((s) =>
-									s.id === role.stepId
-										? role.value
-										: s.groups
-											? { ...s, groups: s.groups.map(replace) }
-											: s,
-								);
-							void save(
-								config.workflows.map((w: any) =>
-									w.id === role.workflowId
-										? { ...w, steps: replace(w.steps) }
-										: w,
-								),
-							).then((ok) => {
+							if (action.isPending || !role?.path) return;
+							const definitions = structuredClone(config.workflows);
+							const workflow = definitions.find(
+								(w: any) => w.id === role.workflowId,
+							);
+							let node = workflow.steps;
+							for (const part of role.path.slice(0, -1)) node = node[part];
+							node[role.path.at(-1)] = role.value;
+							void save(definitions).then((ok) => {
 								if (ok && isCurrent()) {
 									setRole(undefined);
 									toast({ text: "Step settings saved" });

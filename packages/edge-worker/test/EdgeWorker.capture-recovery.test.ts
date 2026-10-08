@@ -692,6 +692,68 @@ it("corrects invalid recommendation indices from a custom question-enabled role"
 	expect(f.runner.start).toHaveBeenCalledOnce();
 });
 
+it.each([
+	false,
+	true,
+])("retains extraction recommendations and corrects invalid inventory output (saved result: %s)", async (saved) => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "extract-requirements",
+		name: "Extract requirements",
+		type: "agent",
+		prompt: "Extract scope",
+		askQuestions: true,
+		reviewContract: "inventory-v1",
+	};
+	f.ctx.run.step = "extract-requirements";
+	const source = { source: "originalInput", reference: "/acceptance/0" };
+	const valid = {
+		schemaVersion: 1,
+		requirements: [
+			{
+				id: "R1",
+				criterion: "Reject blank strings",
+				classification: "active",
+				sources: [source],
+			},
+		],
+		decisions: [],
+		conflicts: [],
+		sourceReceipt: { considered: [source], unavailable: [] },
+		questions: ["Should blank strings be rejected?"],
+		questionRecommendations: [
+			{
+				questionIndex: 0,
+				answer: "Reject blank strings",
+				reason: "Required by the caller contract",
+			},
+		],
+	};
+	const invalid = { ...valid, requirements: [] };
+	if (saved) f.ctx.resumeAgent!.result!.output = invalid;
+	else delete f.ctx.resumeAgent!.result;
+	let turn = 0;
+	f.runner.getMessages = () => [
+		{
+			type: "result",
+			result: JSON.stringify(!saved && turn++ === 0 ? invalid : valid),
+		},
+	];
+	const output = await f.worker.executeFactoryAgent(f.ctx);
+	expect(output).toMatchObject(valid);
+	expect(output.decisions).toEqual([]);
+	expect(f.runner.start).toHaveBeenCalledTimes(saved ? 1 : 2);
+	expect(f.getInput().outputCorrection).toMatchObject({
+		output: invalid,
+		attempts: 1,
+	});
+	expect(f.getInput().outputCorrection.issues).toEqual(
+		expect.arrayContaining([
+			expect.objectContaining({ path: "/requirements" }),
+		]),
+	);
+});
+
 it("gives saved review fixers question guidance even without askQuestions", async () => {
 	const f = await fixture();
 	f.ctx.step = {

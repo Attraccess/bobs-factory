@@ -58,7 +58,10 @@ export async function roleProgress(
 		uncertain: true,
 		newHistory: context.step.inputs
 			? []
-			: run.history.slice(previousRevision?.historyLength ?? 0),
+			: (context.reviewBaseline
+					? run.history.slice(0, context.reviewBaseline.historyLength)
+					: run.history
+				).slice(previousRevision?.historyLength ?? 0),
 	};
 	const git = async (args: string[]) =>
 		(

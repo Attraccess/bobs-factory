@@ -11,6 +11,13 @@ This changelog documents internal development changes, refactors, tooling update
 ### Fixed
 
 - Fix video evidence CI validation and base integration by formatting styles, installing media test tools and preserving both video and refinement recommendation guidance in the full prompt. Keep video-contract validation enforced through question-result normalization and preserve video finalization alongside feedback and review recovery. Integrate passkey access, renamed Bob’s Factory packages, compact review history and CI revision recovery without weakening video media restrictions. Keep context snapshot isolation checks compatible with both source and binary launch arguments. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Integrate specialist review with compact review history and the Bob’s Factory fork. Retain complete coverage in exported guides, question explanations, and batch-specific ticket notifications across restart. Keep snapshot fixtures compatible with binary arguments and authenticate restart-harness requests using isolated test sessions. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Preserve specialist extraction regression coverage while integrating legacy feedback recovery and shared question guidance from main. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Correct Recipes focus-recovery QA to open the reviewer dialog through trusted pointer or keyboard interaction and compare focus with the exact opening button after Escape. Retain reproducible browser receipts for desktop and narrow layouts. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Integrate specialist review with refinement recommendations and wait for capacity initialization in persistence test fixtures before cleanup. Cover assistance-batch notification and restart deduplication through the durable outbox and mocked F1 tracking. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Integrate Web Push with independent execution profiles, retaining intentional-stop metadata, protected device APIs and both capability descriptions. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 
@@ -45,6 +52,11 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Integrate specialist review with passkey-protected Factory access, retain the complete launch guidance, and load authenticated test browser state in Recipes focus QA. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Integrate Codex startup recovery with specialist review and retain focused coverage of retry, restart, requirement validation and approval safeguards. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
+- Integrate specialist review with current QA recovery and instance-capacity behavior; retain inventory validation across nested workflows and refresh the complete routing-prompt expectation. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 - Integrate Codex startup checkpoint recovery and shared question guidance with execution profiles; retain established conversations and independent execution settings. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
 - Integrate feedback recovery with execution profiles while preserving constructor cleanup synchronization and both changelog histories. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
