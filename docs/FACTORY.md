@@ -9,29 +9,42 @@ local authentication file, without accounts, a database or a hosted identity ser
 
 ## Start locally
 
-Install a verified macOS/Linux binary and prepare Git, `gh` and your selected
-agent CLI. Authenticate the agent and GitHub CLI. The repository needs a checked-out
-base branch and writable origin for delivery. The factory needs no separate Node,
-npm or Bun. See [binary distribution](distribution/README.md) for availability.
-Verified preview binaries are available from native CI. Follow the complete
-[binary installation](../README.md#install-and-start) for downloads, verification,
-PATH setup and first-passkey enrollment.
+Follow the two-command [installation](../README.md#install-and-start), then run
+`bobs-factory`. Your browser opens at http://localhost:3457. First launch prints
+the passkey setup code in the same terminal and guides you through selecting a
+Git project, coding agent and optional GitHub connection. No separate terminal,
+GitHub CLI, Node, npm or Bun is needed to install the factory.
+
+The GitHub step links to a classic personal access token with `repo` scope.
+Choose an expiration; this token covers repositories your GitHub account can
+access. Bob validates the selected project's PR and CI evidence before saving
+the token privately. [Fine-grained tokens can lack Checks access](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens-limitations);
+an existing token is accepted only when its read-only capability check succeeds. Existing
+GitHub App and environment credentials remain supported. If organization policy
+blocks classic tokens, use a prepared GitHub App binding instead.
+
+The first public release is being prepared. The installer reports unavailable
+downloads until it is published; see [binary distribution](distribution/README.md).
+
+Git and the selected coding agent remain prerequisites for executing work.
+The project needs a checked-out base branch and writable origin for delivery.
+Your saved setup is reused on the next launch. Explicit launch remains available:
 
 ```sh
 bobs-factory --repo /absolute/path/to/repo --agent codex --model gpt-6.1-sol
 ```
 
-Open http://127.0.0.1:3457. `--port`, `--home` and `--agent` are optional;
-defaults are 3457, `~/.bobs-factory` and `claude`. Local launch uses the next port
-for RPC/webhooks and works without Linear credentials for manually triggered tasks.
+`--port` and `--home` default to 3457 and `~/.bobs-factory`. Use `--no-open` for
+headless startup. Local launch uses the next port for RPC/webhooks and works
+without Linear credentials for manually triggered tasks. Development checkouts
+use `pnpm factory` with the same onboarding.
 
 `bobs-factory start` uses configured repositories/integrations and starts the
 dashboard on port 3457. Set `BOBS_FACTORY_FACTORY_PORT` to choose another port,
-or `0` to disable it. Development checkouts can still use `pnpm factory`.
-The dashboard binds to loopback separately from the webhook listener and is
-intended for one operator. Every dashboard address requires a passkey session,
-including localhost. Provider webhooks and OAuth callbacks stay independent of
-dashboard authentication.
+or `0` to disable it. The dashboard binds to loopback separately from the
+webhook listener and is intended for one operator. Every dashboard address
+requires a passkey session, including localhost. Provider webhooks and OAuth
+callbacks stay independent of dashboard authentication.
 
 ## Passkey access and first setup
 
@@ -57,18 +70,19 @@ The tunnel must preserve the public authority and origin. No forwarded header
 is used as an authentication or identity claim. There is no extra UI listener.
 Remote access is denied when its origin has not been configured.
 
-At first startup, a ten-minute, single-use setup code is written to
-`<home>/factory/auth/enroll.json`, readable only by the operator. Copy its `token`
-value into the setup screen. Generate another code on the machine when it expires
-or a registration is cancelled:
+At first foreground startup, Bob prints a ten-minute, single-use setup code in
+the same terminal and opens the browser. Enter it in the first-passkey screen.
+The private grant is also written to `<home>/factory/auth/enroll.json`, readable
+only by the operator. Existing passkeys are never automatically reset. For a
+service or an expired/cancelled enrollment, generate another code on the machine:
 
 ```sh
 bobs-factory --home /absolute/path/to/the/effective/factory-home factory-auth
 ```
 
-Checkout users can run `bun run scripts/factory.ts factory-auth` from the Bob’s
-Factory checkout in a second terminal after `pnpm factory` has started. Add
-`--home /absolute/path/to/the/effective/factory-home` if the server uses another
+Checkout users also get the code from `pnpm factory` on first launch. The
+manual recovery helper is `bun run scripts/factory.ts factory-auth`; add
+`--home /absolute/path/to/the/effective/factory-home` when selecting another
 state directory.
 
 An installed CLI also supports `bobs-factory --home /absolute/home factory-auth`
@@ -77,8 +91,11 @@ and `bobs-factory --home /absolute/home factory-auth --recover --confirm
 
 Start the server before generating a code: pending grants/challenges are
 invalidated on restart. Both launch modes default to `~/.bobs-factory`; `--home` selects another
-state directory. Always choose the home used by the running service. Setup codes authorize one enrollment, expire in ten minutes and
-never belong in URLs, screenshots, run prompts or ticket comments. Transfer the
+state directory. Always choose the home used by the running service. Setup codes
+authorize one enrollment and expire in ten minutes. Automatic local first launch
+passes the grant in a localhost URL fragment that is consumed and removed before
+normal app navigation; it is not sent in HTTP requests. Keep codes out of shared
+URLs, screenshots, run prompts and ticket comments. Transfer the
 code privately to the phone, then open the exact configured HTTPS origin there.
 
 Each passkey belongs to the address where it was created. Localhost and the

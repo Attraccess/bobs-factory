@@ -1,11 +1,15 @@
 # Binary distribution
 
-For installation, use the [prebuilt binary instructions](../../README.md#install-and-start).
-Preview `0.2.73` from commit `beb6ed76305946fcfab38fa978cb7e3b4e83f6dc` passed
-native installer/runtime smoke on all four targets in
-[CI run 37810552203](https://github.com/jappyjan/bobs-factory/actions/runs/37810552203).
-These are downloadable Actions artifacts, requiring GitHub sign-in; stable
-release publication is pending. The build commands below are for contributors.
+Install with the [two-command quick start](../../README.md#install-and-start).
+The public installer detects your OS/CPU and downloads a verified version without
+GitHub login, GitHub CLI, Node or Bun. First launch opens protected browser setup
+for a project, prepared agent and GitHub connection. Agents may have their own
+runtime and login requirements.
+
+The first public release is being prepared. The shared
+[`release.json` contract](PUBLIC_RELEASES.md) drives the installer, homepage and
+Nix package. Until a reviewed release is published, the homepage and installer
+report unavailable downloads. CI artifacts remain maintainer validation material.
 
 The artifact contract is `bobs-factory-VERSION-TARGET.tar.gz` with a matching
 `.manifest.json`: schema version, product, exact version, commit, target, byte size
@@ -18,7 +22,8 @@ verified before extraction into a content-addressed private resource directory.
 pnpm install --frozen-lockfile
 pnpm --filter 'bobs-factory...' build
 bun run scripts/build-binary.ts --target darwin-arm64 --output /tmp/factory-build
-./scripts/smoke-binary.sh /tmp/factory-build/bobs-factory-0.2.73-darwin-arm64/bobs-factory
+factory_version=$(node -p 'require("./apps/cli/package.json").version')
+./scripts/smoke-binary.sh "/tmp/factory-build/bobs-factory-$factory_version-darwin-arm64/bobs-factory"
 ```
 
 Compile success is not runtime evidence. Native-target smoke must check isolated
@@ -87,11 +92,11 @@ The archive's runtime dependency inventory excludes them.
 
 ## Installation and manual replacement
 
-Download an exact version's archive and matching manifest from a trusted project
-release or successful immutable CI run. Retrieve `install-binary.sh` from the same
-source commit; the main README pins all three to the verified preview. The SHA-256
-manifest verifies downloaded
-bytes, not publisher identity; trust the release source as well. Run:
+The public installer is the primary installation path. For maintainer validation
+or manual replacement, download an exact version's archive, matching manifest and
+`install-binary.sh` from the same trusted release. When validating CI artifacts,
+retrieve the verifier from the immutable candidate's source commit. The SHA-256
+manifest verifies downloaded bytes; trust the release source as well. Run:
 
 ```sh
 sh install-binary.sh ARCHIVE.tar.gz ARCHIVE.manifest.json ~/.local
@@ -108,8 +113,28 @@ replacement consumers, point the executable link to the retained previous versio
 and restore separately backed-up mutable state only if needed. Do not run old and
 new workers together. Automatic polling/updating is deferred.
 
-The binary CI workflow is build/verification only, with immutable candidate input
-and a default dry run. It does not publish releases or move stable tags. Upstream
+The binary CI workflow remains build/verification only, with immutable candidate
+input. The separate [public release workflow](PUBLIC_RELEASES.md) defaults to a
+dry run and publishes only explicitly approved, fully validated immutable artifacts. Upstream
 npm publishing scripts/workflow are retained as historical files in `scripts/archive`;
 they are not supported fork commands. Future publishing must retain the exact
 reviewed candidate, all-target evidence and manifest checks.
+
+## Nix from the same release manifest
+
+Pin a reviewed release's `release.json` as a file in your Nix configuration.
+[`nix/package.nix`](../../nix/package.nix) selects the platform and fixed archive
+checksum from that manifest:
+
+```nix
+bobs-factory = import /path/to/bobs-factory/nix/package.nix {
+  inherit pkgs;
+  releaseManifest = ./bobs-factory-release.json;
+};
+```
+
+The package fetches public versioned assets without GitHub credentials. An
+unavailable manifest fails evaluation clearly. Update the pinned manifest when
+upgrading; avoid fetching a mutable latest pointer during evaluation. Keep the
+service's home, environment and conversations separate from the immutable Nix
+package, and drain/stop the old worker before an intentional upgrade.

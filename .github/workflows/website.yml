@@ -7,7 +7,12 @@ on:
       - main
     paths:
       - 'website/**'
+      - 'scripts/install.sh'
+      - 'scripts/sync-release-metadata.mjs'
+      - 'scripts/lib/binary-release.mjs'
       - '.github/workflows/website.yml'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -41,6 +46,10 @@ jobs:
 
       - name: Install website dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Synchronize public installer and release metadata
+        working-directory: .
+        run: node scripts/sync-release-metadata.mjs
 
       - name: Build website
         env:

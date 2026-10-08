@@ -179,6 +179,7 @@ import {
 	ExecutionProfileStore,
 	ExecutionSnapshotSchema,
 } from "./factory/ExecutionProfiles.js";
+import type { FactoryOnboarding } from "./factory/FactoryOnboarding.js";
 import { FactoryPush } from "./factory/FactoryPush.js";
 import { validateFactoryResult } from "./factory/FactoryResults.js";
 import { FactoryServer } from "./factory/FactoryServer.js";
@@ -191,6 +192,7 @@ import {
 	toolArguments,
 } from "./factory/FactoryTools.js";
 import { factoryFeedbackContext } from "./factory/FeedbackPolicy.js";
+import { applyManagedGithubAgentEnvironment } from "./factory/GithubApi.js";
 import {
 	normalizeGitProviderConfig,
 	resolveGitProvider,
@@ -499,7 +501,10 @@ export class EdgeWorker extends EventEmitter {
 		};
 	}
 
-	constructor(config: EdgeWorkerConfig) {
+	constructor(
+		config: EdgeWorkerConfig,
+		private readonly localSetup?: FactoryOnboarding,
+	) {
 		super();
 		this.config = EdgeWorker.normalizeConfigPaths(config);
 		this.factoryHome = config.factoryHome;
@@ -955,6 +960,7 @@ export class EdgeWorker extends EventEmitter {
 		) {
 			this.factoryPush ??= new FactoryPush(this.factoryHome);
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
+				onboarding: this.localSetup,
 				push: this.factoryPush,
 				capacity: this.runnerSlots,
 				defaultRunner: () => this.runnerSelectionService.getDefaultRunner(),
@@ -2491,7 +2497,7 @@ ${reviewBody}
 - Respond with a concise summary of the changes you made`
 			: `## Instructions
 - The reviewer has requested changes but did not leave a summary comment
-- Use \`gh api repos/${repoFullName}/pulls/${prNumber}/reviews\` to read the review comments and understand what changes are needed
+- Use the built-in GitHub API helper described in the shipping skill to GET \`repos/${repoFullName}/pulls/${prNumber}/reviews\`, paginating the complete result, and understand what changes are needed. GitHub CLI is optional.
 - You are already checked out on the PR branch \`${branchRef}\`
 - Address all the reviewer's feedback and make the necessary changes
 - After making changes, commit and push them to the branch
@@ -3457,6 +3463,47 @@ ${taskSection}`;
 	setConfigPath(configPath: string): void {
 		this.configPath = configPath;
 		this.configManager.setConfigPath(configPath);
+	}
+
+	/** Apply an authenticated local launch setup without restarting the dashboard. */
+	async configureLocalRepository(
+		repository: RepositoryConfig,
+		runner: RunnerType,
+	): Promise<void> {
+		if (!this.localSetup || this.config.platform !== "cli")
+			throw new Error("Local project setup is unavailable on this worker");
+		if (this.repositories.has(repository.id))
+			await this.updateModifiedRepositories([repository]);
+		else await this.addNewRepositories([repository]);
+		const workspace = repository.linearWorkspaceId;
+		if (workspace && !this.issueTrackers.has(workspace)) {
+			const service = new CLIIssueTrackerService();
+			service.seedDefaultData();
+			this.issueTrackers.set(workspace, service);
+			this.activitySinks.set(
+				workspace,
+				new LinearActivitySink(service, workspace),
+			);
+		}
+		const repositories = this.config.repositories.filter(
+			(repo) => repo.id !== repository.id,
+		);
+		const ordered = [
+			this.repositories.get(repository.id)!,
+			...Array.from(this.repositories.values()).filter(
+				(repo) => repo.id !== repository.id,
+			),
+		];
+		this.repositories.clear();
+		for (const repo of ordered) this.repositories.set(repo.id, repo);
+		this.config = {
+			...this.config,
+			repositories: [repository, ...repositories],
+			defaultRunner: runner,
+		};
+		this.configManager.setConfig(this.config);
+		this.runnerSelectionService.setConfig(this.config);
+		this.toolPermissionResolver.setConfig(this.config);
 	}
 
 	/**
@@ -7070,6 +7117,26 @@ ${taskSection}`;
 				run.executionSnapshot!,
 				resolved,
 			);
+		} else {
+			applyManagedGithubAgentEnvironment(config, {
+				factoryHome: this.factoryHome,
+				environment: { ...process.env, ...config.additionalEnv },
+				repositories: this.factoryRepositories(run)
+					.filter(
+						(repository) =>
+							!repository.gitProvider ||
+							repository.gitProvider.type === "github",
+					)
+					.map((repository) => ({
+						directory:
+							run.repositories?.find(
+								(retained) => retained.id === repository.id,
+							)?.workspace ??
+							run.workspace ??
+							repository.repositoryPath,
+						repositoryUrl: repository.githubUrl,
+					})),
+			});
 		}
 		return resolved;
 	}
@@ -8449,6 +8516,7 @@ ${taskSection}`;
 			) {
 				if (input.source && isPullRequestSource(input.source)) {
 					const setupContext: ExecutionContext = {
+						factoryHome: this.factoryHome,
 						execution,
 						run: { ...run, workspace: repository.repositoryPath },
 						step: workflow.steps[0]!,
@@ -8551,6 +8619,7 @@ ${taskSection}`;
 						);
 					if (links[0]) {
 						const context: ExecutionContext = {
+							factoryHome: this.factoryHome,
 							execution,
 							run: { ...run, workspace: repository.repositoryPath },
 							step: workflow.steps[0]!,
@@ -8723,6 +8792,7 @@ ${taskSection}`;
 					);
 					await mkdir(evidenceDir, { recursive: true });
 					const context: ExecutionContext = {
+						factoryHome: this.factoryHome,
 						execution: await this.resolveRunExecution(run),
 						run,
 						step: pending.step,
@@ -8759,6 +8829,7 @@ ${taskSection}`;
 				);
 				await mkdir(evidenceDir, { recursive: true });
 				const context: ExecutionContext = {
+					factoryHome: this.factoryHome,
 					execution: await this.resolveRunExecution(run),
 					run: { ...run, workspace: repository.repositoryPath },
 					step: pending.step,
@@ -10526,6 +10597,21 @@ ${input.userComment}
 		const result = this.runnerConfigBuilder.buildIssueConfig({
 			session,
 			repository,
+			repositories: [
+				...new Set([
+					repository.id,
+					...(session.repositories ?? []).map((repo) => repo.repositoryId),
+					...Object.keys(session.workspace.repoPaths ?? {}),
+				]),
+			]
+				.map((id) =>
+					id === repository.id ? repository : this.repositories.get(id),
+				)
+				.filter((repo): repo is RepositoryConfig => !!repo),
+			nativeGithubCredentials: !(
+				session.metadata?.executionSnapshot ||
+				this.factoryRuntime?.runs.get(sessionId)?.executionSnapshot
+			),
 			sessionId,
 			systemPrompt,
 			allowedTools,

@@ -131,15 +131,28 @@ it.each([
 		.spyOn(tools, "executeCommand")
 		.mockImplementation(async (ctx, exe, args) => {
 			expect(ctx.run.workspace).toBe(home);
-			expect(exe).toBe("gh");
-			expect(args).toEqual([
-				"pr",
-				"view",
-				"https://github.com/test/repo/pull/1",
-				"--json",
-				"state,headRefOid",
-			]);
-			return JSON.stringify({ state, headRefOid });
+			expect(exe).toBe("bobs-factory:github-api");
+			expect(JSON.parse(args[0]!)).toEqual({
+				host: "github.com",
+				project: "test/repo",
+				method: "GET",
+				path: "repos/test/repo/pulls/1",
+			});
+			return JSON.stringify({
+				html_url: "https://github.com/test/repo/pull/1",
+				number: 1,
+				title: "Change",
+				body: "Description",
+				draft: false,
+				state: state === "OPEN" ? "open" : "closed",
+				merged: state === "MERGED",
+				head: {
+					ref: "feature",
+					sha: headRefOid,
+					repo: { full_name: "test/repo" },
+				},
+				base: { ref: "main", repo: { full_name: "test/repo" } },
+			});
 		});
 	run.status = "running";
 	await runtime.launch(run);
@@ -179,7 +192,21 @@ it("retains an already saved merge receipt without duplicating it", async () => 
 	run.history.push({ step: "pipeline/merge", output, at: "" });
 	run.checkpoint!.active!.children![0]!.active!.phase = "result";
 	vi.spyOn(tools, "executeCommand").mockResolvedValue(
-		JSON.stringify({ state: "MERGED", headRefOid: "approved" }),
+		JSON.stringify({
+			html_url: "https://github.com/test/repo/pull/1",
+			number: 1,
+			title: "Change",
+			body: "Description",
+			draft: false,
+			state: "closed",
+			merged: true,
+			head: {
+				ref: "feature",
+				sha: "approved",
+				repo: { full_name: "test/repo" },
+			},
+			base: { ref: "main", repo: { full_name: "test/repo" } },
+		}),
 	);
 	await runtime.launch(run);
 	expect(run.status).toBe("completed");
@@ -225,11 +252,23 @@ it.each([
 		}
 		const history = structuredClone(run.history);
 		const outputs = structuredClone(run.outputs);
-		const command = vi
-			.spyOn(tools, "executeCommand")
-			.mockResolvedValue(
-				JSON.stringify({ state: "MERGED", headRefOid: "approved" }),
-			);
+		const command = vi.spyOn(tools, "executeCommand").mockResolvedValue(
+			JSON.stringify({
+				html_url: "https://github.com/test/repo/pull/1",
+				number: 1,
+				title: "Change",
+				body: "Description",
+				draft: false,
+				state: "closed",
+				merged: true,
+				head: {
+					ref: "feature",
+					sha: "approved",
+					repo: { full_name: "test/repo" },
+				},
+				base: { ref: "main", repo: { full_name: "test/repo" } },
+			}),
+		);
 		await runtime.launch(run);
 		expect(command).toHaveBeenCalledOnce();
 		expect(run.status).toBe("failed");
@@ -253,7 +292,21 @@ it("allows a receipt-dependent terminal route", async () => {
 	];
 	merge.next = "publish";
 	vi.spyOn(tools, "executeCommand").mockResolvedValue(
-		JSON.stringify({ state: "MERGED", headRefOid: "approved" }),
+		JSON.stringify({
+			html_url: "https://github.com/test/repo/pull/1",
+			number: 1,
+			title: "Change",
+			body: "Description",
+			draft: false,
+			state: "closed",
+			merged: true,
+			head: {
+				ref: "feature",
+				sha: "approved",
+				repo: { full_name: "test/repo" },
+			},
+			base: { ref: "main", repo: { full_name: "test/repo" } },
+		}),
 	);
 	await runtime.launch(run);
 	expect(run.status).toBe("completed");

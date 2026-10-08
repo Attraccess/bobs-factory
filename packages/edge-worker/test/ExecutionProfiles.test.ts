@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentRunnerConfig } from "bobs-factory-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExecutionEnvironmentResolver } from "../src/factory/ExecutionEnvironment.js";
 import {
@@ -16,6 +17,7 @@ import {
 	IdentityProfileSchema,
 	ToolProfileSchema,
 } from "../src/factory/ExecutionProfiles.js";
+import { githubRuntimeCredentials } from "../src/factory/GithubApi.js";
 
 const directories: string[] = [];
 function fixture() {
@@ -160,6 +162,75 @@ describe("Private execution materialization", () => {
 		identity: identity(),
 		tools: tools(),
 		sources: { identity: "manual" as const, tools: "manual" as const },
+	});
+	it.each([
+		"claude",
+		"codex",
+		"cursor",
+	])("permits only the trusted GitHub helper executable in private %s sandbox settings without inheriting browser credentials", async (shape) => {
+		const { directory, host } = setup();
+		const executable = join(directory, ".local", "bin", "bobs-factory");
+		const resolver = new ExecutionEnvironmentResolver(
+			join(directory, "factory"),
+			{
+				...host,
+				GH_TOKEN: "ambient-browser-token",
+				BOBS_FACTORY_GITHUB_TOKENS: JSON.stringify([
+					{
+						host: "github.com",
+						project: "test/repo",
+						token: "native-scoped-token",
+					},
+				]),
+				BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND: `'${executable}'`,
+				BOBS_FACTORY_INTERNAL_EXECUTABLE: executable,
+			},
+		);
+		const input = snapshot();
+		const resolved = await resolver.resolve(
+			input,
+			`sandbox-${shape}`,
+			directory,
+			"claude",
+		);
+		const worktree = join(directory, "worktree");
+		const sandbox = {
+			filesystem: { allowRead: [worktree], denyRead: [directory] },
+		};
+		const settings = shape === "codex" ? { allowRead: [worktree] } : sandbox;
+		const before = JSON.stringify(settings);
+		const config: AgentRunnerConfig & {
+			sandbox?: typeof sandbox;
+			sandboxSettings?: typeof sandbox | { allowRead: string[] };
+		} = {
+			factoryHome: directory,
+			...(shape === "claude" ? { sandbox } : { sandboxSettings: settings }),
+		};
+		resolver.apply(config, input, resolved);
+		const actual = shape === "claude" ? config.sandbox : config.sandboxSettings;
+		const readable =
+			actual && "allowRead" in actual
+				? actual.allowRead
+				: (actual as typeof sandbox)?.filesystem.allowRead;
+		expect(readable).toEqual([worktree, executable]);
+		expect(JSON.stringify(settings)).toBe(before);
+		expect(config.childEnvironment?.GH_TOKEN).toBeUndefined();
+		expect(config.childEnvironment?.BOBS_FACTORY_GITHUB_TOKENS).toBeUndefined();
+		expect(
+			config.childEnvironment?.BOBS_FACTORY_GITHUB_EXPLICIT_CREDENTIALS,
+		).toBe("1");
+		writeFileSync(
+			join(directory, "github-auth.json"),
+			"invalid browser store",
+			{ mode: 0o644 },
+		);
+		await expect(
+			githubRuntimeCredentials(
+				{ execution: resolved, factoryHome: directory },
+				"github.com",
+				"test/repo",
+			),
+		).rejects.toThrow("Host fallback is disabled");
 	});
 	it("retains prepared Cursor paths across private HOME changes without passing ambient credentials", async () => {
 		const { directory, host } = setup();

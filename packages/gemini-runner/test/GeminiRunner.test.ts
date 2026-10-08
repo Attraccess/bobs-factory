@@ -158,6 +158,46 @@ describe("GeminiRunner", () => {
 		if (runner.isRunning()) {
 			runner.stop();
 		}
+		vi.unstubAllEnvs();
+	});
+
+	it.each([
+		"native",
+		"isolated",
+	] as const)("passes Git environment additions in %s mode while preserving its config roots", async (mode) => {
+		vi.stubEnv("GH_TOKEN", "ambient-token");
+		vi.stubEnv("FACTORY_AMBIENT_CANARY", "host-only");
+		vi.stubEnv("XDG_CONFIG_HOME", "/native/gemini-config");
+		const childEnvironment =
+			mode === "isolated"
+				? { HOME: TEST_BOBS_FACTORY_HOME, PATH: process.env.PATH! }
+				: undefined;
+		const additionalEnv = {
+			GH_TOKEN: "selected-token",
+			BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND: "/prepared/bobs-factory",
+			GIT_CONFIG_COUNT: "1",
+			GIT_CONFIG_KEY_0: "credential.helper",
+			GIT_CONFIG_VALUE_0: "!/prepared/bobs-factory git-credential",
+		};
+		runner = new GeminiRunner({
+			...defaultConfig,
+			childEnvironment,
+			additionalEnv,
+		});
+		const pending = runner.start("environment fixture");
+		await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalled());
+		const env = mockSpawn.mock.calls.at(-1)?.[2]?.env;
+		expect(env).toMatchObject(additionalEnv);
+		expect(env?.HOME).toBe(childEnvironment?.HOME ?? process.env.HOME);
+		expect(env?.XDG_CONFIG_HOME).toBe(
+			mode === "native" ? "/native/gemini-config" : undefined,
+		);
+		expect(env?.FACTORY_AMBIENT_CANARY).toBe(
+			mode === "native" ? "host-only" : undefined,
+		);
+		expect(process.env.GH_TOKEN).toBe("ambient-token");
+		processEmulator.emitClose(0);
+		await pending;
 	});
 
 	describe("Configuration", () => {

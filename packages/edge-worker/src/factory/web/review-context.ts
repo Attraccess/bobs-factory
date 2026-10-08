@@ -184,7 +184,6 @@ export function reviewContext(value: unknown) {
 		if (!url) return false;
 		return new URL(url).hostname !== "github.com" || Boolean(githubPr(url));
 	});
-	const github = githubPr(prUrl);
 	const forge = pullRequestReference(prUrl);
 	const branch = [draft.branch, source.headRefName, existing.branch]
 		.map(branchName)
@@ -198,23 +197,17 @@ export function reviewContext(value: unknown) {
 			? `${repositoryUrl}${forge?.type === "gitlab" ? "/-/tree/" : "/tree/"}${encodeURIComponent(branch)}`
 			: undefined;
 	const commands: CheckoutCommand[] = [];
-	if (github && prUrl)
+	if (forge?.type === "github")
 		commands.push({
-			label: "GitHub CLI",
-			command: `gh pr checkout ${github[3]}`,
-			help: "Run in a local clone with GitHub CLI installed.",
+			label: "Git",
+			command: `git fetch origin pull/${forge.number}/head\ngit checkout --detach FETCH_HEAD`,
+			help: "Run in a local clone of this repository. Uses your existing Git authentication.",
 		});
 	if (forge?.type === "gitlab")
 		commands.push({
 			label: "GitLab CLI",
 			command: `glab mr checkout ${forge.number} --repo ${shellQuote(forge.url)}`,
 			help: "Run in a local clone with GitLab CLI installed.",
-		});
-	if (forge?.type === "github" && !github)
-		commands.push({
-			label: "GitHub CLI",
-			command: `gh pr checkout ${forge.number} --repo ${shellQuote(forge.url)}`,
-			help: "Run in a local clone with GitHub CLI installed.",
 		});
 	if (branch)
 		commands.push({

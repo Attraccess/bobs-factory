@@ -1,5 +1,9 @@
+import { inspectGithubPullRequest } from "./GithubTakeover.js";
 import { type GitProvider, providerForUrl } from "./GitProvider.js";
-import { isPullRequestSource } from "./GitProviderReference.js";
+import {
+	isPullRequestSource,
+	pullRequestReference,
+} from "./GitProviderReference.js";
 
 export type { TakeoverPullRequest } from "./GitProviderContracts.js";
 
@@ -40,5 +44,7 @@ export async function inspectPullRequest(
 	source: string,
 	provider?: GitProvider,
 ) {
+	if (!provider && pullRequestReference(source)?.type === "github")
+		return inspectGithubPullRequest(command, source);
 	return (provider ?? providerForUrl(command, source)).inspect(source);
 }

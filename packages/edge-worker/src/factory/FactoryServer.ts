@@ -14,6 +14,7 @@ import {
 	FactoryAuth,
 	factoryAccess,
 } from "./FactoryAuth.js";
+import type { FactoryOnboarding } from "./FactoryOnboarding.js";
 import { CaptureSchema, verifiedScreenshot } from "./FactoryTools.js";
 import { factoryWebAssets } from "./FactoryWebAssets.js";
 import {
@@ -34,6 +35,7 @@ import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	onboarding?: FactoryOnboarding;
 	push?: import("./FactoryPush.js").FactoryPush;
 	previewExecution?(
 		repositoryId: string,
@@ -419,7 +421,14 @@ export class FactoryServer {
 				this.streams.delete(stream);
 			});
 		});
-		this.app.get("/api/config", async () => ({
+		this.app.get("/api/config", async (request) => ({
+			onboarding:
+				hooks.onboarding &&
+				["localhost", "127.0.0.1"].includes(
+					new URL(originFor(request)!).hostname,
+				)
+					? await hooks.onboarding.status()
+					: undefined,
 			capacity: await hooks.capacity?.snapshot(),
 			configRevision: configRevision(),
 			executionProfiles: runtime.executionProfiles.read(),
@@ -442,6 +451,40 @@ export class FactoryServer {
 			reasoningLevels,
 			serviceTierRunners,
 		}));
+		const localOnboarding = (request: FastifyRequest) => {
+			if (!hooks.onboarding) throw new Error("Local setup is unavailable");
+			if (
+				!["localhost", "127.0.0.1"].includes(
+					new URL(originFor(request)!).hostname,
+				)
+			)
+				throw new Error("Complete machine setup at the localhost address");
+			return hooks.onboarding;
+		};
+		this.app.get("/api/onboarding", (request) =>
+			localOnboarding(request).status(),
+		);
+		this.app.post("/api/onboarding/project", { bodyLimit: 8192 }, (request) =>
+			localOnboarding(request).configure(
+				z
+					.object({
+						repositoryPath: z.string().trim().min(1).max(4096),
+						runner: z.enum(["claude", "codex", "gemini", "cursor", "opencode"]),
+					})
+					.strict()
+					.parse(request.body),
+			),
+		);
+		this.app.post("/api/onboarding/github", { bodyLimit: 4096 }, (request) =>
+			localOnboarding(request).connectGithub(
+				z
+					.object({
+						token: z.string().trim().min(1).max(2048),
+					})
+					.strict()
+					.parse(request.body),
+			),
+		);
 		this.app.put("/api/execution-profiles", (request) => {
 			checkConfigRevision(request);
 			const body = z

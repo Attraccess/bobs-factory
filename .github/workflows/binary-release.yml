@@ -1,0 +1,65 @@
+name: Prepare or publish verified Bob’s Factory binaries
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full reviewed immutable candidate SHA (includes publisher and installer)
+        required: true
+        type: string
+      version:
+        description: Exact version committed at the candidate SHA
+        required: true
+        type: string
+      binary_run_id:
+        description: Successful four-native-target binary-build run dispatched at the candidate ref
+        required: true
+        type: string
+      evidence_artifact_id:
+        description: Validated bobs-factory-release-evidence-SHA artifact with release-evidence.json and source/rebuild material
+        required: true
+        type: string
+      publish:
+        description: Publish after reviewing the dry-run assets and separately approving release
+        default: false
+        type: boolean
+permissions:
+  actions: write
+  contents: write
+concurrency:
+  group: bobs-factory-release-${{ inputs.version }}
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - name: Retrieve candidate-bound release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          EVIDENCE_ARTIFACT_ID: ${{ inputs.evidence_artifact_id }}
+        run: node scripts/download-release-evidence.mjs --sha "$CANDIDATE_SHA" --artifact-id "$EVIDENCE_ARTIFACT_ID" --output "$RUNNER_TEMP/release-evidence"
+      - name: Validate and stage public binary assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          BINARY_RUN_ID: ${{ inputs.binary_run_id }}
+          PUBLISH_RELEASE: ${{ inputs.publish }}
+        run: |
+          args=()
+          if [[ "$PUBLISH_RELEASE" == true ]]; then args+=(--publish); fi
+          node scripts/publish-binary-release.mjs --sha "$CANDIDATE_SHA" --version "$RELEASE_VERSION" --run-id "$BINARY_RUN_ID" --evidence "$RUNNER_TEMP/release-evidence/release-evidence.json" --output "$RUNNER_TEMP/public-release" "${args[@]}"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: bobs-factory-publication-plan-${{ inputs.candidate_sha }}
+          path: ${{ runner.temp }}/public-release/
+          if-no-files-found: ignore

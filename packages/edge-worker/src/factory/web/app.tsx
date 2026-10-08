@@ -47,6 +47,7 @@ import {
 } from "./focus";
 import { Composer, Recipes } from "./forms";
 import { NotificationsControl } from "./notifications-ui";
+import { SetupBoundary } from "./onboarding";
 import { pwaState, startPwa, usePwa } from "./pwa";
 import { ConnectionNotice, InstallControl } from "./pwa-ui";
 import { useReadingPosition } from "./reading-position";
@@ -1235,7 +1236,9 @@ createRoot(document.getElementById("root")!).render(
 		<HashRouter>
 			<ToastProvider>
 				<AccessBoundary>
-					<App />
+					<SetupBoundary>
+						<App />
+					</SetupBoundary>
 				</AccessBoundary>
 			</ToastProvider>
 		</HashRouter>

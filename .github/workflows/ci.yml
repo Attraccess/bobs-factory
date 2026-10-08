@@ -58,6 +58,9 @@ jobs:
     
     - name: Run Tests
       run: pnpm -r test:run
+
+    - name: Verify public installation and immutable publication guards
+      run: node --test scripts/tests/public-install.test.mjs
     
     - name: Upload coverage
       uses: codecov/codecov-action@v7

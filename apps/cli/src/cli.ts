@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import {
 	factoryVersion,
+	isPackagedExecutable,
 	resolvePath,
 	setGlobalErrorReporter,
 } from "bobs-factory-core";
@@ -17,11 +18,19 @@ import { RefreshTokenCommand } from "./commands/RefreshTokenCommand.js";
 import { SelfAddRepoCommand } from "./commands/SelfAddRepoCommand.js";
 import { SelfAuthCommand } from "./commands/SelfAuthCommand.js";
 import { StartCommand } from "./commands/StartCommand.js";
+import { gitCredential, githubApiRequest } from "./github.js";
 import { launchLocal } from "./local.js";
 import { addMigrationCommands } from "./migration/command.js";
 import { createErrorReporter } from "./services/createErrorReporter.js";
 
 const { home, envFile } = bootstrap();
+const shellQuote = (text: string) => `'${text.replaceAll("'", "'\\''")}'`;
+process.env.BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND = [
+	process.execPath,
+	...(isPackagedExecutable ? [] : [process.argv[1]!]),
+]
+	.map(shellQuote)
+	.join(" ");
 // Initialise the error reporter as early as possible so that exceptions
 // thrown by subsequent imports/bootstrap are captured. Install it as the
 // process-wide reporter so that every Logger.error(...) call across the
@@ -47,14 +56,32 @@ program
 		"Environment file (process environment takes precedence)",
 		envFile,
 	)
-	.option("--repo <path>", "Repository for local launch", process.cwd())
+	.option("--repo <path>", "Existing repository for local launch")
 	.option("--port <port>", "Loopback dashboard port for local launch", "3457")
-	.option("--agent <agent>", "Prepared agent CLI", "claude")
+	.option("--agent <agent>", "Prepared agent CLI (or choose in guided setup)")
+	.option("--no-open", "Start without opening a browser")
 	.option("--model <model>", "Agent model")
 	.option("--origin <origin>", "Exact public HTTPS dashboard origin")
 	.option("--session-hours <hours>", "Passkey session lifetime (1–24 hours)");
 
 // Machine-owner setup/recovery must remain outside the dashboard auth boundary.
+program
+	.command("github-api")
+	.description("Send a repository-scoped GitHub API request without gh")
+	.option("--request <path>", "Private JSON request file")
+	.action(async (options: { request?: string }) => {
+		const global = program.opts();
+		await githubApiRequest({
+			repo: global.repo,
+			request: options.request,
+			home: global.home,
+		});
+	});
+program
+	.command("git-credential [action]", { hidden: true })
+	.action(async (action?: string) => {
+		await gitCredential(action, program.opts().home);
+	});
 program
 	.command("factory-auth")
 	.description(
@@ -77,7 +104,7 @@ program
 
 program
 	.command("local", { isDefault: true })
-	.description("Start the dashboard for a local Git repository")
+	.description("Open Bob's Factory and resume or complete guided setup")
 	.action(async () => {
 		await launchLocal(program.opts());
 	});

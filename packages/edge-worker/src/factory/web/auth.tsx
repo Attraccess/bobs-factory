@@ -58,10 +58,27 @@ async function ceremony(
 	// still clear access through the normal boundary.
 	await checkAccess(true);
 }
+// Local-launch fragments never reach HTTP logs. Consume before the router or browser
+// history can retain the one-time grant, and keep it only in this component's memory.
+const launchedGrant = (() => {
+	if (
+		location.protocol !== "http:" ||
+		!["localhost", "127.0.0.1"].includes(location.hostname)
+	)
+		return "";
+	const match = /^#setup=([A-Za-z0-9_-]{43})$/.exec(location.hash);
+	if (!match) return "";
+	history.replaceState(
+		history.state,
+		"",
+		`${location.pathname}${location.search}#/`,
+	);
+	return match[1]!;
+})();
 export function AccessBoundary({ children }: { children: ReactNode }) {
 	const access = useAccess();
 	const pwa = usePwa();
-	const [grant, setGrant] = useState("");
+	const [grant, setGrant] = useState(launchedGrant);
 	const [label, setLabel] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string>();
@@ -130,7 +147,8 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 							: "Sign in to Bob’s Factory"}
 				</h1>
 				<p>
-					Passkeys protect your Factory on every address, including localhost.
+					Use your device’s fingerprint, face recognition or security key to
+					protect your Factory.
 				</p>
 				<ConnectionNotice hasData={false} signedOut />
 				{access.status !== "checking" && (
@@ -162,12 +180,13 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 									: "Set up a new passkey"}
 							</summary>
 							<p>
-								Get a single-use setup code from the operator on the Factory
-								machine. Create this passkey at the address where you will use
-								it. Phone and security-key passkeys are supported.
+								{launchedGrant && grant
+									? "Your local launcher authorized setup. Choose a name and create your passkey."
+									: "The terminal that launched Bob shows your private setup code. Paste it here to create your first passkey."}{" "}
+								Phone and security-key passkeys are supported.
 							</p>
 							<label>
-								Operator setup code
+								Setup code
 								<input
 									autoComplete="off"
 									type="password"

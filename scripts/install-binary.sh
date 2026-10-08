@@ -58,10 +58,13 @@ mkdir "$lock" 2>/dev/null || { echo 'Another installation or interrupted install
 stage=
 trap '[ -z "$stage" ] || rm -rf "$stage"; rmdir "$lock"' EXIT
 trap 'exit 130' HUP INT TERM
-[ ! -e "$versions/$name" ] || { echo 'Immutable version already installed; refusing overwrite' >&2; exit 1; }
 if [ -e "$prefix/bin/bobs-factory" ] || [ -L "$prefix/bin/bobs-factory" ]; then
   [ -L "$prefix/bin/bobs-factory" ] || { echo 'Existing executable is not an owned version link; move it to a backup first' >&2; exit 1; }
-  case "$(readlink "$prefix/bin/bobs-factory")" in "$versions"/bobs-factory-*/bobs-factory) ;; *) echo 'Existing link is not owned by this installer' >&2; exit 1;; esac
+  previous=$(readlink "$prefix/bin/bobs-factory")
+  previous_name=${previous#"$versions"/}
+  previous_name=${previous_name%/bobs-factory}
+  printf '%s' "$previous_name" | LC_ALL=C grep -Eq '^bobs-factory-[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?-(darwin|linux)-(arm64|x64)$' || { echo 'Existing link is not owned by this installer' >&2; exit 1; }
+  [ "$previous" = "$versions/$previous_name/bobs-factory" ] || { echo 'Existing link is not owned by this installer' >&2; exit 1; }
 fi
 stage=$(mktemp -d "$versions/.install-XXXXXX")
 tar -xzf "$archive" -C "$stage"
@@ -73,8 +76,14 @@ tar -xzf "$archive" -C "$stage"
 [ "$(sha256 "$stage/$name/bobs-factory")" = "$(field "$stage/$name/build.json" sha256)" ] || { echo 'Executable integrity failure' >&2; exit 1; }
 [ "$(wc -c < "$stage/$name/bobs-factory" | tr -d ' ')" = "$(number "$stage/$name/build.json" size)" ] || { echo 'Executable size mismatch' >&2; exit 1; }
 chmod 755 "$stage/$name/bobs-factory"
-mv "$stage/$name" "$versions/$name"
-if [ -L "$prefix/bin/bobs-factory" ]; then
+if [ -e "$versions/$name" ] || [ -L "$versions/$name" ]; then
+  [ -d "$versions/$name" ] && [ ! -L "$versions/$name" ] || { echo 'Immutable version is not an owned directory' >&2; exit 1; }
+  [ -z "$(find "$versions/$name" ! -type f ! -type d -print)" ] || { echo 'Immutable version contains links or special files' >&2; exit 1; }
+  diff -qr "$stage/$name" "$versions/$name" >/dev/null || { echo 'Immutable version differs from verified archive; refusing overwrite' >&2; exit 1; }
+else
+  mv "$stage/$name" "$versions/$name"
+fi
+if [ -L "$prefix/bin/bobs-factory" ] && [ "$(readlink "$prefix/bin/bobs-factory")" != "$versions/$name/bobs-factory" ]; then
   readlink "$prefix/bin/bobs-factory" > "$stage/previous-link"
   mv -f "$stage/previous-link" "$versions/previous-link"
 fi

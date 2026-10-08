@@ -1,13 +1,19 @@
-import { Navigate, NavLink, useParams } from "react-router-dom";
+import { Navigate, NavLink, useNavigate, useParams } from "react-router-dom";
 import { AccessSettings } from "./auth";
 import { useAction, useConfig } from "./client";
 import { ExecutionEditor } from "./execution";
 import { useFormState } from "./form-state";
 import { AgentSettings } from "./forms";
+import { Onboarding } from "./onboarding";
 import { revisionOf } from "./restoration";
 import { Button, useToast } from "./ui";
 
 const pages = [
+	{
+		id: "setup",
+		name: "Project setup",
+		description: "Project, coding agent and GitHub",
+	},
 	{ id: "access", name: "Access", description: "Passkeys and sign-out" },
 	{
 		id: "execution",
@@ -37,6 +43,7 @@ const pages = [
 ] as const;
 
 export function Settings() {
+	const navigate = useNavigate();
 	const { "*": requestedPage } = useParams();
 	const page =
 		pages.find((entry) => entry.id === requestedPage)?.id ?? "execution";
@@ -51,14 +58,25 @@ export function Settings() {
 			</p>
 			<div className="settings-layout">
 				<nav className="settings-nav" aria-label="Settings sections">
-					{pages.map((entry) => (
-						<NavLink key={entry.id} to={`/settings/${entry.id}`}>
-							<strong>{entry.name}</strong>
-							<small>{entry.description}</small>
-						</NavLink>
-					))}
+					{pages
+						.filter(
+							(entry) => entry.id !== "setup" || config.onboarding?.available,
+						)
+						.map((entry) => (
+							<NavLink key={entry.id} to={`/settings/${entry.id}`}>
+								<strong>{entry.name}</strong>
+								<small>{entry.description}</small>
+							</NavLink>
+						))}
 				</nav>
 				<div className="settings-content">
+					{page === "setup" && config.onboarding?.available && (
+						<Onboarding
+							embedded
+							initial={config.onboarding}
+							onComplete={() => navigate("/")}
+						/>
+					)}
 					<ExecutionEditor key={page} config={config} page={page} />
 					{page === "access" && <AccessSettings />}
 					{page === "capacity" && <MachineCapacitySettings config={config} />}
