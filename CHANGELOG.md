@@ -67,7 +67,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Allow autonomous Codex runs to fetch and commit in Git worktrees by granting writes to their linked and shared Git metadata, while retaining protected agent settings, filesystem read restrictions, and explicit read-only modes.
+- Allow autonomous Codex runs to fetch and commit in Git worktrees by granting writes to their linked and shared Git metadata, while retaining protected agent settings, filesystem read restrictions, and explicit read-only modes. ([#48](https://github.com/Attraccess/bobs-factory/pull/48))
 
 - Restore binary builds after Web Push integration by including the verified upstream `http_ece` license notice. ([#47](https://github.com/Attraccess/bobs-factory/pull/47))
 
