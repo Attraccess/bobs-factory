@@ -100,7 +100,7 @@ function MachineCapacitySettings({ config }: { config: any }) {
 						await action.mutateAsync({
 							path: "/api/capacity",
 							method: "PUT",
-							body: { limit: Number(limit) },
+							body: { concurrency: Number(limit) },
 						});
 						setDraft(undefined);
 					} catch {}
