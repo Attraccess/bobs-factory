@@ -38,7 +38,13 @@ export function accessRequired(
 			for (const key of Object.keys(storage))
 				if (
 					/^(factory-|factory\/|bobs-factory-|bob-)/.test(key) &&
-					!["factory-theme", "factory-settled-view"].includes(key)
+					![
+						"factory-theme",
+						"factory-settled-view",
+						// Device consent and deferred unsubscribe cleanup must survive
+						// session loss; this contains no subscription keys or run data.
+						"factory-push-device-v1",
+					].includes(key)
 				)
 					storage.removeItem(key);
 		} catch {

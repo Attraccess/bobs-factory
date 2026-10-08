@@ -179,6 +179,7 @@ import {
 	ExecutionProfileStore,
 	ExecutionSnapshotSchema,
 } from "./factory/ExecutionProfiles.js";
+import { FactoryPush } from "./factory/FactoryPush.js";
 import { validateFactoryResult } from "./factory/FactoryResults.js";
 import { FactoryServer } from "./factory/FactoryServer.js";
 import {
@@ -373,6 +374,7 @@ export class EdgeWorker extends EventEmitter {
 	private preparationStarts = new Map<string, AbortController>();
 	private stopping = false;
 	private factoryServer?: FactoryServer;
+	private factoryPush?: FactoryPush;
 	private factoryChat = new SessionChat();
 	private chatContinuations = new Set<string>();
 	/** Per-org GitHub App installation tokens pushed by cyrus-hosted (lazy file-backed reads) */
@@ -896,6 +898,31 @@ export class EdgeWorker extends EventEmitter {
 
 		// Start shared application server (this also starts Cloudflare tunnel if CLOUDFLARE_TOKEN is set)
 		await this.sharedApplicationServer.start();
+		this.factoryPush?.attach(this.getFactoryRuntime(), {
+			sessions: () =>
+				this.getAllKnownSessions().map((session) => {
+					const work = session.agentRunner?.getPendingWork?.();
+					return {
+						id: session.id,
+						status: session.status,
+						stopped: session.metadata?.intentionalStop,
+						// Saved execution input survives normal completion. Active recovery
+						// has no eligible status; only shutdown suppresses terminal alerts.
+						recovering: this.stopping,
+						pendingWork: Boolean(
+							work && (work.sessionCrons.length || work.backgroundTasks.length),
+						),
+					};
+				}),
+			subscribe: (notify) => {
+				this.agentSessionManager.on("sessionChanged", notify);
+				this.on("chatSessionChanged", notify);
+				return () => {
+					this.agentSessionManager.off("sessionChanged", notify);
+					this.off("chatSessionChanged", notify);
+				};
+			},
+		});
 		this.recoverFactoryRuns();
 		this.recoverPendingTicketLaunches();
 	}
@@ -908,7 +935,9 @@ export class EdgeWorker extends EventEmitter {
 			process.env.BOBS_FACTORY_FACTORY_PORT &&
 			process.env.BOBS_FACTORY_FACTORY_PORT !== "0"
 		) {
+			this.factoryPush ??= new FactoryPush(this.factoryHome);
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
+				push: this.factoryPush,
 				capacity: this.runnerSlots,
 				defaultRunner: () => this.runnerSelectionService.getDefaultRunner(),
 				repositories: () =>
@@ -3203,6 +3232,7 @@ ${taskSection}`;
 	 */
 	async stop(): Promise<void> {
 		this.stopping = true;
+		await this.factoryPush?.stop();
 		await this.runnerSlots.shutdown();
 		this.recoveryAbort.abort();
 		await this.titleGenerator?.shutdown();

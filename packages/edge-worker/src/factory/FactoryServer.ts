@@ -32,6 +32,7 @@ import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	push?: import("./FactoryPush.js").FactoryPush;
 	previewExecution?(
 		repositoryId: string,
 		selection: import("./ExecutionProfiles.js").ExecutionSelection,
@@ -341,6 +342,40 @@ export class FactoryServer {
 					.send(asset.bytes);
 			});
 		}
+		this.app.get(
+			"/api/push",
+			() =>
+				hooks.push?.status() ?? {
+					available: false,
+					diagnostic: "Push unavailable",
+					devices: [],
+				},
+		);
+		this.app.post("/api/push/devices", { bodyLimit: 8192 }, (request) => {
+			if (!hooks.push) throw new Error("Push unavailable");
+			return hooks.push.register(request.body);
+		});
+		this.app.patch("/api/push/devices/:id", { bodyLimit: 1024 }, (request) => {
+			if (!hooks.push) throw new Error("Push unavailable");
+			const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+			return hooks.push.update(id, request.body);
+		});
+		this.app.delete("/api/push/devices/:id", (request) => {
+			if (!hooks.push) throw new Error("Push unavailable");
+			const { id } = z.object({ id: z.string().uuid() }).parse(request.params);
+			return hooks.push.remove(id);
+		});
+		this.app.post(
+			"/api/push/devices/:id/test",
+			{ bodyLimit: 1024 },
+			async (request) => {
+				if (!hooks.push) throw new Error("Push unavailable");
+				const { id } = z
+					.object({ id: z.string().uuid() })
+					.parse(request.params);
+				return hooks.push.test(id);
+			},
+		);
 		this.app.get("/api/version", () => ({
 			build: shell.build,
 			protocol: shell.protocol,

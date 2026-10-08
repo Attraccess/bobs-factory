@@ -216,6 +216,7 @@ async function readValue(client: Client, path: string, view = "compact") {
 	return JSON.parse(text);
 }
 
+// Full-history reads paginate several megabytes over MCP, including under suite load.
 it("compacts repeated history while preserving current inputs and all original evidence", async () => {
 	const finding = {
 		id: "access",
@@ -271,7 +272,7 @@ it("compacts repeated history while preserving current inputs and all original e
 		);
 	});
 	expect(JSON.stringify(input)).toBe(before);
-});
+}, 15000);
 
 it("retains rejected fixes, distinct evidence and identical reopened claims without inferring resolution", async () => {
 	const finding = {
