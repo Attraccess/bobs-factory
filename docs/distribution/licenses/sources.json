@@ -317,5 +317,10 @@
 		"source": "https://registry.npmjs.org/esbuild/-/esbuild-0.28.2.tgz",
 		"sha256": "de7192e025b7a0372f7aa27be99dca6a7a2dfbeced1186154d1f0393304ad6f1",
 		"packages": ["bun-runtime"]
+	},
+	"http-ece.txt": {
+		"source": "https://raw.githubusercontent.com/martinthomson/encrypted-content-encoding/0562510a30819f52424724a6fd5504becacd98a1/LICENSE",
+		"sha256": "717363ac0c7f0883042868db171cfed1f4b423119249eac9bce5131291017ea8",
+		"packages": ["http_ece"]
 	}
 }
