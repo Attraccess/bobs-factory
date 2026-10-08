@@ -1,6 +1,7 @@
 # Factory GitLab merged-results CI
 
 **Date:** 2026-10-08
+**PR:** [#49](https://github.com/Attraccess/bobs-factory/pull/49)
 **Candidate:** `fix/gitlab-merged-results-ci`, based on
 `6219aff7d31744e7401a0e4d6200873ed483163c`, with the merged-results working diff.
 **Goal:** Accept current GitLab merged-results pipelines while retaining the

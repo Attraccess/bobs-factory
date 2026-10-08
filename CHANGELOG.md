@@ -67,7 +67,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Recognize GitLab merged-results CI when it tests the current source and target revisions, without accepting stale checks or changing the human-approved source revision.
+- Recognize GitLab merged-results CI when it tests the current source and target revisions, without accepting stale checks or changing the human-approved source revision. ([#49](https://github.com/Attraccess/bobs-factory/pull/49))
 
 - Restore binary builds after Web Push integration by including the verified upstream `http_ece` license notice. ([#47](https://github.com/Attraccess/bobs-factory/pull/47))
 
