@@ -111,6 +111,8 @@ export interface AgentCheckpoint {
 		}[];
 		revision?: RoleRevision;
 		attempts: number;
+		/** Reserved before launch; a proven pre-turn startup failure returns it. */
+		reserved?: boolean;
 		exhausted?: boolean;
 		screenshots?: { path: string; area: string; state?: string }[];
 	};
@@ -1944,6 +1946,23 @@ export class WorkflowRuntime {
 			const step = steps.find((item) => item.id === frame.current);
 			if (!step) return;
 			const key = `${prefix}${step.id}`;
+			const agent =
+				frame.active?.phase === "executing" ? frame.active.agent : undefined;
+			if (step.type === "agent" && agent?.rejected?.exhausted) {
+				// Explicit Retry authorizes a fresh bounded budget for this role.
+				// Keep the candidate, issues, revision and native conversation.
+				agent.rejected = {
+					...agent.rejected,
+					attempts: 0,
+					reserved: false,
+					exhausted: false,
+				};
+				this.log(
+					run,
+					"run",
+					`Retry authorized another bounded output-correction cycle for ${key}; rejected output, issues and completed work retained.`,
+				);
+			}
 			if (
 				frame.active?.phase === "executing" &&
 				this.isUnstartedCodexAgent(run, frame.active.agent, key)
