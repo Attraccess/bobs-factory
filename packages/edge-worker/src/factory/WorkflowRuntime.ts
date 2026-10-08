@@ -1100,6 +1100,17 @@ export class WorkflowRuntime {
 					);
 					signal.removeEventListener("abort", cancelBranches);
 					if (failure) throw failure;
+					if (state.reviewBaseline) {
+						// All runner hooks have returned and cleaned up their temporary
+						// project configuration. Reject any remaining edits before
+						// accepting the round, without exempting runner directories.
+						const revision = await reviewedRevision(
+							run.workspace,
+							state.reviewBaseline.baseSha,
+						);
+						if (revision.headSha !== state.reviewBaseline.headSha)
+							throw new Error("Revision changed during specialist review");
+					}
 					output = branchResults.map((result, index) =>
 						result.status === "fulfilled"
 							? step.review
@@ -1208,6 +1219,9 @@ export class WorkflowRuntime {
 								const revision = await reviewedRevision(
 									run.workspace,
 									reviewBaseline?.baseSha,
+									// Sibling runners may still own temporary project files.
+									// The fanout join checks cleanliness after every cleanup.
+									{ requireClean: false },
 								);
 								if (
 									!reviewBaseline ||

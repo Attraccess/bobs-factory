@@ -66,7 +66,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Preserve frozen specialist review, requirement coverage and redacted execution results when integrating independent execution profiles and dedicated Settings pages. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Preserve frozen specialist review, requirement coverage and redacted execution results when integrating independent execution profiles and dedicated Settings pages. Wait for all concurrent reviewers to clean up temporary runner configuration before checking worktree cleanliness; remaining product edits still invalidate review. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve specialist coverage and disagreement evidence when integrating review-guide scope classification, system maps and Decide feedback controls. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 

@@ -370,11 +370,15 @@ export function validateReviewConfiguration(
 	}
 }
 const exec = promisify(execFile);
-export async function reviewedRevision(workspace: string, base?: string) {
+export async function reviewedRevision(
+	workspace: string,
+	base?: string,
+	{ requireClean = true }: { requireClean?: boolean } = {},
+) {
 	const git = async (...args: string[]) =>
 		(await exec("git", args, { cwd: workspace, timeout: 10000 })).stdout.trim();
 	const headSha = await git("rev-parse", "HEAD");
-	if (await git("status", "--porcelain"))
+	if (requireClean && (await git("status", "--porcelain")))
 		throw new Error(
 			"Specialist review requires a clean worktree; commit changes before review",
 		);

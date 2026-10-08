@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { CursorRunner } from "bobs-factory-cursor-runner";
 import { afterEach, expect, it, vi } from "vitest";
 import {
 	defaultWorkflows,
@@ -953,6 +954,85 @@ it("shares immutable revision/context across six branches and preserves each bra
 		"different revision",
 	);
 });
+it("waits for mixed-runner cleanup before checking the review worktree", async () => {
+	let installed!: () => void;
+	const ready = new Promise<void>((resolve) => {
+		installed = resolve;
+	});
+	let dirtyDuringReview = "";
+	const fixture = setup({
+		agent: async (ctx) => {
+			if (ctx.step.reviewContract === "inventory-v1") return inventory();
+			if (ctx.step.id === "security-review") {
+				// Simulate the provider call, but use production Cursor config setup
+				// and cleanup. No native runner or provider credits are used.
+				const runner = new CursorRunner({
+					workingDirectory: ctx.run.workspace,
+					factoryHome: fixture.state,
+					runnerArtifactLeaseDirectory: join(fixture.state, "leases"),
+				}) as unknown as {
+					installPermissionsArtifacts(workspace: string): Promise<void>;
+					uninstallPermissionsArtifacts(): void;
+				};
+				await runner.installPermissionsArtifacts(ctx.run.workspace);
+				try {
+					dirtyDuringReview = fixture.git("status", "--porcelain");
+					installed();
+					await vi.waitFor(() => {
+						expect(
+							ctx.run.history.some((h) =>
+								h.step.endsWith("/requirements-review"),
+							),
+						).toBe(true);
+					});
+				} finally {
+					runner.uninstallPermissionsArtifacts();
+				}
+			} else await ready;
+			return ctx.step.reviewContract === "coverage-v1"
+				? review()
+				: { summary: "Reviewed", findings: [] };
+		},
+	});
+	await fixture.runtime.launch(fixture.run);
+	expect(dirtyDuringReview).toContain(".cursor/");
+	expect(fixture.git("status", "--porcelain")).toBe("");
+	expect(fixture.run.status, fixture.run.error).toBe("completed");
+	expect(fixture.run.outputs["review-gate"]).toMatchObject({ approved: true });
+});
+
+it.each([
+	"validator.ts",
+	"untracked.txt",
+	".cursor/hooks.json",
+	"commit",
+])("invalidates a specialist round with remaining product changes (%s)", async (change) => {
+	const fixture = setup({
+		agent: async (ctx) => {
+			if (ctx.step.reviewContract === "inventory-v1") return inventory();
+			if (ctx.step.id === "security-review") {
+				if (change === "commit")
+					fixture.git("commit", "--allow-empty", "-m", "changed head");
+				else {
+					if (change.startsWith(".cursor/"))
+						mkdirSync(join(fixture.home, ".cursor"));
+					writeFileSync(join(fixture.home, change), "product edit");
+				}
+			}
+			return ctx.step.reviewContract === "coverage-v1"
+				? review()
+				: { summary: "Reviewed", findings: [] };
+		},
+	});
+	await fixture.runtime.launch(fixture.run);
+	expect(fixture.run.status).toBe("failed");
+	expect(fixture.run.error).toContain(
+		change === "commit" ? "reviewed revision" : "clean worktree",
+	);
+	expect(fixture.run.outputs["specialist-review"]).toBeUndefined();
+	expect(fixture.run.outputs["review-gate"]).toBeUndefined();
+});
+
 it("cancels incomplete reviewers without approving; retry restores the same baseline and completed branches", async () => {
 	let fail = true;
 	const calls: string[] = [];
