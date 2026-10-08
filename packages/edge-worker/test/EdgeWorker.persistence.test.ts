@@ -106,6 +106,7 @@ it.each([
 		repositories: [],
 	});
 	const access = worker as unknown as PersistenceAccess;
+	// Constructor starts capacity initialization; finish it before removing the home.
 	await access.runnerSlots.ready();
 	let releaseFirst!: () => void;
 	let firstStarted!: () => void;

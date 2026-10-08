@@ -44,7 +44,19 @@ import {
 	type QuestionRecommendation,
 	questionNotification,
 } from "./Questions.js";
+import { reviewRecoveryQuestions } from "./ReviewRecovery.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
+import {
+	aggregateReview,
+	frozenReviewContext,
+	type Inventory,
+	latestAggregate,
+	type ReviewBaseline,
+	reviewedRevision,
+	scopeContextDigest,
+	stampSpecialist,
+	validateContractOutput,
+} from "./SpecialistReview.js";
 import {
 	isComputeIntensive,
 	readPath,
@@ -103,6 +115,8 @@ export interface AgentCheckpoint {
 	};
 }
 export interface GraphCheckpoint {
+	// Inherited by called workflows and fanout branches; calls return it to their caller.
+	reviewKey?: string;
 	current: string;
 	visits: Record<string, number>;
 	additionalVisits?: Record<string, number>;
@@ -128,6 +142,7 @@ export interface GraphCheckpoint {
 		agent?: AgentCheckpoint;
 		children?: GraphCheckpoint[];
 		call?: WorkflowCall;
+		reviewBaseline?: ReviewBaseline;
 	};
 	// Only fanout branches own separate outputs; nested workflows share their parent's.
 	outputs?: Record<string, unknown>;
@@ -215,6 +230,7 @@ export interface FactoryRun {
 	reviewGate?: ReviewGate;
 	humanDecisions?: HumanDecision[];
 	roleRevisions?: Record<string, RoleRevision>;
+	reviewRounds?: ReviewBaseline[];
 	outputs: Record<string, unknown>;
 	history: { step: string; output: unknown; at: string; call?: WorkflowCall }[];
 	answers: { questions: string[]; answer: string; at: string }[];
@@ -234,8 +250,11 @@ export interface ChatMessage {
 	step: string;
 }
 export interface ExecutionContext {
+	reviewKey?: string;
 	execution?: ResolvedExecutionEnvironment;
 	stepKey?: string;
+	reviewBaseline?: ReviewBaseline;
+	currentScope?: () => unknown;
 	capacity?: CapacityOptions;
 	chat?: boolean;
 	chatMessages?: ChatMessage[];
@@ -846,6 +865,7 @@ export class WorkflowRuntime {
 		workflowId: string,
 		chat = false,
 		parallel = false,
+		reviewBaseline?: ReviewBaseline,
 	): Promise<Record<string, unknown>> {
 		while (checkpoint.current !== "end") {
 			signal.throwIfAborted();
@@ -869,50 +889,64 @@ export class WorkflowRuntime {
 			}
 			run.step = key;
 			this.log(run, key, `Starting ${step.name} (pass ${count})`);
-			const input = step.inputs
-				? {
-						...(run.ticketReference
-							? {
-									ticketReference: structuredClone(run.ticketReference),
-									ticketSync: structuredClone(run.ticketSync),
-								}
-							: {}),
-						...Object.fromEntries(
-							step.inputs.map((name) => [name, outputs[name]]),
-						),
-						...(step.askQuestions ||
-						(step.id === "capture" &&
-							(step.qaContract === "qa-v1" ||
-								readPath(outputs, "visual-gate.captureBlocked") === true ||
-								readPath(outputs, "visual-gate.qaBlocked") === true))
-							? { answers: structuredClone(run.answers) }
-							: {}),
-					}
-				: {
-						originalInput: run.input,
-						...(run.ticketReference
-							? {
-									ticketReference: structuredClone(run.ticketReference),
-									ticketSync: structuredClone(run.ticketSync),
-								}
-							: {}),
-						launchInputs: structuredClone(run.launchInputs ?? {}),
-						outputs: structuredClone(outputs),
-						answers: structuredClone(run.answers),
-						chatMessages: structuredClone(this.chatMessages(run.id)),
-						history: structuredClone(run.history),
-						humanDecisions: structuredClone(run.humanDecisions ?? []),
-					};
+			const input = reviewBaseline
+				? structuredClone({
+						...(reviewBaseline.context as Record<string, unknown>),
+						reviewBaseline,
+					})
+				: step.inputs
+					? {
+							...(run.ticketReference
+								? {
+										ticketReference: structuredClone(run.ticketReference),
+										ticketSync: structuredClone(run.ticketSync),
+									}
+								: {}),
+							...Object.fromEntries(
+								step.inputs.map((name) => [name, outputs[name]]),
+							),
+							...(step.askQuestions ||
+							(step.id === "capture" &&
+								(step.qaContract === "qa-v1" ||
+									readPath(outputs, "visual-gate.captureBlocked") === true ||
+									readPath(outputs, "visual-gate.qaBlocked") === true))
+								? { answers: structuredClone(run.answers) }
+								: {}),
+						}
+					: {
+							originalInput: run.input,
+							...(run.ticketReference
+								? {
+										ticketReference: structuredClone(run.ticketReference),
+										ticketSync: structuredClone(run.ticketSync),
+									}
+								: {}),
+							launchInputs: structuredClone(run.launchInputs ?? {}),
+							outputs: structuredClone(outputs),
+							answers: structuredClone(run.answers),
+							chatMessages: structuredClone(this.chatMessages(run.id)),
+							history: structuredClone(run.history),
+							humanDecisions: structuredClone(run.humanDecisions ?? []),
+						};
 			const execution = this.hooks.execution
 				? await this.hooks.execution(run, step.runner ?? run.runner)
 				: undefined;
 			const context: ExecutionContext = {
 				execution,
+				reviewKey: checkpoint.reviewKey,
 				run,
 				step,
 				stepKey: key,
+				reviewBaseline,
+				currentScope: () => ({
+					originalInput: run.input,
+					outputs,
+					answers: run.answers,
+					chatMessages: this.chatMessages(run.id),
+					humanDecisions: run.humanDecisions ?? [],
+				}),
 				capacity: this.capacityOptions(run, key, count),
-				chat: step.chat ?? chat,
+				chat: reviewBaseline ? false : (step.chat ?? chat),
 				chatMessages: structuredClone(this.chatMessages(run.id)),
 				input,
 				outputs,
@@ -929,7 +963,47 @@ export class WorkflowRuntime {
 			mkdirSync(context.evidenceDir, { recursive: true });
 			let output: unknown = outputs[step.id];
 			if (state.phase === "executing") {
-				if (step.type === "fanout") {
+				if (step.tool === "review-gate" && step.review) {
+					const fanoutKey = `${prefix}${step.review.fanout}`;
+					const baseline = [...(run.reviewRounds ?? [])]
+						.reverse()
+						.find((r) => r.key === fanoutKey);
+					if (!baseline)
+						throw new Error("Configured review baseline is unavailable");
+					const inventory = outputs[step.review.inventory] as
+						| Inventory
+						| undefined;
+					if (
+						inventory?.digest !== baseline.inventory.digest ||
+						inventory?.version !== baseline.inventory.version ||
+						inventory?.sourceContextDigest !==
+							baseline.inventory.sourceContextDigest
+					)
+						throw new Error(
+							"Requirement inventory changed without a new specialist round",
+						);
+					const revision = await reviewedRevision(
+						run.workspace,
+						baseline.baseSha,
+					);
+					if (revision.headSha !== baseline.headSha)
+						throw new Error("Revision changed during specialist review");
+					output = aggregateReview(
+						baseline,
+						outputs[step.review.fanout!] as Record<string, unknown>[],
+						latestAggregate(run, fanoutKey),
+					);
+					const questions = reviewRecoveryQuestions(context, output, {
+						headSha: revision.headSha,
+						dirty: false,
+					});
+					if (questions.length)
+						output = {
+							...(output as Record<string, unknown>),
+							reviewBlocked: true,
+							questions,
+						};
+				} else if (step.type === "fanout") {
 					if (
 						step.groups?.some((group) =>
 							group.some(
@@ -938,10 +1012,69 @@ export class WorkflowRuntime {
 						)
 					)
 						throw new Error("Human checkpoints belong outside fanout branches");
+					if (step.review && !state.reviewBaseline) {
+						const inventory = outputs[step.review.inventory] as
+							| Inventory
+							| undefined;
+						if (
+							!inventory?.digest ||
+							inventory.questions.length ||
+							inventory.conflicts.length ||
+							inventory.sourceReceipt.unavailable.length
+						)
+							throw new Error(
+								"Requirement extraction is missing or has unresolved scope/source blockers",
+							);
+						if (inventory.sourceContextDigest !== scopeContextDigest(input)) {
+							checkpoint.current = step.review.inventory;
+							checkpoint.active = undefined;
+							this.log(
+								run,
+								key,
+								"Scope changed after extraction; extracting a fresh inventory before starting reviewers.",
+							);
+							continue;
+						}
+						const repo = outputs.repository as
+							| { baseBranch?: string }
+							| undefined;
+						const source = outputs.source as
+							| { baseRefName?: string }
+							| undefined;
+						const revision = await reviewedRevision(
+							run.workspace,
+							`refs/remotes/origin/${source?.baseRefName ?? repo?.baseBranch ?? "main"}`,
+						);
+						run.reviewRounds ??= [];
+						state.reviewBaseline = {
+							schemaVersion: 1,
+							round: run.reviewRounds.length + 1,
+							key,
+							inventory: structuredClone(inventory),
+							...revision,
+							historyLength: run.history.length,
+							at: new Date().toISOString(),
+							reviewers: (step.groups ?? []).flatMap((group, i) =>
+								group.map((s) => ({
+									id: s.id,
+									key: `${key}/${i}/${s.id}`,
+									group: i,
+									contract: s.reviewContract!,
+								})),
+							),
+							context: frozenReviewContext(input),
+						};
+						run.reviewRounds.push(state.reviewBaseline);
+					}
+					if (state.reviewBaseline)
+						checkpoint.reviewKey = state.reviewBaseline.key;
 					state.children ??= (step.groups ?? []).map((group) => ({
 						...this.newCheckpoint(group),
-						outputs: structuredClone(outputs),
+						outputs: step.review ? {} : structuredClone(outputs),
 					}));
+					// Also fill older resumed branches, preserving reviews established within them.
+					for (const child of state.children)
+						child.reviewKey ??= checkpoint.reviewKey;
 					this.save(run);
 					const branchController = new AbortController();
 					const cancelBranches = () => branchController.abort(signal.reason);
@@ -960,6 +1093,7 @@ export class WorkflowRuntime {
 								workflowId,
 								chat,
 								true,
+								state.reviewBaseline ?? reviewBaseline,
 							).catch((error) => {
 								failure ??= error;
 								branchController.abort(error);
@@ -969,9 +1103,35 @@ export class WorkflowRuntime {
 					);
 					signal.removeEventListener("abort", cancelBranches);
 					if (failure) throw failure;
-					output = branchResults.map((result) =>
-						result.status === "fulfilled" ? result.value : undefined,
+					if (state.reviewBaseline) {
+						// All runner hooks have returned and cleaned up their temporary
+						// project configuration. Reject any remaining edits before
+						// accepting the round, without exempting runner directories.
+						const revision = await reviewedRevision(
+							run.workspace,
+							state.reviewBaseline.baseSha,
+						);
+						if (revision.headSha !== state.reviewBaseline.headSha)
+							throw new Error("Revision changed during specialist review");
+					}
+					output = branchResults.map((result, index) =>
+						result.status === "fulfilled"
+							? step.review
+								? Object.fromEntries(
+										(step.groups?.[index] ?? []).map((s) => [
+											s.id,
+											result.value[s.id],
+										]),
+									)
+								: result.value
+							: undefined,
 					);
+					if (state.reviewBaseline)
+						for (const reviewer of state.reviewBaseline.reviewers) {
+							run.outputs[reviewer.key] = (output as Record<string, unknown>[])[
+								reviewer.group
+							]![reviewer.id];
+						}
 				} else if (step.type === "workflow") {
 					const definition = run.workflowDefinitions?.find(
 						(item) => item.id === step.workflow,
@@ -1004,6 +1164,7 @@ export class WorkflowRuntime {
 						);
 					}
 					state.children ??= [this.newCheckpoint(definition.steps)];
+					state.children[0]!.reviewKey ??= checkpoint.reviewKey;
 					this.save(run);
 					await this.graph(
 						run,
@@ -1017,6 +1178,7 @@ export class WorkflowRuntime {
 						parallel,
 					);
 					output = { workflow: definition.id, completed: true };
+					checkpoint.reviewKey = state.children[0]!.reviewKey;
 				} else {
 					run.capacityLeaves ??= {};
 					run.capacityLeaves[key] = {
@@ -1049,6 +1211,31 @@ export class WorkflowRuntime {
 								await lease.release();
 							}
 						} else output = await this.hooks[step.type](context);
+						if (step.reviewContract) {
+							output = validateContractOutput(context, output);
+							if (step.reviewContract === "inventory-v1")
+								output = {
+									...(output as Inventory),
+									sourceContextDigest: scopeContextDigest(context.input),
+								};
+							if (step.reviewContract !== "inventory-v1") {
+								const revision = await reviewedRevision(
+									run.workspace,
+									reviewBaseline?.baseSha,
+									// Sibling runners may still own temporary project files.
+									// The fanout join checks cleanliness after every cleanup.
+									{ requireClean: false },
+								);
+								if (
+									!reviewBaseline ||
+									revision.headSha !== reviewBaseline.headSha
+								)
+									throw new Error(
+										"Reviewer changed the reviewed revision; review invalidated",
+									);
+								output = stampSpecialist(context, output);
+							}
+						}
 					} catch (error) {
 						if (!execution) throw error;
 						throw new Error(
@@ -1066,6 +1253,8 @@ export class WorkflowRuntime {
 				if (execution && output !== undefined)
 					output = JSON.parse(execution.redact(JSON.stringify(output)));
 				outputs[step.id] = output;
+				if (step.reviewContract && step.reviewContract !== "inventory-v1")
+					run.outputs[key] = output;
 				run.history.push({
 					step: key,
 					output,
@@ -1313,6 +1502,17 @@ export class WorkflowRuntime {
 					continue;
 				}
 			}
+			if (step.tool === "human-review" && readPath(output, "rework") === true) {
+				const next = this.nextStep(steps, step, output);
+				if (next === step.next || next === "end")
+					throw new Error(
+						"Changed review scope needs an explicit rework route before human approval",
+					);
+				checkpoint.current = next;
+				checkpoint.active = undefined;
+				this.save(run);
+				continue;
+			}
 			if (step.tool === "human-review") {
 				if (state.phase !== "answered")
 					await this.waitForHuman(
@@ -1459,11 +1659,23 @@ export class WorkflowRuntime {
 			signal.addEventListener("abort", abort, { once: true });
 			this.log(run, run.step ?? "clarify", questions.join("\n"));
 			try {
-				if (run.ticketReference && this.hooks.track)
+				if (run.ticketReference && this.hooks.track) {
+					const body = `Factory needs assistance:\n\n${questionNotification(questions, run.questionRecommendations)}`;
+					const legacyKey = `questions:${run.step}:${run.answers.length}${state.questionDisplay ? `:explanation:${run.questionBatchId}` : ""}`;
+					const batchKey = `questions:${run.step}:${run.answers.length}:${run.questionBatchId}`;
+					// Reuse unchanged receipts from before all waits used batch identities.
+					const receipts = run.ticketSync?.receipts ?? [];
+					const legacyReceipt =
+						!notify &&
+						!receipts.some((receipt) => receipt.key === batchKey) &&
+						receipts.some(
+							(receipt) => receipt.key === legacyKey && receipt.body === body,
+						);
 					await this.track(run, {
-						key: `questions:${run.step}:${run.answers.length}${state.questionDisplay ? `:explanation:${run.questionBatchId}` : ""}`,
-						body: `Factory needs assistance:\n\n${questionNotification(questions, run.questionRecommendations)}`,
+						key: legacyReceipt ? legacyKey : batchKey,
+						body,
 					});
+				}
 				if (notify) await this.hooks.question?.(run);
 				signal.throwIfAborted();
 				await waiting;

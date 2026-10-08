@@ -21,6 +21,7 @@ import {
 	type RuntimeHooks,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { legacyReviewWorkflows } from "./fixtures/legacy-review.js";
 
 const homes: string[] = [];
 afterEach(() => {
@@ -378,7 +379,7 @@ describe("workflow runtime", () => {
 	});
 
 	it("upgrades the legacy visual reviewer with a real newline while retaining its model", () => {
-		const saved = structuredClone(defaultWorkflows);
+		const saved = legacyReviewWorkflows();
 		const shared = saved.find(
 			(definition) => definition.id === "factory-pipeline",
 		)!;
@@ -1712,7 +1713,7 @@ it.each([
 });
 
 it("upgrades only stock CI routing, retaining customized models and routes", () => {
-	const definitions = structuredClone(defaultWorkflows);
+	const definitions = legacyReviewWorkflows();
 	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
 	shared.steps = shared.steps.filter((x) => x.id !== "after-ci-fix");
 	const fix = shared.steps.find((x) => x.id === "ci-fix")!;
@@ -1739,7 +1740,7 @@ it("upgrades only stock CI routing, retaining customized models and routes", () 
 });
 
 it("upgrades handoff into the existing CI fix route without replacing custom routes", () => {
-	const definitions = structuredClone(defaultWorkflows);
+	const definitions = legacyReviewWorkflows();
 	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
 	const handoff = shared.steps.find((x) => x.id === "handoff")!;
 	handoff.branches = [];
@@ -1907,7 +1908,7 @@ it.each([
 });
 
 it("upgrades stock coordination limits without changing agent/custom limits", () => {
-	const definitions = structuredClone(defaultWorkflows);
+	const definitions = legacyReviewWorkflows();
 	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
 	const gate = shared.steps.find((x) => x.id === "review-gate")!;
 	gate.maxVisits = 8;
@@ -2410,7 +2411,7 @@ it.each([
 });
 
 it("upgrades a coherent screenshot recipe to QA atomically, keeps custom behavior and frozen run definitions", async () => {
-	const saved = structuredClone(defaultWorkflows);
+	const saved = legacyReviewWorkflows();
 	const pipeline = saved.find((w) => w.id === "factory-pipeline")!;
 	for (const legacy of legacyScreenshotSteps)
 		pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =
@@ -2765,7 +2766,7 @@ it("preserves a screenshot recipe with customized result handling or nonvisual r
 			step.branches = [];
 		},
 	]) {
-		const saved = structuredClone(defaultWorkflows),
+		const saved = legacyReviewWorkflows(),
 			pipeline = saved.find((w) => w.id === "factory-pipeline")!;
 		for (const legacy of legacyScreenshotSteps)
 			pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =

@@ -23,6 +23,7 @@ import {
 	type ExecutionContext,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { legacyReviewWorkflows } from "./fixtures/legacy-review.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
 import { qaExecution, qaScope } from "./fixtures/qa.js";
 
@@ -213,6 +214,7 @@ it("returns visual and CI fixes through code review, keeping dispute history", a
 			return {};
 		},
 	});
+	runtime.updateWorkflows(legacyReviewWorkflows());
 	const run = runtime.create({
 		triggerOrigin: {
 			type: "manual",

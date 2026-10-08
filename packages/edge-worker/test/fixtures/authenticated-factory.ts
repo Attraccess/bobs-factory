@@ -12,6 +12,13 @@ export class FactoryServer extends ProtectedFactoryServer {
 			origins: ["http://localhost", "http://127.0.0.1:3457"],
 		});
 		this.auth.store.update((state) => {
+			// A restart fixture may create another server against the same auth store.
+			state.credentials = state.credentials.filter(
+				(c) => c.id !== "route-fixture",
+			);
+			state.sessions = state.sessions.filter(
+				(s) => s.credential !== "route-fixture",
+			);
 			state.credentials.push({
 				id: "route-fixture",
 				origin: "http://localhost",

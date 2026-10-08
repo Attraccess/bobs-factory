@@ -506,7 +506,8 @@ export function artifactsOf(
 			name,
 			value,
 			title:
-				!(value as any)?.qaContract &&
+				(value as any)?.stamp?.reviewer ??
+				(!(value as any)?.qaContract &&
 				["capture", "visual-scope", "visual-review", "visual-gate"].includes(
 					name,
 				)
@@ -518,7 +519,7 @@ export function artifactsOf(
 								"visual-gate": "Visual gate",
 							} as Record<string, string>
 						)[name]!
-					: (friendly[name] ?? name),
+					: (friendly[name] ?? name)),
 		}));
 }
 export function screenshotUrl(run: any, index: number, artifact = "capture") {
