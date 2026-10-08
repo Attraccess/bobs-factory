@@ -172,6 +172,26 @@ export function gitlabProvider(
 				add("stale", "Branch must be updated from the base", "fix");
 			const pipeline = mr.head_pipeline;
 			if (pipeline) {
+				let currentRevision = pipeline.sha === pr.headRefOid;
+				// Merged-results pipelines test a temporary commit, not the source SHA.
+				// Its parents must prove that both the current source and target were tested.
+				if (
+					!currentRevision &&
+					pipeline.source === "merge_request_event" &&
+					pipeline.ref === `refs/merge-requests/${pr.number}/merge` &&
+					typeof pipeline.sha === "string" &&
+					base.commit?.id
+				) {
+					const commit = await api(
+						`/repository/commits/${encodeURIComponent(pipeline.sha)}`,
+					);
+					currentRevision =
+						commit.id === pipeline.sha &&
+						Array.isArray(commit.parent_ids) &&
+						commit.parent_ids.length === 2 &&
+						commit.parent_ids.includes(pr.headRefOid) &&
+						commit.parent_ids.includes(base.commit.id);
+				}
 				const jobs = await pages(
 					`/pipelines/${pipeline.id}/jobs?include_retried=false`,
 				);
@@ -195,23 +215,22 @@ export function gitlabProvider(
 					name: "Pipeline",
 					state: pipeline.status,
 					link: pipeline.web_url,
-					bucket:
-						pipeline.sha !== pr.headRefOid
-							? "pending"
-							: pipeline.status === "success" ||
-									(pipeline.status === "skipped" &&
-										project.allow_merge_on_skipped_pipeline)
-								? "pass"
-								: ["failed", "canceled"].includes(pipeline.status)
-									? "fail"
-									: "pending",
+					bucket: !currentRevision
+						? "pending"
+						: pipeline.status === "success" ||
+								(pipeline.status === "skipped" &&
+									project.allow_merge_on_skipped_pipeline)
+							? "pass"
+							: ["failed", "canceled"].includes(pipeline.status)
+								? "fail"
+								: "pending",
 				});
 				if (checks.some((c) => c.bucket === "fail"))
 					add("checks", "Checks failed", "fix");
 				if (checks.some((c) => c.bucket === "pending"))
 					add(
 						"checks",
-						pipeline.sha !== pr.headRefOid
+						!currentRevision
 							? "Waiting for checks on the current revision"
 							: "Checks or manual pipeline jobs are still pending",
 						"wait",

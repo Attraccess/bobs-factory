@@ -34,6 +34,11 @@ fails closed. Merge sends the explicitly human-approved source SHA to GitLab's
 merge endpoint, which enforces repository rules; completion requires a provider
 receipt at that same SHA.
 
+GitLab merged-results pipelines are accepted when their temporary merge commit
+has exactly the current source and target revisions as parents. Pipelines for a
+different MR, outdated revisions or unavailable commit evidence stay blocked.
+Human approval and merge requests remain bound to the source SHA.
+
 ## Other providers
 
 Configure a local executable adapter for Bitbucket, Gitea, Azure DevOps or another
