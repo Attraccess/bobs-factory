@@ -58,3 +58,52 @@ The example runs are read-only copies of `manual-b38ca592-73a3-4ef6-8ead-9a3113e
 The mixed/video example uses its accepted screenshots of playback. This branch does not implement or validate the separate pending video feature. Simulated authoring proves contract enforcement and recovery, not native-agent writing quality. Physical devices, real provider merges and live agent CLI/API behavior are not exercised.
 
 The ticket snapshot showed Backlog while the runtime tracking receipt reported In Progress with delivered synchronization. Ticket lifecycle synchronization remains runtime-owned; this implementation does not mutate the ticket to reconcile that snapshot difference.
+
+
+## Review fixes: map separation, split columns and flow contrast
+
+The review-fix delta changes map label placement and physical connection ports,
+shares split-diff column sizing across all rows, and restores readable numbers on
+unopened flow stages. The source delta starts at `70c96e4a7e70a448956c85a8dff3813f63b49626`.
+The tested web build is `8155d7b2c895ddde18b0b72e`.
+
+An isolated F1 instance (`/tmp/review92-f1-NvNTBt`, UI port 47092) used deterministic
+F1 runner handlers with `F1_AGENT_MODE=mock`. Its guide correction still ran only
+guide authoring: preparation ran once, guide authoring twice, and one missing-map
+correction reached a pending review gate without a human decision. A fresh
+headless browser session (`review92-fix-20261008`) enrolled an operator passkey;
+the protected API rejected access before authentication. No production state was
+changed and no paid providers were used.
+
+Commands (the scripts and raw results are retained in `E/review-fix/`):
+
+- `F1_AGENT_MODE=mock node E/review-fix/fixture.mjs`
+- `agent-browser --headed false --session review92-fix-20261008 open http://localhost:47092`
+- `node E/review-fix/drive.mjs`
+- `F1_AGENT_MODE=mock pnpm --filter bobs-factory-edge-worker exec vitest run test/ReviewModel.test.ts test/ReviewFiles.test.ts test/FactoryReviewState.test.ts`: 19 tests passed in three files.
+- Edge-worker build and typecheck passed. Biome checks on the three changed frontend files passed with the existing 17 CSS specificity warnings. `git diff --check` passed.
+
+Browser checks at 1280×1000 and 390×844 in both themes confirmed:
+
+- The reviewer's adjacent-label example has no label/label or label/box overlap.
+- Removed forward and added reverse connections have separate physical ports and
+  curves, with no retracing when sampled in reverse. Both labels remain visible.
+  All four Before/After toggle states remain correct.
+- Long replacement lines and neighboring short lines share identical split-row
+  widths and right-column starts. Horizontal scrolling exposes the new code
+  consistently for all rows. Mobile retains unified diffs.
+- Unopened flow-stage number contrast is 12.64:1 in light and 12.43:1 in dark.
+  Flow stages still open on click.
+- Six-lane maps still fit the desktop frame, mobile pages have no horizontal
+  overflow, and long wide-glyph labels remain in bounds without collisions.
+- No unhandled browser errors occurred.
+
+Evidence: `results.json` records the 26 final browser checks; `runtime-summary.json`
+retains simulated-run counts and the pending gate. Screenshots include
+`neighbor-desktop-light.png`, `reverse-desktop-dark.png`, `split-light.png`,
+`flow-mobile-dark.png` and `long-wide-glyphs.png`. Screenshot inspection confirmed
+the revised map separation, aligned scrolled new-code column and readable flow
+numerals. These are purpose-written presentation fixtures, not native-agent
+writing evidence. Real-agent authoring, real provider merges and physical-device
+behavior remain untested. The existing ticket snapshot/runtime status discrepancy
+remains a tracking limitation.

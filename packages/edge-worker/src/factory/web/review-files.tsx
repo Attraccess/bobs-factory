@@ -197,61 +197,63 @@ function DiffBody({ patch, split }: { patch: string; split: boolean }) {
 				tabIndex={0}
 				aria-label={`${isSplit ? "Split" : "Unified"} file diff`}
 			>
-				{isSplit
-					? paired.slice(0, limit).map((row, i) =>
-							row.kind === "hunk" || row.kind === "meta" ? (
-								<div className={`diff-line ${row.kind}`} key={i}>
-									<code>{row.left?.text}</code>
-								</div>
-							) : (
-								<div className="split-row" key={i}>
-									{[row.left, row.right].map((line, j) => (
-										<div
-											key={j}
-											className={`diff-line ${line?.kind ?? "empty"}`}
-										>
-											<span className="gutter">
-												{j === 0 ? line?.old : line?.next}
-											</span>
+				<div className="diff-grid">
+					{isSplit
+						? paired.slice(0, limit).map((row, i) =>
+								row.kind === "hunk" || row.kind === "meta" ? (
+									<div className={`diff-line ${row.kind}`} key={i}>
+										<code>{row.left?.text}</code>
+									</div>
+								) : (
+									<div className="split-row" key={i}>
+										{[row.left, row.right].map((line, j) => (
+											<div
+												key={j}
+												className={`diff-line ${line?.kind ?? "empty"}`}
+											>
+												<span className="gutter">
+													{j === 0 ? line?.old : line?.next}
+												</span>
+												<span className="diff-sign">
+													{line?.kind === "remove"
+														? "−"
+														: line?.kind === "add"
+															? "+"
+															: " "}
+												</span>
+												<code>
+													{line?.text ?? ""}
+													{line?.note && (
+														<>
+															<br />
+															<em>{line.note}</em>
+														</>
+													)}
+												</code>
+											</div>
+										))}
+									</div>
+								),
+							)
+						: lines.slice(0, limit).map((line, i) => (
+								<div key={i} className={`diff-line ${line.kind}`}>
+									{!["hunk", "meta"].includes(line.kind) && (
+										<>
+											<span className="gutter">{line.old}</span>
+											<span className="gutter">{line.next}</span>
 											<span className="diff-sign">
-												{line?.kind === "remove"
+												{line.kind === "remove"
 													? "−"
-													: line?.kind === "add"
+													: line.kind === "add"
 														? "+"
 														: " "}
 											</span>
-											<code>
-												{line?.text ?? ""}
-												{line?.note && (
-													<>
-														<br />
-														<em>{line.note}</em>
-													</>
-												)}
-											</code>
-										</div>
-									))}
+										</>
+									)}
+									<code>{line.text}</code>
 								</div>
-							),
-						)
-					: lines.slice(0, limit).map((line, i) => (
-							<div key={i} className={`diff-line ${line.kind}`}>
-								{!["hunk", "meta"].includes(line.kind) && (
-									<>
-										<span className="gutter">{line.old}</span>
-										<span className="gutter">{line.next}</span>
-										<span className="diff-sign">
-											{line.kind === "remove"
-												? "−"
-												: line.kind === "add"
-													? "+"
-													: " "}
-										</span>
-									</>
-								)}
-								<code>{line.text}</code>
-							</div>
-						))}
+							))}
+				</div>
 			</section>
 			{rows.length > limit && (
 				<Button variant="secondary" onClick={() => setLimit(rows.length)}>

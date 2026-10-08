@@ -3982,6 +3982,7 @@ kbd {
 }
 .flow-reveal button:not(.reached) .step-badge {
 	background: var(--track);
+	color: var(--text);
 }
 .chapter-screen figcaption {
 	overflow-wrap: anywhere;
@@ -4522,9 +4523,18 @@ kbd {
 	white-space: pre;
 	overflow-wrap: normal;
 }
-.split-row {
-	min-width: max-content;
+.diff-body.split .diff-grid {
+	display: grid;
+	width: max-content;
+	min-width: 100%;
 	grid-template-columns: minmax(400px, 1fr) minmax(400px, 1fr);
+}
+.diff-body.split .split-row {
+	grid-column: 1 / -1;
+	grid-template-columns: subgrid;
+}
+.diff-body.split .diff-grid > .diff-line {
+	grid-column: 1 / -1;
 }
 .screenshot-strip button {
 	position: relative;

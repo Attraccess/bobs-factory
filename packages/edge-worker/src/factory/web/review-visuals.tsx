@@ -144,12 +144,22 @@ export function SystemMap({
 			y += height + 22;
 		}
 	});
-	const port = (part: string, source: boolean, i: number, height: number) => {
-		const peers = edges.flatMap((e, j) =>
-			(source ? e.source : e.target) === part ? [j] : [],
-		);
+	// Incoming and outgoing edges share the physical side of a box. Allocate
+	// ports together so a reverse connection cannot retrace the forward curve.
+	const port = (part: string, other: string, i: number, height: number) => {
+		const lane = positions.get(part)!.lane,
+			right = positions.get(other)!.lane >= lane;
+		const peers = edges.flatMap((e, j) => {
+			const peer =
+				e.source === part ? e.target : e.target === part ? e.source : undefined;
+			return peer && positions.get(peer)!.lane >= lane === right ? [j] : [];
+		});
 		return (height * (peers.indexOf(i) + 1)) / (peers.length + 1);
 	};
+	const labelTracks = tracks.map((t) => ({
+		...t,
+		top: headingBottom,
+	}));
 	const layout = edges.map((edge, i) => {
 		const source = positions.get(edge.source)!,
 			target = positions.get(edge.target)!,
@@ -157,18 +167,37 @@ export function SystemMap({
 			forward = target.lane >= source.lane,
 			sx = source.x + (forward ? boxWidth : 0),
 			tx = target.x + (forward ? 0 : boxWidth),
-			sy = source.y + port(edge.source, true, i, source.height),
-			ty = target.y + port(edge.target, false, i, target.height),
+			sy = source.y + port(edge.source, edge.target, i, source.height),
+			ty = target.y + port(edge.target, edge.source, i, target.height),
 			x = Math.max(
 				e.labelWidth / 2 + 8,
 				Math.min(width - e.labelWidth / 2 - 8, (sx + tx) / 2),
 			),
-			y = e.adjacent ? (sy + ty) / 2 : arches[i]!,
 			bend = (forward ? 1 : -1) * Math.max(20, Math.abs(tx - sx) * 0.4);
+		let y = e.adjacent ? (sy + ty) / 2 : arches[i]!;
+		if (e.adjacent && e.label) {
+			const left = x - e.labelWidth / 2 - 4,
+				right = x + e.labelWidth / 2 + 4,
+				half = e.labelHeight / 2 + 4;
+			y = Math.max(y, headingBottom + half + 10);
+			// Sort vertically so shifting past one label also checks every label
+			// below it. The curve midpoint follows the label's allocated space.
+			for (const track of [...labelTracks].sort((a, b) => a.top - b.top)) {
+				if (
+					left < track.right &&
+					right > track.left &&
+					y - half < track.bottom + 6 &&
+					y + half > track.top - 6
+				)
+					y = track.bottom + half + 6;
+			}
+			labelTracks.push({ left, right, top: y - half, bottom: y + half });
+		}
+		const offset = (y - (sy + ty) / 2) / 0.75;
 		const sameSide = source.lane === system.lanes.length - 1 ? -1 : 1;
 		const loopX = source.x + (sameSide > 0 ? boxWidth : 0);
 		const path = e.adjacent
-			? `M${sx},${sy} C${sx + bend},${sy} ${tx - bend},${ty} ${tx},${ty}`
+			? `M${sx},${sy} C${sx + bend},${sy + offset} ${tx - bend},${ty + offset} ${tx},${ty}`
 			: source.lane === target.lane
 				? `M${loopX},${sy} C${loopX + sameSide * 24},${sy - 28} ${loopX + sameSide * 24},${ty + 28} ${loopX},${ty}`
 				: `M${sx},${sy} C${sx + bend},${y - 32} ${tx - bend},${y - 32} ${tx},${ty}`;
