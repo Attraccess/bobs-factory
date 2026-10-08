@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 import type { Guide, GuideChapter } from "../FactoryResults";
 import type { ReviewFile, ReviewFilesManifest } from "../ReviewFiles";
 import { api } from "./client";
-import { reviewFileTarget } from "./review-context";
+import {
+	reviewDiffUrl,
+	reviewFileTarget,
+	reviewFileUrl,
+} from "./review-context";
 import {
 	areaColor,
 	areaName,
@@ -30,32 +34,27 @@ export function FileLink({
 	url?: string;
 	children?: React.ReactNode;
 }) {
-	const [anchor, setAnchor] = useState<string>();
+	const [target, setTarget] = useState<string>();
 	useEffect(() => {
 		let current = true;
-		void crypto.subtle
-			.digest("SHA-256", new TextEncoder().encode(path))
-			.then((bytes) => {
-				if (current)
-					setAnchor(
-						[...new Uint8Array(bytes)]
-							.map((n) => n.toString(16).padStart(2, "0"))
-							.join(""),
-					);
+		setTarget(undefined);
+		void reviewFileUrl(url, path)
+			.then((value) => {
+				if (current) setTarget(value);
 			})
 			.catch(() => {});
 		return () => {
 			current = false;
 		};
-	}, [path]);
-	return url ? (
-		<External href={`${url}/files${anchor ? `#diff-${anchor}` : ""}`}>
-			{children ?? path} ↗
-		</External>
+	}, [url, path]);
+	const href = target ?? reviewDiffUrl(url);
+	return href ? (
+		<External href={href}>{children ?? path} ↗</External>
 	) : (
 		<code>{children ?? path}</code>
 	);
 }
+
 export function useReviewFiles(run: any, guide: Guide) {
 	return useQuery({
 		queryKey: ["review-files", run.id, signature(guide)],
@@ -361,9 +360,7 @@ export function ChangedFiles({
 						Retry files
 					</Button>
 				)}
-				<External href={url ? `${url}/files` : undefined}>
-					Open PR diff ↗
-				</External>
+				<External href={reviewDiffUrl(url)}>Open PR diff ↗</External>
 			</section>
 		);
 	const grouped = groupReviewFiles(manifest.files, chapters),

@@ -40,6 +40,11 @@ import {
 	scopeContextDigest,
 } from "./SpecialistReview.js";
 import { inspectPullRequest } from "./Takeover.js";
+import {
+	VideoCaptureFields,
+	VideoReceiptSchema,
+	videoGateIssues,
+} from "./Video.js";
 import { readPath } from "./Workflow.js";
 
 export function toolArguments(
@@ -207,6 +212,7 @@ export function executeCommand(
 }
 
 export const ReviewResultSchema = z.object({
+	acceptedVideos: z.array(VideoReceiptSchema).max(3).optional(),
 	qaContract: z.literal(QA_CONTRACT).optional(),
 	qaReviewStamp: z
 		.object({
@@ -260,6 +266,7 @@ const screenshotSchema = z.object({
 	state: z.string().optional(),
 });
 const CaptureFields = {
+	...VideoCaptureFields,
 	screenshots: z.array(screenshotSchema),
 	dependencyManifests: z
 		.record(z.string(), z.record(z.string(), z.string()))
@@ -429,7 +436,12 @@ export class FactoryTools {
 					`${shot.area}/${shot.state}: screenshot bytes changed after capture`,
 				);
 		}
-		const findings = [...review.findings.filter((f) => f.status === "open")];
+		const videoIssues = await videoGateIssues(context, headSha);
+		coverage.blocked.push(...videoIssues.blocked);
+		const findings = [
+			...review.findings.filter((f) => f.status === "open"),
+			...videoIssues.failures,
+		];
 		for (const finding of capture.findings.filter((f) => f.status === "open"))
 			if (!findings.some((f) => f.id === finding.id)) findings.push(finding);
 		for (const failure of coverage.failed) {

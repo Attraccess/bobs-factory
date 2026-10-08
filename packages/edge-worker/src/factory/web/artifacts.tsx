@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Link } from "react-router-dom";
 import { api, artifactsOf, friendly, screenshotUrl } from "./client";
-import { LazyImage } from "./media";
+import { LazyImage, LazyVideo } from "./media";
 import { useRestorableState } from "./restoration";
 import { GuidedReview } from "./review";
 import { Button, External, Markdown, Modal, useToast } from "./ui";
@@ -454,6 +454,34 @@ export function RenderArtifact({
 							/>
 						</>
 					)}
+					{(v.videos ?? [])
+						.filter((video: any) => video.validation)
+						.map((video: any) => (
+							<LazyVideo
+								key={video.validation.sha256}
+								runId={run.id}
+								video={{
+									taskId: video.taskId,
+									caption: video.caption,
+									transcript: video.transcript,
+									duration: video.validation.duration,
+									mime: video.validation.mime,
+									sha256: video.validation.sha256,
+									captions: Boolean(video.validation.captions),
+									available: true,
+								}}
+							/>
+						))}
+					{v.videoUnavailable?.length > 0 && (
+						<>
+							<h3>Demonstration limitations</h3>
+							<List
+								items={v.videoUnavailable.map(
+									(gap: any) => `${gap.taskId}: ${gap.reason}`,
+								)}
+							/>
+						</>
+					)}
 					{v.screenshots?.length > 0 && (
 						<ScreenshotGallery
 							shots={v.screenshots}
@@ -869,7 +897,8 @@ export function Inspector({
 			description={`from ${artifact?.name ?? "step"} · ${run.title}`}
 			className="inspector"
 			onKeyDown={(event: any) => {
-				if (event.target.closest("input,textarea,select")) return;
+				if (event.target.closest("input,textarea,select,video,.evidence-video"))
+					return;
 				if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
 					event.preventDefault();
 					move(event.key === "ArrowLeft" ? -1 : 1);

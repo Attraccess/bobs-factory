@@ -875,6 +875,7 @@ function ReviewReader({
 						)}
 						<ChapterVisual
 							chapter={chapter}
+							videos={evidence.data?.videos ?? []}
 							annotate={annotate}
 							base={base}
 							system={guide.system}

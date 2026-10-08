@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Capture authentic feature demonstrations for Factory review guides and the inspector, with lazy playback, transcripts, validated revision evidence and safe seeking. Changed QA scenarios require fresh recordings, and expired recordings from every capture round are cleaned up across restarts. Keep optional recording failures visible and preserve screenshots and explicit human approval. ([Taskbot #31](https://taskbot.apps.janjaap.de/p/bobs-factory/t/31), [#33](https://github.com/Attraccess/bobs-factory/pull/33))
 - Share repository grouping across Factory, Takeover, Simple and custom workflows. Show one composer project for matching routing-label sets and publish, review and merge one PR/MR per changed repository, preserving partial delivery receipts and approval for exact revisions. ([#51](https://github.com/Attraccess/bobs-factory/pull/51))
 - Configurable specialist review with a versioned requirement inventory, complete acceptance coverage and revision-bound reviewer evidence. Recipes exposes each reviewer independently; QA and the human guide retain accepted skips, observations and disagreements. Nested workflows and subsequent fanout branches preserve review safeguards in their callers and guides, renamed gates retain QA coverage, and settled findings require fresh evidence even after intervening omissions. ([Taskbot #73](https://taskbot.apps.janjaap.de/p/bobs-factory/t/73), [#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
@@ -70,6 +71,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve feature-video evidence and capability guidance when integrating grouped repositories and Codex context startup recovery. Validate recording sources and stream current media across every retained repository. Use provider-specific diff and file links in grouped review guides. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+
+- Preserve video validation and playback evidence alongside specialist requirement coverage when integrating review guides and saved stock recipes. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+
+- Reconcile feature-video evidence with the current guide layout, form resets, independent execution profiles, Web Push and Git provider support, preserving capability guidance, video styling and runtime validation. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
+- Reject malformed caption timestamps, reversed intervals and out-of-order cues before accepting recorded audio evidence. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 - Require Codex Factory context tools before model work, preserve correction budgets when startup fails, and let explicit Retry recover exhausted output corrections without rerunning completed roles. ([#52](https://github.com/Attraccess/bobs-factory/pull/52))
 
 - Preserve specialist review and cleanup safeguards when integrating Codex permission-profile registration at app-server launch. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))

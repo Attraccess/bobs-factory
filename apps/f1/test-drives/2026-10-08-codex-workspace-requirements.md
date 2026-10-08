@@ -1,6 +1,6 @@
 # Codex workspace-requirements reload recovery
 
-**Date:** 2026-10-08  
+**Date:** 2026-10-08
 **Candidate:** `t3/fix-recurring-run-failure`, based on `236afd2a`, with the permission-profile launch fix.
 **Implementation commit:** `46f9260b` (PR #50).
 

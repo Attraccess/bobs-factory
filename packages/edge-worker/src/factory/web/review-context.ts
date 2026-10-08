@@ -44,6 +44,34 @@ export function reviewFileTarget(run: unknown, path: string) {
 	};
 }
 
+/** Build only supported forge destinations from credential-free review metadata. */
+export function reviewDiffUrl(url: string | undefined): string | undefined {
+	const reference = pullRequestReference(url);
+	if (!reference) return webUrl(url);
+	return `${reference.requestUrl.replace(/\/$/, "")}/${reference.type === "gitlab" ? "diffs" : "files"}`;
+}
+
+export async function reviewFileUrl(
+	url: string | undefined,
+	path: string,
+): Promise<string | undefined> {
+	const reference = pullRequestReference(url),
+		diff = reviewDiffUrl(url);
+	if (!reference || !diff) return diff;
+	const algorithm = reference.type === "gitlab" ? "SHA-1" : "SHA-256";
+	const bytes = await crypto.subtle.digest(
+		algorithm,
+		new TextEncoder().encode(path),
+	);
+	const hash = [...new Uint8Array(bytes)]
+		.map((n) => n.toString(16).padStart(2, "0"))
+		.join("");
+	// GitLab selects the file by SHA-1 and uses its diff-content ID for scrolling.
+	return reference.type === "gitlab"
+		? `${diff}?file=${hash}#diff-content-${hash}`
+		: `${diff}#diff-${hash}`;
+}
+
 function record(value: unknown): RecordValue {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as RecordValue)

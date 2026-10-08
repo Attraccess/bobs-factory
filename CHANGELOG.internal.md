@@ -10,6 +10,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
+- Fix video evidence CI validation and base integration by formatting styles, installing media test tools and preserving both video and refinement recommendation guidance in the full prompt. Keep video-contract validation enforced through question-result normalization and preserve video finalization alongside feedback and review recovery. Integrate passkey access, renamed Bob’s Factory packages, compact review history and CI revision recovery without weakening video media restrictions. Keep context snapshot isolation checks compatible with both source and binary launch arguments. ([#33](https://github.com/Attraccess/bobs-factory/pull/33))
 - Integrate specialist review with compact review history and the Bob’s Factory fork. Retain complete coverage in exported guides, question explanations, and batch-specific ticket notifications across restart. Keep snapshot fixtures compatible with binary arguments and authenticate restart-harness requests using isolated test sessions. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve specialist extraction regression coverage while integrating legacy feedback recovery and shared question guidance from main. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))

@@ -6,6 +6,7 @@ import {
 	aggregateForContext,
 	assertAggregateRevision,
 } from "./SpecialistReview.js";
+import type { VideoCapture } from "./Video.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 /** Validate guide coverage against the entire PR, not the last agent's delta. */
@@ -66,7 +67,39 @@ export function validateGuideCoverage(
 				| { screenshots?: { area: string; state: string }[] }
 				| undefined
 		)?.screenshots ?? [];
+	const videos =
+		(context.run.outputs.capture as VideoCapture | undefined)?.videos ?? [];
+	const receipts =
+		(
+			context.run.outputs["visual-review"] as
+				| {
+						acceptedVideos?: {
+							taskId: string;
+							sha256: string;
+							inspectedPlayback: boolean;
+						}[];
+				  }
+				| undefined
+		)?.acceptedVideos ?? [];
 	for (const chapter of guide.chapters) {
+		for (const ref of chapter.videos ?? []) {
+			const video = videos.find(
+				(v) => v.taskId === ref.taskId && v.validation?.sha256 === ref.sha256,
+			);
+			if (
+				!video?.validation ||
+				video.validation.dirty ||
+				video.validation.validatedRevision !==
+					context.progress?.currentRevision?.headSha ||
+				!receipts.some(
+					(r) =>
+						r.taskId === ref.taskId &&
+						r.sha256 === ref.sha256 &&
+						r.inspectedPlayback,
+				)
+			)
+				throw new Error(`Guide video is stale or unaccepted: ${ref.taskId}`);
+		}
 		if (ids.has(chapter.id))
 			throw new Error(`Duplicate guide chapter: ${chapter.id}`);
 		ids.add(chapter.id);

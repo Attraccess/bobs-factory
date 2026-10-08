@@ -170,6 +170,9 @@ export interface RunViewState {
 	keptOpen?: boolean;
 	seenAt?: string;
 }
+
+import { cleanupVideoEvidence } from "./Video.js";
+
 export interface FactoryRun {
 	repositories?: import("./RepositoryScope.js").RunRepository[];
 	/** Durable per-repository receipts, including partial publication and merges. */
@@ -391,6 +394,7 @@ export class WorkflowRuntime {
 				run.workflow.chat = true;
 			this.runs.set(run.id, run);
 		}
+		cleanupVideoEvidence(join(this.directory, "evidence"), this.runs.values());
 	}
 
 	chatMessages(id: string): ChatMessage[] {

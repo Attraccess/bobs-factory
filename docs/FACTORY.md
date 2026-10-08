@@ -715,8 +715,80 @@ area/state/image hash. These accepted images can survive a partial visual failur
 when their dependencies and content remain unchanged. Missing or unverified
 critical evidence still blocks the visual gate. Existing in-flight legacy
 inventories are retained for safe recovery; the next visual-scope visit uses the
-compact contract. Demo videos are tracked separately in Taskbot #31 and are not
-implemented in this batch.
+compact contract.
+
+### Authentic demonstration videos
+
+New stock Factory and Takeover runs opt into `video-v1`. Grouped runs validate
+recording sources across every retained repository, including changes in secondary
+repositories. QA scope selects up to
+three demonstrations linked to existing story/criterion IDs, independently of
+visual changes. Usually one 30–90 second clip explains the main changed flow.
+Backend-only changes can select none with a concrete reason. Short authentic
+flows need no padding. Screenshots and fresh behavioral checks remain required
+where applicable; slideshows cannot substitute for recordings.
+
+The capture role checks the local recorder, browser, encoder and metadata probe.
+Use the existing server, seeded non-sensitive fixtures, readable pacing and a
+fresh explicitly headless session. Prefer `agent-browser --headed false --session
+<unique-run-session> open <url>` and its `record start`/`record stop` commands.
+Installed Playwright can record with `headless: true` and `recordVideo`; close
+its context before awaiting `video.saveAs()`. Never attach to the user's browser,
+open desktop windows or silently install global tools. See
+[Playwright recording](https://playwright.dev/docs/videos) and
+[export completion](https://playwright.dev/docs/api/class-video).
+
+Export MP4/H.264 with yuv420p and fast-start layout where possible; WebM with
+VP8/VP9/AV1 is also accepted, with actual container/codec metadata. Produce a real
+poster and a transcript of visible steps/outcomes. Audio needs timed WebVTT
+captions. Runtime validation requires local `ffprobe` and `ffmpeg`, decodes the
+file and streams its hash, and rejects escaped paths, external symlinks,
+unsupported/truncated media or exceeded limits. Agent-supplied metadata cannot
+establish validation. Missing tools/export failures stay visible limitations for
+optional demonstrations; accepted requirements explicitly requiring recording
+remain blocked. Product failures are actionable failed QA.
+
+Reviewers must inspect actual playback to return exact task/hash acceptance
+receipts. Reuse requires that receipt, unchanged media/poster/captions, task and
+linked QA story definitions (including preconditions, fixtures, actions and
+expected criteria), source dependencies and fixture/environment assumptions.
+Dirty, uncertain or unexplained shared changes require recapture. Runtime retains
+the original capture revision and separately stamps the revision validating
+reuse; fresh behavioral execution still runs on each visit. Legacy persisted
+outputs default to no video. Older task-only validation receipts require fresh
+recordings because they cannot establish unchanged scenarios. Frozen runs keep
+their definitions; only coherent stock recipes migrate automatically, preserving
+runner/model choices. Custom
+recipes opt in explicitly using `videoContract: "video-v1"` across scope, capture,
+review, gate, guide and handoff.
+
+Guides reference accepted task IDs and hashes. Chapters and inspector show lazy
+posters, native controls, inline mobile playback and transcripts. Media loads only
+when opened, with `preload="none"` and no autoplay. Playback never checks review
+items or approves the PR. Unsupported, stale, expired or missing recordings fall
+back to transcripts. Chromium mobile emulation does not establish native iOS
+compatibility; record any native testing gap honestly.
+
+Only the validated loopback UI serves `/api/runs/:id/videos/:task/:asset?v=<hash>`
+(`media`, `poster`, `captions`). It supports HEAD and single explicit, open-ended
+or suffix byte ranges, streams without whole-file buffering, returns 416 for
+invalid/multiple ranges and 409 for changed bytes or stale revisions. API media
+is `no-store` and stays outside the service-worker shell cache and webhook tunnel.
+Grouped requests check every retained Git worktree against the captured scope
+revision. The shared parent need not be a Git repository; a dirty, changed or
+missing member makes the recording unavailable until revalidated.
+
+Limits are three clips, **120 seconds and 50 MiB per finalized clip**, with a
+**512 MiB evidence budget per run**. Keep binaries outside source control. Remove
+failed temporary exports owned by the capture attempt. Bounded startup maintenance
+prunes unreferenced `video-temp-*` files older than 24 hours in terminal runs;
+finalized video/poster/caption assets from current and historical capture rounds
+expire 30 days after completed/stopped runs. Each pass removes at most 200 files;
+missing or already removed files do not consume that budget, so later restarts
+continue cleanup across runs while retaining metadata.
+Active, waiting, failed and interrupted runs retain evidence for review/recovery.
+Metadata and receipts survive cleanup and the UI reports expired assets. Cleanup
+never runs on playback requests or deletes files outside the run evidence root.
 
 ## Take over existing work
 
@@ -1165,6 +1237,10 @@ diffs preserve hunk numbers, empty lines and no-final-newline markers; long diff
 initially display 500 rows and can reveal the rest. The desktop diff header collects
 status, full path, counts, mode, navigation and PR link in one row. Patch content
 starts at the first hunk; metadata-only and unavailable changes keep explicit messages.
+Grouped chapter and file links use the owning delivery and repository-relative
+filename. GitHub links use its files view; GitLab links use its diffs view and
+file selector, including on self-managed instances. Unknown custom forges retain
+the published review URL without invented file routes.
 
 Historical guides without snapshots reconstruct only from retained CI/readiness
 and handoff receipts establishing the original revision. The reconstructed

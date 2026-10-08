@@ -276,6 +276,7 @@ import {
 	taskbotSource,
 } from "./factory/TicketTracking.js";
 import { titleMcpConfig } from "./factory/TitleMcpConfig.js";
+import { finalizeVideoEvidence, videoGateIssues } from "./factory/Video.js";
 import {
 	capacityInstructions,
 	readPath as readFactoryPath,
@@ -8106,7 +8107,12 @@ ${taskSection}`;
 					?.find((item) => item.id === "factory-pipeline")
 					?.steps.includes(step)
 			)
-				output = validateFactoryResult(step.id, output, step.qaContract);
+				output = validateFactoryResult(
+					step.id,
+					output,
+					step.qaContract,
+					step.videoContract,
+				);
 			if (step.id === "visual-scope" && step.qaContract) {
 				const issues = qaRequirementIssues(
 					output as QaScope,
@@ -8162,12 +8168,27 @@ ${taskSection}`;
 	): Promise<unknown> {
 		const { run, step } = context;
 		let output = this.validateFactoryAgentOutput(context, value);
-		if (step.id === "guide")
+		if (step.id === "guide") {
+			if (step.videoContract) {
+				const issues = await videoGateIssues(
+					context,
+					context.progress?.currentRevision?.headSha ?? "",
+				);
+				if (issues.blocked.length || issues.failures.length)
+					throw new Error(
+						"Guide video evidence is stale or incomplete: " +
+							issues.blocked.join("; "),
+					);
+			}
 			output = await finalizeGuideFiles(
 				context,
 				attachRequirementCoverage(context, output),
 			);
-		if (step.id === "capture") output = captureEvidence(context, output);
+		}
+		if (step.id === "capture") {
+			output = captureEvidence(context, output);
+			output = await finalizeVideoEvidence(context, output);
+		}
 		const completed = (await roleProgress(context)).currentRevision;
 		if (["code-fix", "visual-fix"].includes(step.id))
 			output = recordReviewFix(context, output, completed);

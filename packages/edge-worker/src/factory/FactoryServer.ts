@@ -28,6 +28,8 @@ import {
 	resolveGuideSnapshot,
 } from "./ReviewFiles.js";
 import type { ChatState } from "./SessionChat.js";
+import type { VideoCapture } from "./Video.js";
+import { registerVideoRoutes } from "./VideoServer.js";
 import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
 
@@ -89,6 +91,7 @@ export class FactoryServer {
 		const shell = factoryWebAssets();
 		this.auth = new FactoryAuth(runtime.directory, access);
 		this.app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
+		registerVideoRoutes(this.app, runtime);
 		this.app.setErrorHandler((error, _request, reply) =>
 			reply.code(error instanceof z.ZodError ? 400 : 409).send({
 				error:
@@ -959,6 +962,26 @@ export class FactoryServer {
 					  }
 					| undefined;
 				return {
+					videos: (
+						(run.outputs.capture as VideoCapture | undefined)?.videos ?? []
+					)
+						.filter((v) => v.validation)
+						.map((v) => ({
+							taskId: v.taskId,
+							caption: v.caption,
+							transcript: v.transcript,
+							duration: v.validation!.duration,
+							mime: v.validation!.mime,
+							codecs: v.validation!.codecs,
+							revision: v.validation!.captureRevision,
+							validatedRevision: v.validation!.validatedRevision,
+							sha256: v.validation!.sha256,
+							captions: Boolean(v.validation!.captions),
+							available: existsSync(v.path) && existsSync(v.posterPath),
+						})),
+					videoUnavailable:
+						(run.outputs.capture as VideoCapture | undefined)
+							?.videoUnavailable ?? [],
 					screenshots: (capture?.screenshots ?? []).map(
 						({ area, state, caption, context, imageSha256 }, index) => ({
 							area,

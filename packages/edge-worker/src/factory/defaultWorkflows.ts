@@ -9,6 +9,7 @@ import {
 	inventoryQaInstructions,
 	specialistSteps,
 } from "./specialistSteps.js";
+import { videoPrompts } from "./videoPrompts.js";
 import { validateWorkflows, type WorkflowStep } from "./Workflow.js";
 
 const agent = (id: string, name: string, prompt: string, extra = {}) => ({
@@ -187,6 +188,26 @@ Optional chapter flow:{title,steps:[{label,detail}]} has 2-8 stages (label <=60,
 ];
 
 const pipeline = definitions[1]!;
+const previousVideoPrompts = new Map<string, string>();
+for (const step of pipeline.steps) {
+	if (
+		![
+			"visual-scope",
+			"capture",
+			"visual-review",
+			"visual-gate",
+			"guide",
+			"handoff",
+		].includes(step.id)
+	)
+		continue;
+	Object.assign(step, { videoContract: "video-v1" });
+	if ("prompt" in step) {
+		previousVideoPrompts.set(step.id, step.prompt);
+		step.prompt += videoPrompts[step.id] ?? "";
+	}
+}
+
 const planStep = pipeline.steps.find((step) => step.id === "plan")!;
 if (!("prompt" in planStep)) throw new Error("Stock planner unavailable");
 const previousPlanPrompt = planStep.prompt;
@@ -385,6 +406,9 @@ export function upgradeWorkflows(value: unknown): unknown {
 					: step.prompt === old.prompt ||
 						step.prompt === current.prompt ||
 						step.prompt ===
+							current.prompt?.replace(videoPrompts[id] ?? "", "") ||
+						step.prompt === previousVideoPrompts.get(id) ||
+						step.prompt ===
 							(
 								legacyReviewSteps.find((s) => s.id === id) as
 									| { prompt?: string }
@@ -415,6 +439,9 @@ export function upgradeWorkflows(value: unknown): unknown {
 				Object.assign(step, {
 					name: stock.name,
 					qaContract: stock.qaContract,
+					...(stock.videoContract
+						? { videoContract: stock.videoContract }
+						: {}),
 					branches: structuredClone(
 						step.id === "handoff" ? (step.branches ?? []) : stock.branches,
 					),
