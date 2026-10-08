@@ -4,6 +4,46 @@ type RecordValue = Record<string, unknown>;
 export type ReviewLink = { url: string; label: string };
 export type CheckoutCommand = { label: string; command: string; help: string };
 
+export function reviewDeliveries(value: unknown) {
+	const run = record(value),
+		gate = record(run.reviewGate);
+	const draft = record(record(run.outputs)["draft-pr"]);
+	const entries = Array.isArray(gate.repositories)
+		? gate.repositories
+		: Array.isArray(draft.deliveries)
+			? draft.deliveries.map((value) => ({
+					...record(value),
+					...record(record(value).output),
+				}))
+			: [];
+	return entries.flatMap((value) => {
+		const item = record(value),
+			url = webUrl(item.url);
+		return url &&
+			typeof item.repositoryId === "string" &&
+			typeof item.name === "string" &&
+			typeof item.headSha === "string"
+			? [
+					{
+						repositoryId: item.repositoryId,
+						name: item.name,
+						url,
+						headSha: item.headSha,
+					},
+				]
+			: [];
+	});
+}
+
+export function reviewFileTarget(run: unknown, path: string) {
+	const deliveries = reviewDeliveries(run);
+	const delivery = deliveries.find((item) => path.startsWith(`${item.name}/`));
+	return {
+		path: delivery ? path.slice(delivery.name.length + 1) : path,
+		url: delivery?.url ?? reviewContext(run).pr?.url,
+	};
+}
+
 function record(value: unknown): RecordValue {
 	return value && typeof value === "object" && !Array.isArray(value)
 		? (value as RecordValue)

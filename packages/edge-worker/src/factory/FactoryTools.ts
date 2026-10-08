@@ -13,6 +13,7 @@ import { spawnExecution as spawn } from "bobs-factory-core";
 import { z } from "zod";
 import { feedbackInstructionFingerprint } from "./FeedbackPolicy.js";
 import { type GitProvider, resolveGitProvider } from "./GitProvider.js";
+import { groupedTool, scopeCommand } from "./GroupedTools.js";
 import { dependencyCovers, dependencyHashes } from "./Incremental.js";
 import {
 	assessFeedback,
@@ -31,6 +32,7 @@ import {
 	qaDigest,
 	qaRequirementIssues,
 } from "./Qa.js";
+import { runRepositories } from "./RepositoryScope.js";
 import { reviewRecoveryQuestions } from "./ReviewRecovery.js";
 import {
 	aggregateForContext,
@@ -49,6 +51,7 @@ export function toolArguments(
 		input: context.input,
 		run: { id: context.run.id, title: context.run.title },
 		workspace: context.run.workspace,
+		repositories: runRepositories(context.run),
 		evidenceDir: context.evidenceDir,
 	};
 	if (typeof value === "string") {
@@ -141,6 +144,7 @@ export function executeCommand(
 				FACTORY_INPUT: Buffer.byteLength(input) <= 16000 ? input : undefined,
 				FACTORY_INPUT_FILE: inputPath,
 				FACTORY_EVIDENCE_DIR: context.evidenceDir,
+				FACTORY_REPOSITORIES: JSON.stringify(runRepositories(context.run)),
 			},
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -490,6 +494,43 @@ export class FactoryTools {
 		}
 	}
 	async tool(context: ExecutionContext): Promise<unknown> {
+		if (runRepositories(context.run).length > 1) {
+			if (context.step.tool === "handoff" && context.step.qaContract) {
+				const gate = await this.qaGate(context, (exe, args) =>
+					scopeCommand(context, this.command.bind(this), exe, args),
+				);
+				const accepted = context.run.outputs["visual-gate"];
+				if (
+					!gate.approved ||
+					["headSha", "captureHash", "scopeHash", "reviewHash"].some(
+						(key) => readPath(accepted, key) !== readPath(gate, key),
+					)
+				)
+					throw new Error(
+						"Grouped QA evidence changed or is incomplete; handoff blocked",
+					);
+			}
+			return groupedTool(context, this.command.bind(this), (child) =>
+				this.repositoryTool(
+					child.run === context.run
+						? child
+						: { ...child, step: { ...child.step, qaContract: undefined } },
+				),
+			);
+		}
+		return this.repositoryTool(context);
+	}
+	private command(
+		context: ExecutionContext,
+		executable: string,
+		args: string[],
+		timeout?: number,
+	): Promise<string> {
+		return this.hooks.command
+			? this.hooks.command(context, executable, args, timeout)
+			: executeCommand(context, executable, args, timeout);
+	}
+	private async repositoryTool(context: ExecutionContext): Promise<unknown> {
 		const { run } = context;
 		// Built-in commands return machine data retained in artifacts. Their raw
 		// stdout (especially repeated provider polling) is not conversation text.
@@ -505,9 +546,7 @@ export class FactoryTools {
 							run: { ...run, workspace: context.evidenceDir },
 						}
 					: commandContext;
-			return this.hooks.command
-				? this.hooks.command(ctx, exe, args, timeout)
-				: executeCommand(ctx, exe, args, timeout);
+			return scopeCommand(ctx, this.command.bind(this), exe, args, timeout);
 		};
 		let selected: Promise<GitProvider> | undefined;
 		const provider = (url?: string) =>
@@ -577,6 +616,9 @@ export class FactoryTools {
 					);
 				const branch = await command("git", ["branch", "--show-current"]);
 				if (!branch) throw new Error("Draft PR requires a branch");
+				// Keep provider validation ahead of mutations for a delivery candidate.
+				// A grouped context-only repository needs no publication provider.
+				if (!context.allowUnchangedRepository) await provider();
 				if (readPath(run.outputs, "source.url")) {
 					if (readPath(run.outputs, "source.headRefName") !== branch)
 						throw new Error("Takeover must publish to the original PR branch");
@@ -585,8 +627,8 @@ export class FactoryTools {
 					if (pr.state !== "OPEN" || !pr.isDraft)
 						throw new Error("Takeover PR must remain open and draft");
 				}
-				const forge = await provider();
 				if (await command("git", ["status", "--porcelain"])) {
+					await provider();
 					await command("git", ["add", "-A"]);
 					// Ticket titles are not commit messages; conventional-commit hooks
 					// require a type and subject. Keep the header short and single-line.
@@ -621,9 +663,12 @@ export class FactoryTools {
 					`${baseRef}...HEAD`,
 				]);
 				if (commits.trim() === "0" || !changes.trim())
+					if (context.allowUnchangedRepository) return { unchanged: true };
+				if (commits.trim() === "0" || !changes.trim())
 					throw new Error(
 						`No implementation changes to publish against ${baseBranch}. ${String(readPath(run.outputs, "implement.summary") ?? "The worktree has no deliverable changes.")} Resolve the implementation blocker before delivery; retrying PR creation cannot fix an empty branch.`,
 					);
+				const forge = await provider();
 				await command("git", ["push", "-u", "origin", "HEAD"]);
 				const existing = await forge.list(branch);
 				if (existing.length > 1)
@@ -1290,7 +1335,11 @@ export function captureEvidence(
 			const key = JSON.stringify([...area.dependencies].sort());
 			hashes = manifests.get(key);
 			if (!hashes) {
-				hashes = dependencyHashes(context.run.workspace, area.dependencies);
+				hashes = dependencyHashes(
+					context.run.workspace,
+					area.dependencies,
+					runRepositories(context.run),
+				);
 				manifests.set(key, hashes);
 			}
 		}

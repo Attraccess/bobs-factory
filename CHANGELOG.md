@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Share repository grouping across Factory, Takeover, Simple and custom workflows. Show one composer project for matching routing-label sets and publish, review and merge one PR/MR per changed repository, preserving partial delivery receipts and approval for exact revisions. ([#51](https://github.com/Attraccess/bobs-factory/pull/51))
 - Configurable specialist review with a versioned requirement inventory, complete acceptance coverage and revision-bound reviewer evidence. Recipes exposes each reviewer independently; QA and the human guide retain accepted skips, observations and disagreements. Nested workflows and subsequent fanout branches preserve review safeguards in their callers and guides, renamed gates retain QA coverage, and settled findings require fresh evidence even after intervening omissions. ([Taskbot #73](https://taskbot.apps.janjaap.de/p/bobs-factory/t/73), [#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Opt into per-device Web Push for new questions, review revisions, runs needing help and successful completions. Manage devices and send a real push test; preserve subscriptions across restart without replaying old attention, wait for scheduled and background work before completion alerts, and refresh protected run links before actions. ([Taskbot #69](https://taskbot.apps.janjaap.de/p/bobs-factory/t/69), [#35](https://github.com/Attraccess/bobs-factory/pull/35))

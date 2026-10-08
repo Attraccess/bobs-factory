@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
 	existsSync,
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	rmSync,
@@ -89,6 +90,33 @@ const fixture = () => {
 	});
 	return { home, identity, tools, store, resolver };
 };
+
+it("validates remote bindings in every grouped repository before materializing an execution", async () => {
+	const { home, store, resolver } = fixture();
+	const secondary = join(home, "secondary"),
+		parent = join(home, "group");
+	mkdirSync(secondary);
+	mkdirSync(parent);
+	execFileSync("git", ["init", "-q", secondary]);
+	execFileSync("git", [
+		"-C",
+		secondary,
+		"remote",
+		"add",
+		"origin",
+		"https://unbound.example/team/repo.git",
+	]);
+	await expect(
+		resolver.resolve(
+			store.select("primary")!,
+			"grouped",
+			parent,
+			"claude",
+			"main",
+			[home, secondary],
+		),
+	).rejects.toThrow("unbound remote destination");
+});
 
 it("freezes profile definitions across deletion and restart, passing only a private environment to commands", async () => {
 	const { home, store, resolver } = fixture();
