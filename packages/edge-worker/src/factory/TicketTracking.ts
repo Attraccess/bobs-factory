@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { IIssueTrackerService, McpServerConfig } from "bobs-factory-core";
 import { z } from "zod";
 import { isPullRequestSource } from "./GitProviderReference.js";
@@ -39,6 +39,8 @@ export type TicketStage = "in_progress" | "in_review" | "done";
 export interface TicketMilestone {
 	key: string;
 	body: string;
+	purpose?: "documentation" | "operational";
+	deliveryId?: string;
 	stage?: TicketStage;
 	pr?: string;
 	merged?: boolean;
@@ -52,6 +54,12 @@ export interface TicketSync {
 	receipts: TicketMilestone[];
 	lastStatus?: string;
 	error?: string;
+	transcript?: {
+		externalLink?: string;
+		sessionId?: string;
+		createAttempted?: boolean;
+		error?: string;
+	};
 }
 export interface TicketSnapshot {
 	comments: { body: string }[];
@@ -66,6 +74,7 @@ export interface TicketAdapter {
 		snapshot: TicketSnapshot,
 	): Promise<string | undefined>;
 	comment(body: string): Promise<void>;
+	publish?(receipt: TicketMilestone, documentationBody: string): Promise<void>;
 	link(url: string): Promise<void>;
 }
 
@@ -296,9 +305,106 @@ export function taskbotAdapter(
 	};
 }
 
+/** Reuse a verified binding; ambiguous provider creation is reconciled, never blindly repeated. */
+export async function ensureTicketTranscript(
+	run: FactoryRun,
+	tracker: IIssueTrackerService,
+	save: (run: FactoryRun) => void,
+	existingSessionId?: string,
+	externalLink?: string,
+): Promise<string> {
+	const ref = TicketReferenceSchema.parse(run.ticketReference);
+	if (ref.provider !== "native" || ref.platform !== "linear")
+		throw new Error(
+			"Linear transcript requires a verified native Linear ticket",
+		);
+	run.ticketSync ??= { receipts: [] };
+	run.ticketSync.transcript ??= {};
+	const binding = run.ticketSync.transcript;
+	if (binding.sessionId) return binding.sessionId;
+	if (existingSessionId) {
+		binding.sessionId = existingSessionId;
+		delete binding.error;
+		save(run);
+		return existingSessionId;
+	}
+	if (!externalLink || !tracker.findAgentSessionForExternalLink)
+		throw new Error(
+			"Manual Linear transcript needs a configured HTTPS Factory origin and session reconciliation; operational delivery retained",
+		);
+	const link = new URL(externalLink);
+	if (
+		link.protocol !== "https:" ||
+		link.username ||
+		link.password ||
+		link.pathname !== "/" ||
+		link.search ||
+		link.hash !== `#/runs/${encodeURIComponent(run.id)}`
+	)
+		throw new Error(
+			"Factory transcript link must identify this run on its configured HTTPS origin",
+		);
+	if (binding.externalLink && binding.externalLink !== externalLink)
+		throw new Error(
+			"Factory transcript origin changed during pending creation; reconcile the original binding first",
+		);
+	binding.externalLink = externalLink;
+	let creatingNow = false;
+	try {
+		const found = await tracker.findAgentSessionForExternalLink(
+			ref.id,
+			externalLink,
+		);
+		if (found) {
+			binding.sessionId = found;
+			delete binding.error;
+			save(run);
+			return found;
+		}
+		if (binding.createAttempted)
+			throw new Error(
+				"Manual Linear transcript creation remains unconfirmed; retain the original identity until the provider confirms it",
+			);
+		binding.createAttempted = true;
+		save(run);
+		creatingNow = true;
+		const result = await tracker.createAgentSessionOnIssue({
+			issueId: ref.id,
+			externalLink,
+		});
+		if (!result.success) {
+			binding.createAttempted = false;
+			throw new Error("Linear rejected transcript session creation");
+		}
+		const id = result.agentSessionId ?? (await result.agentSession)?.id;
+		if (!id)
+			throw new Error("Linear transcript creation returned no session receipt");
+		binding.sessionId = id;
+		delete binding.error;
+		save(run);
+		return id;
+	} catch (error) {
+		const type = (error as { type?: string }).type;
+		if (
+			creatingNow &&
+			[
+				"Ratelimited",
+				"InvalidInput",
+				"Forbidden",
+				"AuthenticationError",
+			].includes(type ?? "")
+		)
+			binding.createAttempted = false;
+		binding.error = error instanceof Error ? error.message : String(error);
+		save(run);
+		throw error;
+	}
+}
+
 export function nativeAdapter(
 	ref: Extract<TicketReference, { provider: "native" }>,
 	tracker: IIssueTrackerService,
+	options?: { getTranscriptSession: () => Promise<string> },
 ): TicketAdapter {
 	const selectedState = async (
 		stage: TicketStage,
@@ -379,6 +485,35 @@ export function nativeAdapter(
 		async comment(body) {
 			await tracker.createComment(ref.id, { body });
 		},
+		...(ref.platform === "linear"
+			? {
+					async publish(receipt: TicketMilestone, documentationBody: string) {
+						if (receipt.purpose === "documentation" || receipt.merged) {
+							await tracker.createComment(ref.id, { body: documentationBody });
+							return;
+						}
+						if (!options)
+							throw new Error(
+								"Linear transcript binding unavailable; operational delivery retained without an issue comment",
+							);
+						const sessionId = await options.getTranscriptSession();
+						if (!sessionId)
+							throw new Error("Verified Linear transcript session unavailable");
+						const result = await tracker.createAgentActivity({
+							id: receipt.deliveryId,
+							agentSessionId: sessionId,
+							content: {
+								type: receipt.key.startsWith("questions:")
+									? "elicitation"
+									: "thought",
+								body: receipt.body,
+							},
+						});
+						if (!result.success)
+							throw new Error("Linear transcript delivery was rejected");
+					},
+				}
+			: {}),
 		async link(url) {
 			if (!tracker.linkPullRequest)
 				throw new Error(
@@ -494,9 +629,11 @@ export class TicketTracking {
 									: undefined;
 							sync.lastStatus = statusOf(await adapter.read());
 							this.save(run);
-							await adapter.comment(
-								`${receipt.body}${receipt.limitation ? `\n\nTracking limitation: ${receipt.limitation}` : ""}\n\n${marker}`,
-							);
+							receipt.deliveryId ??= randomUUID();
+							this.save(run);
+							const body = `${receipt.body}${receipt.limitation ? `\n\nTracking limitation: ${receipt.limitation}` : ""}\n\n${marker}`;
+							if (adapter.publish) await adapter.publish(receipt, body);
+							else await adapter.comment(body);
 						}
 						receipt.delivered = true;
 						delete receipt.error;

@@ -574,7 +574,7 @@ it("preserves a correction through pre-turn infrastructure failure without spend
 	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
 });
 
-it("persists correction after confirmed startup and bounds repeated validation rejection", async () => {
+it("refunds confirmed transport failures and still bounds repeated validation rejection", async () => {
 	const f = await guideFixture();
 	const start = f.runner.start.getMockImplementation()!;
 	f.runner.start.mockImplementationOnce(async (...args) => {
@@ -586,9 +586,12 @@ it("persists correction after confirmed startup and bounds repeated validation r
 	);
 	const checkpoint = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
 	expect(checkpoint.rejected).toMatchObject({
-		attempts: 1,
+		attempts: 0,
 		reserved: false,
 		output: f.invalid,
+	});
+	expect(checkpoint.infrastructureFailure).toMatchObject({
+		reason: "Transport offline after startup",
 	});
 	f.ctx.resumeAgent = checkpoint;
 	f.runner.start.mockImplementation(start);

@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { LINEAR_WEBHOOK_IPS } from "bobs-factory-core";
+import { LINEAR_WEBHOOK_IPS, WebhookIpValidator } from "bobs-factory-core";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LinearEventTransport } from "../src/LinearEventTransport.js";
@@ -37,6 +37,9 @@ describe("LinearEventTransport", () => {
 		});
 
 		it.each([
+			"34.185.239.137",
+			"35.246.206.27",
+			"35.246.210.220",
 			"34.186.126.124",
 			"34.48.40.158",
 			"35.236.218.67",
@@ -53,6 +56,66 @@ describe("LinearEventTransport", () => {
 			}
 			expect(onEvent).toHaveBeenCalledTimes(2);
 			expect(onEvent).toHaveBeenCalledWith(payload);
+		});
+
+		it("uses refreshed sources on the mounted route and still requires signatures", async () => {
+			await server.close();
+			server = Fastify({ trustProxy: "127.0.0.1" });
+			const validator = new WebhookIpValidator();
+			const transport = new LinearEventTransport({
+				fastifyServer: server,
+				verificationMode: "direct",
+				secret,
+				ipAllowlist: () => validator.getAllowlist("linear"),
+			});
+			transport.on("event", onEvent);
+			transport.register();
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => ({
+					ok: true,
+					json: async () => ({ ips: ["203.0.113.7/32"] }),
+				})),
+			);
+			await validator.refreshLinearAllowlist();
+			vi.unstubAllGlobals();
+			expect(
+				(
+					await server.inject({
+						method: "POST",
+						url: "/linear-webhook",
+						remoteAddress: "203.0.113.7",
+						headers: { "linear-signature": signature },
+						payload,
+					})
+				).statusCode,
+			).toBe(200);
+			expect(
+				(
+					await server.inject({
+						method: "POST",
+						url: "/linear-webhook",
+						remoteAddress: "203.0.113.7",
+						headers: { "linear-signature": "0".repeat(64) },
+						payload,
+					})
+				).statusCode,
+			).toBe(401);
+			expect(
+				(
+					await server.inject({
+						method: "POST",
+						url: "/linear-webhook",
+						remoteAddress: "203.0.113.8",
+						headers: {
+							"linear-signature": signature,
+							"x-forwarded-for": "203.0.113.7",
+						},
+						payload,
+					})
+				).statusCode,
+			).toBe(403);
+			expect(onEvent).toHaveBeenCalledTimes(1);
 		});
 
 		it.each([

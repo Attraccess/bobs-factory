@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { factoryRuntimeIdentity } from "bobs-factory-core";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { MachineCapacity } from "../MachineCapacity.js";
@@ -22,6 +23,7 @@ import {
 	type ResolvedLaunchRequest,
 	resolveLaunchRequest,
 } from "./LaunchFields.js";
+import { runProvenance } from "./Provenance.js";
 import {
 	readReviewManifest,
 	readReviewPatch,
@@ -34,6 +36,15 @@ import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	deliveryStatus?(): {
+		platform: string;
+		workspaceId: string;
+		pending: number;
+		delivered: number;
+		superseded: number;
+		hasError: boolean;
+		nextAttemptAt?: number;
+	}[];
 	push?: import("./FactoryPush.js").FactoryPush;
 	previewExecution?(
 		repositoryId: string,
@@ -387,6 +398,10 @@ export class FactoryServer {
 		this.app.get("/api/version", () => ({
 			build: shell.build,
 			protocol: shell.protocol,
+			runtime: factoryRuntimeIdentity,
+		}));
+		this.app.get("/api/delivery-status", () => ({
+			workspaces: hooks.deliveryStatus?.() ?? [],
 		}));
 		this.app.get("/api/events", (request, reply) => {
 			reply.hijack();
@@ -592,6 +607,14 @@ export class FactoryServer {
 				.code(202)
 				.send(await hooks.start(resolveLaunchRequest(workflow, input)));
 		});
+		this.app.get<{ Params: { id: string } }>(
+			"/api/runs/:id/provenance",
+			(request, reply) => {
+				const run = runtime.runs.get(request.params.id);
+				if (!run) return reply.code(404).send({ error: "Run not found" });
+				return runProvenance(run);
+			},
+		);
 		this.app.get<{ Params: { id: string }; Querystring: { view?: string } }>(
 			"/api/runs/:id",
 			(request, reply) => {

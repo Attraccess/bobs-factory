@@ -10,6 +10,12 @@ release publication is pending. The build commands below are for contributors.
 The artifact contract is `bobs-factory-VERSION-TARGET.tar.gz` with a matching
 `.manifest.json`: schema version, product, exact version, commit, target, byte size
 and SHA-256. `build.json` inside adds tooling, executable hash and resource digest.
+The same verified commit, target and resource digest are embedded in the runtime
+identity returned by `/version` and `/api/version`, alongside the product
+version and dirty-build flag. Development runtimes report unknown source identity;
+the current Git checkout is not evidence of the installed executable's commit.
+Run attempt provenance retains the identity that actually executed each attempt,
+including when a frozen run resumes after an upgrade.
 Supported target names: `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`.
 Bun 1.4.2 bundles the runtime; immutable dashboard/prompts/skills are embedded and
 verified before extraction into a content-addressed private resource directory.

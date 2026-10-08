@@ -20,7 +20,11 @@ import {
 	pullRequestReference,
 	repositoryReference,
 } from "./GitProviderReference.js";
-import type { MergeReadiness, ProviderCommand } from "./MergeReadiness.js";
+import type {
+	MergeReadiness,
+	ProviderCheck,
+	ProviderCommand,
+} from "./MergeReadiness.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 export type GitProviderSnapshot = GitProviderConfig & { repositoryUrl: string };
@@ -37,6 +41,10 @@ export function normalizeGitProviderConfig(
 		: config;
 }
 export interface GitProvider {
+	retryCheck?(
+		url: string,
+		retry: NonNullable<ProviderCheck["retry"]>,
+	): Promise<void>;
 	list(branch: string): Promise<{ url: string; isDraft: boolean }[]>;
 	create(input: {
 		branch: string;
@@ -141,12 +149,17 @@ export async function resolveGitProvider(
 					}
 				: ({ type, repositoryUrl: reference.url } as GitProviderSnapshot);
 	}
-	return gitProvider(command, run.gitProvider);
+	run.ciSupervision ??= { retries: [] };
+	run.ciSupervision.checkReceipts ??= {};
+	return gitProvider(command, run.gitProvider, run.ciSupervision.checkReceipts);
 }
 
 export function gitProvider(
 	command: ProviderCommand,
 	snapshot: GitProviderSnapshot,
+	checkReceipts?: NonNullable<
+		import("./CISupervision.js").CISupervision["checkReceipts"]
+	>,
 ): GitProvider {
 	const repository = repositoryReference(snapshot.repositoryUrl);
 	const repositoryWebUrl = new URL(repository.url);
@@ -178,8 +191,32 @@ export function gitProvider(
 	};
 	let provider: GitProvider;
 	if (snapshot.type === "github") {
-		const gh = (args: string[]) => command("gh", args);
+		const gh = (args: string[]) =>
+			command(
+				"gh",
+				args[0] === "api" && repository.host !== "github.com"
+					? [...args, "--hostname", repository.host]
+					: args,
+			);
 		provider = {
+			retryCheck: async (url, retry) => {
+				if (retry.kind !== "github-run" || !/^\d+$/.test(retry.id))
+					throw new Error("Invalid GitHub retry receipt");
+				const pr = JSON.parse(
+					await gh(["pr", "view", url, "--json", "headRefOid,state"]),
+				);
+				if (pr.headRefOid !== retry.headSha || pr.state !== "OPEN")
+					throw new Error("CI retry revision changed");
+				const path = `repos/${repository.project}/actions/runs/${retry.id}`;
+				const receipt = JSON.parse(await gh(["api", path]));
+				if (
+					receipt.head_sha !== retry.headSha ||
+					receipt.run_attempt !== retry.attempt ||
+					receipt.status !== "completed"
+				)
+					return;
+				await gh(["api", `${path}/rerun-failed-jobs`, "--method", "POST"]);
+			},
 			list: async (branch) =>
 				JSON.parse(
 					await gh([
@@ -214,7 +251,7 @@ export function gitProvider(
 			view: async (url, fields = "headRefOid,isDraft,state") =>
 				JSON.parse(await gh(["pr", "view", url, "--json", fields])),
 			inspect: (url) => inspectGithubPullRequest(command, url),
-			readiness: (url) => inspectGithubReadiness(command, url),
+			readiness: (url) => inspectGithubReadiness(command, url, checkReceipts),
 			draft: async (url, draft) => {
 				await gh(["pr", "ready", url, ...(draft ? ["--undo"] : [])]);
 			},
@@ -305,6 +342,14 @@ export function gitProvider(
 	} else throw new Error("Unknown Git provider");
 	// Provider output must not redirect subsequent mutations to another repository.
 	return {
+		...(provider.retryCheck
+			? {
+					retryCheck: (
+						url: string,
+						retry: NonNullable<ProviderCheck["retry"]>,
+					) => provider.retryCheck!(checkedUrl(url), retry),
+				}
+			: {}),
 		list: async (branch) =>
 			(await provider.list(branch)).map((item) => ({
 				...item,

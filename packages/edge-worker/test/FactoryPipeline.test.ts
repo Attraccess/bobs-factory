@@ -312,6 +312,41 @@ function context(): ExecutionContext {
 	};
 }
 
+it("blocks an unexecuted legacy review instead of approving empty findings", async () => {
+	const ctx = context();
+	ctx.step = { ...ctx.step, id: "review-gate", tool: "review-gate" };
+	ctx.run.outputs["code-review"] = {
+		findings: [],
+		summary:
+			"Blocked: factory-context tools were unavailable, so no review was performed.",
+	};
+	const tools = new FactoryTools();
+	await expect(tools.tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		reviewIncomplete: true,
+		findings: [],
+		questions: [expect.stringContaining("no review was performed")],
+	});
+});
+
+it("requires an explicit outcome from newly authored reviewers and approves a completed clean review", async () => {
+	expect(() =>
+		validateFactoryResult("code-review", { findings: [], summary: "Clean" }),
+	).toThrow("status");
+	const ctx = context();
+	ctx.step = { ...ctx.step, id: "review-gate", tool: "review-gate" };
+	ctx.run.outputs["code-review"] = validateFactoryResult("code-review", {
+		status: "completed",
+		blockers: [],
+		findings: [],
+		summary: "Reviewed all inputs and diff",
+	});
+	await expect(new FactoryTools().tool(ctx)).resolves.toMatchObject({
+		approved: true,
+		findings: [],
+	});
+});
+
 it("routes a CI revision mismatch to the configured fixer without accepting old checks", async () => {
 	const ctx = context();
 	ctx.step.tool = "ci";
@@ -848,6 +883,7 @@ it.each([
 			const capture = ctx.run.outputs.capture as { screenshots: unknown[] };
 			// Even an incorrectly approving reviewer cannot bypass missing captures.
 			return {
+				status: "completed",
 				findings: [],
 				summary: "Web accepted",
 				acceptedScreenshots: capture.screenshots,
@@ -977,7 +1013,11 @@ it.each([
 it("offers capture assistance when selected states are missing even without an unavailable report", async () => {
 	const ctx = context();
 	ctx.step.tool = "visual-gate";
-	ctx.run.outputs["visual-review"] = { findings: [], summary: "No findings" };
+	ctx.run.outputs["visual-review"] = {
+		status: "completed",
+		findings: [],
+		summary: "No findings",
+	};
 	const path = join(ctx.evidenceDir, "web.png");
 	writeFileSync(path, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]));
 	ctx.run.outputs.capture = {
@@ -1011,7 +1051,7 @@ it("waits again when capture remains blocked after an answer, and stops without 
 						screenshots: [],
 						unavailable: [{ area: "Reader", reason: "Login still fails" }],
 					}
-				: { findings: [], summary: "No screenshots" },
+				: { status: "completed", findings: [], summary: "No screenshots" },
 		script: async () => {
 			handoff();
 			return {};
@@ -1079,6 +1119,7 @@ it("fails safely when a custom visual gate has no capture recovery path", async 
 	ctx.run.workflow.steps = [gate];
 	ctx.run.outputs.capture = { screenshots: [], unavailable: [] };
 	ctx.run.outputs["visual-review"] = {
+		status: "completed",
 		findings: [],
 		summary: "No screenshots",
 	};
@@ -1225,6 +1266,7 @@ function stampQa(ctx: ExecutionContext, output = qaExecution()) {
 		output,
 	);
 	ctx.run.outputs["visual-review"] = {
+		status: "completed",
 		qaContract: "qa-v1",
 		findings: [],
 		summary: "Reviewed executed receipts",
@@ -1462,6 +1504,7 @@ it("does not present legacy screenshot-only roles as QA when a runner supplies e
 	});
 	expect(
 		validateFactoryResult("visual-review", {
+			status: "completed",
 			qaContract: "qa-v1",
 			findings: [],
 			summary: "Screenshot-only review",
@@ -1472,7 +1515,12 @@ it("does not present legacy screenshot-only roles as QA when a runner supplies e
 				scopeHash: "invented",
 			},
 		}),
-	).toEqual({ findings: [], summary: "Screenshot-only review" });
+	).toEqual({
+		status: "completed",
+		blockers: [],
+		findings: [],
+		summary: "Screenshot-only review",
+	});
 });
 
 it("uses a reported open criterion failure without generating a duplicate, but never accepts a rejection of failed behavior", async () => {

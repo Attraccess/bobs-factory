@@ -7,12 +7,14 @@ declare function fetch(
 	init?: { headers?: Record<string, string>; signal?: AbortSignal },
 ): Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
 
+import { isIP } from "node:net";
+
 import { createLogger, type ILogger } from "../logging/index.js";
 
 /**
  * Known webhook source IPs/CIDRs for supported providers.
  *
- * Linear: https://linear.app/docs/security (verified 2026-09-15)
+ * Linear: https://linear.app/docs/security (verified 2026-10-08)
  * Published set: https://linear.app/.well-known/appspecific/app.linear.ips.json
  * Plain Linear IPs below match the published /32 entries exactly.
  * GitHub: https://api.github.com/meta (hooks field)
@@ -31,6 +33,9 @@ export const LINEAR_WEBHOOK_IPS = [
 	"34.186.126.124",
 	"34.48.40.158",
 	"35.236.218.67",
+	"34.185.239.137",
+	"35.246.206.27",
+	"35.246.210.220",
 ] as const;
 
 /**
@@ -153,6 +158,13 @@ export class WebhookIpValidator {
 	private allowlists: Record<WebhookProvider, readonly string[]>;
 	private enabled: boolean;
 	private logger: ILogger;
+	private readonly customLinear: boolean;
+	private refreshTimer?: ReturnType<typeof setInterval>;
+	private linearRefresh?: Promise<{
+		status: "updated" | "unchanged" | "custom" | "failed";
+		added: string[];
+		removed: string[];
+	}>;
 
 	constructor(options: WebhookIpValidatorOptions = {}) {
 		this.enabled = options.enabled ?? true;
@@ -160,11 +172,97 @@ export class WebhookIpValidator {
 			options.logger ?? createLogger({ component: "WebhookIpValidator" });
 
 		const custom = options.customAllowlists ?? {};
+		this.customLinear = custom.linear !== undefined;
 		this.allowlists = {
 			linear: custom.linear ?? [...LINEAR_WEBHOOK_IPS],
 			github: custom.github ?? [...GITHUB_WEBHOOK_CIDRS_FALLBACK],
 			gitlab: custom.gitlab ?? [...GITLAB_WEBHOOK_CIDRS],
 		};
+	}
+
+	/** Refresh the official Linear webhook set; failed refreshes retain the last known set. */
+	refreshLinearAllowlist(): Promise<{
+		status: "updated" | "unchanged" | "custom" | "failed";
+		added: string[];
+		removed: string[];
+	}> {
+		if (this.customLinear)
+			return Promise.resolve({ status: "custom", added: [], removed: [] });
+		if (this.linearRefresh) return this.linearRefresh;
+		this.linearRefresh = (async () => {
+			try {
+				const response = await fetch(
+					"https://linear.app/.well-known/appspecific/app.linear.ips.json",
+					{
+						headers: { Accept: "application/json" },
+						signal: AbortSignal.timeout(5000),
+					},
+				);
+				if (!response.ok) throw new Error(`HTTP ${response.status}`);
+				const data = (await response.json()) as { ips?: unknown };
+				if (
+					!Array.isArray(data?.ips) ||
+					data.ips.length === 0 ||
+					data.ips.length > 1000 ||
+					data.ips.some(
+						(entry) =>
+							typeof entry !== "string" ||
+							!entry.endsWith("/32") ||
+							isIP(entry.slice(0, -3)) !== 4,
+					)
+				) {
+					throw new Error(
+						"Published Linear webhook set must contain IPv4 /32 sources",
+					);
+				}
+				const next = [
+					...new Set((data.ips as string[]).map((entry) => entry.slice(0, -3))),
+				].sort();
+				const previous = this.allowlists.linear;
+				const added = next.filter((ip) => !previous.includes(ip));
+				const removed = previous.filter((ip) => !next.includes(ip));
+				this.allowlists.linear = next;
+				if (added.length || removed.length)
+					this.logger.warn(
+						`Linear webhook source drift reconciled: added ${added.join(", ") || "none"}; removed ${removed.join(", ") || "none"}`,
+					);
+				return {
+					status:
+						added.length || removed.length
+							? ("updated" as const)
+							: ("unchanged" as const),
+					added,
+					removed,
+				};
+			} catch (error) {
+				this.logger.warn(
+					"Linear webhook source refresh failed; retaining last known allowlist",
+					error instanceof Error ? error : new Error(String(error)),
+				);
+				return { status: "failed" as const, added: [], removed: [] };
+			} finally {
+				this.linearRefresh = undefined;
+			}
+		})();
+		return this.linearRefresh;
+	}
+
+	/** One bounded startup refresh and six-hour drift checks; no incoming request waits on the network. */
+	startRefreshing(intervalMs = 6 * 60 * 60 * 1000): void {
+		if (!this.enabled || this.refreshTimer) return;
+		void this.refreshLinearAllowlist();
+		this.refreshTimer = setInterval(
+			() => {
+				void this.refreshLinearAllowlist();
+			},
+			Math.max(60_000, intervalMs),
+		);
+		this.refreshTimer.unref?.();
+	}
+
+	stopRefreshing(): void {
+		if (this.refreshTimer) clearInterval(this.refreshTimer);
+		this.refreshTimer = undefined;
 	}
 
 	/**

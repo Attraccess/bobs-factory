@@ -29,6 +29,26 @@ describe("ActivityPoster", () => {
 		);
 	});
 
+	it("uses a direct mutation receipt without relationship requests", async () => {
+		createAgentActivity.mockResolvedValue({
+			success: true,
+			agentActivityId: "activity-1",
+			get agentActivity() {
+				throw new Error("unneeded relationship fetch");
+			},
+		});
+		expect(
+			await poster.postActivityDirect(
+				{ createAgentActivity } as unknown as IIssueTrackerService,
+				{
+					agentSessionId: "session",
+					content: { type: "thought", body: "Routing" },
+				},
+				"routing",
+			),
+		).toBe("activity-1");
+	});
+
 	it("adds a sudo guidance hint to repo setup hook sudo failures", async () => {
 		await poster.postRepoSetupHookActivity("session-1", "workspace-1", {
 			status: "failed",

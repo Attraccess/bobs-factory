@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Coordinate overlapping repository/base-branch finalization while keeping implementation parallel, and supervise bounded CI infrastructure retries without agent polling or empty source commits. Native Linear operational updates use the agent transcript; durable developer documentation remains issue comments. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))
+
 - Show complete binary installation on the homepage for all four macOS/Linux targets, from verified downloads and PATH setup to dashboard passkey enrollment, with all commands immediately visible ([#54](https://github.com/jappyjan/bobs-factory/pull/54)).
 - Updated source, installation and homepage links for the move to `jappyjan/bobs-factory` ([#53](https://github.com/jappyjan/bobs-factory/pull/53)).
 - Make guided review more compact, require system maps for new technical and mixed guides, identify individual file areas, and collect feedback and review actions on Decide. Keep neighboring map labels and reverse connections distinct, align split-diff columns across long lines, and keep unopened flow-stage numbers readable. Keep chapter checks compact, use a plain reviewed checkbox row, and announce singular feedback counts correctly ([Taskbot #92](https://taskbot.apps.janjaap.de/p/bobs-factory/t/92), [#44](https://github.com/Attraccess/bobs-factory/pull/44)).
@@ -14,6 +16,8 @@ All notable changes to this project will be documented in this file.
 
 
 ### Added
+
+- Submit large structured role results as bounded, revision-bound artifacts with complete runtime-owned file coverage. Expose actual runtime build identity and secret-safe per-attempt workflow, contract and instruction provenance across recovery. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))
 
 - Capture authentic feature demonstrations for Factory review guides and the inspector, with lazy playback, transcripts, validated revision evidence and safe seeking. Changed QA scenarios require fresh recordings, and expired recordings from every capture round are cleaned up across restarts. Keep optional recording failures visible and preserve screenshots and explicit human approval. ([Taskbot #31](https://taskbot.apps.janjaap.de/p/bobs-factory/t/31), [#33](https://github.com/Attraccess/bobs-factory/pull/33))
 - Share repository grouping across Factory, Takeover, Simple and custom workflows. Show one composer project for matching routing-label sets and publish, review and merge one PR/MR per changed repository, preserving partial delivery receipts and approval for exact revisions. ([#51](https://github.com/Attraccess/bobs-factory/pull/51))
@@ -72,6 +76,8 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Block approval when a required review did not complete; cap oversized context page requests, replace expired scoped context connections on resume, and retain bounded correction recovery after tooling repair. Budget Linear requests, persist and reconcile activity/document delivery, and refresh signed webhook source validation without losing custom allowlists. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))
 
 - Start a fresh ticket run after settling previous stopped or failed runs, including older sessions. Live execution and background work still prevent competing launches. ([#23](https://github.com/Attraccess/bobs-factory/pull/23))
 
