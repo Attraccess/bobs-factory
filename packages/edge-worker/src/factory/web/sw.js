@@ -144,3 +144,85 @@ router.registerRoute(
 	),
 );
 router.addFetchListener();
+
+const notificationBodies = {
+	question: "New questions need your answer.",
+	review: "A new review needs your approval.",
+	failure: "A run needs your help.",
+	blocker: "A run needs a decision.",
+	completion: "A run completed successfully.",
+	test: "Test notification. Open Factory to check current state.",
+};
+function notificationDestination(data) {
+	if (data?.category === "test") return "/#/";
+	if (
+		typeof data?.runId !== "string" ||
+		!/^[A-Za-z0-9_-]{1,200}$/.test(data.runId)
+	)
+		return "/#/";
+	const path = `/#/runs/${encodeURIComponent(data.runId)}`;
+	return data.destination === path || data.destination === `${path}/review`
+		? data.destination
+		: "/#/";
+}
+self.addEventListener("push", (event) => {
+	let payload;
+	try {
+		payload = event.data?.json();
+	} catch {
+		/* Always display a safe visible fallback. */
+	}
+	const valid =
+		payload?.version === 1 &&
+		Object.hasOwn(notificationBodies, payload.category);
+	const data = valid
+		? {
+				category: payload.category,
+				runId: payload.runId,
+				destination: notificationDestination(payload),
+			}
+		: { category: "test", destination: "/#/" };
+	event.waitUntil(
+		self.registration.showNotification("Bob’s Factory", {
+			body: valid
+				? notificationBodies[payload.category]
+				: "Open Factory to check current state.",
+			icon: "/icons/icon-192.png",
+			badge: "/icons/icon-192.png",
+			tag:
+				typeof data.runId === "string" &&
+				/^[A-Za-z0-9_-]{1,200}$/.test(data.runId)
+					? `factory-${data.runId}`
+					: "factory-test",
+			data,
+		}),
+	);
+});
+self.addEventListener("notificationclick", (event) => {
+	event.notification.close();
+	const destination = notificationDestination(event.notification.data);
+	event.waitUntil(
+		(async () => {
+			const windows = await self.clients.matchAll({
+				type: "window",
+				includeUncontrolled: true,
+			});
+			const window = windows.find((client) => {
+				const url = new URL(client.url);
+				return (
+					url.origin === self.location.origin &&
+					url.pathname === "/" &&
+					!url.search
+				);
+			});
+			if (window) {
+				// The app changes only its hash after pausing actions; drafts survive in the same tab.
+				window.postMessage({ type: "FACTORY_NOTIFICATION", destination });
+				await window.focus();
+			} else
+				await self.clients.openWindow(
+					new URL(destination, self.location.origin).href,
+				);
+		})(),
+	);
+});

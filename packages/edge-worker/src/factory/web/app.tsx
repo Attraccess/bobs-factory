@@ -46,6 +46,7 @@ import {
 	WorkingRow,
 } from "./focus";
 import { Composer, Recipes } from "./forms";
+import { NotificationsControl } from "./notifications-ui";
 import { pwaState, startPwa, usePwa } from "./pwa";
 import { ConnectionNotice, InstallControl } from "./pwa-ui";
 import { useReadingPosition } from "./reading-position";
@@ -205,6 +206,7 @@ function Header({
 				</nav>
 				<div className="header-actions">
 					<InstallControl />
+					<NotificationsControl />
 					<Dropdown.Root>
 						<Dropdown.Trigger asChild>
 							<Button variant="icon" aria-label={`Theme: ${theme.choice}`}>

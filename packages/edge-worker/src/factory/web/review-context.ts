@@ -1,3 +1,5 @@
+import { pullRequestReference } from "../GitProviderReference.js";
+
 type RecordValue = Record<string, unknown>;
 export type ReviewLink = { url: string; label: string };
 export type CheckoutCommand = { label: string; command: string; help: string };
@@ -115,24 +117,35 @@ export function reviewContext(value: unknown) {
 		return new URL(url).hostname !== "github.com" || Boolean(githubPr(url));
 	});
 	const github = githubPr(prUrl);
+	const forge = pullRequestReference(prUrl);
 	const branch = [draft.branch, source.headRefName, existing.branch]
 		.map(branchName)
 		.find(Boolean);
-	const repositoryUrl = github
-		? `https://github.com/${github[1]}/${github[2]}`
-		: undefined;
+	const repositoryUrl = forge?.url;
 	const branchUrl =
 		repositoryUrl &&
 		branch &&
 		source.isCrossRepository !== true &&
 		draft.isCrossRepository !== true
-			? `${repositoryUrl}/tree/${encodeURIComponent(branch)}`
+			? `${repositoryUrl}${forge?.type === "gitlab" ? "/-/tree/" : "/tree/"}${encodeURIComponent(branch)}`
 			: undefined;
 	const commands: CheckoutCommand[] = [];
 	if (github && prUrl)
 		commands.push({
 			label: "GitHub CLI",
 			command: `gh pr checkout ${github[3]}`,
+			help: "Run in a local clone with GitHub CLI installed.",
+		});
+	if (forge?.type === "gitlab")
+		commands.push({
+			label: "GitLab CLI",
+			command: `glab mr checkout ${forge.number} --repo ${shellQuote(forge.url)}`,
+			help: "Run in a local clone with GitLab CLI installed.",
+		});
+	if (forge?.type === "github" && !github)
+		commands.push({
+			label: "GitHub CLI",
+			command: `gh pr checkout ${forge.number} --repo ${shellQuote(forge.url)}`,
 			help: "Run in a local clone with GitHub CLI installed.",
 		});
 	if (branch)
@@ -143,7 +156,12 @@ export function reviewContext(value: unknown) {
 		});
 	return {
 		pr: prUrl
-			? { url: prUrl, label: github ? `PR #${github[3]}` : "Pull request" }
+			? {
+					url: prUrl,
+					label: forge
+						? `${forge.type === "gitlab" ? "MR !" : "PR #"}${forge.number}`
+						: "Pull request",
+				}
 			: undefined,
 		branch,
 		branchUrl,

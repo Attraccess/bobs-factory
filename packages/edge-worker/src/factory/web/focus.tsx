@@ -705,8 +705,8 @@ function ReviewDecisions({
 
 			{waiting && (
 				<small className="muted">
-					Approval applies to {gate.headSha.slice(0, 8)}. Settles after GitHub
-					confirms the merge.
+					Approval applies to {gate.headSha.slice(0, 8)}. Settles after the Git
+					provider confirms the merge.
 				</small>
 			)}
 			{action.error && (
