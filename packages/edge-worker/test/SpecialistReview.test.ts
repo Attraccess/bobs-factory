@@ -37,7 +37,7 @@ import {
 	type RuntimeHooks,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
-import { providerReceipt } from "./fixtures/merge-readiness.js";
+import { githubApiReceipt } from "./fixtures/github-api.js";
 import { qaExecution, qaScope } from "./fixtures/qa.js";
 
 const dirs: string[] = [];
@@ -214,9 +214,9 @@ it.each([
 				? args[0] === "status"
 					? ""
 					: "changed-head"
-				: args.includes("graphql")
-					? JSON.stringify(providerReceipt({ headRefOid: "changed-head" }))
-					: "[[]]",
+				: JSON.stringify(
+						githubApiReceipt(args, { headRefOid: "changed-head" }),
+					),
 	});
 	let accepted: AggregateReview | undefined;
 	const fixture = setup({
@@ -543,9 +543,7 @@ it("uses a renamed aggregate for unchanged-revision readiness after a fix", asyn
 				? args[0] === "status"
 					? ""
 					: "head"
-				: args.includes("graphql")
-					? JSON.stringify(providerReceipt())
-					: "[[]]",
+				: JSON.stringify(githubApiReceipt(args)),
 	});
 	await expect(tools.tool(context)).resolves.toMatchObject({
 		reviewRequired: false,

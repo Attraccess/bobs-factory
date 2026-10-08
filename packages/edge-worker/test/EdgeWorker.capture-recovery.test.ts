@@ -19,7 +19,7 @@ import {
 import { questionInstructions } from "../src/factory/Questions.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 import { SessionSemaphore } from "../src/RunnerConcurrency.js";
-import { providerReceipt } from "./fixtures/merge-readiness.js";
+import { githubApiReceipt, githubRequest } from "./fixtures/github-api.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -248,9 +248,9 @@ it.each([
 	};
 	const readiness = await inspectMergeReadiness(
 		async (_exe, args) =>
-			args.includes("graphql")
-				? JSON.stringify(providerReceipt())
-				: JSON.stringify([[comment]]),
+			githubRequest(args).path.includes("/comments?")
+				? JSON.stringify([comment])
+				: JSON.stringify(githubApiReceipt(args)),
 		"https://github.com/test/repo/pull/1",
 	);
 	if (legacy) {
