@@ -132,6 +132,14 @@ const result = await Bun.build({
 	plugins: licensePlugins,
 	define: {
 		BOBS_FACTORY_VERSION: JSON.stringify(version),
+		BOBS_FACTORY_BUILD_IDENTITY: JSON.stringify({
+			version,
+			commit,
+			dirty,
+			target,
+			resourceDigest: hash(JSON.stringify(files)),
+			packaged: true,
+		}),
 		BOBS_FACTORY_ASSETS: JSON.stringify({
 			digest: hash(JSON.stringify(files)),
 			files,

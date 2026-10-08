@@ -1,6 +1,7 @@
 export type { LinearWebhookPayload } from "@linear/sdk/webhooks";
 export { LinearEventTransport } from "./LinearEventTransport.js";
 export {
+	type LinearDeliveryOptions,
 	LinearIssueTrackerService,
 	type LinearOAuthConfig,
 } from "./LinearIssueTrackerService.js";

@@ -23,7 +23,7 @@ export interface LinearEventTransportConfig {
 	/** Secret for verification (LINEAR_WEBHOOK_SECRET or BOBS_FACTORY_API_KEY) */
 	secret: string;
 	/** Optional IP allowlist for webhook source validation (only used in direct mode) */
-	ipAllowlist?: readonly string[];
+	ipAllowlist?: readonly string[] | (() => readonly string[]);
 }
 
 /**

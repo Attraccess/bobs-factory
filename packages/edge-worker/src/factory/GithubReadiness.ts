@@ -8,6 +8,9 @@ import type {
 export async function inspectGithubReadiness(
 	command: ProviderCommand,
 	url: string,
+	checkReceipts?: NonNullable<
+		import("./CISupervision.js").CISupervision["checkReceipts"]
+	>,
 ): Promise<MergeReadiness> {
 	const reference = pullRequestReference(url);
 	if (reference?.type !== "github") throw new Error("Enter a GitHub PR URL");
@@ -17,12 +20,12 @@ export async function inspectGithubReadiness(
 	command = (exe, args, timeout) =>
 		originalCommand(
 			exe,
-			reference.host === "github.com"
+			exe !== "gh" || reference.host === "github.com"
 				? args
 				: [...args, "--hostname", reference.host],
 			timeout,
 		);
-	const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed pullRequest(number:$number){url headRefOid baseRefOid state isDraft mergeable mergeStateStatus reviewDecision mergeQueueEntry{id} autoMergeRequest{enabledAt} statusCheckRollup{contexts(first:100){pageInfo{hasNextPage} nodes{__typename ... on CheckRun{name status conclusion detailsUrl} ... on StatusContext{context state targetUrl}}}} reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated comments(first:100){nodes{id body url author{login}} pageInfo{hasNextPage}}}} comments(last:100){nodes{id body url createdAt author{login}} pageInfo{hasPreviousPage}} reviews(last:100){nodes{id state body submittedAt author{login}} pageInfo{hasPreviousPage}}}}}`;
+	const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed pullRequest(number:$number){url title headRefOid baseRefOid state isDraft mergeable mergeStateStatus reviewDecision mergeQueueEntry{id} autoMergeRequest{enabledAt} statusCheckRollup{contexts(first:100){pageInfo{hasNextPage} nodes{__typename ... on CheckRun{databaseId name status conclusion detailsUrl} ... on StatusContext{context state targetUrl}}}} reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated comments(first:100){nodes{id body url author{login}} pageInfo{hasNextPage}}}} comments(last:100){nodes{id body url createdAt author{login}} pageInfo{hasPreviousPage}} reviews(last:100){nodes{id state body submittedAt author{login}} pageInfo{hasPreviousPage}}}}}`;
 	let cursor: string | undefined;
 	let method: MergeReadiness["mergeMethod"] = "squash";
 	let pr: any,
@@ -82,9 +85,138 @@ export async function inspectGithubReadiness(
 							].includes(state)
 						? "fail"
 						: "pending",
+				...(state === "STARTUP_FAILURE"
+					? {
+							failure: {
+								kind: "infrastructure",
+								evidence: "GitHub check conclusion: STARTUP_FAILURE",
+							},
+						}
+					: {}),
 			};
 		},
 	);
+	// Classify only provider evidence, never a check name or a fixer's guess.
+	const runs = new Map<string, any>();
+	for (const [index, source] of (
+		pr.statusCheckRollup?.contexts.nodes ?? []
+	).entries()) {
+		const check = checks[index];
+		if (check.bucket !== "fail" || !Number.isSafeInteger(source.databaseId))
+			continue;
+		let id: string | undefined;
+		try {
+			const link = new URL(check.link);
+			const prefix = `/${owner}/${name}/actions/runs/`;
+			const match: RegExpMatchArray | null =
+				link.hostname === reference.host && link.pathname.startsWith(prefix)
+					? link.pathname.slice(prefix.length).match(/^(\d+)(?:\/|$)/)
+					: null;
+			id = match?.[1];
+		} catch {
+			/* Non-Actions checks still retain failure evidence without a retry identity. */
+		}
+		if (id && !runs.has(id))
+			runs.set(
+				id,
+				JSON.parse(
+					await command("gh", [
+						"api",
+						`repos/${owner}/${name}/actions/runs/${id}`,
+					]),
+				),
+			);
+		const run: any = id ? runs.get(id) : undefined;
+		const key = JSON.stringify([
+			reference.url,
+			pr.headRefOid,
+			source.databaseId,
+			check.state,
+			run?.run_attempt ?? null,
+			run?.status ?? null,
+		]);
+		if (checkReceipts?.[key]) check.failure = checkReceipts[key].failure;
+		else {
+			const detail = JSON.parse(
+				await command("gh", [
+					"api",
+					`repos/${owner}/${name}/check-runs/${source.databaseId}`,
+				]),
+			);
+			if (detail.head_sha !== pr.headRefOid) continue;
+			const evidence = [
+				detail.output?.title,
+				detail.output?.summary,
+				detail.output?.text,
+			]
+				.filter((value) => typeof value === "string")
+				.join("\n");
+			check.failure = {
+				kind:
+					check.state === "STARTUP_FAILURE" ||
+					/^\s*The job was not acquired by Runner of type hosted even after multiple attempts\.?\s*$/im.test(
+						evidence,
+					)
+						? "infrastructure"
+						: /pull request title.*(?:does not match|invalid|must|format|validation)/i.test(
+									evidence,
+								)
+							? "metadata"
+							: "unknown",
+				evidence,
+			};
+			if (checkReceipts) {
+				checkReceipts[key] = { failure: check.failure };
+				while (Object.keys(checkReceipts).length > 200)
+					delete checkReceipts[Object.keys(checkReceipts)[0]!];
+			}
+		}
+		if (
+			id &&
+			run &&
+			String(run.id) === id &&
+			run.head_sha === pr.headRefOid &&
+			Number.isSafeInteger(run.run_attempt) &&
+			[
+				"queued",
+				"in_progress",
+				"completed",
+				"waiting",
+				"pending",
+				"requested",
+			].includes(run.status)
+		) {
+			let metadataRecheck = checkReceipts?.[key]?.metadataRecheck;
+			if (check.failure.kind === "metadata" && metadataRecheck === undefined) {
+				metadataRecheck = false;
+				const path = typeof run.path === "string" ? run.path.split("@")[0] : "";
+				if (/^\.github\/workflows\/[\w.-]+\.ya?ml$/.test(path)) {
+					try {
+						const workflow = await command("git", [
+							"show",
+							`${pr.headRefOid}:${path}`,
+						]);
+						metadataRecheck =
+							/^\s*(?:run:\s*)?gh\s+pr\s+view\b[^\n]*--json\s+title\b/m.test(
+								workflow,
+							) && !workflow.includes("github.event.pull_request.title");
+					} catch {
+						/* Unavailable workflow source cannot establish support. */
+					}
+				}
+				if (checkReceipts?.[key])
+					checkReceipts[key].metadataRecheck = metadataRecheck;
+			}
+			check.retry = {
+				status: run.status,
+				id,
+				attempt: run.run_attempt,
+				headSha: run.head_sha,
+				kind: "github-run",
+				...(metadataRecheck ? { metadataRecheck: true } : {}),
+			};
+		}
+	}
 	if (pr.state !== "OPEN" && pr.state !== "MERGED")
 		add("closed", "PR is closed", "wait");
 	if (pr.isDraft)
@@ -131,6 +263,7 @@ export async function inspectGithubReadiness(
 	// Draft PRs can report BLOCKED because of their draft status. This is a human action,
 	// not evidence of mergeability; recheck after marking ready and never bypass GitHub rules.
 	return {
+		...(typeof pr.title === "string" ? { metadata: { title: pr.title } } : {}),
 		url: pr.url,
 		headSha: pr.headRefOid,
 		baseSha: pr.baseRefOid,

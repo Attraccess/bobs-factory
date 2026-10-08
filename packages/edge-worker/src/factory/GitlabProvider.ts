@@ -85,6 +85,21 @@ export function gitlabProvider(
 		},
 	});
 	return {
+		retryCheck: async (url, retry) => {
+			if (retry.kind !== "gitlab-job" || !/^\d+$/.test(retry.id))
+				throw new Error("Invalid GitLab retry receipt");
+			const pr = normalize(await api(requestPath(url)));
+			if (pr.headRefOid !== retry.headSha || pr.state !== "OPEN")
+				throw new Error("CI retry revision changed");
+			const job = await api(`/jobs/${retry.id}`);
+			if (
+				job.commit?.id !== retry.headSha ||
+				job.pipeline?.sha !== retry.headSha ||
+				job.status !== "failed"
+			)
+				return;
+			await api(`/jobs/${retry.id}/retry`, "POST");
+		},
 		list: async (branch) =>
 			(
 				await pages(
@@ -209,6 +224,34 @@ export function gitlabProvider(
 								: ["failed", "canceled"].includes(job.status)
 									? "fail"
 									: "pending",
+						...(job.status === "failed" &&
+						[
+							"runner_system_failure",
+							"runner_external_dependency_failure",
+							"runner_interrupted",
+						].includes(job.failure_reason)
+							? {
+									failure: {
+										kind: "infrastructure",
+										evidence: `GitLab failure_reason: ${job.failure_reason}`,
+									},
+								}
+							: {}),
+						...(job.status === "failed" &&
+						currentRevision &&
+						job.commit?.id === pr.headRefOid &&
+						pipeline.sha === pr.headRefOid &&
+						Number.isSafeInteger(job.id)
+							? {
+									retry: {
+										id: String(job.id),
+										attempt: 1,
+										headSha: pr.headRefOid,
+										kind: "gitlab-job",
+										lineage: `${pipeline.id}:${job.name}`,
+									},
+								}
+							: {}),
 					});
 				// Include aggregate/child-pipeline status; job success alone is insufficient.
 				checks.push({
@@ -224,6 +267,23 @@ export function gitlabProvider(
 							: ["failed", "canceled"].includes(pipeline.status)
 								? "fail"
 								: "pending",
+					...(pipeline.status === "failed" &&
+					currentRevision &&
+					checks.filter((check) => check.bucket === "fail").length &&
+					checks
+						.filter((check) => check.bucket === "fail")
+						.every((check) => check.failure?.kind === "infrastructure")
+						? {
+								failure: {
+									kind: "infrastructure",
+									evidence: checks
+										.filter((check) => check.bucket === "fail")
+										.map((check) => check.failure!.evidence)
+										.join("\n"),
+								},
+								retry: checks.find((check) => check.retry)?.retry,
+							}
+						: {}),
 				});
 				if (checks.some((c) => c.bucket === "fail"))
 					add("checks", "Checks failed", "fix");

@@ -11,11 +11,12 @@ import {
 	WebhookIpValidator,
 } from "../../src/security/WebhookIpValidator.js";
 
-// Independent snapshot verified on 2026-09-15 against:
+// Independent snapshot verified on 2026-10-08 against:
 // https://linear.app/.well-known/appspecific/app.linear.ips.json
 const PUBLISHED_LINEAR_IPS = [
 	"34.134.222.122",
 	"34.140.253.14",
+	"34.185.239.137",
 	"34.186.126.124",
 	"34.38.87.206",
 	"34.48.40.158",
@@ -26,6 +27,8 @@ const PUBLISHED_LINEAR_IPS = [
 	"35.231.147.226",
 	"35.236.218.67",
 	"35.243.134.228",
+	"35.246.206.27",
+	"35.246.210.220",
 ] as const;
 
 describe("IP utility functions", () => {
@@ -191,6 +194,7 @@ describe("WebhookIpValidator", () => {
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		vi.unstubAllGlobals();
 	});
 
 	describe("constructor", () => {
@@ -274,6 +278,64 @@ describe("WebhookIpValidator", () => {
 			const validator = new WebhookIpValidator();
 			// Linear IP in IPv6-mapped form
 			expect(validator.validate("::ffff:35.231.147.226", "linear")).toBe(true);
+		});
+	});
+
+	describe("refreshLinearAllowlist", () => {
+		it.each([
+			[],
+			["0.0.0.0/0"],
+			["999.0.0.1/32"],
+			["203.0.113.7/32", null],
+		])("retains known sources after malformed refresh %j", async (ips) => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => ({ ok: true, json: async () => ({ ips }) })),
+			);
+			const validator = new WebhookIpValidator();
+			expect((await validator.refreshLinearAllowlist()).status).toBe("failed");
+			expect(validator.getAllowlist("linear")).toEqual([...LINEAR_WEBHOOK_IPS]);
+			expect(validator.validate("203.0.113.7", "linear")).toBe(false);
+		});
+
+		it("retains a successfully refreshed list after a network outage", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi
+					.fn()
+					.mockResolvedValueOnce({
+						ok: true,
+						json: async () => ({ ips: ["203.0.113.7/32"] }),
+					})
+					.mockRejectedValueOnce(new Error("offline")),
+			);
+			const validator = new WebhookIpValidator();
+			await validator.refreshLinearAllowlist();
+			expect((await validator.refreshLinearAllowlist()).status).toBe("failed");
+			expect(validator.validate("203.0.113.7", "linear")).toBe(true);
+			expect(validator.validate("203.0.113.8", "linear")).toBe(false);
+		});
+
+		it("applies verified source drift without replacing an explicit custom list", async () => {
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => ({
+					ok: true,
+					json: async () => ({ ips: ["35.231.147.226/32", "203.0.113.7/32"] }),
+				})),
+			);
+			const validator = new WebhookIpValidator();
+			const result = await validator.refreshLinearAllowlist();
+			expect(result.status).toBe("updated");
+			expect(result.added).toEqual(["203.0.113.7"]);
+			expect(validator.validate("203.0.113.7", "linear")).toBe(true);
+			expect(validator.validate("35.246.210.220", "linear")).toBe(false);
+			const custom = new WebhookIpValidator({
+				customAllowlists: { linear: ["10.0.0.1"] },
+			});
+			expect((await custom.refreshLinearAllowlist()).status).toBe("custom");
+			expect(custom.validate("10.0.0.1", "linear")).toBe(true);
+			expect(custom.validate("203.0.113.7", "linear")).toBe(false);
 		});
 	});
 

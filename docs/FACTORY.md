@@ -1052,6 +1052,50 @@ Explicitly terminated, completed and failed runs do not restart. Active runs
 saved by earlier factory versions are upgraded using their retained history.
 Previously interrupted/stopped historical runs remain unchanged.
 
+Scoped context tools apply oversized positive page requests to the supported cap:
+`read_context` returns at most 16,000 characters and `list_context` at most 50
+entries, with the applied `limit` and `nextOffset`. Follow pagination to read the
+complete value. Invalid arguments still fail explicitly. Fresh and resumed roles
+probe mandatory context access before execution; Claude replaces a prewarmed
+connection when its scoped MCP configuration changes while retaining the native
+conversation. Infrastructure failures retain the rejected result and do not spend
+the schema-correction budget. An explicit run retry records a new retry generation
+at unchanged code; genuinely invalid outputs still have a bounded correction budget.
+
+Large structured role results can use `submit_result_artifact` on the scoped
+`factory-context` server. Write valid JSON inside the supplied role artifact
+directory, submit its relative path, then return the small envelope unchanged.
+The runtime rereads the bounded file (8 MiB maximum), verifies its digest and
+run/role/head/base binding, and applies the same result and evidence validation as
+inline JSON. Guide chapters may use `fileIndexes` into the complete runtime-owned
+`reviewScope.files` inventory; `scope.files: "runtime"` keeps scope authoritative.
+Every changed file must still be covered; shared files may belong to several feature chapters. Rejected candidates and
+correction diagnostics remain separate from accepted outputs.
+
+Finalization is coordinated for overlapping repository/base-branch scopes, including
+grouped deliveries. Implementation remains parallel. Durable queue admission starts
+at provider publication/readiness and continues through configured downstream roles;
+assistance and human waits release admission. Cancellation and restart retain fair
+queue order. Coordination reduces avoidable moving-base work; consequential or
+uncertain changes still require the existing revision checks and relevant evidence.
+
+The runtime supervises pending CI without an agent slot. Concrete infrastructure
+failure receipts can request at most two provider retries for the same check lineage
+and head. Retry identity is saved before the provider mutation; an uncertain outcome
+requires assistance instead of another blind request. Unknown or source failures
+still require diagnosis. PR metadata can be rechecked without a source commit only
+when the provider/workflow verifies that it reads current metadata; a rerun of the
+original event payload does not establish that. Required checks and provider merge
+rules remain authoritative.
+
+`GET /api/version` reports runtime build identity separately from the dashboard
+build. `GET /api/runs/:id/provenance` exports step/agent-turn receipts with runtime,
+frozen workflow and contract hashes, effective supplied instruction hashes, visit
+reasons, outcomes and revision evidence. The protected provenance export omits task text,
+outputs and credentials. Development builds and historical runs report unknown
+source identity where no verified build receipt exists. A source merge does not
+establish deployment, and absent candidate inventory is reported as unknown.
+
 An unfinished script or direct tool call is retried from the beginning; use
 idempotent commands for steps with external effects. A crash between an external
 side effect and saving its result can require the agent to inspect existing
@@ -1276,13 +1320,23 @@ configured MCP files and inline servers. An inaccessible explicit source fails
 setup visibly instead of silently dropping tracking. Transport credentials stay
 in existing configuration; persisted references contain no secrets.
 
-The runtime owns progress comments, PR attachments and lifecycle status. Agents
+The runtime owns ticket publication, PR attachments and lifecycle status. Agents
 supply summaries and precise blockers. Work starts In Progress, handoff and human
 or provider waits remain In Review, and a coding ticket becomes Done only when
-GitHub confirms the PR merged. Run completion, approval, green CI or a merge
+the selected Git provider confirms the PR merged. Run completion, approval, green CI or a merge
 queue request alone cannot close it. Closed-unmerged PRs and stopped work remain
 open. Simple keeps its native lifecycle. A missing native Review state retains a
-nonterminal status and records the limitation in a comment.
+nonterminal status and records the limitation with its synchronization receipt.
+
+For native Linear tickets, operational progress, questions and blockers go to the
+readable agent transcript. Durable developer documentation and confirmed delivery
+summaries remain issue comments. Existing native transcript sessions are reused;
+manual runs create a session with the configured exact HTTPS Factory origin and
+their stable run link. Ambiguous creation is reconciled by that link before retry.
+A matching session-created webhook binds the receipt to its existing run instead
+of launching another workflow. Missing transcript configuration leaves delivery
+pending visibly, without substituting an operational issue comment. Taskbot retains
+its comment-based milestones.
 
 Synchronization receipts live on the run as `ticketReference` and `ticketSync`.
 Failures appear in run activity and retain pending work across restart. Access
@@ -1294,6 +1348,19 @@ Inspect `ticketSync.error` and receipt limitations in its response. Comments use
 stable run/milestone markers; attachments deduplicate by PR URL. Ambiguous writes
 are reread before retrying; providers without idempotency cannot guarantee
 exactly-once delivery. Terminal tickets are retained for ownership review.
+
+Native Linear requests, including lazy SDK relationship fetches, share a budget per
+credential/workspace. Provider rate-limit/reset responses delay subsequent requests.
+Activity and documentation-comment outboxes under
+`<home>/state/linear-activity-delivery` and `<home>/state/linear-comment-delivery`
+persist stable mutation identities before sending and reconcile uncertain outcomes.
+Activities prioritize questions/errors/final responses and coalesce repeated routine
+progress. Protected `GET /api/delivery-status` reports pending/delivered counts and
+retry timing without exposing provider error bodies. Local activity evidence remains
+complete. Recovery runs independently of coding roles.
+The maintained webhook source list refreshes periodically from Linear's official
+endpoint; failed refreshes retain the last known set and explicit custom lists are
+preserved. Source validation remains separate from mandatory signature verification.
 
 Taskbot comments and status mutations identify `bobs-factory` as author. Its
 attachment tool has no author field; the accompanying milestone comment records

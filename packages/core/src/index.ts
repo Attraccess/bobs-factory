@@ -319,3 +319,7 @@ export {
 	isPackagedExecutable,
 	runtimeAssetPath,
 } from "./runtime-assets.js";
+export {
+	factoryRuntimeIdentity,
+	type RuntimeIdentity,
+} from "./runtime-identity.js";

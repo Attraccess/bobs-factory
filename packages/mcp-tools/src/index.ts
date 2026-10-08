@@ -4,9 +4,19 @@ export {
 } from "./callConfiguredTool.js";
 export { serveFactoryContext } from "./factory-context-stdio.js";
 export {
+	type FactoryArtifactBinding,
+	factoryArtifactLimit,
+	resolveFactoryResultArtifact,
+	submitFactoryResultArtifact,
+} from "./factoryArtifacts.js";
+export {
 	factoryContextInstructions,
 	prepareFactoryContext,
 } from "./factoryContext.js";
+export {
+	FactoryContextInfrastructureError,
+	verifyFactoryContext,
+} from "./factoryContextReadiness.js";
 export {
 	createFetchFailureModesClient,
 	type FetchFailureModesClientOptions,
