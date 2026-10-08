@@ -163,7 +163,14 @@ export const RequirementCoverageSchema = z.object({
 		}),
 	),
 });
+export const GuideScopeSchema = z.object({
+	kind: z.enum(["purely-visual", "nonvisual"]),
+	rationale: short(600),
+	files: z.array(text),
+});
 export const GuideSchema = z.object({
+	// Optional only when reading historical artifacts.
+	scope: GuideScopeSchema.optional(),
 	requirementCoverage: RequirementCoverageSchema.optional(),
 	tldr: short(90).optional(),
 	system: SystemSchema.optional(),
@@ -242,6 +249,7 @@ export const GuideSchema = z.object({
 });
 /** Reading remains additive; all newly authored guides require the compact contract. */
 export const GeneratedGuideSchema = GuideSchema.extend({
+	scope: GuideScopeSchema,
 	tldr: short(90),
 	decision: GuideSchema.shape.decision.extend({ summaryShort: short(160) }),
 	chapters: z
@@ -261,6 +269,24 @@ export const GeneratedGuideSchema = GuideSchema.extend({
 	};
 	unique(guide.chapters, ["chapters"]);
 	const system = guide.system;
+	if (guide.scope.kind === "nonvisual" && !system)
+		fail(
+			["system"],
+			"Nonvisual and mixed guides require a system map of the whole PR",
+		);
+	if (system && (system.lanes.length < 3 || system.lanes.length > 6))
+		fail(
+			["system", "lanes"],
+			"New maps require 3–6 meaningful lanes; historical maps remain readable",
+		);
+	if (
+		guide.scope.kind === "purely-visual" &&
+		guide.chapters.some((c) => c.flow || c.diagrams.length)
+	)
+		fail(
+			["scope", "kind"],
+			"Logic chapters require nonvisual scope and a system map",
+		);
 	const partIds = system
 		? unique(system.parts, ["system", "parts"])
 		: new Set<string>();
@@ -287,6 +313,15 @@ export const GeneratedGuideSchema = GuideSchema.extend({
 		}
 	}
 	guide.chapters.forEach((chapter, i) => {
+		if (
+			guide.scope.kind === "nonvisual" &&
+			(chapter.files.length || chapter.flow || chapter.diagrams.length) &&
+			!chapter.systemPartIds?.length
+		)
+			fail(
+				["chapters", i, "systemPartIds"],
+				"Link this changed chapter to the system parts it touches",
+			);
 		const seen = new Set<string>();
 		chapter.systemPartIds?.forEach((id, j) => {
 			if (!partIds.has(id) || seen.has(id))

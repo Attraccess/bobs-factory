@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Make guided review more compact, require system maps for new technical and mixed guides, identify individual file areas, and collect feedback and review actions on Decide. Keep neighboring map labels and reverse connections distinct, align split-diff columns across long lines, and keep unopened flow-stage numbers readable. Keep chapter checks compact, use a plain reviewed checkbox row, and announce singular feedback counts correctly ([Taskbot #92](https://taskbot.apps.janjaap.de/p/bobs-factory/t/92), [#44](https://github.com/Attraccess/bobs-factory/pull/44)).
 - Record the user-approved simulated-agent QA scope for refinement recommendations, retaining real-agent and ticket-delivery limitations. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 - Rebrand maintained product contracts for Bob’s Factory and prepare independent binary installation and explicit Cyrus migration ([Taskbot #38](https://taskbot.apps.janjaap.de/p/bobs-factory/t/38), [#34](https://github.com/Attraccess/bobs-factory/pull/34)). Binary rollout remains pending publication. Cursor stays user-prepared; archives exclude its proprietary SDK and native files. Preserve native sessions and Git worktrees through verified migration backups; retain waiting review gates and queue order, and reject malformed coordinator state before cutover. Reconcile owned MCP permissions, configuration and saved/frozen workflow tool references during migration while preserving completed step outputs and completed/rejected agent checkpoint payloads for resumed steps; reload file-owned environment values while preserving process overrides.
 
@@ -64,12 +65,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve specialist coverage and disagreement evidence when integrating review-guide scope classification, system maps and Decide feedback controls. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+
 - Preserve specialist role editing and exact-step saves when integrating dashboard input resets; unsaved edits reset while required review output validation remains enforced. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve assistance recovery for specialist review when integrating feedback-loop safeguards: unchanged rejected fixes pause after reassessment and resume with explicit human direction. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 - Retain generated recommendations on requirement-extraction questions while enforcing specialist inventory validation and explicit human submission. Notify the originating ticket when restored questions or recommendations change, without duplicating unchanged waits. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
 
 - Preserve resolved specialist disagreements, their rationale and supporting evidence in exported review guide Markdown. ([#32](https://github.com/Attraccess/bobs-factory/pull/32))
+- Update the routing prompt test to cover the current review-guide requirements and restore CI validation ([#44](https://github.com/Attraccess/bobs-factory/pull/44)).
 - Recover PR/worktree revision mismatches through the configured CI fixer; preserve both revisions and wait for assistance when synchronization makes no progress, keeping old CI from approving newer work. ([#43](https://github.com/Attraccess/bobs-factory/pull/43))
 
 - Reconcile compact Factory review history with the binary fork, retaining original evidence, explicit answers and explanation revision records across restart. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
