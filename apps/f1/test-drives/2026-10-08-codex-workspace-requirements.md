@@ -2,6 +2,7 @@
 
 **Date:** 2026-10-08  
 **Candidate:** `t3/fix-recurring-run-failure`, based on `236afd2a`, with the permission-profile launch fix.
+**Implementation commit:** `46f9260b` (PR #50).
 
 ## Root cause and native reproduction
 
@@ -92,7 +93,7 @@ creation. They were stopped cleanly. Final evidence comes from the passing drive
   isolation when filesystem grants change.
 - Relevant EdgeWorker workflow, Codex configuration/activity and capacity suites:
   134 tests passed.
-- Dependency build through EdgeWorker, workspace typecheck, lint and
+- Workspace build (including CLI and F1), workspace typecheck, lint and
   `git diff --check` passed. Lint retained 19 existing warnings.
 
 This establishes native configuration behavior with fabricated credentials and
