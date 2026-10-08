@@ -4,7 +4,7 @@
 	"description": "Core business logic for Bob’s Factory",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/Attraccess/bobs-factory.git",
+		"url": "git+https://github.com/jappyjan/bobs-factory.git",
 		"directory": "packages/core"
 	},
 	"type": "module",

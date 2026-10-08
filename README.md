@@ -1,8 +1,11 @@
 # Bob’s Factory
 
+[Source repository](https://github.com/jappyjan/bobs-factory) ·
+[Homepage](https://jappyjan.github.io/bobs-factory/)
+
 A self-hosted software factory: describe work, answer questions, review the result
-and approve delivery from a local dashboard. Bob’s Factory is an Apache-2.0 fork
-of [Cyrus](https://github.com/cyrusagents/cyrus) by Ceedar. Original notices and
+and approve delivery from a local dashboard. Bob’s Factory derives from the
+Apache-2.0 project [Cyrus](https://github.com/cyrusagents/cyrus) by Ceedar. Original notices and
 historical changelogs/test drives are retained.
 
 ## Install and start
@@ -73,7 +76,7 @@ There are no old command aliases or implicit old-home fallback.
 ## Develop from a checkout
 
 ```sh
-git clone https://github.com/Attraccess/bobs-factory
+git clone https://github.com/jappyjan/bobs-factory
 cd bobs-factory
 pnpm install --frozen-lockfile
 pnpm factory --repo ~/code/my-project --agent codex

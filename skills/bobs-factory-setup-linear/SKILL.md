@@ -70,7 +70,7 @@ const manifest = {
 	},
 	oauth: {
 		client_name: agentName,
-		client_uri: "https://github.com/Attraccess/bobs-factory",
+		client_uri: "https://github.com/jappyjan/bobs-factory",
 		redirect_uris: [`${baseUrl}/callback`],
 		grant_types: ["authorization_code"],
 	},
@@ -119,7 +119,7 @@ Review only non-secret fields:
 
 - Application name matches `<AGENT_NAME>`
 - Developer name is `Self-hosted`
-- Developer URL is `https://github.com/Attraccess/bobs-factory`
+- Developer URL is `https://github.com/jappyjan/bobs-factory`
 - Redirect callback URLs contains `<BOBS_FACTORY_BASE_URL>/callback`
 - Webhook is enabled with URL `<BOBS_FACTORY_BASE_URL>/linear-webhook`
 - Event types include Agent session events, Inbox notifications, Permission changes, and Issues
@@ -158,7 +158,7 @@ Guide the user through manual creation:
 > 2. Sign in to Linear if prompted, then review the pre-filled settings:
 >    - **Application name:** `<AGENT_NAME>`
 >    - **Developer name:** `Self-hosted`
->    - **Developer URL:** `https://github.com/Attraccess/bobs-factory`
+>    - **Developer URL:** `https://github.com/jappyjan/bobs-factory`
 >    - **Redirect callback URLs:** `<BOBS_FACTORY_BASE_URL>/callback`
 >    - **Webhook URL:** `<BOBS_FACTORY_BASE_URL>/linear-webhook`
 >    - **Webhook:** ✓ enabled

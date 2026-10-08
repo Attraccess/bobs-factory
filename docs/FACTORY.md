@@ -1,5 +1,8 @@
 # Bob’s Factory
 
+[Source repository](https://github.com/jappyjan/bobs-factory) ·
+[Homepage](https://jappyjan.github.io/bobs-factory/)
+
 The factory builds on Cyrus’s runners, Git worktrees and ticket integrations. Its
 dashboard and JSON workflow graph are deliberately small: passkeys and a private
 local authentication file, without accounts, a database or a hosted identity service.

@@ -3,6 +3,7 @@
 	"version": "1.0.1",
 	"private": true,
 	"description": "Monorepo for Bob’s Factory - Linear Claude Agent integration",
+	"homepage": "https://jappyjan.github.io/bobs-factory/",
 	"packageManager": "pnpm@10.33.1",
 	"type": "module",
 	"scripts": {
@@ -33,7 +34,7 @@
 	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/Attraccess/bobs-factory.git"
+		"url": "git+https://github.com/jappyjan/bobs-factory.git"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.1.3",

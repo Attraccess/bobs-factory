@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-08
 **PR:** [#23](https://github.com/Attraccess/bobs-factory/pull/23)
-**Tested source:** current main `73e40efb44c5f1155e1383238ceea780a451ccdf` plus PR #23's settlement fix and regression cases; runtime/test diff SHA-256 `928afa2b2131dd8d899f829c4eac50aa1b2073afa4fd8aca98c85ac5e8b0912d`.
+**Tested source:** current main `73e40efb44c5f1155e1383238ceea780a451ccdf` plus PR #23's settlement fix and regression cases; runtime/test diff (`EdgeWorker.ts`, `factory/Workflow.ts`, workflow-trigger and routing-context tests) SHA-256 `394b454b799884859546587531476d05ca31e4a655d6a1a585166b3cf9692bd3`.
 
 The branch retains all newer Bob’s Factory names, passkey access and capability instructions while adding the explicit settlement rule. F1 applies to ticket admission and session lifecycle.
 

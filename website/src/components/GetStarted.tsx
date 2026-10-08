@@ -4,7 +4,7 @@ import { Bob } from "./Bob";
 import { CopyCommand } from "./CopyCommand";
 import { Reveal, SectionTitle } from "./ui";
 
-export const REPO = "https://github.com/Attraccess/bobs-factory";
+export const REPO = "https://github.com/jappyjan/bobs-factory";
 
 const lines = [
 	{ cmd: "# Download a verified macOS or Linux binary release" },
@@ -137,7 +137,7 @@ export function Footer() {
 						Docs
 					</a>
 					<a
-						href="https://github.com/ceedaragents/cyrus"
+						href="https://github.com/cyrusagents/cyrus"
 						className="hover:text-ink"
 					>
 						Built on Cyrus

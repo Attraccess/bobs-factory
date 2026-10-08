@@ -4,7 +4,7 @@
 	"description": "Gemini CLI process spawning and management for Bob’s Factory",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/Attraccess/bobs-factory.git",
+		"url": "git+https://github.com/jappyjan/bobs-factory.git",
 		"directory": "packages/gemini-runner"
 	},
 	"type": "module",

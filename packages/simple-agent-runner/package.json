@@ -4,7 +4,7 @@
 	"description": "Simple agent runner for enumerated responses",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/Attraccess/bobs-factory.git",
+		"url": "git+https://github.com/jappyjan/bobs-factory.git",
 		"directory": "packages/simple-agent-runner"
 	},
 	"type": "module",

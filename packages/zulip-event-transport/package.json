@@ -4,7 +4,7 @@
 	"description": "Zulip event transport for receiving and verifying Zulip outgoing webhooks",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/Attraccess/bobs-factory.git",
+		"url": "git+https://github.com/jappyjan/bobs-factory.git",
 		"directory": "packages/zulip-event-transport"
 	},
 	"type": "module",
