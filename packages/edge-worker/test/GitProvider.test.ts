@@ -300,6 +300,86 @@ it("allows the guide with human-only blockers and sends the approved SHA to the 
 	).rejects.toThrow("selected repository");
 	expect(cmd).toHaveBeenCalledTimes(count);
 });
+
+it.each([
+	[
+		"current source and target",
+		{},
+		{ id: "merged", parent_ids: ["base", "head"] },
+		true,
+	],
+	[
+		"stale source",
+		{},
+		{ id: "merged", parent_ids: ["base", "old-head"] },
+		false,
+	],
+	[
+		"stale target",
+		{},
+		{ id: "merged", parent_ids: ["old-base", "head"] },
+		false,
+	],
+	[
+		"different commit",
+		{},
+		{ id: "other", parent_ids: ["base", "head"] },
+		false,
+	],
+	[
+		"other MR",
+		{ ref: "refs/merge-requests/18/merge" },
+		{ id: "merged", parent_ids: ["base", "head"] },
+		false,
+	],
+	[
+		"branch pipeline",
+		{ source: "push" },
+		{ id: "merged", parent_ids: ["base", "head"] },
+		false,
+	],
+	["missing parents", {}, { id: "merged" }, false],
+])("checks GitLab merged results against %s", async (_name, extra, commit, current) => {
+	const base = gitlab(
+		{
+			draft: false,
+			detailed_merge_status: "mergeable",
+			head_pipeline: {
+				...mr.head_pipeline,
+				sha: "merged",
+				source: "merge_request_event",
+				ref: "refs/merge-requests/17/merge",
+				...extra,
+			},
+		},
+		[],
+		0,
+	);
+	const command = vi.fn(async (exe: string, args: string[]) =>
+		args[1]?.includes("/repository/commits/")
+			? JSON.stringify(commit)
+			: base(exe, args),
+	);
+	const result = await inspectMergeReadiness(command, url);
+	expect(result.headSha).toBe("head");
+	expect(result.baseSha).toBe("base");
+	expect(result.approved).toBe(current);
+	expect(result.reviewReady).toBe(current);
+	expect(result.checks.find((check) => check.name === "Pipeline")?.bucket).toBe(
+		current ? "pass" : "pending",
+	);
+	expect(result.blockers).toEqual(
+		current
+			? []
+			: [
+					{
+						kind: "checks",
+						message: "Waiting for checks on the current revision",
+						action: "wait",
+					},
+				],
+	);
+});
 it("captures takeover context on self-managed GitLab and rejects fork sources", async () => {
 	const forge = gitProvider(gitlab(), { type: "gitlab", repositoryUrl });
 	expect(await forge.inspect(url)).toMatchObject({
