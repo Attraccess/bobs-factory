@@ -9,6 +9,7 @@ import {
 	runRepositories,
 	scopeRevision,
 } from "./RepositoryScope.js";
+import { aggregateForContext, scopeContextDigest } from "./SpecialistReview.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 export type RepositoryCommand = (
@@ -192,6 +193,17 @@ export async function groupedTool(
 			throw new Error(
 				"Explicit human approval must bind every current repository PR and revision",
 			);
+		const aggregate = aggregateForContext(context);
+		const scopeUnchanged =
+			!aggregate ||
+			scopeContextDigest(aggregate.baseline.context) ===
+				scopeContextDigest(
+					context.currentScope?.() ?? {
+						...(context.input as Record<string, unknown>),
+						answers: run.answers,
+						humanDecisions: run.humanDecisions ?? [],
+					},
+				);
 		for (const repository of scope) {
 			const projected = repositoryRun(run, repository);
 			const child = { ...context, run: projected };
@@ -205,6 +217,7 @@ export async function groupedTool(
 			if (!approved) {
 				const base = `refs/remotes/origin/${repository.baseBranch}`;
 				if (
+					scopeUnchanged &&
 					!dirty &&
 					!(
 						await execute("git", ["diff", "--name-only", `${base}...HEAD`])
@@ -214,7 +227,15 @@ export async function groupedTool(
 			} else {
 				const provider = await resolveGitProvider(child, execute, approved.url);
 				const remote = await provider.view(approved.url, "state,headRefOid");
+				const reviewed = aggregateForContext(child);
+				const baseUnchanged =
+					!reviewed ||
+					remote.state === "MERGED" ||
+					(await provider.readiness(approved.url)).baseSha ===
+						reviewed.baseline.baseSha;
 				if (
+					scopeUnchanged &&
+					baseUnchanged &&
 					!dirty &&
 					head === approved.headSha &&
 					remote.headRefOid === approved.headSha &&

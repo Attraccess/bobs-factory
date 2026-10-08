@@ -110,8 +110,8 @@ it.each([
 	"dirty",
 	"commit",
 ])("specialist fanout binds every repository and rejects secondary changes: %s", async (change) => {
-	const { directory, forge, execute } = fixture();
-	await execute("draft-pr");
+	const { directory, forge, execute, tools } = fixture();
+	const draft = await execute("draft-pr");
 	const workflow = WorkflowSchema.parse({
 		id: "specialist-group",
 		name: "Grouped specialist review",
@@ -219,6 +219,36 @@ it.each([
 				forge.git(api, "rev-parse", "origin/development"),
 			),
 		).not.toThrow();
+		run.outputs["draft-pr"] = draft;
+		run.humanDecisions = [
+			{
+				reviewId: "review",
+				headSha: String((draft as Record<string, unknown>).headSha),
+				decision: "approve",
+				at: new Date().toISOString(),
+				repositories: deliveryRevisions(draft),
+			},
+		];
+		// The secondary target advancing must block the entire merge before the first mutation.
+		forge.git(api, "update-ref", "refs/remotes/origin/development", "HEAD");
+		await expect(
+			tools.tool({
+				run,
+				step: {
+					id: "merge",
+					name: "Merge",
+					type: "tool",
+					tool: "merge",
+					branches: [],
+					maxVisits: 8,
+				},
+				input: (run.outputs["review-gate"] as AggregateReview).baseline.context,
+				signal: new AbortController().signal,
+				evidenceDir: directory,
+				log: () => {},
+			}),
+		).resolves.toMatchObject({ fix: true, merged: false });
+		expect(forge.merges).toEqual([]);
 	} else {
 		expect(run.status).toBe("failed");
 		expect(run.error).toMatch(
