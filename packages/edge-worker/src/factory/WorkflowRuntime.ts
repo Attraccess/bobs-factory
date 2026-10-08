@@ -30,6 +30,12 @@ import {
 	upgradeHandoffReadiness,
 	upgradeWorkflows,
 } from "./defaultWorkflows.js";
+import type { ResolvedExecutionEnvironment } from "./ExecutionEnvironment.js";
+import {
+	ExecutionProfileStore,
+	type ExecutionSelection,
+	type ExecutionSnapshot,
+} from "./ExecutionProfiles.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
 import {
 	isExplanationRequest,
@@ -147,6 +153,16 @@ export interface RunViewState {
 import { cleanupVideoEvidence } from "./Video.js";
 
 export interface FactoryRun {
+	executionSnapshot?: ExecutionSnapshot;
+	executionDiagnostics?: {
+		accounts: ResolvedExecutionEnvironment["accounts"];
+		git?: ResolvedExecutionEnvironment["git"];
+		mcp: string[];
+		runner: string;
+		binary: string;
+		version: string;
+		tracking: string;
+	};
 	ticketReference?: import("./TicketTracking.js").TicketReference;
 	ticketSync?: import("./TicketTracking.js").TicketSync;
 	triggerOrigin?: WorkflowTriggerOrigin;
@@ -218,6 +234,7 @@ export interface ChatMessage {
 	step: string;
 }
 export interface ExecutionContext {
+	execution?: ResolvedExecutionEnvironment;
 	stepKey?: string;
 	capacity?: CapacityOptions;
 	chat?: boolean;
@@ -234,6 +251,10 @@ export interface ExecutionContext {
 	checkpointAgent?: (agent: AgentCheckpoint) => void;
 }
 export interface RuntimeHooks {
+	execution?(
+		run: FactoryRun,
+		runner?: string,
+	): Promise<ResolvedExecutionEnvironment | undefined>;
 	capacity?: ExecutionCapacity;
 	track?(
 		run: FactoryRun,
@@ -251,6 +272,7 @@ export interface RuntimeHooks {
 	simple?(run: FactoryRun, signal: AbortSignal): Promise<void>;
 	prepare?(run: FactoryRun, signal: AbortSignal): Promise<void>;
 	finished?(run: FactoryRun): Promise<void>;
+	cleanupExecution?(run: FactoryRun): void;
 }
 
 export class WorkflowRuntime {
@@ -286,6 +308,14 @@ export class WorkflowRuntime {
 	private viewStates: Record<string, RunViewState> = {};
 	private chats = new Map<string, ChatMessage[]>();
 	readonly directory: string;
+	get executionProfiles(): ExecutionProfileStore {
+		return new ExecutionProfileStore(this.directory);
+	}
+	updateExecutionProfiles(value: unknown, revision: number) {
+		const saved = this.executionProfiles.save(value, revision);
+		this.changed({ config: true });
+		return saved;
+	}
 
 	constructor(
 		home: string,
@@ -529,6 +559,8 @@ export class WorkflowRuntime {
 		};
 	}
 	create(options: {
+		executionSnapshot?: ExecutionSnapshot;
+		executionSelection?: ExecutionSelection;
 		triggerOrigin: WorkflowTriggerOrigin;
 		workflowDefinitions?: Workflow[];
 		id?: string;
@@ -567,6 +599,12 @@ export class WorkflowRuntime {
 				options.workflowDefinitions ?? this.listWorkflows(),
 			),
 			contractVersion: 2,
+			executionSnapshot: Object.hasOwn(options, "executionSnapshot")
+				? options.executionSnapshot
+				: this.executionProfiles.select(
+						options.repositoryId,
+						options.executionSelection,
+					),
 			id,
 			title: id,
 			titleGeneration: {
@@ -727,6 +765,15 @@ export class WorkflowRuntime {
 		} finally {
 			this.controllers.delete(run.id);
 			this.pendingAnswers.delete(run.id);
+			try {
+				this.hooks.cleanupExecution?.(run);
+			} catch {
+				this.log(
+					run,
+					"run",
+					"Private auth-cache cleanup failed; retained state needs operator cleanup.",
+				);
+			}
 			this.save(run);
 			if (
 				!this.shuttingDown &&
@@ -857,7 +904,11 @@ export class WorkflowRuntime {
 						history: structuredClone(run.history),
 						humanDecisions: structuredClone(run.humanDecisions ?? []),
 					};
+			const execution = this.hooks.execution
+				? await this.hooks.execution(run, step.runner ?? run.runner)
+				: undefined;
 			const context: ExecutionContext = {
+				execution,
 				run,
 				step,
 				stepKey: key,
@@ -867,7 +918,8 @@ export class WorkflowRuntime {
 				input,
 				outputs,
 				signal,
-				log: (message, source) => this.log(run, key, message, source),
+				log: (message, source) =>
+					this.log(run, key, execution?.redact(message) ?? message, source),
 				evidenceDir: join(this.directory, "evidence", run.id),
 				resumeAgent: state.agent,
 				checkpointAgent: (agent) => {
@@ -998,6 +1050,13 @@ export class WorkflowRuntime {
 								await lease.release();
 							}
 						} else output = await this.hooks[step.type](context);
+					} catch (error) {
+						if (!execution) throw error;
+						throw new Error(
+							execution.redact(
+								error instanceof Error ? error.message : String(error),
+							),
+						);
 					} finally {
 						if (!this.shuttingDown || run.status === "stopped")
 							delete run.capacityLeaves[key];
@@ -1005,6 +1064,8 @@ export class WorkflowRuntime {
 					}
 				}
 				signal.throwIfAborted();
+				if (execution && output !== undefined)
+					output = JSON.parse(execution.redact(JSON.stringify(output)));
 				outputs[step.id] = output;
 				run.history.push({
 					step: key,
@@ -1237,7 +1298,18 @@ export class WorkflowRuntime {
 								| undefined,
 							context,
 						);
-					checkpoint.active = undefined;
+					// Answers start a new turn in the same conversation. Discard the
+					// completed result so unchanged-code recovery cannot replay it.
+					checkpoint.active = state.agent
+						? {
+								phase: "executing",
+								agent: {
+									runner: state.agent.runner,
+									sessionId: state.agent.sessionId,
+								},
+							}
+						: undefined;
+					if (state.agent) checkpoint.visits[step.id] = count + 1;
 					this.save(run);
 					continue;
 				}

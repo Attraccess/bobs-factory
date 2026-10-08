@@ -12,7 +12,13 @@ interface McpToolResult {
 
 /** Use Codex's MCP transport and OAuth store without starting a model turn. */
 export async function callCodexMcpTool(
-	config: Pick<AgentRunnerConfig, "workingDirectory" | "additionalEnv"> &
+	config: Pick<
+		AgentRunnerConfig,
+		| "workingDirectory"
+		| "additionalEnv"
+		| "childEnvironment"
+		| "codexDisabledMcp"
+	> &
 		Pick<CodexRunnerConfig, "codexPath" | "codexHome">,
 	serverName: string,
 	server: McpServerConfig,
@@ -33,11 +39,11 @@ export async function callCodexMcpTool(
 	const client = new AppServerClient({
 		binaryPath: command,
 		args: launchArgs,
-		...(config.additionalEnv || config.codexHome
+		...(config.childEnvironment || config.additionalEnv || config.codexHome
 			? {
 					env: {
 						...Object.fromEntries(
-							Object.entries(process.env).filter(
+							Object.entries(config.childEnvironment ?? process.env).filter(
 								(entry): entry is [string, string] => entry[1] !== undefined,
 							),
 						),
@@ -72,7 +78,17 @@ export async function callCodexMcpTool(
 				approvalPolicy: "never",
 				sandbox: "read-only",
 				ephemeral: true,
-				config: { mcp_servers: servers },
+				config: {
+					mcp_servers: {
+						...Object.fromEntries(
+							(config.codexDisabledMcp ?? []).map((name) => [
+								name,
+								{ enabled: false },
+							]),
+						),
+						...servers,
+					},
+				},
 			},
 		);
 		if (!thread?.id)

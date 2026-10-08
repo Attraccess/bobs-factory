@@ -41,6 +41,16 @@ describe("EdgeWorker - Feedback Delivery Timeout Issue", () => {
 	let mockOnFeedbackDelivery: any;
 	let _mockOnSessionCreated: any;
 
+	const releaseSessions: (() => void)[] = [];
+	function pendingSession() {
+		let release!: () => void;
+		const promise = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		releaseSessions.push(release);
+		return { promise, release };
+	}
+
 	const mockRepository: RepositoryConfig = {
 		id: "test-repo",
 		name: "Test Repo",
@@ -82,8 +92,8 @@ describe("EdgeWorker - Feedback Delivery Timeout Issue", () => {
 		mockClaudeRunner = {
 			supportsStreamingInput: true,
 			startStreaming: vi.fn().mockImplementation(async () => {
-				// Simulate a long-running Claude session (10 seconds)
-				await new Promise((resolve) => setTimeout(resolve, 10000));
+				// Keep completion controlled, independently of host scheduling delays.
+				await pendingSession().promise;
 				return { sessionId: "claude-session-123" };
 			}),
 			stop: vi.fn(),
@@ -195,6 +205,7 @@ describe("EdgeWorker - Feedback Delivery Timeout Issue", () => {
 	});
 
 	afterEach(() => {
+		for (const release of releaseSessions.splice(0)) release();
 		vi.restoreAllMocks();
 		vi.useRealTimers();
 	});
@@ -226,25 +237,19 @@ describe("EdgeWorker - Feedback Delivery Timeout Issue", () => {
 				"parent-session-123",
 			);
 
-			// Act - Call the feedback delivery and measure time
-			const startTime = Date.now();
+			// Returning while the child remains pending proves delivery does not await it.
 			const result = await mockOnFeedbackDelivery(
 				childSessionId,
 				feedbackMessage,
 			);
-			const endTime = Date.now();
-			const duration = endTime - startTime;
 
 			// Assert - The feedback delivery should return quickly
 			expect(result).toBe(true);
 
-			// Wait for the async handlePromptWithStreamingCheck to complete (fire-and-forget pattern)
-			await new Promise((resolve) => setTimeout(resolve, 100));
-
-			expect(resumeClaudeSessionSpy).toHaveBeenCalledOnce();
-
-			// Should return in less than 100ms (not wait for the 10-second session)
-			expect(duration).toBeLessThan(100);
+			await vi.waitFor(() => {
+				expect(resumeClaudeSessionSpy).toHaveBeenCalledOnce();
+				expect(mockClaudeRunner.startStreaming).toHaveBeenCalledOnce();
+			});
 
 			// The child session is still running in the background
 			expect(mockClaudeRunner.startStreaming).toHaveBeenCalledOnce();
@@ -257,13 +262,13 @@ describe("EdgeWorker - Feedback Delivery Timeout Issue", () => {
 			const childSessionId = "child-session-456";
 			const feedbackMessage = "Test feedback";
 			let sessionCompleted = false;
+			const child = pendingSession();
 
 			// Mock resumeAgentSession to track when it completes
 			resumeClaudeSessionSpy = vi
 				.spyOn(edgeWorker as any, "resumeAgentSession")
 				.mockImplementation(async () => {
-					// Start a 2-second operation
-					await new Promise((resolve) => setTimeout(resolve, 2000));
+					await child.promise;
 					sessionCompleted = true;
 					return undefined;
 				});
@@ -276,25 +281,21 @@ describe("EdgeWorker - Feedback Delivery Timeout Issue", () => {
 			);
 
 			// Act
-			const startTime = Date.now();
 			const result = await mockOnFeedbackDelivery(
 				childSessionId,
 				feedbackMessage,
 			);
-			const duration = Date.now() - startTime;
 
 			// Assert
 			expect(result).toBe(true);
-			expect(duration).toBeLessThan(100); // Returns immediately
 			expect(sessionCompleted).toBe(false); // Session still running
 
-			// Wait for the async handlePromptWithStreamingCheck to complete (fire-and-forget pattern)
-			await new Promise((resolve) => setTimeout(resolve, 100));
+			await vi.waitFor(() =>
+				expect(resumeClaudeSessionSpy).toHaveBeenCalledOnce(),
+			);
 
-			expect(resumeClaudeSessionSpy).toHaveBeenCalledOnce();
-
-			// Wait a bit and verify session completes in background
-			await new Promise((resolve) => setTimeout(resolve, 2100));
+			child.release();
+			await resumeClaudeSessionSpy.mock.results[0].value;
 			expect(sessionCompleted).toBe(true);
 		}, 5000);
 	});

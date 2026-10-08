@@ -131,7 +131,7 @@ export function executeCommand(
 			cwd: context.run.workspace,
 			detached: process.platform !== "win32",
 			env: {
-				...process.env,
+				...(context.execution?.environment ?? process.env),
 				// Large contexts cannot fit in the OS process argument/environment limit.
 				FACTORY_INPUT: Buffer.byteLength(input) <= 16000 ? input : undefined,
 				FACTORY_INPUT_FILE: inputPath,
@@ -168,7 +168,8 @@ export function executeCommand(
 		const record = (chunk: Buffer) => {
 			const text = chunk.toString();
 			output = (output + text).slice(-1000000);
-			context.log(text);
+			// Wait until close to redact across arbitrary stdout chunk boundaries.
+			if (!context.execution) context.log(text);
 		};
 		child.stdout.on("data", record);
 		child.stderr.on("data", record);
@@ -183,6 +184,10 @@ export function executeCommand(
 		});
 		child.on("close", (code) => {
 			cleanup();
+			if (context.execution) {
+				output = context.execution.redact(output);
+				context.log(output);
+			}
 			if (context.signal.aborted) reject(new Error("Run terminated"));
 			else if (timedOut) reject(new Error(`Command timed out: ${command}`));
 			else if (code !== 0)

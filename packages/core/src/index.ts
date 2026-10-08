@@ -302,11 +302,13 @@ export {
 	type CapacityRequest,
 	CapacityStateSchema,
 } from "./capacity-state.js";
+export type { JsonObject } from "./config-schemas.js";
 export {
 	executionEnvironment,
 	executionScope,
 	spawnExecution,
 } from "./ExecutionScope.js";
+export { ProjectArtifactLease } from "./ProjectArtifactLease.js";
 export { preparedExecutable } from "./prepared-executable.js";
 export {
 	factoryVersion,

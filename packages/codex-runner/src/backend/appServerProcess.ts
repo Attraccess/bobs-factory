@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { executionEnvironment } from "bobs-factory-core";
 import type { CodexConfigValue } from "../types.js";
 import { waitWithAbort } from "./abort.js";
@@ -374,13 +375,17 @@ function extractThreadId(params: unknown): string | undefined {
 }
 
 function buildLaunchKey(options: LaunchOptions): string {
-	return JSON.stringify({
-		command: options.command,
-		args: options.args,
-		env: options.env ? sortRecord(options.env) : null,
-		requestTimeoutMs: options.requestTimeoutMs ?? null,
-		mcpServers: options.mcpServers ? sortConfig(options.mcpServers) : null,
-	});
+	return createHash("sha256")
+		.update(
+			JSON.stringify({
+				command: options.command,
+				args: options.args,
+				env: options.env ? sortRecord(options.env) : null,
+				requestTimeoutMs: options.requestTimeoutMs ?? null,
+				mcpServers: options.mcpServers ? sortConfig(options.mcpServers) : null,
+			}),
+		)
+		.digest("hex");
 }
 
 function sortConfig(value: CodexConfigValue): CodexConfigValue {

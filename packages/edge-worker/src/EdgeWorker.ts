@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import type {
@@ -167,6 +167,18 @@ import { ConfigManager, type RepositoryChanges } from "./ConfigManager.js";
 import { DefaultSkillsDeployer } from "./DefaultSkillsDeployer.js";
 import { EgressProxy } from "./EgressProxy.js";
 import { resolveAgentSettings } from "./factory/AgentSettings.js";
+import {
+	executionCapabilities,
+	validateProfileRunner,
+} from "./factory/ExecutionCapabilities.js";
+import {
+	ExecutionEnvironmentResolver,
+	type ResolvedExecutionEnvironment,
+} from "./factory/ExecutionEnvironment.js";
+import {
+	ExecutionProfileStore,
+	ExecutionSnapshotSchema,
+} from "./factory/ExecutionProfiles.js";
 import { validateFactoryResult } from "./factory/FactoryResults.js";
 import { FactoryServer } from "./factory/FactoryServer.js";
 import {
@@ -251,6 +263,8 @@ import { finalizeVideoEvidence, videoGateIssues } from "./factory/Video.js";
 import {
 	capacityInstructions,
 	readPath as readFactoryPath,
+	type Workflow,
+	type WorkflowStep,
 	workflowTriggerInstructions,
 } from "./factory/Workflow.js";
 import {
@@ -350,6 +364,7 @@ export class EdgeWorker extends EventEmitter {
 	private sharedApplicationServer: SharedApplicationServer;
 	private factoryHome: string;
 	private factoryRuntime?: WorkflowRuntime;
+	private executionResolver?: ExecutionEnvironmentResolver;
 	private ticketTracking?: TicketTracking;
 	private titleGenerator?: RunTitleGenerator;
 	private titleStarted = new Set<string>();
@@ -936,6 +951,57 @@ export class EdgeWorker extends EventEmitter {
 						this.agentSessionManager.off("sessionChanged", notify);
 						this.off("chatSessionChanged", notify);
 					};
+				},
+				previewExecution: async (
+					repositoryId,
+					selection,
+					runner,
+					workflowId,
+					model,
+				) => {
+					const snapshot = this.getFactoryRuntime().executionProfiles.select(
+						repositoryId,
+						selection,
+					);
+					if (!snapshot)
+						return { mode: "Legacy", validation: "Existing runner behavior" };
+					const id = `preview-${randomUUID()}`;
+					try {
+						const temporary = {
+							id,
+							repositoryId,
+							workspace: "",
+							runner,
+							executionSnapshot: snapshot,
+							model,
+						} as FactoryRun;
+						if (workflowId) {
+							const runtime = this.getFactoryRuntime();
+							const selected = runtime.selectWorkflow([], "manual", workflowId);
+							await this.preflightExecution(
+								temporary,
+								selected,
+								runtime.listWorkflows(),
+							);
+						}
+						const resolved = await this.resolveRunExecution(temporary);
+						return {
+							diagnostics: temporary.executionDiagnostics,
+							snapshot,
+							accounts: resolved?.accounts,
+							mcp: Object.keys(resolved?.mcp ?? {}),
+							validation:
+								"Configuration and repository accounts checked. Runner API owner remains declared and unverified",
+						};
+					} finally {
+						await rm(
+							join(this.factoryHome, "factory", "execution-private", id),
+							{
+								recursive: true,
+								force: true,
+							},
+						);
+					}
 				},
 				chat: (id) => this.factoryChatState(id),
 				message: (id, text, messageId) =>
@@ -3989,7 +4055,24 @@ ${taskSection}`;
 		}
 
 		// Delete worktrees for this issue, keyed by the Linear issue identifier.
-		await this.gitService.deleteWorktree(message.workItemIdentifier, {
+		const configured = sessions.find(
+			(session) => session.metadata?.executionSnapshot,
+		);
+		let teardownService = this.gitService;
+		if (configured) {
+			const snapshot = ExecutionSnapshotSchema.parse(
+				configured.metadata!.executionSnapshot,
+			);
+			const resolved = await this.getExecutionResolver().resolve(
+				snapshot,
+				configured.id,
+				configured.workspace.path,
+				configured.titleGeneration?.settings.runner ??
+					this.runnerSelectionService.getDefaultRunner(),
+			);
+			teardownService = this.gitService.withEnvironment(resolved.environment);
+		}
+		await teardownService.deleteWorktree(message.workItemIdentifier, {
 			repositories: teardownRepositories,
 		});
 
@@ -4698,6 +4781,41 @@ ${taskSection}`;
 				);
 			throw error;
 		}
+		const executionSnapshot = new ExecutionProfileStore(
+			join(this.factoryHome, "factory"),
+		).select(primaryRepo.id);
+		let execution: ResolvedExecutionEnvironment | undefined;
+		if (executionSnapshot) {
+			if (repositories.length !== 1)
+				throw new Error("Execution profiles require one repository per root");
+			const labels = await this.fetchIssueLabels(fullIssue);
+			const selection = this.runnerSelectionService.determineRunnerSelection(
+				labels,
+				fullIssue.description ?? undefined,
+			);
+			await this.preflightExecution(
+				{
+					id: sessionId,
+					repositoryId: primaryRepo.id,
+					workspace: "",
+					runner: selection.runnerType,
+					model: selection.modelOverride,
+					executionSnapshot,
+				} as FactoryRun,
+				launch.workflow,
+				launch.workflowDefinitions,
+			);
+			executionCapabilities(selection.runnerType);
+			execution = await this.getExecutionResolver().resolve(
+				executionSnapshot,
+				sessionId,
+				primaryRepo.repositoryPath,
+				selection.runnerType,
+			);
+		}
+		const gitService = execution
+			? this.gitService.withEnvironment(execution.environment)
+			: this.gitService;
 		const takeover = launch.workflow.id === "takeover";
 		this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 		if (takeover && fullIssue.branchName) {
@@ -4742,6 +4860,7 @@ ${taskSection}`;
 								fullIssue,
 								repositories,
 								{
+									childEnvironment: execution?.environment,
 									baseBranchOverrides,
 									onRepoSetupHookEvent: (activity) =>
 										this.activityPoster.postRepoSetupHookActivity(
@@ -4751,7 +4870,7 @@ ${taskSection}`;
 										),
 								},
 							)
-						: await this.gitService.createGitWorktree(fullIssue, repositories, {
+						: await gitService.createGitWorktree(fullIssue, repositories, {
 								baseBranchOverrides,
 								onRepoSetupHookEvent: (activity) =>
 									this.activityPoster.postRepoSetupHookActivity(
@@ -4817,6 +4936,11 @@ ${taskSection}`;
 			},
 		};
 		const createdSession = agentSessionManager.getSession(sessionId)!;
+		if (executionSnapshot)
+			createdSession.metadata = {
+				...createdSession.metadata,
+				executionSnapshot,
+			};
 		createdSession.workflowChat = launch.workflow.chat ?? false;
 		createdSession.triggerOrigin = {
 			...origin,
@@ -5665,6 +5789,9 @@ ${taskSection}`;
 				this.ensureTicketLaunchOpen(linearWorkspaceId, sessionId);
 				const run = this.getFactoryRuntime().create({
 					id: sessionId,
+					executionSnapshot: session.metadata?.executionSnapshot
+						? ExecutionSnapshotSchema.parse(session.metadata.executionSnapshot)
+						: undefined,
 					title: fullIssue.title,
 					repositoryId: primaryRepo.id,
 					workflow,
@@ -6756,6 +6883,111 @@ ${taskSection}`;
 		);
 	}
 
+	private getExecutionResolver(): ExecutionEnvironmentResolver {
+		this.executionResolver ??= new ExecutionEnvironmentResolver(
+			join(this.factoryHome, "factory"),
+		);
+		return this.executionResolver;
+	}
+	/** Check every reachable provider and naming job before worktree hooks or ticket mutation. */
+	private async preflightExecution(
+		run: FactoryRun,
+		workflow: Workflow,
+		definitions: Workflow[],
+	): Promise<void> {
+		if (!run.executionSnapshot) return;
+		const fallback = (run.runner ??
+			this.runnerSelectionService.getDefaultRunner()) as RunnerType;
+		const requests: [RunnerType, string | undefined][] = [
+			[fallback, run.model ?? this.getDefaultModelForRunner(fallback)],
+		];
+		const visited = new Set<string>();
+		const scan = (steps: WorkflowStep[]) => {
+			for (const step of steps) {
+				if (step.type === "agent")
+					requests.push([
+						step.runner ?? fallback,
+						step.model ??
+							(step.runner && step.runner !== fallback
+								? this.getDefaultModelForRunner(step.runner)
+								: (run.model ?? this.getDefaultModelForRunner(fallback))),
+					]);
+				if (step.groups) for (const group of step.groups) scan(group);
+				if (step.workflow && !visited.has(step.workflow)) {
+					visited.add(step.workflow);
+					const nested = definitions.find((item) => item.id === step.workflow);
+					if (nested) scan(nested.steps);
+				}
+			}
+		};
+		scan(workflow.steps);
+		const title = this.getFactoryRuntime().resolveTitleSettings();
+		requests.push([title.runner, title.model]);
+		const checked = new Set<RunnerType>();
+		for (const [runner, model] of requests) {
+			validateProfileRunner(
+				{ factoryHome: this.factoryHome, model },
+				run.executionSnapshot,
+				runner,
+			);
+			if (!checked.has(runner)) await this.resolveRunExecution(run, runner);
+			checked.add(runner);
+		}
+	}
+	private async resolveRunExecution(
+		run: FactoryRun,
+		runner?: string,
+		job = "main",
+	): Promise<ResolvedExecutionEnvironment | undefined> {
+		if (!run.executionSnapshot) return undefined;
+		const repository = this.repositories.get(run.repositoryId);
+		if (!repository) throw new Error("Execution repository unavailable");
+		const type = (runner ??
+			run.runner ??
+			this.runnerSelectionService.getDefaultRunner()) as RunnerType;
+		const capability = executionCapabilities(type);
+		const resolved = await this.getExecutionResolver().resolve(
+			run.executionSnapshot,
+			run.id,
+			run.workspace && existsSync(run.workspace)
+				? run.workspace
+				: repository.repositoryPath,
+			type,
+			job,
+		);
+		run.executionDiagnostics = {
+			accounts: resolved.accounts,
+			git: resolved.git,
+			mcp: Object.keys(resolved.mcp),
+			runner: type,
+			binary: capability.binary,
+			version: capability.version,
+			tracking: !run.ticketReference
+				? "No associated ticket"
+				: run.ticketReference.provider === "native"
+					? "Service integration (control plane)"
+					: "Selected MCP credentials",
+		};
+		return resolved;
+	}
+	private async applyRunExecution(
+		run: FactoryRun,
+		runner: RunnerType,
+		config: AgentRunnerConfig,
+		job = "main",
+	) {
+		const resolved = await this.resolveRunExecution(run, runner, job);
+		if (resolved) {
+			validateProfileRunner(config, run.executionSnapshot!, runner);
+			this.getExecutionResolver().apply(
+				config,
+				run.executionSnapshot!,
+				resolved,
+			);
+		}
+		return resolved;
+	}
+
 	private getFactoryRuntime(): WorkflowRuntime {
 		if (!this.factoryRuntime) {
 			const tools = new FactoryTools({
@@ -6765,6 +6997,11 @@ ${taskSection}`;
 					this.executeFactoryMcpTool(context, server, tool),
 			});
 			this.factoryRuntime = new WorkflowRuntime(this.factoryHome, {
+				execution: (run, runner) => this.resolveRunExecution(run, runner),
+				cleanupExecution: (run) => {
+					if (run.executionSnapshot)
+						this.getExecutionResolver().cleanupCredentials(run.id);
+				},
 				capacity: this.runnerSlots,
 				track: (run, milestone) =>
 					this.getTicketTracking().record(run, milestone),
@@ -6979,7 +7216,7 @@ ${taskSection}`;
 						repositories: [],
 						workspace: { path: directory, isGitWorktree: false },
 					};
-					return this.runnerConfigBuilder.buildTitleConfig(
+					const titleConfig = this.runnerConfigBuilder.buildTitleConfig(
 						{
 							session: synthetic,
 							repository:
@@ -7023,6 +7260,33 @@ ${taskSection}`;
 							this.factoryRuntime?.runs.get(jobId)?.workspace ??
 							repository.repositoryPath,
 					);
+					const sourceRun =
+						this.factoryRuntime?.runs.get(jobId) ??
+						(source?.metadata?.executionSnapshot
+							? ({
+									id: jobId,
+									repositoryId: repository.id,
+									workspace: source.workspace.path,
+									executionSnapshot: ExecutionSnapshotSchema.parse(
+										source.metadata.executionSnapshot,
+									),
+								} as FactoryRun)
+							: undefined);
+					if (sourceRun?.executionSnapshot) {
+						await this.applyRunExecution(
+							sourceRun,
+							snapshot.settings.runner,
+							titleConfig,
+							"title",
+						);
+						titleConfig.mcpConfig = titleMcpConfig(
+							titleConfig,
+							snapshot.settings.runner,
+							sourceRun.workspace,
+							this.logger,
+						);
+					}
+					return titleConfig;
 				},
 				createRunner: (snapshot, config) =>
 					this.buildRunnerForType(snapshot.settings.runner, config, true),
@@ -7065,6 +7329,12 @@ ${taskSection}`;
 		);
 		const runnerType =
 			(run.runner as RunnerType | undefined) ?? built.runnerType;
+		const execution = await this.applyRunExecution(
+			run,
+			runnerType,
+			built.config,
+			"mcp",
+		);
 		const servers = titleMcpConfig(
 			built.config,
 			runnerType,
@@ -7074,7 +7344,7 @@ ${taskSection}`;
 		return {
 			built,
 			servers,
-			callTool: (
+			callTool: async (
 				serverName: string,
 				tool: string,
 				args: Record<string, unknown>,
@@ -7090,24 +7360,38 @@ ${taskSection}`;
 					throw new Error(
 						`MCP server ${serverName} is not configured as a process/HTTP transport`,
 					);
-				if (runnerType === "codex" && "url" in server)
-					return callCodexMcpTool(
-						{ ...built.config, workingDirectory: run.workspace },
-						serverName,
-						server,
-						tool,
-						args,
-						signal,
+				try {
+					const result =
+						runnerType === "codex" && "url" in server
+							? await callCodexMcpTool(
+									{ ...built.config, workingDirectory: run.workspace },
+									serverName,
+									server,
+									tool,
+									args,
+									signal,
+								)
+							: await callConfiguredTool(
+									"command" in server
+										? {
+												...server,
+												env: { ...server.env, ...executionEnvironment() },
+											}
+										: server,
+									tool,
+									args,
+									signal,
+									run.workspace || repository.repositoryPath,
+									built.config.childEnvironment,
+								);
+					return execution
+						? JSON.parse(execution.redact(JSON.stringify(result)))
+						: result;
+				} catch (error) {
+					throw new Error(
+						execution ? execution.redact(String(error)) : String(error),
 					);
-				return callConfiguredTool(
-					"command" in server
-						? { ...server, env: { ...server.env, ...executionEnvironment() } }
-						: server,
-					tool,
-					args,
-					signal,
-					run.workspace,
-				);
+				}
 			},
 		};
 	}
@@ -7536,6 +7820,14 @@ ${taskSection}`;
 				serviceTier: run.serviceTier,
 			}),
 		);
+		await this.applyRunExecution(
+			run,
+			runnerType,
+			built.config,
+			createHash("sha256")
+				.update(context.stepKey ?? step.id)
+				.digest("hex"),
+		);
 		built.config.resumeSessionId = context.resumeAgent?.sessionId;
 		built.config.additionalDirectories = [
 			...(built.config.additionalDirectories ?? []),
@@ -7624,7 +7916,7 @@ ${taskSection}`;
 						? runner.startStreaming.bind(runner)
 						: runner.start.bind(runner);
 				await start(
-					`${outputCorrection && !captureCorrection ? "Your previous output failed validation. Read /outputCorrection from the NEW factory-context connection: it contains the rejected candidate, precise issues, and revision. Correct those issues and return the COMPLETE result for this role. Preserve accepted evidence and completed work; correct only this role output and, for capture, invalid states. Do not replay other pipeline roles. This is an output correction, not a process restart.\n\n" : captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent ? "This role was interrupted by a process restart. Continue from your existing conversation and worktree. Inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
+					`${outputCorrection && !captureCorrection ? "Your previous output failed validation. Read /outputCorrection from the NEW factory-context connection: it contains the rejected candidate, precise issues, and revision. Correct those issues and return the COMPLETE result for this role. Preserve accepted evidence and completed work; correct only this role output and, for capture, invalid states. Do not replay other pipeline roles. This is an output correction, not a process restart.\n\n" : captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent ? "Continue this role from your existing conversation and worktree. Read the latest answers through the new factory-context connection and inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
 				);
 				context.signal.throwIfAborted();
 				const messages = runner.getMessages();
@@ -7875,7 +8167,35 @@ ${taskSection}`;
 		);
 		if (workflow.id === "simple" && Object.keys(customInputs).length)
 			prompt += `\n\nWorkflow launch inputs:\n${JSON.stringify(customInputs, null, 2)}`;
+		const id = `manual-${randomUUID()}`;
+		const parent = sourceRunId ? runtime.runs.get(sourceRunId) : undefined;
+		const inherited = sourceRunId
+			? this.titleSession(sourceRunId)?.metadata?.executionSnapshot
+			: undefined;
+		const executionSnapshot = sourceRunId
+			? structuredClone(
+					parent?.executionSnapshot ??
+						(inherited ? ExecutionSnapshotSchema.parse(inherited) : undefined),
+				)
+			: runtime.executionProfiles.select(repository.id, input.execution);
+		if (executionSnapshot) {
+			// Admission has no session yet. Resolve against the source repository before fetch/hooks.
+			const temporary = {
+				id,
+				repositoryId: repository.id,
+				workspace: "",
+				runner: input.runner,
+				model: input.model,
+				executionSnapshot,
+			} as FactoryRun;
+			await this.preflightExecution(temporary, workflow, workflowDefinitions);
+			if (Object.keys(executionSnapshot.identity?.runners ?? {}).length === 0)
+				throw new Error(
+					"Execution identity needs runner authentication bindings",
+				);
+		}
 		const run = runtime.create({
+			executionSnapshot,
 			triggerOrigin: {
 				type: "manual",
 				workflowId: workflow.id,
@@ -7888,7 +8208,7 @@ ${taskSection}`;
 				},
 			},
 			workflowDefinitions,
-			id: `manual-${randomUUID()}`,
+			id,
 			repositoryId: repository.id,
 			workflow,
 			source: input.source,
@@ -7901,7 +8221,6 @@ ${taskSection}`;
 			modelVariant: input.modelVariant,
 			serviceTier: input.serviceTier,
 		});
-		const parent = sourceRunId ? runtime.runs.get(sourceRunId) : undefined;
 		if (parent?.ticketReference)
 			run.ticketReference = structuredClone(parent.ticketReference);
 		run.launchRequest = structuredClone(input);
@@ -7919,6 +8238,10 @@ ${taskSection}`;
 		const runtime = this.getFactoryRuntime();
 		const repository = this.repositories.get(run.repositoryId)!;
 		const workflow = run.workflow;
+		const execution = await this.resolveRunExecution(run);
+		const gitService = execution
+			? this.gitService.withEnvironment(execution.environment)
+			: this.gitService;
 		const prompt =
 			workflow.id === "takeover"
 				? input.prompt ||
@@ -7950,6 +8273,7 @@ ${taskSection}`;
 			) {
 				if (input.source?.startsWith("https://github.com/")) {
 					const setupContext: ExecutionContext = {
+						execution,
 						run: { ...run, workspace: repository.repositoryPath },
 						step: workflow.steps[0]!,
 						input: {},
@@ -8044,6 +8368,7 @@ ${taskSection}`;
 						);
 					if (links[0]) {
 						const context: ExecutionContext = {
+							execution,
 							run: { ...run, workspace: repository.repositoryPath },
 							step: workflow.steps[0]!,
 							input: {},
@@ -8067,7 +8392,7 @@ ${taskSection}`;
 				}
 			}
 			if (run.status === "stopped") return;
-			const workspace = await this.gitService.createGitWorktree(
+			const workspace = await gitService.createGitWorktree(
 				fullIssue,
 				[repository],
 				{ baseBranchOverrides },
@@ -8135,6 +8460,11 @@ ${taskSection}`;
 	private saveFactorySession(run: FactoryRun): void {
 		const session = this.agentSessionManager.getSession(run.id);
 		if (session) {
+			if (run.executionSnapshot)
+				session.metadata = {
+					...session.metadata,
+					executionSnapshot: run.executionSnapshot,
+				};
 			const { agentRunner: _runner, ...snapshot } = session;
 			run.sessionSnapshot = structuredClone(snapshot);
 		}
@@ -8149,6 +8479,7 @@ ${taskSection}`;
 			throw new Error(
 				"Run repository is unavailable; restore its configuration before continuing",
 			);
+		await this.resolveRunExecution(run);
 		if ((!run.workspace || run.setupComplete === false) && run.launchRequest)
 			await this.prepareManualFactoryRun(run, run.launchRequest, signal);
 		signal.throwIfAborted();
@@ -8170,6 +8501,7 @@ ${taskSection}`;
 				const pr = JSON.parse(
 					await executeCommand(
 						{
+							execution: await this.resolveRunExecution(run),
 							run: { ...run, workspace: repository.repositoryPath },
 							step: pending.step,
 							input: {},
@@ -8623,6 +8955,7 @@ ${taskSection}`;
 		built.config.fallbackModel =
 			this.getDefaultFallbackModelForRunner(runnerType);
 		Object.assign(built.config, resolveAgentSettings(runnerType, run));
+		await this.applyRunExecution(run, runnerType, built.config);
 		const originalMessage = built.config.onMessage;
 		built.config.onMessage = (message) => {
 			if (
@@ -9993,6 +10326,25 @@ ${input.userComment}
 			}
 		}
 
+		if (
+			!this.factoryRuntime?.runs.has(sessionId) &&
+			session.metadata?.executionSnapshot
+		) {
+			const snapshot = ExecutionSnapshotSchema.parse(
+				session.metadata.executionSnapshot,
+			);
+			const resolved = await this.getExecutionResolver().resolve(
+				snapshot,
+				sessionId,
+				session.workspace.path,
+				result.runnerType,
+			);
+			executionCapabilities(result.runnerType);
+			validateProfileRunner(result.config, snapshot, result.runnerType);
+			this.getExecutionResolver().apply(result.config, snapshot, resolved);
+			delete (result.config as AgentRunnerConfig & { warmSession?: WarmQuery })
+				.warmSession;
+		}
 		return result;
 	}
 

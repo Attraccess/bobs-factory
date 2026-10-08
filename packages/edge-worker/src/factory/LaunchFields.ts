@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { agentSettings } from "./AgentSettings.js";
+import { ExecutionSelectionSchema } from "./ExecutionProfiles.js";
 import { TakeoverSourceSchema } from "./Takeover.js";
 import type { Workflow } from "./Workflow.js";
 
@@ -78,6 +79,7 @@ export function getLaunchFields(
 	).filter((field) => field.name !== "title");
 }
 export const LaunchRequestSchema = z.object({
+	execution: ExecutionSelectionSchema.optional(),
 	title: z.string().trim().max(300).optional(),
 	prompt: z.string().trim().max(100000).optional(),
 	source: z.string().trim().max(1000).optional(),

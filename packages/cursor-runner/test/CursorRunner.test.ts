@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SDKResultMessage } from "bobs-factory-core";
@@ -102,6 +108,32 @@ function tempWorkspace(): string {
 }
 
 describe("CursorRunner (SDK adapter)", () => {
+	it("preserves external artifact edits and returns a repair failure instead of successful cleanup", async () => {
+		const workspace = tempWorkspace();
+		const factoryHome = tempWorkspace();
+		const agent = sdkMock.__install({ events: [] });
+		sdkMock.create.mockImplementationOnce(async () => {
+			writeFileSync(join(workspace, ".cursor", "hooks.json"), "external edit");
+			return agent;
+		});
+		const runner = new CursorRunner({
+			workingDirectory: workspace,
+			factoryHome,
+			onError: () => {},
+		});
+		await runner.start("fixture");
+		expect(readFileSync(join(workspace, ".cursor", "hooks.json"), "utf8")).toBe(
+			"external edit",
+		);
+		expect(runner.getMessages().at(-1)).toMatchObject({
+			type: "result",
+			is_error: true,
+			errors: [
+				"Cursor runner artifacts could not be safely restored. Inspect the private recovery journal before retrying.",
+			],
+		});
+		expect(runner.isRunning()).toBe(false);
+	});
 	it("installs and uninstalls .cursor permission artifacts around a session", async () => {
 		const workspace = tempWorkspace();
 		const factoryHome = tempWorkspace();

@@ -19,6 +19,7 @@ export async function callConfiguredTool(
 	args: Record<string, unknown>,
 	signal: AbortSignal,
 	cwd: string,
+	childEnvironment?: Record<string, string>,
 ): Promise<unknown> {
 	const client = new Client({ name: "cyrus-factory", version: "1.0.0" });
 	const transport =
@@ -29,7 +30,7 @@ export async function callConfiguredTool(
 					cwd,
 					env: {
 						...Object.fromEntries(
-							Object.entries(process.env).filter(
+							Object.entries(childEnvironment ?? process.env).filter(
 								(entry): entry is [string, string] => entry[1] !== undefined,
 							),
 						),

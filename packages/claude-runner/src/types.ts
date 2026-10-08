@@ -82,6 +82,14 @@ export interface ClaudeRunnerConfig {
 	sandbox?: SandboxSettings; // Sandbox settings (enabled, network proxy ports, etc.)
 	/** Additional environment variables to pass to the Claude child process (merged after process.env) */
 	additionalEnv?: Record<string, string>;
+	/** Complete child environment. When present, ambient environment and repository .env are not inherited. */
+	childEnvironment?: Record<string, string>;
+	/** Scrub private execution credentials before public logs, messages and callbacks. */
+	redact?: (text: string) => string;
+	/** Validated ordinary settings, with authentication and permissions controlled separately. */
+	runnerSettings?: Record<string, unknown>;
+	/** Explicit Claude settings discovery for accepted execution profiles. */
+	settingSources?: ("user" | "project" | "local")[];
 	pathToClaudeCodeExecutable?: string; // Explicit path to Claude Code CLI executable (auto-resolved if not set)
 	/**
 	 * Override how the Claude Code process is spawned. Forwarded to the SDK's
