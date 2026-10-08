@@ -123,6 +123,8 @@ export interface CyrusAgentSession {
 	metadata?: {
 		/** Suppress attention notifications for an intentional user stop, including after restart. */
 		intentionalStop?: boolean;
+		/** Immutable public execution-profile snapshot. Interpreted by the Factory resolver. */
+		executionSnapshot?: unknown;
 		/** Default repository available when a standalone chat was created. */
 		chatRepositoryId?: string;
 		chatPlatform?: "slack" | "zulip";

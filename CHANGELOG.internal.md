@@ -10,6 +10,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Fixed
 
+- Integrate Web Push with independent execution profiles, retaining intentional-stop metadata, protected device APIs and both capability descriptions. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+
 - Reconcile Web Push with the Bob’s Factory fork and current CI recovery, using the renamed home and environment settings while retaining subscriptions, passkey protection and transition bookkeeping. Preserve the original decision identity through question rephrasing and nested workflow restart. Make context snapshot checks work with packaged launch arguments and allow the full-history fixture to finish under suite load. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 
 - Integrate Web Push with Factory passkey authentication, protecting device management and refreshed notification destinations after sign-in, while retaining opt-out and deferred device cleanup across session loss. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
@@ -19,6 +21,7 @@ This changelog documents internal development changes, refactors, tooling update
 - Integrate Web Push with the current question guidance, preserving both changelog entries and the saved review-fix instruction path. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Integrate Web Push with the current Factory base, retaining configured public/trusted proxy access, refinement guidance and both PWA regression suites. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
 - Update the routing prompt test fixture for the accepted Web Push capability description, retaining complete prompt assertions and restoring CI. ([#35](https://github.com/Attraccess/bobs-factory/pull/35))
+- Integrate execution profiles with the Bob’s Factory fork, passkey Settings, compact context and PR revision recovery; retain runner artifact restoration and isolated Cursor workers in binaries. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 
 - Initialize reflection support before bundled certificate imports; verify renamed passkey commands, protected runtime recovery and packaged macOS startup while integrating main. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
@@ -40,6 +43,13 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Integrate Codex startup checkpoint recovery and shared question guidance with execution profiles; retain established conversations and independent execution settings. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
+- Integrate feedback recovery with execution profiles while preserving constructor cleanup synchronization and both changelog histories. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
+- Merge current workflow recovery, refinement recommendations and instance capacity into execution profiles; retain dedicated Settings pages and both answer/execution update drafts. Wait for coordinator initialization before removing persistence-test homes and give mocked multi-package release scenarios a bounded 30-second budget. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
+
+- Integrate execution profiles with machine capacity and the current Recipes UI; preserve selected environments, cancellable setup and redaction while retaining lease provenance and both settings editors. Update direct-MCP regression checks for Legacy and selected complete child environments. ([#30](https://github.com/Attraccess/bobs-factory/pull/30))
 - Integrate passkey access with refinement recommendations, preserving explicit answer submission, protected drafts and both capability references. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
 
 - Restore CI coverage for authenticated Factory review drafts and the complete passkey-aware routing prompt; integrate capacity/recovery updates while preserving passkey gates and the public-origin compatibility setting; format the authentication CSS for the repository-wide Biome gate. ([#27](https://github.com/Attraccess/bobs-factory/pull/27))
@@ -60,6 +70,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 
 ### Added
+- Add versioned execution snapshots, scoped Git/provider/hook/MCP environments, runner source/version checks, Cursor IPC isolation and recoverable project artifact leases. Add revision-safe profile APIs and runtime/UI coverage. Live runner API and GitLab tests were waived by the operator. ([Taskbot #57](https://taskbot.apps.janjaap.de/p/bobs-factory/t/57))
 - Added workflow/API/MCP regression coverage and a scoped F1 factory lifecycle drive; corrected CLI activity-sink lookup and cancellation of queued factory runners. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 - Documented native Codex command exceptions and the distinction between runner sandbox modes, egress-proxy settings, and writable directories. ([#1521](https://github.com/cyrusagents/cyrus/pull/1521))
 

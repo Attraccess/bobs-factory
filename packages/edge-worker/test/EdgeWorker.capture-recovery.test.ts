@@ -109,7 +109,7 @@ async function fixture() {
 	const runner = {
 		start: vi.fn(async () => {
 			input = JSON.parse(
-				readFileSync(config.mcpConfig["factory-context"].args.at(-1)!, "utf8"),
+				readFileSync(config.mcpConfig["factory-context"].args.at(-1), "utf8"),
 			);
 			config.onMessage({
 				type: "system",

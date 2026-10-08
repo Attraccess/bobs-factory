@@ -1,0 +1,27 @@
+{
+	"capability": {
+		"version": "2.1.281 (Claude Code)",
+		"elapsedMs": 182,
+		"networkConnectionEstablished": true,
+		"reportUnmodified": true
+	},
+	"preview": {
+		"status": 200,
+		"elapsedMs": 1862
+	},
+	"manualLaunch": {
+		"id": "manual-aac38318-f653-4961-b00f-d9b18a1ec68b",
+		"status": "completed",
+		"account": "bobs-factory",
+		"author": "Bob author",
+		"committer": "Bob committer",
+		"identity": "bob",
+		"tools": "private"
+	},
+	"browser": {
+		"reloadPassed": true,
+		"storedOnlyProfileIds": true,
+		"nativeSharedRepairPassed": true,
+		"nativePrivateRejected": true
+	}
+}

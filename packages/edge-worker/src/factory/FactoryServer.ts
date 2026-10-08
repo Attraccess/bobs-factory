@@ -8,6 +8,7 @@ import { z } from "zod";
 import type { MachineCapacity } from "../MachineCapacity.js";
 import { activityMarkers, activityPage } from "./ActivityPage.js";
 import { reasoningLevels, serviceTierRunners } from "./AgentSettings.js";
+import { ExecutionSelectionSchema } from "./ExecutionProfiles.js";
 import {
 	type FactoryAccess,
 	FactoryAuth,
@@ -32,6 +33,13 @@ import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
 	push?: import("./FactoryPush.js").FactoryPush;
+	previewExecution?(
+		repositoryId: string,
+		selection: import("./ExecutionProfiles.js").ExecutionSelection,
+		runner?: string,
+		workflow?: string,
+		model?: string,
+	): Promise<unknown>;
 	capacity?: MachineCapacity;
 	chat?(id: string): ChatState;
 	message?(id: string, text: string, messageId?: string): void | Promise<void>;
@@ -135,6 +143,7 @@ export class FactoryServer {
 						runtime.listWorkflows(),
 						runtime.getDefaultWorkflow(),
 						runtime.getTitleSettings(),
+						runtime.executionProfiles.read(),
 					]),
 				)
 				.digest("hex");
@@ -405,6 +414,15 @@ export class FactoryServer {
 		this.app.get("/api/config", async () => ({
 			capacity: await hooks.capacity?.snapshot(),
 			configRevision: configRevision(),
+			executionProfiles: runtime.executionProfiles.read(),
+			executionConsumers: [...runtime.runs.values()]
+				.filter((run) => run.executionSnapshot)
+				.map((run) => ({
+					id: run.id,
+					status: run.status,
+					identity: run.executionSnapshot?.identity?.id,
+					tools: run.executionSnapshot?.tools?.id,
+				})),
 			repositories: hooks.repositories(),
 			workflows: runtime.listWorkflows().map((workflow) => ({
 				...workflow,
@@ -416,6 +434,48 @@ export class FactoryServer {
 			reasoningLevels,
 			serviceTierRunners,
 		}));
+		this.app.put("/api/execution-profiles", (request) => {
+			checkConfigRevision(request);
+			const body = z
+				.object({
+					profiles: z.unknown(),
+					expectedRevision: z.number().int().nonnegative(),
+				})
+				.parse(request.body);
+			return runtime.updateExecutionProfiles(
+				body.profiles,
+				body.expectedRevision,
+			);
+		});
+		this.app.post("/api/execution-preview", async (request) => {
+			const body = z
+				.object({
+					repositoryId: z.string(),
+					selection: ExecutionSelectionSchema,
+					workflow: z.string().optional(),
+					model: z.string().optional(),
+					runner: z
+						.enum(["claude", "codex", "gemini", "cursor", "opencode"])
+						.optional(),
+				})
+				.parse(request.body);
+			const snapshot = runtime.executionProfiles.select(
+				body.repositoryId,
+				body.selection,
+			);
+			return hooks.previewExecution
+				? hooks.previewExecution(
+						body.repositoryId,
+						body.selection,
+						body.runner,
+						body.workflow,
+						body.model,
+					)
+				: {
+						snapshot,
+						validation: "Execution validation is unavailable on this server",
+					};
+		});
 		this.app.put("/api/capacity", async (request) => {
 			if (!hooks.capacity) throw new Error("Instance capacity unavailable");
 			const { limit } = z
