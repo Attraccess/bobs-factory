@@ -1,7 +1,9 @@
 # Settled ticket ownership and fresh Takeover launch
 
-**Date:** 2026-10-06  
-**Revision:** fix/settled-ticket-ownership, based on e5cd5b74, committed with this report  
+**Date:** 2026-10-06
+
+**Revision:** fix/settled-ticket-ownership, based on e5cd5b74, committed with this report
+
 **Behavior:** Explicitly settled finished runs release ticket ownership, including legacy stopped sessions without launch receipts. Live runners, background work and resumed graphs remain exclusive.
 
 F1 applies because this changes ticket launch admission and session lifecycle.
