@@ -7746,7 +7746,7 @@ ${taskSection}`;
 				(await roleProgress(context)).currentRevision?.headSha
 		)
 			throw new Error(
-				`Output correction exhausted at ${context.step.id}; inspect persisted rejected output/issues. A new revision is required before further automatic correction.`,
+				`Output correction exhausted at ${context.step.id}; inspect persisted rejected output/issues, restore missing infrastructure if needed, then use Retry to authorize another bounded correction attempt.`,
 			);
 		const checkpoint = context.checkpointAgent;
 		context.checkpointAgent = (agent) => {
@@ -7830,7 +7830,7 @@ ${taskSection}`;
 					// Increment before launching so process restarts cannot reset the budget.
 					context.checkpointAgent({
 						...context.resumeAgent,
-						rejected: { ...rejection, attempts: attempts + 1 },
+						rejected: { ...rejection, attempts: attempts + 1, reserved: true },
 					});
 				}
 			}
@@ -7936,13 +7936,17 @@ ${taskSection}`;
 		];
 		const originalMessage = built.config.onMessage;
 		let agentCheckpoint = context.resumeAgent;
+		let startupConfirmed = false;
 		built.config.onMessage = (message) => {
+			if (message.type === "assistant" || message.type === "user")
+				startupConfirmed = true;
 			if (
 				message.type === "system" &&
 				message.subtype === "init" &&
 				message.session_id &&
 				message.session_id !== "pending"
 			) {
+				startupConfirmed = true;
 				agentCheckpoint = {
 					runner: runnerType,
 					sessionId: message.session_id,
@@ -7951,7 +7955,7 @@ ${taskSection}`;
 						? { result: context.resumeAgent.result }
 						: {}),
 					...(context.resumeAgent?.rejected
-						? { rejected: context.resumeAgent.rejected }
+						? { rejected: { ...context.resumeAgent.rejected, reserved: false } }
 						: {}),
 				};
 				context.checkpointAgent?.(agentCheckpoint);
@@ -7984,7 +7988,12 @@ ${taskSection}`;
 		try {
 			built.config.mcpConfig = {
 				...built.config.mcpConfig,
-				"factory-context": factoryContext.config,
+				"factory-context": {
+					...factoryContext.config,
+					...(runnerType === "codex"
+						? { required: true, startup_timeout_sec: 45 }
+						: {}),
+				},
 			};
 			const runner = capRunnerStarts(
 				this.buildRunnerForType(runnerType, built.config, true),
@@ -8018,6 +8027,7 @@ ${taskSection}`;
 					.at(-1);
 				if (result?.type === "result" && result.is_error)
 					throw new Error(`Agent step failed: ${JSON.stringify(result)}`);
+				startupConfirmed = true;
 				const assistant = messages
 					.filter((message) => message.type === "assistant")
 					.at(-1);
@@ -8062,6 +8072,19 @@ ${taskSection}`;
 				unregisterChat();
 			}
 		} finally {
+			const rejected = context.resumeAgent?.rejected;
+			if (runnerType === "codex" && !startupConfirmed && rejected?.reserved) {
+				// No ready thread or model work: return the launch reservation,
+				// preserving the rejected candidate for an infrastructure retry.
+				context.checkpointAgent?.({
+					...context.resumeAgent!,
+					rejected: {
+						...rejected,
+						attempts: Math.max(0, rejected.attempts - 1),
+						reserved: false,
+					},
+				});
+			}
 			factoryContext.cleanup();
 		}
 	}

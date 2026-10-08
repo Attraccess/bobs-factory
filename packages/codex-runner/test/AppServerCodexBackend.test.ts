@@ -86,6 +86,175 @@ function makeBackend(): { backend: AppServerCodexBackend; client: FakeClient } {
 
 describe("AppServerCodexBackend", () => {
 	it.each([
+		false,
+		true,
+	])("waits for required MCP tools before exposing a usable thread (resume=%s)", async (resume) => {
+		const { backend, client } = makeBackend();
+		let ready!: () => void;
+		client.responses["mcpServerStatus/list"] = () =>
+			new Promise((resolve) => {
+				ready = () =>
+					resolve({
+						data: [
+							{
+								name: "factory-context",
+								runtimeStatus: "connected",
+								tools: {
+									list_context: { name: "list_context" },
+									read_context: { name: "read_context" },
+								},
+							},
+						],
+					});
+			});
+		const events: NormalizedCodexEvent[] = [];
+		backend.on("event", (event) => events.push(event));
+		const opening = backend.open({
+			...baseConfig,
+			codexPath: "/bin/true",
+			...(resume ? { resumeSessionId: "saved" } : {}),
+			configOverrides: {
+				mcp_servers: {
+					"factory-context": {
+						command: "fixture",
+						required: true,
+						enabled_tools: ["list_context", "read_context"],
+					},
+				},
+			},
+		});
+		await vi.waitFor(() =>
+			expect(client.lastRequest("mcpServerStatus/list")).toBeDefined(),
+		);
+		expect(events).toEqual([]);
+		expect(client.lastRequest("turn/start")).toBeUndefined();
+		ready();
+		await expect(opening).resolves.toEqual({
+			threadId: resume ? "thread-resumed" : "thread-1",
+		});
+		expect(events).toEqual([
+			{
+				kind: "thread-started",
+				threadId: resume ? "thread-resumed" : "thread-1",
+			},
+		]);
+		await backend.close();
+	});
+
+	it("fails required MCP discovery before emitting init or starting model work", async () => {
+		const { backend, client } = makeBackend();
+		client.responses["mcpServerStatus/list"] = {
+			data: [
+				{
+					name: "factory-context",
+					runtimeStatus: "connected",
+					tools: { list_context: { name: "list_context" } },
+				},
+			],
+		};
+		const event = vi.fn();
+		backend.on("event", event);
+		await expect(
+			backend.open({
+				...baseConfig,
+				codexPath: "/bin/true",
+				configOverrides: {
+					mcp_servers: {
+						"factory-context": {
+							command: "fixture",
+							required: true,
+							enabled_tools: ["list_context", "read_context"],
+						},
+					},
+				},
+			}),
+		).rejects.toThrow("read_context");
+		expect(event).not.toHaveBeenCalled();
+		expect(client.lastRequest("turn/start")).toBeUndefined();
+		expect(client.closeCalls).toBe(1);
+	});
+	it.each([
+		"starting",
+		"failed",
+		"missing",
+		"discovery error",
+		"request timeout",
+	])("rejects %s required MCP infrastructure without a model turn", async (failure) => {
+		const { backend, client } = makeBackend();
+		client.responses["mcpServerStatus/list"] =
+			failure === "request timeout"
+				? () => Promise.reject(new Error("mcpServerStatus/list timed out"))
+				: {
+						data:
+							failure === "missing"
+								? []
+								: [
+										{
+											name: "factory-context",
+											runtimeStatus:
+												failure === "discovery error" ? "connected" : failure,
+											toolsError:
+												failure === "discovery error"
+													? "Unavailable catalog"
+													: null,
+											tools: { read_context: { name: "read_context" } },
+										},
+									],
+					};
+		const event = vi.fn();
+		backend.on("event", event);
+		await expect(
+			backend.open({
+				...baseConfig,
+				codexPath: "/bin/true",
+				configOverrides: {
+					mcp_servers: {
+						"factory-context": {
+							command: "fixture",
+							required: true,
+							enabled_tools: ["read_context"],
+						},
+					},
+				},
+			}),
+		).rejects.toThrow("Required MCP server 'factory-context'");
+		expect(event).not.toHaveBeenCalled();
+		expect(client.lastRequest("turn/start")).toBeUndefined();
+		expect(client.closeCalls).toBe(1);
+	});
+	it("cancels required MCP discovery without exposing the late-ready thread", async () => {
+		const { backend, client } = makeBackend();
+		let ready!: () => void;
+		client.responses["mcpServerStatus/list"] = () =>
+			new Promise((resolve) => {
+				ready = () =>
+					resolve({
+						data: [{ name: "context", runtimeStatus: "connected", tools: {} }],
+					});
+			});
+		const event = vi.fn();
+		backend.on("event", event);
+		const opening = backend
+			.open({
+				...baseConfig,
+				codexPath: "/bin/true",
+				configOverrides: {
+					mcp_servers: { context: { command: "fixture", required: true } },
+				},
+			})
+			.catch(() => "cancelled");
+		await vi.waitFor(() =>
+			expect(client.lastRequest("mcpServerStatus/list")).toBeDefined(),
+		);
+		await backend.close();
+		expect(await opening).toBe("cancelled");
+		ready();
+		await Promise.resolve();
+		expect(event).not.toHaveBeenCalled();
+		expect(client.closeCalls).toBe(1);
+	});
+
+	it.each([
 		"fast",
 		"standard",
 		undefined,

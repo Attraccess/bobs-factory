@@ -115,6 +115,8 @@ export class AppServerCodexBackend
 				signal,
 			);
 			signal.throwIfAborted();
+			await this.checkRequiredMcpTools(config, threadId, signal);
+			signal.throwIfAborted();
 
 			this.threadId = threadId;
 			appServer.registerThread(threadId, this.threadHandler);
@@ -268,6 +270,69 @@ export class AppServerCodexBackend
 	}
 
 	// ---- Thread setup -------------------------------------------------------
+
+	private async checkRequiredMcpTools(
+		config: ResolvedCodexConfig,
+		threadId: string,
+		signal: AbortSignal,
+	): Promise<void> {
+		const servers = config.configOverrides?.mcp_servers;
+		if (!servers || typeof servers !== "object" || Array.isArray(servers))
+			return;
+		for (const [name, server] of Object.entries(servers)) {
+			if (
+				!server ||
+				typeof server !== "object" ||
+				Array.isArray(server) ||
+				server.required !== true ||
+				server.enabled === false
+			)
+				continue;
+			try {
+				// Required servers finish initialization during start/resume. Verify
+				// the same thread's catalog before a turn can freeze its tool set.
+				const status = await waitWithAbort(
+					this.appServer!.request<{
+						data: {
+							name: string;
+							runtimeStatus?: string | null;
+							toolsError?: string | null;
+							tools: Record<string, { name: string }>;
+						}[];
+					}>("mcpServerStatus/list", {
+						threadId,
+						serverName: name,
+						detail: "toolsAndAuthOnly",
+					}),
+					signal,
+				);
+				const entry = status.data?.find((item) => item.name === name);
+				if (
+					!entry ||
+					entry.toolsError ||
+					(entry.runtimeStatus && entry.runtimeStatus !== "connected")
+				)
+					throw new Error(
+						`tool discovery is unavailable (${entry?.runtimeStatus ?? "missing server"})`,
+					);
+				const names = new Set(
+					Object.values(entry.tools ?? {}).map((tool) => tool.name),
+				);
+				const missing = Array.isArray(server.enabled_tools)
+					? server.enabled_tools.filter(
+							(tool) => typeof tool === "string" && !names.has(tool),
+						)
+					: [];
+				if (missing.length)
+					throw new Error(`missing tools: ${missing.join(", ")}`);
+			} catch (error) {
+				signal.throwIfAborted();
+				throw new Error(
+					`Required MCP server '${name}' is unavailable before model work: ${error instanceof Error ? error.message : String(error)}`,
+				);
+			}
+		}
+	}
 
 	private async startThread(config: ResolvedCodexConfig): Promise<string> {
 		const result = await this.appServer?.request<ThreadStartResult>(
