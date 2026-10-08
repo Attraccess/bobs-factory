@@ -185,6 +185,8 @@ function ReviewReader({
 }) {
 	useReviewInput();
 	const feedback = useReviewFeedback();
+	const feedbackCount =
+		feedback?.draft.items.filter((i) => i.text.trim()).length ?? 0;
 	const chapters = useMemo(() => chaptersFor(guide), [guide]),
 		tokens = useMemo(() => pageTokens(chapters), [chapters]),
 		titles = [
@@ -1023,7 +1025,7 @@ function ReviewReader({
 					<Button
 						variant="secondary"
 						className="feedback-count"
-						aria-label={`Collected feedback: ${feedback.draft.items.filter((i) => i.text.trim()).length} comments. Open Decide`}
+						aria-label={`Collected feedback: ${feedbackCount} ${feedbackCount === 1 ? "comment" : "comments"}. Open Decide`}
 						onClick={() => {
 							feedback.update((d) => ({ ...d, collectedOpen: true }));
 							go(tokens.length - 1);
@@ -1036,10 +1038,7 @@ function ReviewReader({
 							);
 						}}
 					>
-						✎{" "}
-						<span>
-							{feedback.draft.items.filter((i) => i.text.trim()).length}
-						</span>
+						✎ <span>{feedbackCount}</span>
 					</Button>
 				)}
 				{!final && (

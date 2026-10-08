@@ -141,3 +141,61 @@ recording the final screenshots; initial attempt logs are retained. The fixture
 and browser were stopped after validation. Simulated agents and virtual passkeys
 do not prove real-agent authoring, physical-device behavior or provider merges.
 The existing ticket snapshot/runtime status discrepancy remains a limitation.
+
+## QA repair: chapter controls and accessible feedback count
+
+This delta starts at `26b37affaa4334d5ea73be6f257ff920abe26eeb` and fixes the
+three open QA findings. Checkboxes no longer inherit text-field minimum height,
+padding or top margin. Short check rows are 44px tall, with 14px text and 20px
+checkboxes; longer mobile text wraps without clipping. The reviewed label is a
+plain 44px row with no panel background or padding. The feedback navigation name
+uses “1 comment” and “0 comments” / “2 comments”.
+
+The isolated home is `/tmp/review92-f1-7I2O2o`, using the same mock-only F1
+fixture and ports as the original drive. Fresh headless session
+`qa92-fix-20261008` enrolled an operator passkey through the supported setup flow.
+The protected API returned 401 before login. Preparation ran once, simulated
+guide authoring twice, and the missing-map correction reached a pending gate.
+No gate decision or tracker message was sent.
+
+Evidence scripts and receipts are in `E/qa-fix/`:
+
+- `F1_AGENT_MODE=mock node E/qa-fix/fixture.mjs`
+- `agent-browser --headed false --session qa92-fix-20261008 open http://localhost:46992`
+- `QA_LOG=results node E/qa-fix/drive.mjs`: 32 viewport/theme checks passed,
+  covering short controls and the three copied acceptance-guide families at
+  1280, 390, 360 and 430 pixels in both themes. Keyboard toggling, chapter
+  navigation and reload retained checks and reviewed state.
+- `QA_LOG=rechecks-final node E/qa-fix/recheck.mjs`: reviewed route/file/Decide
+  badges passed. Zero, singular and plural accessible counts passed, including
+  adding, editing, removing and retaining comment order.
+- `QA_LOG=final-capture node E/qa-fix/final-capture.mjs`: final mobile capture and
+  44px short-control measurements on the final served web build.
+- `F1_AGENT_MODE=mock pnpm --filter bobs-factory-edge-worker exec vitest run test/FactoryReviewFeedback.test.ts test/FactoryReviewState.test.ts test/ReviewModel.test.ts test/ReviewFiles.test.ts`:
+  28 tests passed in four files (`E/qa-fix-tests.log`).
+- Edge-worker build and typecheck passed. The final web build is
+  `062ece40969096ba20616a4e`; final browser receipts confirm the served build.
+  Biome passed with the existing 17 CSS specificity warnings. Diff checks passed.
+
+The initial driver assumed the first CDP page was the application tab; Chromium
+also had a new-tab page. It now selects the isolated localhost tab. The setup
+receipt was adapted to the current run shape. Two assertions read before file
+loading settled and expected old empty-list wording; corrected checks passed.
+After formatting changed the web build, the isolated server restarted and the
+browser used the supported Update now action before final checks. Initial logs
+are retained; these were test-driver issues, with no additional product fixes.
+
+Replacement screenshots are `logic-desktop-light-controls.png` and
+`logic-mobile-dark-reviewed-final.png`. Comparisons retain the prior QA and #75
+references alongside the corrected controls. Existing accepted evidence for
+maps, files, diff, feedback placement and the four earlier fixes remains valid;
+this delta changes only the chapter controls and count wording. The prototype
+logic reference shows the upper chapter while the corrected captures scroll to
+CHECK, so the exact control requirement is also assessed from the ticket's
+compact-row and plain-checkbox wording. Long mobile checks may exceed 44px to
+keep all text readable. No exact pixel matching is claimed.
+
+Simulated agents, copied presentation maps and virtual passkeys do not establish
+real-agent authoring, physical-device behavior or provider merge correctness.
+The existing ticket snapshot/runtime status discrepancy remains a tracking
+limitation. The draft PR remains subject to the subsequent review and QA gates.

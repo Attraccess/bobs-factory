@@ -2822,15 +2822,11 @@ kbd {
 	display: flex;
 	align-items: center;
 	gap: 10px;
-	margin: 20px 0;
-	padding: 16px;
-	border-radius: 12px;
-	background: var(--quiet);
-}
-.guide-reviewed input {
-	accent-color: #7b61ff;
-	width: 18px;
-	height: 18px;
+	min-height: 44px;
+	margin: 18px 0;
+	font-size: 14px;
+	font-weight: 500;
+	cursor: pointer;
 }
 .guide-navigation {
 	margin: 24px 0;
@@ -3277,6 +3273,7 @@ kbd {
 	border: 1px solid var(--line);
 	border-radius: 12px;
 	margin: 6px 0;
+	font-size: 14px;
 	cursor: pointer;
 }
 .guide-check small {
@@ -3294,14 +3291,14 @@ kbd {
 }
 .guide-check input,
 .guide-reviewed input {
+	/* The label supplies the touch target; checkboxes must not inherit field sizing. */
 	accent-color: var(--chapter);
 	width: 20px;
 	height: 20px;
+	min-height: 0;
+	padding: 0;
+	margin: 0;
 	flex-shrink: 0;
-}
-.guide-reviewed {
-	min-height: 44px;
-	margin: 18px 0;
 }
 .primary-visual > .actions {
 	margin-bottom: 12px;
