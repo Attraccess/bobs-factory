@@ -5,7 +5,7 @@ import {
 	recordFeedbackAssessment,
 } from "../src/factory/MergeReadiness.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
-import { providerReceipt } from "./fixtures/merge-readiness.js";
+import { githubApiReceipt, githubRequest } from "./fixtures/github-api.js";
 
 const author = "custom-review-service[bot]";
 const comment = {
@@ -33,14 +33,14 @@ const context = () =>
 const snapshot = async (comments = [comment], extra = {}) => {
 	const receipt = await inspectMergeReadiness(
 		async (_exe, args) =>
-			args.includes("graphql")
-				? JSON.stringify(
-						providerReceipt({
+			githubRequest(args).path.includes("/comments?")
+				? JSON.stringify(comments)
+				: JSON.stringify(
+						githubApiReceipt(args, {
 							url: "https://github.com/another-org/unrelated-project/pull/83",
 							...extra,
 						}),
-					)
-				: JSON.stringify([comments]),
+					),
 		"https://github.com/another-org/unrelated-project/pull/83",
 	);
 	return receipt;

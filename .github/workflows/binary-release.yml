@@ -1,0 +1,174 @@
+name: Prepare or publish verified Bob’s Factory binaries
+on:
+  workflow_dispatch:
+    inputs:
+      evidence_artifact_id:
+        description: Candidate-bound evidence artifact ID (prepare mode)
+        type: string
+      prepared_artifact_id:
+        description: Exact reviewed prepared-release artifact ID (publication or recovery mode)
+        type: string
+      publish:
+        description: Publish after separate approval; default is preparation only
+        default: false
+        type: boolean
+      sign_only:
+        description: Sign prepared bytes in the protected environment without publication
+        default: false
+        type: boolean
+      approved_assets_digest:
+        description: Stable only, exact assetsDigest from the signed publication plan
+        type: string
+  workflow_run:
+    workflows: ["Validate and upload Bob's Factory release evidence"]
+    types: [completed]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  resolve:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    outputs:
+      digest: ${{ steps.identity.outputs.digest }}
+      channel: ${{ steps.identity.outputs.channel }}
+      publish: ${{ steps.identity.outputs.publish }}
+      sign: ${{ steps.identity.outputs.sign }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - name: Retrieve retained prepared bytes or successful evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_ARTIFACT_ID: ${{ inputs.evidence_artifact_id }}
+          PREPARED_ARTIFACT_ID: ${{ inputs.prepared_artifact_id }}
+          EVIDENCE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          if [ -n "$PREPARED_ARTIFACT_ID" ]; then
+            node scripts/download-release-artifact.mjs --kind prepared --artifact-id "$PREPARED_ARTIFACT_ID" --output "$RUNNER_TEMP/input"
+          elif [ -n "$EVIDENCE_RUN_ID" ]; then
+            node scripts/download-release-artifact.mjs --kind evidence --run-id "$EVIDENCE_RUN_ID" --output "$RUNNER_TEMP/input"
+          else
+            node scripts/download-release-artifact.mjs --kind evidence --artifact-id "$EVIDENCE_ARTIFACT_ID" --output "$RUNNER_TEMP/input"
+          fi
+      - name: Validate frozen execution and publication mode
+        id: identity
+        env:
+          REQUEST_PUBLISH: ${{ inputs.publish }}
+          SIGN_ONLY: ${{ inputs.sign_only }}
+          PREPARED_ARTIFACT_ID: ${{ inputs.prepared_artifact_id }}
+          AUTOMATIC_NIGHTLIES: ${{ vars.BOBS_FACTORY_AUTOMATIC_NIGHTLIES }}
+          TOOLING_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          ENTRYPOINT_SHA: ${{ github.sha }}
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync,appendFileSync} from 'node:fs';
+          import {validateCandidate} from './scripts/lib/release-candidate.mjs';
+          const prepared=Boolean(process.env.PREPARED_ARTIFACT_ID);
+          const r=validateCandidate(JSON.parse(readFileSync(process.env.RUNNER_TEMP+'/input/'+(prepared?'assets/candidate.json':'candidate.json'))));
+          if(process.env.GITHUB_EVENT_NAME==='workflow_run' && process.env.ENTRYPOINT_SHA !== r.candidate.workflowSha) throw Error('Automatic workflow advanced since evidence. Dispatch manually from frozen tooling ref.');
+          if(r.candidate.workflowSha !== process.env.TOOLING_SHA) throw Error('Dispatch from the frozen tooling ref');
+          const automatic=process.env.GITHUB_EVENT_NAME==='workflow_run' && r.candidate.channel==='nightly' && process.env.AUTOMATIC_NIGHTLIES==='enabled';
+          const publish=automatic || process.env.REQUEST_PUBLISH==='true';
+          if((publish || process.env.SIGN_ONLY==='true') && !automatic && !prepared) throw Error('Manual publication requires the exact reviewed prepared artifact');
+          appendFileSync(process.env.GITHUB_OUTPUT,`digest=${r.digest}\nchannel=${r.candidate.channel}\npublish=${publish}\nsign=${process.env.SIGN_ONLY==='true'}\n`);
+          JS
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-input-${{ github.run_id }}
+          path: ${{ runner.temp }}/input/
+  prepare:
+    needs: resolve
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-input-${{ github.run_id }}
+          path: ${{ runner.temp }}/input
+      - name: Prepare with read-only credentials; never sign or publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -d "$RUNNER_TEMP/input/assets" ]; then
+            mv "$RUNNER_TEMP/input" "$RUNNER_TEMP/public-release"
+            run_id=$(node -p 'JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP+"/public-release/assets/release.json")).buildRunId')
+            node scripts/publish-binary-release.mjs --candidate "$RUNNER_TEMP/public-release/assets/candidate.json" --run-id "$run_id" --resume --output "$RUNNER_TEMP/public-release"
+          else
+            run_id=$(node -p 'JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP+"/input/release-evidence.json")).buildRunId')
+            node scripts/publish-binary-release.mjs --candidate "$RUNNER_TEMP/input/candidate.json" --run-id "$run_id" --evidence "$RUNNER_TEMP/input/release-evidence.json" --output "$RUNNER_TEMP/public-release"
+          fi
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: bobs-factory-prepared-release-${{ needs.resolve.outputs.digest }}
+          path: ${{ runner.temp }}/public-release/
+          if-no-files-found: ignore
+  publish:
+    needs: [resolve, prepare]
+    if: needs.resolve.outputs.publish == 'true' || needs.resolve.outputs.sign == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # All release mutations across versions/channels share this repository lock.
+    concurrency:
+      group: bobs-factory-repository-publication
+      cancel-in-progress: false
+    environment: ${{ needs.resolve.outputs.channel == 'stable' && 'binary-stable-release' || 'binary-nightly-release' }}
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: bobs-factory-prepared-release-${{ needs.resolve.outputs.digest }}
+          path: ${{ runner.temp }}/public-release
+      - name: Sign and publish only after protected activation or candidate-bound stable approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIGNING_KEY: ${{ secrets.BOBS_FACTORY_RELEASE_SIGNING_KEY }}
+          KEY_ID: ${{ vars.BOBS_FACTORY_RELEASE_KEY_ID }}
+          BOBS_FACTORY_AUTOMATIC_NIGHTLIES: ${{ vars.BOBS_FACTORY_AUTOMATIC_NIGHTLIES }}
+          BOBS_FACTORY_RELEASE_PUBLICATION_LOCK: repository
+          APPROVED_ASSETS_DIGEST: ${{ inputs.approved_assets_digest }}
+          APPROVED_BY: ${{ github.actor }}
+          CHANNEL: ${{ needs.resolve.outputs.channel }}
+          PUBLISH_RELEASE: ${{ needs.resolve.outputs.publish }}
+        run: |
+          umask 077
+          trap 'rm -f "$RUNNER_TEMP/release-signing.pem"' EXIT
+          candidate="$RUNNER_TEMP/public-release/assets/candidate.json"
+          run_id=$(node -p 'JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP+"/public-release/assets/release.json")).buildRunId')
+          if [ ! -f "$RUNNER_TEMP/public-release/assets/release.json.sig" ]; then
+            # Stable assets must be signed in a separate protected preparation run before approval.
+            if [ "$CHANNEL" = stable ] && [ "$PUBLISH_RELEASE" = true ]; then echo 'Stable approval requires a previously signed prepared artifact.' >&2; exit 1; fi
+            printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/release-signing.pem"
+            export BOBS_FACTORY_RELEASE_SIGNING_KEY_FILE="$RUNNER_TEMP/release-signing.pem"
+          fi
+          node --input-type=module -e 'import {readFileSync,writeFileSync} from "node:fs"; const c=JSON.parse(readFileSync(process.env.RUNNER_TEMP+"/public-release/assets/candidate.json")); writeFileSync(process.env.RUNNER_TEMP+"/approval.json",JSON.stringify({candidateDigest:c.digest,assetsDigest:process.env.APPROVED_ASSETS_DIGEST,approvedBy:process.env.APPROVED_BY}))'
+          args=()
+          if [ "$PUBLISH_RELEASE" = true ]; then args+=(--publish); fi
+          node scripts/publish-binary-release.mjs --candidate "$candidate" --run-id "$run_id" --resume --key-id "$KEY_ID" --approval "$RUNNER_TEMP/approval.json" --output "$RUNNER_TEMP/public-release" "${args[@]}"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: bobs-factory-publication-receipt-${{ needs.resolve.outputs.digest }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/public-release/
+          if-no-files-found: error

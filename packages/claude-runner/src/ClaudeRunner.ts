@@ -790,15 +790,19 @@ export class ClaudeRunner extends EventEmitter implements IAgentRunner {
 
 			// Process messages from the query
 			// Pre-warmed queries were created before per-run settings were known.
-			// Use a fresh query when speed is explicit so it cannot be ignored.
-			if (this.config.warmSession && this.config.serviceTier) {
+			// Fresh queries honor explicit speed and replace expired per-role MCP
+			// attachments, including when resuming an existing native conversation.
+			if (
+				this.config.warmSession &&
+				(this.config.serviceTier || this.config.mcpConfig?.["factory-context"])
+			) {
 				this.config.warmSession.close();
 				this.config.warmSession = undefined;
 			}
 			// Use pre-warmed session if available (eliminates cold-start subprocess spawn cost).
 			// warmSession.query() accepts both string and AsyncIterable<SDKUserMessage>,
 			// so promptForQuery works correctly for both start() and startStreaming().
-			if (this.config.warmSession && !this.config.serviceTier) {
+			if (this.config.warmSession) {
 				this.logger.debug("Using pre-warmed session for first turn");
 				this.activeQuery = this.config.warmSession.query(promptForQuery);
 			} else {

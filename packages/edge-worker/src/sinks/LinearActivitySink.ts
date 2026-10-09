@@ -97,9 +97,11 @@ export class LinearActivitySink implements IActivitySink {
 			}),
 		});
 
-		if (result.success && result.agentActivity) {
-			const agentActivity = await result.agentActivity;
-			return { activityId: agentActivity.id };
+		if (result.success) {
+			if (result.agentActivityId) return { activityId: result.agentActivityId };
+			// Legacy/F1 payloads may lack the no-fetch receipt getter. Read the relationship once.
+			const activity = result.agentActivity;
+			if (activity) return { activityId: (await activity).id };
 		}
 
 		return {};

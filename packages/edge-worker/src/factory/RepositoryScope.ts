@@ -280,7 +280,7 @@ export function aggregateDeliveries(
 		scopeVersion: 1,
 		deliveries,
 	};
-	for (const field of ["approved", "reviewReady", "ready", "merged"])
+	for (const field of ["approved", "reviewReady", "ready", "merged", "skipFix"])
 		if (deliveries.some((item) => field in item.output))
 			result[field] = deliveries.every((item) => item.output[field] === true);
 	for (const field of [
@@ -296,6 +296,7 @@ export function aggregateDeliveries(
 			result[field] = deliveries.some((item) => item.output[field] === true);
 	for (const field of [
 		"questions",
+		"ciAssistance",
 		"blockers",
 		"checks",
 		"threads",
@@ -325,7 +326,7 @@ export function aggregateDeliveries(
 					};
 				}),
 			);
-	for (const field of ["headSha", "baseSha"])
+	for (const field of ["headSha", "baseSha", "correctionBaseSha"])
 		if (deliveries.every((item) => typeof item.output[field] === "string"))
 			result[field] = scopeRevision(
 				deliveries.map((item) => ({

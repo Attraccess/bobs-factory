@@ -326,7 +326,7 @@ export class ConfigManager extends EventEmitter {
 					parsedConfig.geminiDefaultModel || this.config.geminiDefaultModel,
 				codexDefaultModel:
 					parsedConfig.codexDefaultModel || this.config.codexDefaultModel,
-				// Removing an explicit mode restores the runner's sandboxed default.
+				// Removing an explicit mode restores the runner's full-access default.
 				codexSandboxMode: parsedConfig.codexSandboxMode,
 				cursorDefaultModel:
 					parsedConfig.cursorDefaultModel || this.config.cursorDefaultModel,

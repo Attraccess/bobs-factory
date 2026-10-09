@@ -1,4 +1,16 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	realpathSync,
+	rmSync,
+	statSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { expect, it } from "vitest";
@@ -12,8 +24,16 @@ import { factoryContextView } from "./factoryContextMemory.js";
 async function withContext(
 	input: unknown,
 	check: (client: Client) => Promise<void>,
+	artifacts?: {
+		directory: string;
+		authorizedRoot?: string;
+		runId: string;
+		stepKey: string;
+		headSha: string;
+		baseSha?: string;
+	},
 ) {
-	const server = createFactoryContextServer(input);
+	const server = createFactoryContextServer(input, artifacts);
 	const client = new Client({ name: "factory-test", version: "1" });
 	const [a, b] = InMemoryTransport.createLinkedPair();
 	await server.connect(a);
@@ -25,6 +45,95 @@ async function withContext(
 		await server.close();
 	}
 }
+
+it("submits a large artifact as a bounded envelope bound to the current role and revision", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "factory-artifact-test-"));
+	const value = {
+		chapters: [
+			{ files: Array.from({ length: 3781 }, (_, i) => `feature/path-${i}.ts`) },
+		],
+	};
+	writeFileSync(join(directory, "guide.json"), JSON.stringify(value));
+	try {
+		await withContext(
+			{},
+			async (client) => {
+				const output = await client.callTool({
+					name: "submit_result_artifact",
+					arguments: { path: "guide.json" },
+				});
+				expect(output.isError).not.toBe(true);
+				expect(output.structuredContent).toMatchObject({
+					factoryArtifact: {
+						path: "guide.json",
+						runId: "run-one",
+						stepKey: "pipeline/guide",
+						headSha: "revision-one",
+						baseSha: "base-one",
+						sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+					},
+				});
+				expect(JSON.stringify(output.structuredContent).length).toBeLessThan(
+					400,
+				);
+			},
+			{
+				directory,
+				runId: "run-one",
+				stepKey: "pipeline/guide",
+				headSha: "revision-one",
+				baseSha: "base-one",
+			},
+		);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+it.each([
+	"role",
+	"parent",
+])("rejects a result artifact when its authorized %s directory is replaced with an escaping symlink", async (replacement) => {
+	const directory = realpathSync(
+		mkdtempSync(join(tmpdir(), "factory-artifact-root-")),
+	);
+	const outside = mkdtempSync(join(tmpdir(), "factory-artifact-outside-"));
+	const parent = join(directory, "role-results");
+	const role = join(parent, "guide");
+	mkdirSync(role, { recursive: true });
+	writeFileSync(join(outside, "guide.json"), "{}");
+	if (replacement === "role") {
+		rmSync(role, { recursive: true });
+		symlinkSync(outside, role, "dir");
+	} else {
+		mkdirSync(join(outside, "guide"));
+		writeFileSync(join(outside, "guide", "guide.json"), "{}");
+		rmSync(parent, { recursive: true });
+		symlinkSync(outside, parent, "dir");
+	}
+	try {
+		await withContext(
+			{},
+			async (client) => {
+				const result = await client.callTool({
+					name: "submit_result_artifact",
+					arguments: { path: "guide.json" },
+				});
+				expect(result.isError).toBe(true);
+			},
+			{
+				directory: role,
+				authorizedRoot: realpathSync(directory),
+				runId: "run",
+				stepKey: "guide",
+				headSha: "head",
+			},
+		);
+	} finally {
+		rmSync(directory, { recursive: true, force: true });
+		rmSync(outside, { recursive: true, force: true });
+	}
+});
 
 it("pages oversized values and all discussion entries without dropping data", async () => {
 	const text = "Ticket detail: 🏭\n".repeat(70000);
@@ -92,6 +201,67 @@ it("pages oversized values and all discussion entries without dropping data", as
 	);
 });
 
+it("caps oversized read requests and reports the applied character page without losing text", async () => {
+	const description = "Complete issue evidence 🏭".repeat(2200);
+	await withContext({ description }, async (client) => {
+		let recovered = "";
+		let offset: number | null = 0;
+		while (offset !== null) {
+			const result = await client.callTool({
+				name: "read_context",
+				arguments: { path: "/description", offset, limit: 1000000 },
+			});
+			expect(result.isError).not.toBe(true);
+			const page = result.structuredContent as {
+				text: string;
+				limit: number;
+				nextOffset: number | null;
+			};
+			expect(page.limit).toBe(16000);
+			expect(page.text.length).toBeLessThanOrEqual(16000);
+			recovered += page.text;
+			offset = page.nextOffset;
+		}
+		expect(recovered).toBe(description);
+	});
+});
+
+it("caps oversized entry listings and keeps escaped paths completely discoverable", async () => {
+	const entries = Object.fromEntries(
+		Array.from({ length: 103 }, (_, i) => [`file/${i}~`, { file: i }]),
+	);
+	await withContext({ entries }, async (client) => {
+		const paths: string[] = [];
+		let offset: number | null = 0;
+		while (offset !== null) {
+			const result = await client.callTool({
+				name: "list_context",
+				arguments: { path: "/entries", offset, limit: 1000 },
+			});
+			expect(result.isError).not.toBe(true);
+			const page = result.structuredContent as {
+				limit: number;
+				entries: { path: string }[];
+				nextOffset: number | null;
+			};
+			expect(page.limit).toBe(50);
+			expect(page.entries.length).toBeLessThanOrEqual(50);
+			paths.push(...page.entries.map((entry) => entry.path));
+			offset = page.nextOffset;
+		}
+		expect(paths).toHaveLength(103);
+		expect(paths.at(-1)).toBe("/entries/file~1102~0");
+		expect(
+			(
+				await client.callTool({
+					name: "read_context",
+					arguments: { path: paths.at(-1) },
+				})
+			).structuredContent,
+		).toMatchObject({ text: '{"file":102}', nextOffset: null, limit: 12000 });
+	});
+});
+
 it("exposes only declared inputs, supports escaped paths, and rejects invalid reads", async () => {
 	await withContext({ plan: { "a/b~c": "Accepted plan" } }, async (client) => {
 		expect(
@@ -125,7 +295,7 @@ it("exposes only declared inputs, supports escaped paths, and rejects invalid re
 			(
 				await client.callTool({
 					name: "read_context",
-					arguments: { limit: 1000000 },
+					arguments: { limit: 0 },
 				})
 			).isError,
 		).toBe(true);

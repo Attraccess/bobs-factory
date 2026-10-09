@@ -9,31 +9,48 @@ local authentication file, without accounts, a database or a hosted identity ser
 
 ## Start locally
 
-Install a verified macOS/Linux binary and prepare Git, `gh` and your selected
-agent CLI. Authenticate the agent and GitHub CLI. The repository needs a checked-out
-base branch and writable origin for delivery. The factory needs no separate Node,
-npm or Bun. See [binary distribution](distribution/README.md) for availability.
+Follow the two-command [installation](../README.md#install-and-start), then run
+`bobs-factory`. Your browser opens at http://localhost:3457. First launch prints
+the passkey setup code in the same terminal and guides you through selecting a
+Git project, coding agent and optional GitHub connection. No separate terminal,
+GitHub CLI, Node, npm or Bun is needed to install the factory.
+
+The GitHub step links to a classic personal access token with `repo` scope.
+Choose an expiration; this token covers repositories your GitHub account can
+access. Bob validates the selected project's PR and CI evidence before saving
+the token privately. [Fine-grained tokens can lack Checks access](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens-limitations);
+an existing token is accepted only when its read-only capability check succeeds. Existing
+GitHub App and environment credentials remain supported. If organization policy
+blocks classic tokens, use a prepared GitHub App binding instead.
+
+The first public release is being prepared. The installer reports unavailable
+downloads until it is published; see [binary distribution](distribution/README.md).
+
+Git and the selected coding agent remain prerequisites for executing work.
+The project needs a checked-out base branch and writable origin for delivery.
+Your saved setup is reused on the next launch. Explicit launch remains available:
 
 ```sh
 bobs-factory --repo /absolute/path/to/repo --agent codex --model gpt-6.1-sol
 ```
 
-Open http://127.0.0.1:3457. `--port`, `--home` and `--agent` are optional;
-defaults are 3457, `~/.bobs-factory` and `claude`. Local launch uses the next port
-for RPC/webhooks and works without Linear credentials for manually triggered tasks.
+`--port` and `--home` default to 3457 and `~/.bobs-factory`. Use `--no-open` for
+headless startup. Local launch uses the next port for RPC/webhooks and works
+without Linear credentials for manually triggered tasks. Development checkouts
+use `pnpm factory` with the same onboarding.
 
 `bobs-factory start` uses configured repositories/integrations and starts the
 dashboard on port 3457. Set `BOBS_FACTORY_FACTORY_PORT` to choose another port,
-or `0` to disable it. Development checkouts can still use `pnpm factory`.
-The dashboard binds to loopback separately from the webhook listener and is
-intended for one operator. Every dashboard address requires a passkey session,
-including localhost. Provider webhooks and OAuth callbacks stay independent of
-dashboard authentication.
+or `0` to disable it. The dashboard binds to loopback separately from the
+webhook listener and is intended for one operator. Every browser dashboard address
+requires a passkey session, including localhost. Provider webhooks and OAuth
+callbacks stay independent of dashboard authentication.
 
 ## Passkey access and first setup
 
-Factory requires a server-verified passkey session for all dashboard data and
-controls. Localhost has no authentication bypass. An empty store displays the
+Factory requires a server-verified passkey session for browser dashboard data and
+controls. The terminal dashboard uses a separate authenticated local-operator session
+as described below. Localhost has no unauthenticated bypass. An empty store displays the
 first-passkey setup screen; it does not give a remote visitor permission to enroll.
 Development checkouts use Node 22 or newer (SimpleWebAuthn 14). The binary includes its runtime.
 
@@ -54,14 +71,20 @@ The tunnel must preserve the public authority and origin. No forwarded header
 is used as an authentication or identity claim. There is no extra UI listener.
 Remote access is denied when its origin has not been configured.
 
-At first startup, a ten-minute, single-use setup code is written to
-`<home>/factory/auth/enroll.json`, readable only by the operator. Copy its `token`
-value into the setup screen. Generate another code on the machine when it expires
-or a registration is cancelled:
+At first foreground startup, Bob prints a ten-minute, single-use setup code in
+the same terminal and opens the browser. Enter it in the first-passkey screen.
+The private grant is also written to `<home>/factory/auth/enroll.json`, readable
+only by the operator. Existing passkeys are never automatically reset. For a
+service or an expired/cancelled enrollment, generate another code on the machine:
 
 ```sh
 bobs-factory --home /absolute/path/to/the/effective/factory-home factory-auth
 ```
+
+Checkout users also get the code from `pnpm factory` on first launch. The
+manual recovery helper is `bun run scripts/factory.ts factory-auth`; add
+`--home /absolute/path/to/the/effective/factory-home` when selecting another
+state directory.
 
 An installed CLI also supports `bobs-factory --home /absolute/home factory-auth`
 and `bobs-factory --home /absolute/home factory-auth --recover --confirm
@@ -69,8 +92,11 @@ and `bobs-factory --home /absolute/home factory-auth --recover --confirm
 
 Start the server before generating a code: pending grants/challenges are
 invalidated on restart. Both launch modes default to `~/.bobs-factory`; `--home` selects another
-state directory. Always choose the home used by the running service. Setup codes authorize one enrollment, expire in ten minutes and
-never belong in URLs, screenshots, run prompts or ticket comments. Transfer the
+state directory. Always choose the home used by the running service. Setup codes
+authorize one enrollment and expire in ten minutes. Automatic local first launch
+passes the grant in a localhost URL fragment that is consumed and removed before
+normal app navigation; it is not sent in HTTP requests. Keep codes out of shared
+URLs, screenshots, run prompts and ticket comments. Transfer the
 code privately to the phone, then open the exact configured HTTPS origin there.
 
 Each passkey belongs to the address where it was created. Localhost and the
@@ -126,6 +152,7 @@ or deliberately recover rather than silently rebinding existing keys.
 | Surface | Access |
 | --- | --- |
 | Local and public dashboard data/actions/media/SSE | Passkey session required |
+| Terminal dashboard on localhost | Private local-operator request; expiring Bearer session, bound to localhost |
 | Static app shell, version, access status and ceremonies | Public; no run or configuration data |
 | First or recovery enrollment | Operator setup code; one key only |
 | Additional enrollment/removal | Recently verified session or a fresh operator code |
@@ -147,6 +174,61 @@ and reopen the installed app. Chromium emulation and a virtual authenticator do
 not prove biometric, Safari or synced-phone behavior. Connection failure means
 reconnect to sign in; a browser cancellation means retry with a fresh setup code
 when enrollment has consumed its previous authorization.
+
+## Terminal dashboard
+
+Start the factory as usual, then open another interactive terminal:
+
+```sh
+bobs-factory tui
+bobs-factory --home /absolute/path/to/factory-home --port 3457 tui --theme light
+```
+
+From a development checkout, use `pnpm factory tui` (it builds the CLI first).
+The TUI connects to the existing loopback dashboard; it does not start a service.
+An explicit `--port` wins over `BOBS_FACTORY_FACTORY_PORT`, then 3457. Choose the
+same home and OS user as the running service. A disabled dashboard (port 0) cannot
+serve the TUI. Settings, integration setup and the full guided review remain in
+the browser; `o` opens the relevant run or review.
+
+Today groups questions, stuck runs and reviews under **Needs you**, with compact
+working/queued rows and a collapsible **Settled** section. Selection expands its
+available actions. Changes and conversation activity refresh through the server's
+event stream, with reconnect and a manual refresh key.
+
+| Key | Action |
+| --- | --- |
+| `j`/`k`, arrows, Enter | Select and open a run |
+| `n` | New run: repository, recipe, recipe inputs, optional agent/model |
+| `a`, `y` | Answer/approve; accept all question recommendations |
+| `r`, `c`, `m` | Request changes, retry/continue, message/follow-up |
+| `s`, `S`, `x` | Settle/bring back, show Settled, stop (with confirmation) |
+| Ctrl-K | Find any run by title, repository or ID |
+| `[`/`]`, Esc | Previous/next run; return to Today |
+| `t`, F8 | Switch light/dark theme |
+| Ctrl-R, `?`, Ctrl-C | Refresh, help, quit |
+
+Forms use Tab/Shift-Tab to move and left/right to choose. Ctrl-S submits;
+Alt-Enter adds a newline. Escape closes a new-run form while keeping its draft
+in memory until launch or exit. Empty question answers use displayed recommendations;
+questions without recommendations require an answer. Review submissions include
+the displayed gate ID/head SHA, and answers include the question batch context,
+so the server can reject stale decisions.
+
+Themes use the web palette, inverted selection colours and 256-colour fallback
+when truecolor is unavailable. Auto detection queries the terminal background,
+then uses `COLORFGBG`, then dark. `--theme light|dark` overrides detection.
+Use a terminal at least 60 columns by 16 rows; larger sizes show more context.
+
+Local login writes a one-minute request containing only a token hash under the
+operator-owned `<home>/factory/auth` directory. The server consumes that request
+and grants an expiring memory-only session for its localhost origin. The raw
+token stays in terminal process memory. The private directory is the authority;
+HTTP headers or a loopback connection alone never grant access. Remote origins
+cannot use this terminal session. It cannot manage passkeys, and browser links
+still require browser passkey login. Sessions follow the configured 1–24 hour
+lifetime; expiry/restart causes a fresh local request. Deliberate auth recovery
+revokes them along with browser sessions. No native credential store is changed.
 
 ## Execution identities and tools
 
@@ -1044,6 +1126,50 @@ Explicitly terminated, completed and failed runs do not restart. Active runs
 saved by earlier factory versions are upgraded using their retained history.
 Previously interrupted/stopped historical runs remain unchanged.
 
+Scoped context tools apply oversized positive page requests to the supported cap:
+`read_context` returns at most 16,000 characters and `list_context` at most 50
+entries, with the applied `limit` and `nextOffset`. Follow pagination to read the
+complete value. Invalid arguments still fail explicitly. Fresh and resumed roles
+probe mandatory context access before execution; Claude replaces a prewarmed
+connection when its scoped MCP configuration changes while retaining the native
+conversation. Infrastructure failures retain the rejected result and do not spend
+the schema-correction budget. An explicit run retry records a new retry generation
+at unchanged code; genuinely invalid outputs still have a bounded correction budget.
+
+Large structured role results can use `submit_result_artifact` on the scoped
+`factory-context` server. Write valid JSON inside the supplied role artifact
+directory, submit its relative path, then return the small envelope unchanged.
+The runtime rereads the bounded file (8 MiB maximum), verifies its digest and
+run/role/head/base binding, and applies the same result and evidence validation as
+inline JSON. Guide chapters may use `fileIndexes` into the complete runtime-owned
+`reviewScope.files` inventory; `scope.files: "runtime"` keeps scope authoritative.
+Every changed file must still be covered; shared files may belong to several feature chapters. Rejected candidates and
+correction diagnostics remain separate from accepted outputs.
+
+Finalization is coordinated for overlapping repository/base-branch scopes, including
+grouped deliveries. Implementation remains parallel. Durable queue admission starts
+at provider publication/readiness and continues through configured downstream roles;
+assistance and human waits release admission. Cancellation and restart retain fair
+queue order. Coordination reduces avoidable moving-base work; consequential or
+uncertain changes still require the existing revision checks and relevant evidence.
+
+The runtime supervises pending CI without an agent slot. Concrete infrastructure
+failure receipts can request at most two provider retries for the same check lineage
+and head. Retry identity is saved before the provider mutation; an uncertain outcome
+requires assistance instead of another blind request. Unknown or source failures
+still require diagnosis. PR metadata can be rechecked without a source commit only
+when the provider/workflow verifies that it reads current metadata; a rerun of the
+original event payload does not establish that. Required checks and provider merge
+rules remain authoritative.
+
+`GET /api/version` reports runtime build identity separately from the dashboard
+build. `GET /api/runs/:id/provenance` exports step/agent-turn receipts with runtime,
+frozen workflow and contract hashes, effective supplied instruction hashes, visit
+reasons, outcomes and revision evidence. The protected provenance export omits task text,
+outputs and credentials. Development builds and historical runs report unknown
+source identity where no verified build receipt exists. A source merge does not
+establish deployment, and absent candidate inventory is reported as unknown.
+
 An unfinished script or direct tool call is retried from the beginning; use
 idempotent commands for steps with external effects. A crash between an external
 side effect and saving its result can require the agent to inspect existing
@@ -1268,16 +1394,30 @@ configured MCP files and inline servers. An inaccessible explicit source fails
 setup visibly instead of silently dropping tracking. Transport credentials stay
 in existing configuration; persisted references contain no secrets.
 
-The runtime owns progress comments, PR attachments and lifecycle status. Agents
+The runtime owns ticket publication, PR attachments and lifecycle status. Agents
 supply summaries and precise blockers. Work starts In Progress, handoff and human
 or provider waits remain In Review, and a coding ticket becomes Done only when
-GitHub confirms the PR merged. Run completion, approval, green CI or a merge
+the selected Git provider confirms the PR merged. Run completion, approval, green CI or a merge
 queue request alone cannot close it. Closed-unmerged PRs and stopped work remain
 open. Simple keeps its native lifecycle. A missing native Review state retains a
-nonterminal status and records the limitation in a comment.
+nonterminal status and records the limitation with its synchronization receipt.
+
+For native Linear tickets, operational progress, questions and blockers go to the
+readable agent transcript. Durable developer documentation and confirmed delivery
+summaries remain issue comments. Existing native transcript sessions are reused;
+manual runs create a session with the configured exact HTTPS Factory origin and
+their stable run link. Ambiguous creation is reconciled by that link before retry.
+A matching session-created webhook binds the receipt to its existing run instead
+of launching another workflow. Missing transcript configuration leaves delivery
+pending visibly, without substituting an operational issue comment. Taskbot retains
+its comment-based milestones.
 
 Synchronization receipts live on the run as `ticketReference` and `ticketSync`.
-Failures appear in run activity and retain pending work across restart. Access
+Milestones and PR links are saved before external delivery. Synchronization runs
+in the background and holds neither repository admission nor execution capacity.
+Newer lifecycle intent supersedes only an older pending status change; its
+documentation and links remain pending. Failures appear in run activity and
+retain pending work across restart. Access
 failures retry every 30 seconds while the worker runs; Taskbot status conflicts
 require reassessment and do not blindly retry. After restoring configuration or
 checking a conflict, call the protected `POST /api/runs/:id/ticket-sync` endpoint.
@@ -1287,9 +1427,60 @@ stable run/milestone markers; attachments deduplicate by PR URL. Ambiguous write
 are reread before retrying; providers without idempotency cannot guarantee
 exactly-once delivery. Terminal tickets are retained for ownership review.
 
+Native Linear requests, including lazy SDK relationship fetches, share a budget per
+credential/workspace. Provider rate-limit/reset responses delay subsequent requests.
+Activity and documentation-comment outboxes under
+`<home>/state/linear-activity-delivery` and `<home>/state/linear-comment-delivery`
+persist stable mutation identities before sending and reconcile uncertain outcomes.
+Activities prioritize questions/errors/final responses and coalesce repeated routine
+progress. Protected `GET /api/delivery-status` reports pending/delivered counts and
+retry timing without exposing provider error bodies. Local activity evidence remains
+complete. Recovery runs independently of coding roles.
+The maintained webhook source list refreshes periodically from Linear's official
+endpoint; failed refreshes retain the last known set and explicit custom lists are
+preserved. Source validation remains separate from mandatory signature verification.
+
 Taskbot comments and status mutations identify `bobs-factory` as author. Its
 attachment tool has no author field; the accompanying milestone comment records
 attribution using the supported provider contract.
+
+### Delivery admission and shared QA
+
+Factory and Takeover reserve repository/base targets for publication and
+integration corrections. Dirty worktrees, committed or inherited changes and
+saved publication receipts establish the affected targets. Unchanged selected
+repositories remain context. Before admission, the complete target set is
+reconciled atomically, including newly affected repositories in a grouped run.
+Missing Git state is treated conservatively. Older eligible runs retain priority;
+stopping releases ownership, and restart restores admission only for unfinished
+operations in frozen workflow checkpoints.
+
+Independent worktree reviews, QA and guide preparation use normal machine
+capacity. CI supervision polls without repository ownership. Merge reserves the
+affected targets for each fresh inspection and provider mutation, releasing them
+between provider polls. Every merge attempt still checks the approved revision,
+accepted scope, review evidence and provider rules. A queued CI fixer refreshes
+head/base, checks, comments and scope before starting; a resolved failure follows
+the existing no-change route, while dirty work, new instructions and failed
+review or QA gates retain corrective work and required approval.
+
+Custom agent, script and tool leaves can declare `"delivery":"exclusive"` for
+integration or publication operations, and `"resources":["qa:shared-cluster"]`
+for a shared environment. These fields belong to leaves, not workflow/fanout
+parents. Automatic mutation detection also covers the configured correction
+branches of frozen workflows.
+
+QA scope declares `environment: {"isolation":"worktree"}` only when its server,
+database and fixtures are independent. Shared QA declares, for example,
+`environment: {"isolation":"shared","resources":["qa:staging-database"]}`.
+Use the same identity across every run and repository using that resource.
+The capture role reserves these resources separately from repository integration.
+Legacy QA plans without an environment retain conservative exclusion per
+repository. A custom QA role with another step ID declares `resources` directly.
+
+Run activity coalesces unchanged admission waits and identifies the blocking run,
+operation and target. The dashboard distinguishes delivery admission and shared
+QA contention from provider CI, pending ticket synchronization and human waits.
 
 
 ### Specialist review and complete requirement coverage

@@ -6,10 +6,12 @@ description: Check a Bob’s Factory binary installation and prepared Git, deliv
 # Prerequisites
 
 Check `bobs-factory --version` and `--help`. If absent, guide the user through
-versioned binary installation in `docs/distribution/README.md`. Validate platform
-and checksum before installation. The factory does not require Node, npm or Bun.
+the one-command installer in `README.md#install-and-start`; it selects the
+platform and verifies the download. The factory does not require Node, npm or Bun.
 
-Check Git and, for GitHub delivery, `gh auth status`. Check the selected agent's
+Check Git. Configure GitHub through the protected first-launch browser setup;
+the native provider uses saved credentials without requiring `gh`. Keep an
+existing GitHub CLI login as an optional credential source. Check the selected agent's
 CLI and authenticated status through its supported commands. Users own agent
 installation and authentication; do not install or log tools in automatically.
 Agent launchers may need their own runtime. Project dependencies are handled by

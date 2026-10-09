@@ -12,8 +12,14 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnExecution as spawn } from "bobs-factory-core";
 import { z } from "zod";
 import { feedbackInstructionFingerprint } from "./FeedbackPolicy.js";
+import {
+	executeGithubApi,
+	GITHUB_API_COMMAND,
+	githubGitEnvironment,
+} from "./GithubApi.js";
 import { type GitProvider, resolveGitProvider } from "./GitProvider.js";
 import { groupedTool, scopeCommand } from "./GroupedTools.js";
+import { guideGapRecovery } from "./GuideRecovery.js";
 import { dependencyCovers, dependencyHashes } from "./Incremental.js";
 import {
 	assessFeedback,
@@ -130,6 +136,24 @@ export function executeCommand(
 	timeoutMs = 20 * 60 * 1000,
 ): Promise<string> {
 	context.signal.throwIfAborted();
+	if (command === GITHUB_API_COMMAND) return executeGithubApi(context, args);
+	if (
+		command === "git" &&
+		["fetch", "push", "ls-remote", "clone"].includes(args[0] ?? "")
+	)
+		return githubGitEnvironment(context).then((environment) =>
+			executeProcessCommand(context, command, args, timeoutMs, environment),
+		);
+	return executeProcessCommand(context, command, args, timeoutMs);
+}
+
+function executeProcessCommand(
+	context: ExecutionContext,
+	command: string,
+	args: string[],
+	timeoutMs: number,
+	gitEnvironment?: NodeJS.ProcessEnv,
+): Promise<string> {
 	const input = JSON.stringify(context.input) ?? "null";
 	const directory = mkdtempSync(join(tmpdir(), "cyrus-factory-command-"));
 	const inputPath = join(directory, "input.json");
@@ -145,6 +169,7 @@ export function executeCommand(
 			detached: process.platform !== "win32",
 			env: {
 				...(context.execution?.environment ?? process.env),
+				...gitEnvironment,
 				// Large contexts cannot fit in the OS process argument/environment limit.
 				FACTORY_INPUT: Buffer.byteLength(input) <= 16000 ? input : undefined,
 				FACTORY_INPUT_FILE: inputPath,
@@ -212,6 +237,9 @@ export function executeCommand(
 }
 
 export const ReviewResultSchema = z.object({
+	/** Older accepted artifacts remain readable; an unlabelled new gate fails closed. */
+	status: z.enum(["completed", "blocked", "failed"]).optional(),
+	blockers: z.array(z.string().min(1)).default([]),
 	acceptedVideos: z.array(VideoReceiptSchema).max(3).optional(),
 	qaContract: z.literal(QA_CONTRACT).optional(),
 	qaReviewStamp: z
@@ -506,6 +534,8 @@ export class FactoryTools {
 		}
 	}
 	async tool(context: ExecutionContext): Promise<unknown> {
+		// Projected grouped runs share retry identities and immutable check receipts.
+		context.run.ciSupervision ??= { retries: [] };
 		if (runRepositories(context.run).length > 1) {
 			if (context.step.tool === "handoff" && context.step.qaContract) {
 				const gate = await this.qaGate(context, (exe, args) =>
@@ -522,15 +552,30 @@ export class FactoryTools {
 						"Grouped QA evidence changed or is incomplete; handoff blocked",
 					);
 			}
-			return groupedTool(context, this.command.bind(this), (child) =>
-				this.repositoryTool(
-					child.run === context.run
-						? child
-						: { ...child, step: { ...child.step, qaContract: undefined } },
-				),
+			const output = await groupedTool(
+				context,
+				this.command.bind(this),
+				(child) => {
+					const execute = () =>
+						this.repositoryTool(
+							child.run === context.run
+								? child
+								: { ...child, step: { ...child.step, qaContract: undefined } },
+						);
+					return child.step.tool === "draft-pr" && child.coordinateDelivery
+						? child.coordinateDelivery(execute)
+						: execute();
+				},
 			);
+			if (context.step.tool === "ci-fix-readiness") {
+				context.run.outputs.ci = output;
+				context.save?.();
+			}
+			return output;
 		}
-		return this.repositoryTool(context);
+		return context.step.tool === "draft-pr" && context.coordinateDelivery
+			? context.coordinateDelivery(() => this.repositoryTool(context))
+			: this.repositoryTool(context);
 	}
 	private command(
 		context: ExecutionContext,
@@ -651,8 +696,13 @@ export class FactoryTools {
 						.slice(0, 72)
 						.trim()
 						.replace(/\.+$/, "");
+					// Repository commit hooks can run unbounded full-suite checks that a
+					// mechanical step can neither finish nor repair, failing delivery on
+					// every retry. Implementation checks, review and CI with its fixer
+					// own verification. Push hooks still run (for example Git LFS).
 					await command("git", [
 						"commit",
+						"--no-verify",
 						"-m",
 						`chore: ${subject || "factory changes"}`,
 					]);
@@ -744,6 +794,37 @@ export class FactoryTools {
 				const source =
 					context.step.tool === "review-gate" ? "code-review" : "visual-review";
 				const review = filterReview(run.outputs[source]);
+				if (review.status !== "completed" || review.blockers.length) {
+					if (source === "visual-review" && context.step.qaContract) {
+						const capture = QaCaptureSchema.safeParse(run.outputs.capture);
+						// An incomplete reviewer cannot approve, but recorded product failures
+						// still need correction before fresh QA and a complete review.
+						if (
+							capture.success &&
+							(capture.data.results.some((result) =>
+								result.criteria.some(
+									(criterion) => criterion.outcome === "failed",
+								),
+							) ||
+								capture.data.findings.some(
+									(finding) => finding.status === "open",
+								))
+						) {
+							const gate = await this.qaGate(context, command);
+							if (gate.findings.length) return recovery(gate);
+						}
+					}
+					return {
+						approved: false,
+						findings: review.findings.filter(
+							(finding) => finding.status === "open",
+						),
+						reviewIncomplete: true,
+						questions: [
+							`${source} did not complete (${review.status ?? "legacy outcome missing"}). ${review.blockers.join("; ") || review.summary} Restore the required input/tools, then answer to retry only this reviewer. Missing findings do not approve or waive the review.`,
+						],
+					};
+				}
 				const open = review.findings.filter(
 					(finding) => finding.status === "open",
 				);
@@ -790,7 +871,9 @@ export class FactoryTools {
 				if (readiness.headSha !== headSha)
 					blockRevisionMismatch(readiness, headSha);
 				const previousBase =
-					aggregate?.baseline.baseSha ?? readPath(run.outputs, "ci.baseSha");
+					aggregate?.baseline.baseSha ??
+					readPath(run.outputs, "ci.correctionBaseSha") ??
+					readPath(run.outputs, "ci.baseSha");
 				assessFeedback(context, readiness);
 				const feedback = readPath(run.outputs, "ci.blockers") as
 					| { kind: string; action?: string }[]
@@ -828,7 +911,9 @@ export class FactoryTools {
 					);
 				context.log(
 					reviewRequired
-						? "Changed revision, substantive feedback or missing review provenance requires code review."
+						? previousBase && previousBase !== readiness.baseSha
+							? `Base changed from ${String(previousBase)} to ${readiness.baseSha}; integration context requires review and relevant validation.`
+							: "Changed source revision, substantive feedback or missing review provenance requires code review."
 						: "Accepted code and base are unchanged; returning directly to merge readiness.",
 				);
 				const previousChecks = readPath(run.outputs, "ci.checks");
@@ -872,6 +957,24 @@ export class FactoryTools {
 					(!reviewRequired || repeated);
 				return {
 					reviewRequired,
+					invalidation: {
+						kind:
+							previousBase && previousBase !== readiness.baseSha
+								? "base-change"
+								: reviewed?.headSha !== headSha ||
+										dirty ||
+										readiness.headSha !== headSha
+									? "source-change"
+									: substantiveFeedback
+										? "new-feedback"
+										: reviewRequired
+											? "missing-provenance"
+											: "none",
+						previousBaseSha: previousBase,
+						baseSha: readiness.baseSha,
+						previousHeadSha: reviewed?.headSha,
+						headSha,
+					},
 					headSha,
 					baseSha: readiness.baseSha,
 					...(unchangedRevision || unchangedFailures || unchangedWork
@@ -925,10 +1028,53 @@ export class FactoryTools {
 						blockRevisionMismatch(snapshot, headSha);
 					}
 					reportReadiness(context, snapshot);
-					if (snapshot.fix || snapshot.reviewReady || snapshot.approved)
+					if (
+						snapshot.ciAssistance?.length ||
+						snapshot.fix ||
+						snapshot.reviewReady ||
+						snapshot.approved
+					)
 						return snapshot;
 					await delay(context.signal);
 				}
+			}
+			case "ci-fix-readiness": {
+				const previous = run.outputs.ci as MergeReadiness | undefined;
+				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
+				const snapshot = await inspectReadinessWithRetry(context, command, url);
+				assessFeedback(context, snapshot);
+				const head = (await command("git", ["rev-parse", "HEAD"])).trim();
+				const dirty = Boolean(
+					(await command("git", ["status", "--porcelain"])).trim(),
+				);
+				if (snapshot.headSha !== head) blockRevisionMismatch(snapshot, head);
+				const digest = scopeContextDigest(
+					context.currentScope?.() ?? context.input,
+				);
+				const aggregate = aggregateForContext(context);
+				const scopeUnchanged =
+					previous?.scopeDigest === digest ||
+					Boolean(
+						aggregate?.baseline.context &&
+							scopeContextDigest(aggregate.baseline.context) === digest,
+					);
+				const skipFix =
+					snapshot.state === "OPEN" &&
+					!snapshot.fix &&
+					!dirty &&
+					scopeUnchanged &&
+					!readPath(run.outputs, "handoff.guideRecovery") &&
+					readPath(run.outputs, "visual-gate.approved") !== false &&
+					readPath(run.outputs, "review-gate.approved") !== false;
+				const refreshed = {
+					...snapshot,
+					scopeDigest: digest,
+					correctionBaseSha: previous?.correctionBaseSha ?? previous?.baseSha,
+				};
+				run.outputs.ci = refreshed;
+				reportReadiness(context, snapshot);
+				context.save?.();
+				return { ...refreshed, skipFix };
 			}
 			case "human-review": {
 				const headSha = await command("git", ["rev-parse", "HEAD"]);
@@ -976,71 +1122,84 @@ export class FactoryTools {
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
 				let submitted = false;
 				for (;;) {
-					const snapshot = await inspectReadinessWithRetry(
-						context,
-						command,
-						url,
-					);
-					const merged = confirmedMerge(run, snapshot);
-					if (merged) {
-						reportReadiness(context, snapshot);
-						return merged;
-					}
-					assessFeedback(context, snapshot);
-					reportReadiness(context, snapshot);
-					const aggregate = aggregateForContext(context);
-					if (
-						aggregate &&
-						(aggregate.baseline.baseSha !== snapshot.baseSha ||
-							this.scopeChanged(context, aggregate.baseline.context))
-					) {
-						delete run.reviewGate;
-						return {
-							...snapshot,
-							rework: true,
-							reason: "Base or accepted scope changed after specialist review",
-						};
-					}
-					if (aggregate)
-						assertAggregateRevision(
-							aggregate,
-							approved.headSha,
-							snapshot.baseSha,
-						);
-					if (
-						snapshot.headSha !== approved.headSha ||
-						(await command("git", ["rev-parse", "HEAD"])) !==
-							approved.headSha ||
-						(await command("git", ["status", "--porcelain"]))
-					) {
-						delete run.reviewGate;
-						return {
-							...snapshot,
-							fix: true,
-							rework: false,
-							reason:
-								"Revision changed after human approval; synchronize the local and remote branch without discarding work, commit/push pending changes, then repeat all review gates",
-						};
-					}
-					if (snapshot.state !== "OPEN")
-						throw new Error("PR closed without merging");
-					if (snapshot.isDraft) {
-						await (await provider(url)).draft(url, false);
-						continue;
-					}
-					if (snapshot.fix) return { ...snapshot, fix: true };
-					if (snapshot.approved && !snapshot.queued && !submitted) {
-						await (await provider(url)).merge(
+					let immediate = false;
+					const inspectAndMerge = async () => {
+						const invalid = await context.validateDelivery?.();
+						if (invalid) return invalid;
+						const snapshot = await inspectReadinessWithRetry(
+							context,
+							command,
 							url,
-							approved.headSha,
-							snapshot.mergeMethod,
 						);
-						submitted = true;
-						context.log(
-							"Merge requested; waiting for the provider to confirm merge or queue completion.",
-						);
-					}
-					await delay(context.signal);
+						const merged = confirmedMerge(run, snapshot);
+						if (merged) {
+							reportReadiness(context, snapshot);
+							return merged;
+						}
+						assessFeedback(context, snapshot);
+						reportReadiness(context, snapshot);
+						if (snapshot.ciAssistance?.length) return snapshot;
+						const aggregate = aggregateForContext(context);
+						if (
+							aggregate &&
+							(aggregate.baseline.baseSha !== snapshot.baseSha ||
+								this.scopeChanged(context, aggregate.baseline.context))
+						) {
+							delete run.reviewGate;
+							return {
+								...snapshot,
+								rework: true,
+								reason:
+									"Base or accepted scope changed after specialist review",
+							};
+						}
+						if (aggregate)
+							assertAggregateRevision(
+								aggregate,
+								approved.headSha,
+								snapshot.baseSha,
+							);
+						if (
+							snapshot.headSha !== approved.headSha ||
+							(await command("git", ["rev-parse", "HEAD"])) !==
+								approved.headSha ||
+							(await command("git", ["status", "--porcelain"]))
+						) {
+							delete run.reviewGate;
+							return {
+								...snapshot,
+								fix: true,
+								rework: false,
+								reason:
+									"Revision changed after human approval; synchronize the local and remote branch without discarding work, commit/push pending changes, then repeat all review gates",
+							};
+						}
+						if (snapshot.state !== "OPEN")
+							throw new Error("PR closed without merging");
+						if (snapshot.isDraft) {
+							await (await provider(url)).draft(url, false);
+							immediate = true;
+							return undefined;
+						}
+						if (snapshot.fix) return { ...snapshot, fix: true };
+						if (snapshot.approved && !snapshot.queued && !submitted) {
+							await (await provider(url)).merge(
+								url,
+								approved.headSha,
+								snapshot.mergeMethod,
+							);
+							submitted = true;
+							context.log(
+								"Merge requested; waiting for the provider to confirm merge or queue completion.",
+							);
+						}
+						return undefined;
+					};
+					const result = await (context.coordinateDelivery
+						? context.coordinateDelivery(inspectAndMerge)
+						: inspectAndMerge());
+					if (result) return result;
+					if (!immediate) await delay(context.signal);
 				}
 			}
 			case "handoff": {
@@ -1086,14 +1245,12 @@ export class FactoryTools {
 					run.outputs.ci = readiness;
 					return readiness;
 				}
+				let readiness: MergeReadiness;
 				for (;;) {
-					const readiness = await inspectReadinessWithRetry(
-						context,
-						command,
-						url,
-					);
+					readiness = await inspectReadinessWithRetry(context, command, url);
 					assessFeedback(context, readiness);
 					reportReadiness(context, readiness);
+					if (readiness.ciAssistance?.length) return readiness;
 					if (readiness.headSha !== headSha || readiness.state !== "OPEN")
 						throw new Error(
 							`Merge readiness changed; handoff blocked: ${readiness.blockers.map((blocker) => blocker.message).join("; ") || "PR state or revision changed"}`,
@@ -1148,6 +1305,11 @@ export class FactoryTools {
 					// The provider may recalculate mergeability or start checks while the
 					// guide is being written. Wait as CI does, without replaying roles.
 					await delay(context.signal);
+				}
+				const recovery = guideGapRecovery(context, readiness);
+				if (recovery) {
+					run.outputs.ci = recovery;
+					return recovery;
 				}
 				if (readPath(run.outputs, "guide.decision.status") !== "ready")
 					throw new Error(

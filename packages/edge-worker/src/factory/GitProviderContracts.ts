@@ -26,6 +26,7 @@ export const TakeoverPullRequestSchema = PullRequestSchema.extend({
 export type TakeoverPullRequest = z.infer<typeof TakeoverPullRequestSchema>;
 export const ReadinessSchema = z
 	.object({
+		metadata: z.object({ title: z.string() }).optional(),
 		headSha: z.string().min(1),
 		baseSha: z.string().min(1),
 		url: z.string().url(),
@@ -47,6 +48,32 @@ export const ReadinessSchema = z
 				state: z.string(),
 				bucket: z.enum(["pass", "fail", "pending"]),
 				link: z.string().optional(),
+				failure: z
+					.object({
+						kind: z.enum(["infrastructure", "metadata", "unknown"]),
+						evidence: z.string(),
+					})
+					.optional(),
+				retry: z
+					.object({
+						status: z
+							.enum([
+								"queued",
+								"in_progress",
+								"completed",
+								"waiting",
+								"pending",
+								"requested",
+							])
+							.optional(),
+						id: z.string().min(1),
+						attempt: z.number().int().positive(),
+						headSha: z.string().min(1),
+						kind: z.enum(["github-run", "gitlab-job"]),
+						metadataRecheck: z.boolean().optional(),
+						lineage: z.string().optional(),
+					})
+					.optional(),
 			}),
 		),
 		threads: z.array(z.unknown()),

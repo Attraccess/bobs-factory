@@ -322,5 +322,32 @@
 		"source": "https://raw.githubusercontent.com/martinthomson/encrypted-content-encoding/0562510a30819f52424724a6fd5504becacd98a1/LICENSE",
 		"sha256": "717363ac0c7f0883042868db171cfed1f4b423119249eac9bce5131291017ea8",
 		"packages": ["http_ece"]
+	},
+	"bun-hdrhistogram-license.txt": {
+		"source": "https://raw.githubusercontent.com/HdrHistogram/HdrHistogram_c/be60a9987ee48d0abf0d7b6a175bad8d6c1585d1/LICENSE.txt",
+		"sha256": "93a583ec58cd981232ec6fab797ff6f17f350c97b83ae0700b2d9350c91028af",
+		"packages": ["bun-runtime"]
+	},
+	"bun-hdrhistogram-copying.txt": {
+		"source": "https://raw.githubusercontent.com/HdrHistogram/HdrHistogram_c/be60a9987ee48d0abf0d7b6a175bad8d6c1585d1/COPYING.txt",
+		"sha256": "a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499",
+		"packages": ["bun-runtime"]
+	},
+	"bun-rust-argon2-mit.txt": {
+		"source": "https://raw.githubusercontent.com/sru-systems/rust-argon2/ed81866f163f0c7026aa6fd8388adf37242eb32a/LICENSE-MIT",
+		"sha256": "26b997d1a1496df49cb1ad2cbe024714cd9126543c18e1bc6c7bbca1b3dc42b6",
+		"packages": ["bun-runtime"]
+	},
+	"bun-rust-argon2-apache.txt": {
+		"source": "https://raw.githubusercontent.com/sru-systems/rust-argon2/ed81866f163f0c7026aa6fd8388adf37242eb32a/LICENSE-APACHE",
+		"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+		"packages": ["bun-runtime"]
+	},
+	"bun-cargo-production-notices.txt": {
+		"source": "https://raw.githubusercontent.com/oven-sh/bun/744846f844374847c902b5e7fd59b4342a51ef99/Cargo.lock",
+		"sha256": "b7635dd18621be2db3d7e29062a4939db5122bad83c5edb88e4adcd572ffa35b",
+		"packages": ["bun-runtime"],
+		"derived": true,
+		"provenance": "bun-cargo-production-notices.provenance.json"
 	}
 }

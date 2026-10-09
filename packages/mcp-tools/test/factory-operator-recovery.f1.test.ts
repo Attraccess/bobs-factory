@@ -18,6 +18,9 @@ const { direct, native, discovery } = vi.hoisted(() => ({
 }));
 vi.mock("bobs-factory-mcp-tools", async (original) => ({
 	...(await original<object>()),
+	// Mandatory context preflight spawns Node, so use the compiled stdio entry point.
+	prepareFactoryContext: (await import("../dist/factoryContext.js"))
+		.prepareFactoryContext,
 	callConfiguredTool: direct,
 	listConfiguredTools: discovery,
 }));
@@ -33,6 +36,7 @@ afterEach(async () => {
 });
 it("F1: repairs missing Taskbot transport entirely through compiled stdio MCP, preserving the accepted runner", async () => {
 	vi.stubEnv("F1_AGENT_MODE", "mock");
+	vi.stubEnv("BOBS_FACTORY_INTERNAL_EXECUTABLE", undefined);
 	vi.stubEnv("BOBS_FACTORY_FACTORY_PORT", "0");
 	const home = mkdtempSync("/private/tmp/f1-operator-");
 	cleanup.push(() => rmSync(home, { recursive: true, force: true }));

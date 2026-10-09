@@ -1,3 +1,4 @@
+import { factoryRuntimeIdentity } from "bobs-factory-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import type { EdgeWorkerConfig, RepositoryConfig } from "../src/types.js";
@@ -190,6 +191,7 @@ describe("EdgeWorker - Version Endpoint", () => {
 			expect(mockReply.status).toHaveBeenCalledWith(200);
 			expect(mockReply.send).toHaveBeenCalledWith({
 				cyrus_cli_version: null,
+				runtime: factoryRuntimeIdentity,
 			});
 		});
 
@@ -241,6 +243,7 @@ describe("EdgeWorker - Version Endpoint", () => {
 			expect(mockReply.status).toHaveBeenCalledWith(200);
 			expect(mockReply.send).toHaveBeenCalledWith({
 				cyrus_cli_version: "1.2.3",
+				runtime: factoryRuntimeIdentity,
 			});
 		});
 
@@ -294,6 +297,7 @@ describe("EdgeWorker - Version Endpoint", () => {
 			// Empty string is truthy for ?? operator, so it returns empty string
 			expect(mockReply.send).toHaveBeenCalledWith({
 				cyrus_cli_version: "",
+				runtime: factoryRuntimeIdentity,
 			});
 		});
 	});

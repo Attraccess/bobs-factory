@@ -522,9 +522,9 @@ export interface AgentRunnerConfig {
 	factoryHome: string;
 	/**
 	 * Additional environment variables for the agent child process, merged on
-	 * top of the inherited process env. Used for per-session credentials
-	 * (e.g. org-matched GH_TOKEN) and sandbox CA cert paths. Currently only
-	 * the Claude runner consumes this.
+	 * top of childEnvironment when selected, otherwise the inherited process
+	 * env. Used for per-session credentials and sandbox CA cert paths. Native
+	 * configuration roots are preserved unless explicitly overridden.
 	 */
 	additionalEnv?: Record<string, string>;
 	/** Complete child environment. When present, ambient environment and repository .env are not inherited. */

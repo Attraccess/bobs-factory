@@ -103,6 +103,60 @@ describe("ClaudeRunner", () => {
 
 	describe("start()", () => {
 		it.each([
+			undefined,
+			"native-review-conversation",
+		])("uses the new scoped context rather than an old warm query (resume=%s)", async (resumeSessionId) => {
+			const warm = {
+				close: vi.fn(),
+				query: () =>
+					(async function* () {
+						yield {
+							type: "result",
+							result: "expired-context",
+							session_id: "old-warm-session",
+						};
+					})(),
+			};
+			mockQuery.mockImplementation(async function* () {
+				yield {
+					type: "system",
+					subtype: "init",
+					session_id: resumeSessionId ?? "fresh-session",
+				};
+				yield {
+					type: "result",
+					result: "fresh-scoped-context",
+					session_id: resumeSessionId ?? "fresh-session",
+				};
+			});
+			const configured = new ClaudeRunner(
+				{
+					...defaultConfig,
+					resumeSessionId,
+					mcpConfig: {
+						"factory-context": {
+							type: "stdio",
+							command: "node",
+							args: ["/new/scoped/input.json"],
+						},
+					},
+					warmSession: warm as unknown as NonNullable<
+						ClaudeRunnerConfig["warmSession"]
+					>,
+				},
+				false,
+			);
+			await configured.start("Read the current role input");
+			expect(configured.getMessages().at(-1)).toMatchObject({
+				result: "fresh-scoped-context",
+				session_id: resumeSessionId ?? "fresh-session",
+			});
+			expect(mockQuery.mock.calls.at(-1)?.[0].options).toMatchObject({
+				...(resumeSessionId ? { resume: resumeSessionId } : {}),
+				mcpServers: { "factory-context": { args: ["/new/scoped/input.json"] } },
+			});
+		});
+		it.each([
 			"fast",
 			"standard",
 			undefined,

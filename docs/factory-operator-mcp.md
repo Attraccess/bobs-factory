@@ -174,7 +174,7 @@ or silently switches the accepted runner.
 Legacy repository repairs require a regular configuration file inside the selected
 Factory home. External/native files remain read-only; an owned overlay can preserve
 external sources while repairing their selected server. Local launches retain
-repairs in `local-config.json`. A local home retains its repository identity;
+repairs in `config.json`. A local home retains its repository identity;
 select the same repository on restart, or use a separate home for a different repository. Deny permissions take precedence and are never
 removed automatically. Reserved `factory-context` and operator server identities
 cannot be updated through this tool.

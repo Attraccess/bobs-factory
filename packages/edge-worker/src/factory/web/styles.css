@@ -465,6 +465,52 @@ kbd {
 	color: var(--text);
 	font-size: 17px;
 }
+.brand-area {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+.brand strong,
+.connection-status {
+	transition:
+		opacity 0.35s,
+		transform 0.35s;
+}
+.brand-area[data-connection] .brand strong {
+	opacity: 0;
+	transform: translateY(-6px);
+}
+/* Occupies the wordmark's place while Factory reconnects. */
+.connection-status {
+	position: absolute;
+	left: 46px;
+	opacity: 0;
+	transform: translateY(6px);
+	pointer-events: none;
+	white-space: nowrap;
+	color: var(--muted);
+	font-size: 14px;
+	font-weight: 700;
+}
+.brand-area[data-connection] .connection-status {
+	opacity: 1;
+	transform: none;
+	pointer-events: auto;
+}
+.connection-status button {
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+	text-decoration: underline dotted;
+	text-underline-offset: 3px;
+}
+.connection-modal {
+	display: grid;
+	gap: 12px;
+}
 .nav-pill {
 	display: flex;
 	background: var(--surface);
@@ -2062,6 +2108,23 @@ kbd {
 .bob-sleepy {
 	animation: none !important;
 }
+/* Factory is unreachable: Bob slows down and looks around for it. */
+.bob-reconnecting {
+	animation: bob-bounce 3.6s ease-in-out infinite;
+	opacity: 0.85;
+}
+.bob-reconnecting .bob-eyes g {
+	animation: bob-scan 1.8s ease-in-out infinite;
+}
+@keyframes bob-scan {
+	0%,
+	100% {
+		transform: translateX(-5px);
+	}
+	50% {
+		transform: translateX(5px);
+	}
+}
 .new-run-glow {
 	animation: glow 1.6s ease-out;
 }
@@ -2180,6 +2243,13 @@ kbd {
 		gap: 8px;
 	}
 	.brand strong {
+		display: none;
+	}
+	.connection-status {
+		position: static;
+		margin-left: 8px;
+	}
+	.brand-area:not([data-connection]) .connection-status {
 		display: none;
 	}
 	.brand .bob {
@@ -4693,4 +4763,78 @@ kbd {
 	.map-edge {
 		transition: none;
 	}
+}
+
+.onboarding-page {
+	min-height: 100dvh;
+	display: grid;
+	place-items: center;
+	padding: 28px 16px;
+}
+.onboarding-card {
+	width: min(100%, 680px);
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 24px;
+	padding: clamp(20px, 5vw, 42px);
+	box-shadow: var(--pop);
+}
+.onboarding-card header {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+}
+.onboarding-card h1 {
+	font-size: clamp(25px, 5vw, 34px);
+	margin: 0;
+}
+.onboarding-progress {
+	list-style: none;
+	display: flex;
+	gap: 12px;
+	padding: 0;
+	margin: 26px 0;
+	font-size: 13px;
+	color: var(--muted);
+	flex-wrap: wrap;
+}
+.onboarding-progress li[aria-current] {
+	color: var(--text);
+	font-weight: 700;
+}
+.onboarding-card form,
+.onboarding-card label {
+	display: grid;
+	gap: 12px;
+}
+.onboarding-card form {
+	gap: 18px;
+}
+.onboarding-card input,
+.onboarding-card select {
+	width: 100%;
+	min-width: 0;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	background: var(--field);
+	color: var(--text);
+	padding: 12px;
+	font: inherit;
+}
+.onboarding-card p {
+	overflow-wrap: anywhere;
+}
+.onboarding-note {
+	padding: 16px 18px;
+	background: var(--quiet);
+	border-radius: 14px;
+}
+.onboarding-note p {
+	margin-bottom: 0;
+}
+.onboarding-actions {
+	display: flex;
+	gap: 12px;
+	margin-top: 24px;
+	flex-wrap: wrap;
 }

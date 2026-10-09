@@ -1,9 +1,10 @@
 // F1_AGENT_MODE=mock bun apps/f1/test-drives/assets/codex-context-readiness.ts
-// Build workspace packages first. All inference and MCP startup are scripted.
+// Build workspace packages first. Inference is scripted; MCP catalogs come from the real scoped stdio helper.
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -14,7 +15,15 @@ import { defaultWorkflows } from "../../../../packages/edge-worker/dist/factory/
 import { FactoryServer } from "../../../../packages/edge-worker/test/fixtures/authenticated-factory.ts";
 import { MockAgentRunner } from "../../src/MockAgentRunner.ts";
 
+const requireMcp = createRequire(
+	new URL("../../../../packages/mcp-tools/package.json", import.meta.url),
+);
+const { Client } = requireMcp("@modelcontextprotocol/sdk/client/index.js");
+const { StdioClientTransport } = requireMcp(
+	"@modelcontextprotocol/sdk/client/stdio.js",
+);
 assert.equal(process.env.F1_AGENT_MODE, "mock");
+const threadTimeouts = process.env.F1_CONTEXT_FAILURE === "thread-timeout";
 const root = mkdtempSync(join(tmpdir(), "f1-codex-context-"));
 const home = join(root, "home"),
 	repository = join(root, "repo");
@@ -138,9 +147,12 @@ const guide = {
 
 class ScriptedClient extends EventEmitter {
 	notify: ((method: string, params: unknown) => void) | undefined;
+	private catalog: Record<string, unknown> = {};
 	constructor(
 		private mode: string,
 		private attempt: number,
+		private role: string,
+		private workspace: string,
 	) {
 		super();
 	}
@@ -151,13 +163,39 @@ class ScriptedClient extends EventEmitter {
 	start() {}
 	async close() {}
 	async request(method: string, params: any) {
-		const threadId = params.threadId ?? `f1-guide-${this.mode}`;
+		const threadId = params.threadId ?? `f1-${this.role}-${this.mode}`;
 		if (method === "thread/start" || method === "thread/resume") {
+			if (
+				threadTimeouts &&
+				((this.mode === "readiness" && this.attempt === 1) ||
+					(this.mode === "correction" && this.attempt === 2))
+			) {
+				throw new Error(`${method} timed out after 60000ms`);
+			}
 			assert.equal(params.config.mcp_servers["factory-context"].required, true);
 			assert.equal(
 				params.config.mcp_servers["factory-context"].startup_timeout_sec,
 				45,
 			);
+			const scoped = params.config.mcp_servers["factory-context"];
+			const client = new Client({ name: "f1-context-catalog", version: "1" });
+			try {
+				await client.connect(
+					new StdioClientTransport({
+						command: scoped.command,
+						args: scoped.args,
+					}),
+				);
+				this.catalog = Object.fromEntries(
+					(await client.listTools()).tools.map((tool: any) => [
+						tool.name,
+						tool,
+					]),
+				);
+				assert(this.catalog.list_context && this.catalog.read_context);
+			} finally {
+				await client.close();
+			}
 			return { thread: { id: threadId } };
 		}
 		if (method === "mcpServerStatus/list") {
@@ -169,18 +207,36 @@ class ScriptedClient extends EventEmitter {
 					{
 						name: "factory-context",
 						runtimeStatus: failed ? "failed" : "connected",
-						tools: failed
-							? {}
-							: {
-									list_context: { name: "list_context" },
-									read_context: { name: "read_context" },
-								},
+						tools: failed ? {} : this.catalog,
 					},
 				],
 			};
 		}
 		if (method === "turn/start") {
-			turns[this.mode] = (turns[this.mode] ?? 0) + 1;
+			if (this.mode !== "dirty" || this.role === "implement")
+				turns[this.mode] = (turns[this.mode] ?? 0) + 1;
+			if (this.mode === "dirty" && this.role === "implement") {
+				if (this.attempt === 1) {
+					writeFileSync(
+						join(this.workspace, "record.txt"),
+						"after with uncommitted work\n",
+					);
+					throw new Error("Scripted interruption after native initialization");
+				}
+				assert.equal(
+					readFileSync(join(this.workspace, "record.txt"), "utf8"),
+					"after with uncommitted work\n",
+				);
+				git(this.workspace, "add", "record.txt");
+				git(
+					this.workspace,
+					"-c",
+					"commit.gpgsign=false",
+					"commit",
+					"-qm",
+					"Recovered fixture edit",
+				);
+			}
 			const invalid =
 				(this.mode === "exhausted" && this.attempt <= 6) ||
 				(this.mode === "correction" && this.attempt === 1);
@@ -195,7 +251,11 @@ class ScriptedClient extends EventEmitter {
 						type: "agentMessage",
 						id: "fixture-message",
 						text: JSON.stringify(
-							invalid ? { ...guide, chapters: [], requirements: [] } : guide,
+							this.role === "implement"
+								? { summary: "Recovered uncommitted work" }
+								: invalid
+									? { ...guide, chapters: [], requirements: [] }
+									: guide,
 						),
 					},
 				});
@@ -243,9 +303,16 @@ function makeWorker() {
 				const mode = String(context.originalInput).match(/MODE:(\w+)/)![1];
 				const key = `${mode}:${role}`;
 				counts[key] = (counts[key] ?? 0) + 1;
-				if (role === "guide") {
-					resumes[mode] ??= [];
-					resumes[mode].push(config.resumeSessionId);
+				if (role === "guide" || (mode === "dirty" && role === "implement")) {
+					if (mode === "dirty" && role === "implement")
+						assert.equal(
+							context.progress.currentRevision.dirty,
+							counts[key]! > 1,
+						);
+					if (mode !== "dirty" || role === "implement") {
+						resumes[mode] ??= [];
+						resumes[mode].push(config.resumeSessionId);
+					}
 					const runner = new CodexRunner({
 						...config,
 						fallbackModel: undefined,
@@ -255,7 +322,13 @@ function makeWorker() {
 					});
 					(runner as any).createBackend = () =>
 						new AppServerCodexBackend(
-							() => new ScriptedClient(mode, counts[key]!),
+							() =>
+								new ScriptedClient(
+									mode,
+									counts[key]!,
+									role,
+									config.workingDirectory!,
+								),
 						);
 					return runner;
 				}
@@ -348,7 +421,10 @@ try {
 	attach();
 	await cli("ping");
 	let issue = 0;
-	for (const mode of ["readiness", "correction", "exhausted"]) {
+	const scenarios = threadTimeouts
+		? ["readiness", "correction"]
+		: ["dirty", "readiness", "correction", "exhausted"];
+	for (const mode of scenarios) {
 		await cli(
 			"create-issue",
 			"--title",
@@ -365,14 +441,46 @@ try {
 			leaf = before.checkpoint.active.children[0];
 		assert.deepEqual(
 			before.history.map((item: any) => item.step),
-			["pipeline/clarify", "pipeline/implement", "pipeline/ci"],
+			mode === "dirty"
+				? ["pipeline/clarify"]
+				: ["pipeline/clarify", "pipeline/implement", "pipeline/ci"],
 		);
+		if (mode === "dirty") {
+			assert.match(
+				before.error,
+				/Scripted interruption after native initialization/,
+			);
+			assert.equal(leaf.active.agent.sessionId, "f1-implement-dirty");
+			assert.equal(turns[mode], 1);
+			assert.equal(
+				readFileSync(join(before.workspace, "record.txt"), "utf8"),
+				"after with uncommitted work\n",
+			);
+		}
 		if (mode === "readiness") {
-			assert.equal(leaf.active.agent, undefined);
+			assert.equal(leaf.active.agent.sessionId, undefined);
+			assert.match(
+				leaf.active.agent.infrastructureFailure.reason,
+				threadTimeouts
+					? /thread\/start timed out after 60000ms/
+					: /tool discovery is unavailable/,
+			);
 			assert.equal(turns[mode] ?? 0, 0);
-			assert.match(before.error, /Required MCP server/);
+			assert.match(
+				before.error,
+				threadTimeouts
+					? /thread\/start timed out after 60000ms/
+					: /Required MCP server/,
+			);
 		}
 		if (mode === "correction") {
+			assert.equal(leaf.active.agent.sessionId, "f1-guide-correction");
+			if (threadTimeouts) {
+				assert.match(
+					leaf.active.agent.infrastructureFailure.reason,
+					/thread\/resume timed out after 60000ms/,
+				);
+			}
 			assert.equal(leaf.active.agent.rejected.attempts, 0);
 			assert.equal(leaf.active.agent.rejected.reserved, false);
 			assert.equal(turns[mode], 1);
@@ -403,12 +511,27 @@ try {
 			before.history,
 		);
 		for (const role of ["clarify", "implement", "ci"])
-			assert.equal(counts[`${mode}:${role}`], 1);
+			assert.equal(
+				counts[`${mode}:${role}`],
+				mode === "dirty" && role === "implement" ? 2 : 1,
+			);
 		assert.equal(done.outputs.guide.chapters.length, 1);
 		assert.equal(done.outputs.guide.requirements.length, 1);
 		assert.equal(done.checkpoint.active, undefined);
+		if (mode === "dirty") {
+			assert.equal(turns[mode], 2);
+			assert.equal(
+				readFileSync(join(done.workspace, "record.txt"), "utf8"),
+				"after with uncommitted work\n",
+			);
+		}
 		if (mode !== "readiness")
-			assert(resumes[mode]!.slice(1).every((id) => id === `f1-guide-${mode}`));
+			assert(
+				resumes[mode]!.slice(1).every(
+					(id) =>
+						id === `f1-${mode === "dirty" ? "implement" : "guide"}-${mode}`,
+				),
+			);
 		if (mode === "exhausted")
 			assert(
 				done.events.some((event: any) =>

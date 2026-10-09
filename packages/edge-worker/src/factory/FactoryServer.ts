@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
+import { factoryRuntimeIdentity } from "bobs-factory-core";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { MachineCapacity } from "../MachineCapacity.js";
@@ -13,6 +14,7 @@ import {
 	FactoryAuth,
 	factoryAccess,
 } from "./FactoryAuth.js";
+import type { FactoryOnboarding } from "./FactoryOnboarding.js";
 import { CaptureSchema, verifiedScreenshot } from "./FactoryTools.js";
 import { factoryWebAssets } from "./FactoryWebAssets.js";
 import {
@@ -22,6 +24,7 @@ import {
 	resolveLaunchRequest,
 } from "./LaunchFields.js";
 import { OperatorService } from "./OperatorService.js";
+import { runProvenance } from "./Provenance.js";
 import {
 	readReviewManifest,
 	readReviewPatch,
@@ -34,6 +37,16 @@ import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	onboarding?: FactoryOnboarding;
+	deliveryStatus?(): {
+		platform: string;
+		workspaceId: string;
+		pending: number;
+		delivered: number;
+		superseded: number;
+		hasError: boolean;
+		nextAttemptAt?: number;
+	}[];
 	push?: import("./FactoryPush.js").FactoryPush;
 	previewExecution?(
 		repositoryId: string,
@@ -181,8 +194,12 @@ export class FactoryServer {
 				.map((c) => c.trim())
 				.find((c) => c.startsWith(`${name}=`))
 				?.slice(name.length + 1);
+		// Browsers use the HttpOnly cookie; the local terminal UI sends its session as a Bearer token.
 		const tokenFor = (request: FastifyRequest) =>
-			cookie(request, cookieName(originFor(request)!));
+			cookie(request, cookieName(originFor(request)!)) ??
+			/^Bearer ([A-Za-z0-9_-]{43})$/.exec(
+				request.headers.authorization ?? "",
+			)?.[1];
 		const setCookie = (
 			reply: import("fastify").FastifyReply,
 			origin: string,
@@ -204,6 +221,7 @@ export class FactoryServer {
 		]);
 		this.app.addHook("onRequest", async (request, reply) => {
 			this.auth.checkRecovery();
+			this.auth.checkTerminalRequests();
 			const origin = originFor(request);
 			if (!origin)
 				return reply.code(403).send({ error: "Invalid Factory authority" });
@@ -388,6 +406,10 @@ export class FactoryServer {
 		this.app.get("/api/version", () => ({
 			build: shell.build,
 			protocol: shell.protocol,
+			runtime: factoryRuntimeIdentity,
+		}));
+		this.app.get("/api/delivery-status", () => ({
+			workspaces: hooks.deliveryStatus?.() ?? [],
 		}));
 		this.app.get("/api/events", (request, reply) => {
 			reply.hijack();
@@ -420,7 +442,14 @@ export class FactoryServer {
 				this.streams.delete(stream);
 			});
 		});
-		this.app.get("/api/config", async () => ({
+		this.app.get("/api/config", async (request) => ({
+			onboarding:
+				hooks.onboarding &&
+				["localhost", "127.0.0.1"].includes(
+					new URL(originFor(request)!).hostname,
+				)
+					? await hooks.onboarding.status()
+					: undefined,
 			capacity: await hooks.capacity?.snapshot(),
 			configRevision: configRevision(),
 			executionProfiles: runtime.executionProfiles.read(),
@@ -443,6 +472,40 @@ export class FactoryServer {
 			reasoningLevels,
 			serviceTierRunners,
 		}));
+		const localOnboarding = (request: FastifyRequest) => {
+			if (!hooks.onboarding) throw new Error("Local setup is unavailable");
+			if (
+				!["localhost", "127.0.0.1"].includes(
+					new URL(originFor(request)!).hostname,
+				)
+			)
+				throw new Error("Complete machine setup at the localhost address");
+			return hooks.onboarding;
+		};
+		this.app.get("/api/onboarding", (request) =>
+			localOnboarding(request).status(),
+		);
+		this.app.post("/api/onboarding/project", { bodyLimit: 8192 }, (request) =>
+			localOnboarding(request).configure(
+				z
+					.object({
+						repositoryPath: z.string().trim().min(1).max(4096),
+						runner: z.enum(["claude", "codex", "gemini", "cursor", "opencode"]),
+					})
+					.strict()
+					.parse(request.body),
+			),
+		);
+		this.app.post("/api/onboarding/github", { bodyLimit: 4096 }, (request) =>
+			localOnboarding(request).connectGithub(
+				z
+					.object({
+						token: z.string().trim().min(1).max(2048),
+					})
+					.strict()
+					.parse(request.body),
+			),
+		);
 		this.app.put("/api/execution-profiles", (request) => {
 			checkConfigRevision(request);
 			const body = z
@@ -542,6 +605,7 @@ export class FactoryServer {
 					title,
 					status,
 					capacityLeaves,
+					deliveryCoordination,
 					createdAt,
 					updatedAt,
 					repositoryId,
@@ -557,6 +621,7 @@ export class FactoryServer {
 					title,
 					status: capacityRunStatus({ status, capacityLeaves } as FactoryRun),
 					capacityLeaves,
+					deliveryCoordination,
 					createdAt,
 					updatedAt,
 					repositoryId,
@@ -593,6 +658,14 @@ export class FactoryServer {
 				.code(202)
 				.send(await hooks.start(resolveLaunchRequest(workflow, input)));
 		});
+		this.app.get<{ Params: { id: string } }>(
+			"/api/runs/:id/provenance",
+			(request, reply) => {
+				const run = runtime.runs.get(request.params.id);
+				if (!run) return reply.code(404).send({ error: "Run not found" });
+				return runProvenance(run);
+			},
+		);
 		this.app.get<{ Params: { id: string }; Querystring: { view?: string } }>(
 			"/api/runs/:id",
 			(request, reply) => {

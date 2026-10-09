@@ -7,8 +7,7 @@ import {
 	resolvePath,
 } from "bobs-factory-core";
 import { z } from "zod";
-import { inspectGithubReadiness } from "./GithubReadiness.js";
-import { inspectGithubPullRequest } from "./GithubTakeover.js";
+import { githubProvider } from "./GithubProvider.js";
 import { gitlabProvider } from "./GitlabProvider.js";
 import {
 	PullRequestSchema,
@@ -19,8 +18,14 @@ import {
 import {
 	pullRequestReference,
 	repositoryReference,
+	samePullRequestReference,
+	sameRepositoryReference,
 } from "./GitProviderReference.js";
-import type { MergeReadiness, ProviderCommand } from "./MergeReadiness.js";
+import type {
+	MergeReadiness,
+	ProviderCheck,
+	ProviderCommand,
+} from "./MergeReadiness.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 export type GitProviderSnapshot = GitProviderConfig & { repositoryUrl: string };
@@ -37,6 +42,10 @@ export function normalizeGitProviderConfig(
 		: config;
 }
 export interface GitProvider {
+	retryCheck?(
+		url: string,
+		retry: NonNullable<ProviderCheck["retry"]>,
+	): Promise<void>;
 	list(branch: string): Promise<{ url: string; isDraft: boolean }[]>;
 	create(input: {
 		branch: string;
@@ -141,12 +150,17 @@ export async function resolveGitProvider(
 					}
 				: ({ type, repositoryUrl: reference.url } as GitProviderSnapshot);
 	}
-	return gitProvider(command, run.gitProvider);
+	run.ciSupervision ??= { retries: [] };
+	run.ciSupervision.checkReceipts ??= {};
+	return gitProvider(command, run.gitProvider, run.ciSupervision.checkReceipts);
 }
 
 export function gitProvider(
 	command: ProviderCommand,
 	snapshot: GitProviderSnapshot,
+	checkReceipts?: NonNullable<
+		import("./CISupervision.js").CISupervision["checkReceipts"]
+	>,
 ): GitProvider {
 	const repository = repositoryReference(snapshot.repositoryUrl);
 	const repositoryWebUrl = new URL(repository.url);
@@ -162,7 +176,8 @@ export function gitProvider(
 			(snapshot.type === "custom"
 				? parsed.origin !== repositoryWebUrl.origin ||
 					!parsed.pathname.startsWith(`${repositoryWebUrl.pathname}/`)
-				: ref?.type !== snapshot.type || ref.url !== repository.url)
+				: ref?.type !== snapshot.type ||
+					!sameRepositoryReference(snapshot.type, repository, ref))
 		)
 			throw new Error(
 				"Pull/merge request must belong to the selected repository and provider",
@@ -170,68 +185,19 @@ export function gitProvider(
 		return url;
 	};
 	const sameRequest = (expected: string, returned: string) => {
+		checkedUrl(expected);
+		checkedUrl(returned);
 		if (
-			new URL(checkedUrl(expected)).href.replace(/\/$/, "") !==
-			new URL(checkedUrl(returned)).href.replace(/\/$/, "")
+			snapshot.type === "github"
+				? !samePullRequestReference(expected, returned)
+				: new URL(expected).href.replace(/\/$/, "") !==
+					new URL(returned).href.replace(/\/$/, "")
 		)
 			throw new Error("Provider returned a different pull/merge request");
 	};
 	let provider: GitProvider;
 	if (snapshot.type === "github") {
-		const gh = (args: string[]) => command("gh", args);
-		provider = {
-			list: async (branch) =>
-				JSON.parse(
-					await gh([
-						"pr",
-						"list",
-						"--head",
-						branch,
-						"--state",
-						"open",
-						"--json",
-						"url,isDraft",
-						"--repo",
-						repository.url,
-					]),
-				),
-			create: (input) =>
-				gh([
-					"pr",
-					"create",
-					"--draft",
-					"--base",
-					input.baseBranch,
-					"--head",
-					input.branch,
-					"--title",
-					input.title,
-					"--body",
-					input.body,
-					"--repo",
-					repository.url,
-				]),
-			view: async (url, fields = "headRefOid,isDraft,state") =>
-				JSON.parse(await gh(["pr", "view", url, "--json", fields])),
-			inspect: (url) => inspectGithubPullRequest(command, url),
-			readiness: (url) => inspectGithubReadiness(command, url),
-			draft: async (url, draft) => {
-				await gh(["pr", "ready", url, ...(draft ? ["--undo"] : [])]);
-			},
-			description: async (url, body) => {
-				await gh(["pr", "edit", url, "--body", body]);
-			},
-			merge: async (url, sha, method) => {
-				await gh([
-					"pr",
-					"merge",
-					url,
-					`--${method}`,
-					"--match-head-commit",
-					sha,
-				]);
-			},
-		};
+		provider = githubProvider(command, repository.url, checkReceipts);
 	} else if (snapshot.type === "gitlab")
 		provider = gitlabProvider(command, repository);
 	else if (snapshot.type === "custom") {
@@ -305,6 +271,14 @@ export function gitProvider(
 	} else throw new Error("Unknown Git provider");
 	// Provider output must not redirect subsequent mutations to another repository.
 	return {
+		...(provider.retryCheck
+			? {
+					retryCheck: (
+						url: string,
+						retry: NonNullable<ProviderCheck["retry"]>,
+					) => provider.retryCheck!(checkedUrl(url), retry),
+				}
+			: {}),
 		list: async (branch) =>
 			(await provider.list(branch)).map((item) => ({
 				...item,

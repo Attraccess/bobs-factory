@@ -139,7 +139,13 @@ it("publishes the reported GitLab SSH repository without ever invoking gh", asyn
 		baseSha: "base",
 	});
 	expect(calls.some((c) => c[0] === "gh")).toBe(false);
-	expect(calls).toContainEqual(["git", "commit", "-m", "chore: change"]);
+	expect(calls).toContainEqual([
+		"git",
+		"commit",
+		"--no-verify",
+		"-m",
+		"chore: change",
+	]);
 	expect(calls).toContainEqual(["git", "push", "-u", "origin", "HEAD"]);
 	expect(ctx.run.gitProvider).toEqual({
 		type: "gitlab",
@@ -382,6 +388,16 @@ it.each([
 				],
 	);
 });
+it("keeps GitLab repository path comparisons case-sensitive", async () => {
+	const command = gitlab();
+	await expect(
+		gitProvider(command, { type: "gitlab", repositoryUrl }).view(
+			"https://gitlab.example/Team/subgroup/repo/-/merge_requests/17",
+		),
+	).rejects.toThrow("selected repository");
+	expect(command).not.toHaveBeenCalled();
+});
+
 it("captures takeover context on self-managed GitLab and rejects fork sources", async () => {
 	const forge = gitProvider(gitlab(), { type: "gitlab", repositoryUrl });
 	expect(await forge.inspect(url)).toMatchObject({

@@ -1,84 +1,68 @@
-import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	renameSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
-import { basename, join, resolve } from "node:path";
-
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { getAllTools } from "bobs-factory-claude-runner";
 import {
-	EdgeConfigSchema,
 	type EdgeWorkerConfig,
 	type RunnerType,
 	resolvePath,
 } from "bobs-factory-core";
 import { EdgeWorker } from "bobs-factory-edge-worker";
+import open from "open";
+import {
+	installedCommand,
+	LocalOnboarding,
+	loadLocalConfig,
+	localRepository,
+	savePrivateJson,
+} from "./onboarding.js";
 
 export async function launchLocal(values: {
-	repo: string;
+	repo?: string;
 	port: string;
-	agent: string;
+	agent?: string;
 	model?: string;
 	home: string;
 	origin?: string;
 	sessionHours?: string;
+	open?: boolean;
 }) {
-	const repo = resolve(resolvePath(values.repo!));
+	const home = resolve(resolvePath(values.home));
 	const port = Number(values.port);
 	if (!Number.isInteger(port) || port < 1 || port >= 65535)
 		throw new Error("Choose a UI port between 1 and 65534");
 	if (
-		!["claude", "codex", "gemini", "cursor", "opencode"].includes(values.agent!)
+		values.agent &&
+		!["claude", "codex", "gemini", "cursor", "opencode"].includes(values.agent)
 	)
 		throw new Error("Unknown agent");
-	let isDirectory = false;
-	try {
-		isDirectory = statSync(repo).isDirectory();
-	} catch {
+	const config = loadLocalConfig(home);
+	const repository = values.repo
+		? localRepository(values.repo, home)
+		: undefined;
+	const selected = values.agent ?? config.defaultRunner;
+	// The dashboard itself needs neither Git nor an agent. Select an installed agent in setup.
+	const command = selected === "cursor" ? "agent" : selected;
+	if (values.repo && selected && command && !installedCommand(command))
 		throw new Error(
-			`Cannot access repository directory: ${repo}. Choose an existing Git repository with --repo <path>, or create the directory and run git init there.`,
+			`Install the selected ${selected} coding agent before launching this project, or run bobs-factory without --repo to use guided setup.`,
 		);
-	}
-	if (!isDirectory)
-		throw new Error(
-			`Repository path is not a directory: ${repo}. Use --repo <path> to select a Git repository directory.`,
-		);
-	const home = resolvePath(values.home!);
-	let baseBranch: string;
-	try {
-		baseBranch = execFileSync(
-			"git",
-			["symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-			{ cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-		)
-			.trim()
-			.replace(/^origin\//, "");
-	} catch {
-		baseBranch = execFileSync("git", ["branch", "--show-current"], {
-			cwd: repo,
-			encoding: "utf8",
-		}).trim();
-	}
-	if (!baseBranch)
-		throw new Error("Check out a branch before starting the factory");
+	const configPath = join(home, "config.json");
+
 	process.env.BOBS_FACTORY_FACTORY_PORT = String(port);
+	process.env.BOBS_FACTORY_HOME = home;
 	if (values.origin) process.env.BOBS_FACTORY_FACTORY_ORIGIN = values.origin;
 	if (values.sessionHours !== undefined)
 		process.env.BOBS_FACTORY_FACTORY_SESSION_HOURS = values.sessionHours;
-	let config: EdgeWorkerConfig = {
+	// Persist the effective launch settings so operator repair reloads use the same runner and model.
+	const effective: EdgeWorkerConfig = {
+		...config,
 		platform: "cli",
 		factoryHome: home,
 		serverPort: port + 1,
 		serverHost: "127.0.0.1",
-		defaultRunner: values.agent as RunnerType,
-		linearAllowedTools: getAllTools(),
-		...(values.model
+		...(selected ? { defaultRunner: selected as RunnerType } : {}),
+		linearAllowedTools: config.linearAllowedTools ?? getAllTools(),
+		...(values.agent || values.repo || values.model
 			? {
 					claudeDefaultModel: values.model,
 					codexDefaultModel: values.model,
@@ -87,65 +71,48 @@ export async function launchLocal(values: {
 					opencodeDefaultModel: values.model,
 				}
 			: {}),
-		repositories: [
-			{
-				id: "local",
-				name: basename(repo),
-				repositoryPath: repo,
-				workspaceBaseDir: join(home, "worktrees"),
-				baseBranch,
-				linearWorkspaceId: "cli-workspace",
-				isActive: true,
-			},
-		],
+		repositories: config.repositories,
 	};
-	// Local launches retain an owned source for operator connection repairs across restarts.
-	const configPath = join(home, "local-config.json");
-	mkdirSync(home, { recursive: true, mode: 0o700 });
-	if (existsSync(configPath)) {
-		const saved = EdgeConfigSchema.parse(
-			JSON.parse(readFileSync(configPath, "utf8")),
-		);
-		const repository = saved.repositories.find(
-			(repository) =>
-				repository.id === "local" && repository.repositoryPath === repo,
-		);
-		if (!repository)
-			throw new Error(
-				"This Factory home retains a different local repository. Select its repository or use a separate --home so saved operator repairs and runs keep their repository identity.",
-			);
-		config = {
-			...saved,
-			...config,
-			// An omitted --model restores provider defaults, rather than an old override.
-			claudeDefaultModel: values.model,
-			codexDefaultModel: values.model,
-			geminiDefaultModel: values.model,
-			cursorDefaultModel: values.model,
-			opencodeDefaultModel: values.model,
-			linearAllowedTools: saved.linearAllowedTools ?? config.linearAllowedTools,
-			repositories: saved.repositories.map((entry) =>
-				entry.id === "local" ? { ...entry, ...config.repositories[0]! } : entry,
-			),
-		};
-	}
-	// Reload and startup must consume the same effective launch configuration.
-	const temporaryPath = `${configPath}.${randomUUID()}.tmp`;
-	try {
-		writeFileSync(temporaryPath, JSON.stringify(config, null, 2), {
-			mode: 0o600,
-			flag: "wx",
-		});
-		renameSync(temporaryPath, configPath);
-	} finally {
-		rmSync(temporaryPath, { force: true });
-	}
-	const worker = new EdgeWorker(config);
+	savePrivateJson(configPath, effective);
+	let worker: EdgeWorker;
+	const onboarding = new LocalOnboarding(home, (repository, runner) =>
+		worker.configureLocalRepository(repository, runner),
+	);
+	worker = new EdgeWorker(effective, onboarding);
 	worker.setConfigPath(configPath);
 	await worker.start();
-	console.log(
-		`Bob's Factory: http://127.0.0.1:${port}\nRepository: ${repo}\nState: ${home}`,
-	);
+	if (repository && selected)
+		await onboarding.configure({
+			repositoryPath: repository.repositoryPath,
+			runner: selected as RunnerType,
+		});
+	const address = `http://localhost:${port}`;
+	let setupCode: string | undefined;
+	// Only the local launcher reads machine authority. Never expose enrollment grants via HTTP.
+	const statePath = join(home, "factory", "auth", "state.json");
+	const grantPath = join(home, "factory", "auth", "enroll.json");
+	if (existsSync(statePath) && existsSync(grantPath)) {
+		const state = JSON.parse(readFileSync(statePath, "utf8"));
+		if (state.credentials.length === 0) {
+			const grant = JSON.parse(readFileSync(grantPath, "utf8"));
+			if (grant.expires > Date.now()) setupCode = grant.token;
+		}
+	}
+	console.log(`Bob's Factory: ${address}\nState: ${home}`);
+	if (setupCode)
+		console.log(
+			`First passkey setup code (private, expires in ten minutes): ${setupCode}`,
+		);
+	if (values.open !== false) {
+		try {
+			// Fragments stay on the local machine, outside HTTP requests and server logs.
+			await open(`${address}/${setupCode ? `#setup=${setupCode}` : ""}`, {
+				wait: false,
+			});
+		} catch {
+			console.log(`Open ${address} in your browser to continue setup.`);
+		}
+	}
 	let stopping = false;
 	const stop = async () => {
 		if (stopping) return;
@@ -155,4 +122,5 @@ export async function launchLocal(values: {
 	};
 	process.once("SIGINT", stop);
 	process.once("SIGTERM", stop);
+	return worker;
 }

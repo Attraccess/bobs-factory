@@ -24,6 +24,9 @@ if (process.argv[2] === "operator-mcp") {
 		),
 		resolvePath(flag("--credential-file")!),
 	);
+} else if (process.argv[2] === "git-credential") {
+	const { gitCredential } = await import("./github.js");
+	await gitCredential(process.argv[3]);
 } else if (process.argv[2] === "internal") {
 	const { runInternal } = await import("./internal.js");
 	await runInternal(process.argv.slice(3));

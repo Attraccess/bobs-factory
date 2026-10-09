@@ -83,10 +83,34 @@ Determine the platform from the repository context (`<github_url>` or `<gitlab_u
 
 ### GitHub (when `<github_url>` is present)
 
-```bash
-git push -u origin HEAD
-gh pr view --json url,number 2>/dev/null || gh pr create --draft --base [base_branch from context] --title "[descriptive title]" --body "Work in progress"
+Push the branch with `git push -u origin HEAD`. In a managed Bob’s Factory
+session, use its built-in GitHub client when
+`BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND` is set. This works with the browser
+connection and the accepted execution credentials, including before the shell
+PATH is reloaded. GitHub CLI installation is optional.
+
+Write a token-free JSON request file with `method`, repository-relative `path`
+and optional `body`, then invoke the trusted launcher with positional arguments:
+
+```sh
+sh -c "$BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND github-api \"\$@\"" bobs-factory \
+  --repo https://github.com/OWNER/REPO --request /absolute/request.json
 ```
+
+- Find an existing open PR using `GET` and
+  `repos/OWNER/REPO/pulls?state=open&head=OWNER%3ABRANCH` (URL-encode the branch).
+  Paginate complete lists with `per_page=100&page=N` when needed.
+- Create a PR using `POST`, `repos/OWNER/REPO/pulls` and
+  `{ "head": "BRANCH", "base": "BASE", "title": "TITLE", "body": "BODY", "draft": true }`.
+  Use the actual branch/base from context and the complete reviewable description.
+- Update its title/description using `PATCH`,
+  `repos/OWNER/REPO/pulls/NUMBER` and the corresponding body fields.
+- Read `html_url` and `number` from the confirmed response. Never put credentials
+  in the request file, arguments, output or PR body. Keep the PR a draft when
+  requested; this step does not authorize a merge.
+
+Outside a managed session, an already available GitHub CLI remains an optional
+way to create/update the PR. Do not require users to install it for Bob.
 
 ### GitLab (when `<gitlab_url>` is present)
 

@@ -1,5 +1,6 @@
 import { motion, useScroll, useSpring, useTransform } from "motion/react";
 import { useRef, useState } from "react";
+import { INSTALL_COMMAND, releaseAvailable } from "../install";
 import { Bob, type Mood } from "./Bob";
 import { CopyCommand } from "./CopyCommand";
 import { BrowserFrame, ease, Video } from "./ui";
@@ -127,7 +128,11 @@ export function Hero() {
 							→
 						</span>
 					</a>
-					<CopyCommand command="pnpm factory --repo . --agent claude" />
+					<CopyCommand
+						command={INSTALL_COMMAND}
+						label="Copy install command"
+						disabled={!releaseAvailable}
+					/>
 				</motion.div>
 			</div>
 

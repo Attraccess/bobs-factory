@@ -1,5 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { FactoryTools } from "../src/factory/FactoryTools.js";
+import { GITHUB_API_COMMAND } from "../src/factory/GithubApi.js";
 import {
 	assessFeedback,
 	informationalComment,
@@ -9,12 +10,13 @@ import {
 	reportReadiness,
 } from "../src/factory/MergeReadiness.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
+import { githubApiReceipt, githubRequest } from "./fixtures/github-api.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
 
 const url = "https://github.com/test/repo/pull/1";
 const command = (extra = {}) =>
 	vi.fn(async (_exe: string, args: string[]) =>
-		args.includes("graphql") ? JSON.stringify(providerReceipt(extra)) : "[[]]",
+		JSON.stringify(githubApiReceipt(args, extra)),
 	);
 it("reports readiness progress once while retaining fresh complete polling receipts", async () => {
 	const ctx = {
@@ -140,11 +142,11 @@ it.each([
 	} as unknown as ExecutionContext;
 	const cmd = vi.fn(
 		async (input: ExecutionContext, exe: string, args: string[]) => {
-			expect(exe).toBe("gh");
+			expect(exe).toBe(GITHUB_API_COMMAND);
 			expect(input.run.workspace).toBe(ctx.evidenceDir);
-			return args.includes("graphql")
-				? JSON.stringify(providerReceipt({ state: "MERGED", headRefOid }))
-				: "[[]]";
+			return JSON.stringify(
+				githubApiReceipt(args, { state: "MERGED", headRefOid }),
+			);
 		},
 	);
 	const result = new FactoryTools({ command: cmd, postComment: vi.fn() }).tool(
@@ -157,9 +159,9 @@ it.each([
 			headSha: "head",
 		});
 	else await expect(result).rejects.toThrow("explicitly approved revision");
-	expect(cmd.mock.calls.every(([, , args]) => !args.includes("merge"))).toBe(
-		true,
-	);
+	expect(
+		cmd.mock.calls.every(([, , args]) => githubRequest(args).method !== "PUT"),
+	).toBe(true);
 });
 
 it("invalidates approval for a clean unpushed local commit", async () => {
@@ -179,7 +181,7 @@ it("invalidates approval for a clean unpushed local commit", async () => {
 				? args[0] === "rev-parse"
 					? "unpushed"
 					: ""
-				: args.includes("graphql")
+				: githubRequest(args).path === "graphql"
 					? JSON.stringify(
 							providerReceipt({
 								isDraft: false,
@@ -187,14 +189,15 @@ it("invalidates approval for a clean unpushed local commit", async () => {
 								reviewDecision: "APPROVED",
 							}),
 						)
-					: "[[]]",
+					: "[]",
 	);
 	await expect(
 		new FactoryTools({ command: cmd, postComment: async () => {} }).tool(ctx),
 	).resolves.toMatchObject({ fix: true, rework: false });
 	expect(
 		cmd.mock.calls.some(
-			([, exe, args]) => exe === "gh" && args.includes("merge"),
+			([, exe, args]) =>
+				exe === GITHUB_API_COMMAND && githubRequest(args).method === "PUT",
 		),
 	).toBe(false);
 });
@@ -215,7 +218,7 @@ it("assesses new feedback during human review before any merge request", async (
 				? args[0] === "rev-parse"
 					? "head"
 					: ""
-				: args.includes("graphql")
+				: githubRequest(args).path === "graphql"
 					? JSON.stringify(
 							providerReceipt({
 								isDraft: false,
@@ -223,14 +226,15 @@ it("assesses new feedback during human review before any merge request", async (
 								reviewDecision: "APPROVED",
 							}),
 						)
-					: JSON.stringify([[{ id: 9, body: "Fix this first" }]]),
+					: JSON.stringify([{ id: 9, body: "Fix this first" }]),
 	);
 	await expect(
 		new FactoryTools({ command: cmd, postComment: async () => {} }).tool(ctx),
 	).resolves.toMatchObject({ fix: true });
 	expect(
 		cmd.mock.calls.some(
-			([, exe, args]) => exe === "gh" && args.includes("merge"),
+			([, exe, args]) =>
+				exe === GITHUB_API_COMMAND && githubRequest(args).method === "PUT",
 		),
 	).toBe(false);
 });
@@ -359,11 +363,11 @@ it.each([
 				: dirty
 					? " M file"
 					: ""
-			: args.includes("graphql")
+			: githubRequest(args).path === "graphql"
 				? JSON.stringify(
 						providerReceipt({ headRefOid: head, baseRefOid: base }),
 					)
-				: "[[]]";
+				: "[]";
 	await expect(
 		new FactoryTools({ command: cmd, postComment: async () => {} }).tool(ctx),
 	).resolves.toMatchObject({ reviewRequired: required });
@@ -399,11 +403,11 @@ it.each([
 			? args[0] === "rev-parse"
 				? "head"
 				: ""
-			: args.includes("graphql")
+			: githubRequest(args).path === "graphql"
 				? JSON.stringify(
 						providerReceipt({ headRefOid: "head", baseRefOid: "base" }),
 					)
-				: "[[]]";
+				: "[]";
 	await expect(
 		new FactoryTools({ command: cmd, postComment: async () => {} }).tool(ctx),
 	).resolves.toMatchObject({ reviewRequired: required });
@@ -448,7 +452,7 @@ it.each([
 			? args[0] === "rev-parse"
 				? "head"
 				: ""
-			: args.includes("graphql")
+			: githubRequest(args).path === "graphql"
 				? JSON.stringify(
 						providerReceipt({
 							headRefOid: "head",
@@ -468,7 +472,7 @@ it.each([
 							},
 						}),
 					)
-				: "[[]]";
+				: "[]";
 	const result = await new FactoryTools({
 		command: cmd,
 		postComment: async () => {},

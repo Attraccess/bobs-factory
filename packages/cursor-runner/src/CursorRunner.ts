@@ -430,7 +430,9 @@ export class CursorRunner extends EventEmitter implements IAgentRunner {
 	}
 
 	async start(prompt: string): Promise<CursorSessionInfo> {
-		if (this.config.childEnvironment) {
+		// The SDK has no local env option and reads process.env. Native additions
+		// therefore use the same dedicated process as isolated execution profiles.
+		if (this.config.childEnvironment || this.config.additionalEnv) {
 			if (!this.worker) {
 				this.worker = new CursorWorkerRunner(this.config);
 				this.worker.on("message", (message) => this.emit("message", message));

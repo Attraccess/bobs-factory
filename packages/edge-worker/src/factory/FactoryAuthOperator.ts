@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
 	chmodSync,
 	existsSync,
@@ -29,6 +29,23 @@ export function authorizeFactoryEnrollment(home: string): string {
 	atomicPrivateFile(
 		join(directory, "enroll.json"),
 		JSON.stringify({ token, expires: Date.now() + 600000 }),
+	);
+	return token;
+}
+/**
+ * Local filesystem authority only: request a terminal session from the running
+ * server. Only the token hash is written; the server consumes the request within a
+ * minute and accepts the token as a Bearer credential on its localhost origin.
+ */
+export function requestFactoryTerminalSession(home: string): string {
+	const directory = authDirectory(home),
+		token = randomBytes(32).toString("base64url");
+	atomicPrivateFile(
+		join(directory, `terminal-${randomBytes(16).toString("hex")}.json`),
+		JSON.stringify({
+			hash: createHash("sha256").update(token).digest("hex"),
+			expires: Date.now() + 60000,
+		}),
 	);
 	return token;
 }

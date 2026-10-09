@@ -7,7 +7,7 @@ import {
 	renameSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type {
 	RunTitleJob,
@@ -25,6 +25,16 @@ import {
 	AgentSettingsSchema,
 	resolveAgentSettings,
 } from "./AgentSettings.js";
+import { ciFixRuntimeInstructions } from "./CISupervision.js";
+import {
+	acquireDelivery,
+	type DeliveryCoordination,
+	deliveryScopes,
+	deliveryStep,
+	releaseDelivery,
+	resourceScopes,
+	restoreDelivery,
+} from "./DeliveryCoordination.js";
 import {
 	defaultWorkflows,
 	upgradeHandoffReadiness,
@@ -38,6 +48,7 @@ import {
 } from "./ExecutionProfiles.js";
 import type { GitProviderSnapshot } from "./GitProvider.js";
 import type { RoleProgress, RoleRevision } from "./Incremental.js";
+import { beginStepAttempt, finishStepAttempt } from "./Provenance.js";
 import {
 	isExplanationRequest,
 	normalizeQuestionResult,
@@ -58,6 +69,7 @@ import {
 	stampSpecialist,
 	validateContractOutput,
 } from "./SpecialistReview.js";
+import { recordTicketMilestone } from "./TicketTracking.js";
 import {
 	isComputeIntensive,
 	readPath,
@@ -91,10 +103,12 @@ export interface WorkflowCall {
 	workflowId: string;
 }
 export interface AgentCheckpoint {
+	infrastructureFailure?: { reason: string; at: string; output?: unknown };
 	/** Persisted per-role budget for resuming a silent provider turn. */
 	idleRetries?: number;
 	runner: NonNullable<WorkflowStep["runner"]>;
-	sessionId: string;
+	/** Absent when required infrastructure fails before a native session exists. */
+	sessionId?: string;
 	result?: {
 		output: unknown;
 		revision: RoleRevision;
@@ -114,6 +128,7 @@ export interface AgentCheckpoint {
 		/** Reserved before launch; a proven pre-turn startup failure returns it. */
 		reserved?: boolean;
 		exhausted?: boolean;
+		retryGeneration?: number;
 		screenshots?: { path: string; area: string; state?: string }[];
 	};
 }
@@ -122,8 +137,11 @@ export interface GraphCheckpoint {
 	reviewKey?: string;
 	current: string;
 	visits: Record<string, number>;
+	/** Exact native identities for the configured roles in this frame; never completed results. */
+	agentSessions?: Record<string, Pick<AgentCheckpoint, "runner" | "sessionId">>;
 	additionalVisits?: Record<string, number>;
 	active?: {
+		attemptId?: string;
 		phase: "executing" | "result" | "waiting" | "answered";
 		questionDisplay?: {
 			source?: {
@@ -174,6 +192,10 @@ export interface RunViewState {
 import { cleanupVideoEvidence } from "./Video.js";
 
 export interface FactoryRun {
+	ciSupervision?: import("./CISupervision.js").CISupervision;
+	stepAttempts?: import("./Provenance.js").StepAttempt[];
+	deliveryCoordination?: DeliveryCoordination;
+	deliveryReservations?: Record<string, DeliveryCoordination>;
 	repositories?: import("./RepositoryScope.js").RunRepository[];
 	/** Durable per-repository receipts, including partial publication and merges. */
 	repositoryOutputs?: Record<string, Record<string, unknown>>;
@@ -261,6 +283,13 @@ export interface ChatMessage {
 	step: string;
 }
 export interface ExecutionContext {
+	/** Revalidate the complete grouped approval under the operation reservation. */
+	validateDelivery?: () => Promise<Record<string, unknown> | undefined>;
+	/** Nested publication discovered by passive grouped readiness must also claim targets. */
+	coordinateDelivery?: <T>(operation: () => Promise<T>) => Promise<T>;
+	/** Runtime-owned home, never inferred from a worktree or a private runner HOME. */
+	factoryHome?: string;
+	attemptId?: string;
 	reviewKey?: string;
 	execution?: ResolvedExecutionEnvironment;
 	stepKey?: string;
@@ -386,6 +415,9 @@ export class WorkflowRuntime {
 				readFileSync(join(this.directory, "runs", filename), "utf8"),
 			);
 			run.workflow = WorkflowSchema.parse(run.workflow);
+			// Process-owned operations must reacquire after restart. Legacy broad
+			// ownership cannot block restored passive parent/CI frames.
+			restoreDelivery(run);
 
 			// Persisted definitions are immutable. Legacy contract migration occurs
 			// explicitly at retry/start, preserving graph positions and native IDs.
@@ -797,6 +829,8 @@ export class WorkflowRuntime {
 			controller.abort(); // Cancel sibling fanout branches on failure.
 			this.log(run, "run", run.error);
 		} finally {
+			if (!this.shuttingDown || run.status === "stopped")
+				releaseDelivery(run, `Run ${run.status}`);
 			this.controllers.delete(run.id);
 			this.pendingAnswers.delete(run.id);
 			try {
@@ -862,9 +896,76 @@ export class WorkflowRuntime {
 		milestone: import("./TicketTracking.js").TicketMilestone,
 	): Promise<void> {
 		try {
-			await this.hooks.track?.(run, milestone);
+			if (!run.ticketReference || !this.hooks.track) return;
+			recordTicketMilestone(run, milestone);
+			this.save(run);
+			// The outbox owns retries and deduplication. External tracking never
+			// holds a graph step, execution capacity, or repository reservation.
+			void Promise.resolve(this.hooks.track(run, milestone)).catch((error) =>
+				this.log(
+					run,
+					"ticket-sync",
+					`Ticket tracking failed: ${String(error)}`,
+				),
+			);
 		} catch (error) {
 			this.log(run, "ticket-sync", `Ticket tracking failed: ${String(error)}`);
+		}
+	}
+	private async coordinate<T>(
+		context: ExecutionContext,
+		operation: () => Promise<T>,
+		scopes?: string[],
+		mutation = !scopes,
+	): Promise<T> {
+		const key = `${context.stepKey ?? context.step.id}:${mutation ? "mutation" : "resources"}`;
+		const targets = () =>
+			[
+				...new Set([
+					...(mutation ? deliveryScopes(context.run) : []),
+					...(scopes ?? []),
+				]),
+			].sort();
+		const admit = () =>
+			acquireDelivery(
+				context.run,
+				() => this.runs.values(),
+				context.signal,
+				() => this.save(context.run),
+				context.log,
+				{
+					key,
+					scopes: targets,
+					reason: mutation
+						? "Repository integration/publication"
+						: "Shared QA/environment resource",
+				},
+			);
+		await admit();
+		try {
+			context.signal.throwIfAborted();
+			const nested = context.coordinateDelivery;
+			if (mutation)
+				context.coordinateDelivery = async (operation) => {
+					const owned = context.run.deliveryReservations?.[key];
+					if (
+						owned?.phase !== "active" ||
+						targets().some((target) => !owned.scopes.includes(target))
+					)
+						// Suspend this operation and reconcile its whole scope before any
+						// new publication, retaining ownership until the outer operation settles.
+						await admit();
+					context.signal.throwIfAborted();
+					return operation();
+				};
+			try {
+				return await operation();
+			} finally {
+				context.coordinateDelivery = nested;
+			}
+		} finally {
+			releaseDelivery(context.run, "Operation settled", key);
+			this.save(context.run);
 		}
 	}
 	async retryTracking(id: string): Promise<void> {
@@ -948,6 +1049,8 @@ export class WorkflowRuntime {
 				? await this.hooks.execution(run, step.runner ?? run.runner)
 				: undefined;
 			const context: ExecutionContext = {
+				factoryHome: dirname(this.directory),
+				attemptId: state.attemptId,
 				execution,
 				reviewKey: checkpoint.reviewKey,
 				run,
@@ -973,310 +1076,420 @@ export class WorkflowRuntime {
 				resumeAgent: state.agent,
 				checkpointAgent: (agent) => {
 					state.agent = agent;
+					if (agent.sessionId && agent.sessionId !== "pending") {
+						checkpoint.agentSessions ??= {};
+						checkpoint.agentSessions[step.id] = {
+							runner: agent.runner,
+							sessionId: agent.sessionId,
+						};
+					}
 					this.save(run);
 				},
 				save: () => this.save(run),
 			};
+			context.coordinateDelivery = (operation) =>
+				this.coordinate(context, operation);
+			if (
+				step.type === "agent" &&
+				(step.id === "ci-fix" ||
+					steps.some(
+						(item) =>
+							item.tool === "ci" &&
+							item.branches.some(
+								(branch) =>
+									branch.next === step.id && branch.when.path === "fix",
+							),
+					))
+			)
+				context.step = {
+					...step,
+					prompt: `${step.prompt ?? ""}\n\n${ciFixRuntimeInstructions}`,
+				};
 			mkdirSync(context.evidenceDir, { recursive: true });
 			let output: unknown = outputs[step.id];
 			if (state.phase === "executing") {
-				if (step.tool === "review-gate" && step.review) {
-					const fanoutKey = `${prefix}${step.review.fanout}`;
-					const baseline = [...(run.reviewRounds ?? [])]
-						.reverse()
-						.find((r) => r.key === fanoutKey);
-					if (!baseline)
-						throw new Error("Configured review baseline is unavailable");
-					const inventory = outputs[step.review.inventory] as
-						| Inventory
-						| undefined;
-					if (
-						inventory?.digest !== baseline.inventory.digest ||
-						inventory?.version !== baseline.inventory.version ||
-						inventory?.sourceContextDigest !==
-							baseline.inventory.sourceContextDigest
-					)
-						throw new Error(
-							"Requirement inventory changed without a new specialist round",
-						);
-					const revision = await reviewedRunRevision(run, baseline);
-					if (revision.headSha !== baseline.headSha)
-						throw new Error("Revision changed during specialist review");
-					output = aggregateReview(
-						baseline,
-						outputs[step.review.fanout!] as Record<string, unknown>[],
-						latestAggregate(run, fanoutKey),
-					);
-					const questions = reviewRecoveryQuestions(context, output, {
-						headSha: revision.headSha,
-						dirty: false,
-					});
-					if (questions.length)
-						output = {
-							...(output as Record<string, unknown>),
-							reviewBlocked: true,
-							questions,
-						};
-				} else if (step.type === "fanout") {
-					if (
-						step.groups?.some((group) =>
-							group.some(
-								(item) => item.askQuestions || item.tool === "human-review",
-							),
-						)
-					)
-						throw new Error("Human checkpoints belong outside fanout branches");
-					if (step.review && !state.reviewBaseline) {
+				state.attemptId = beginStepAttempt(context);
+				this.save(run);
+				try {
+					if (step.tool === "review-gate" && step.review) {
+						const fanoutKey = `${prefix}${step.review.fanout}`;
+						const baseline = [...(run.reviewRounds ?? [])]
+							.reverse()
+							.find((r) => r.key === fanoutKey);
+						if (!baseline)
+							throw new Error("Configured review baseline is unavailable");
 						const inventory = outputs[step.review.inventory] as
 							| Inventory
 							| undefined;
 						if (
-							!inventory?.digest ||
-							inventory.questions.length ||
-							inventory.conflicts.length ||
-							inventory.sourceReceipt.unavailable.length
+							inventory?.digest !== baseline.inventory.digest ||
+							inventory?.version !== baseline.inventory.version ||
+							inventory?.sourceContextDigest !==
+								baseline.inventory.sourceContextDigest
 						)
 							throw new Error(
-								"Requirement extraction is missing or has unresolved scope/source blockers",
+								"Requirement inventory changed without a new specialist round",
 							);
-						if (inventory.sourceContextDigest !== scopeContextDigest(input)) {
-							checkpoint.current = step.review.inventory;
-							checkpoint.active = undefined;
+						const revision = await reviewedRunRevision(run, baseline);
+						if (revision.headSha !== baseline.headSha)
+							throw new Error("Revision changed during specialist review");
+						output = aggregateReview(
+							baseline,
+							outputs[step.review.fanout!] as Record<string, unknown>[],
+							latestAggregate(run, fanoutKey),
+						);
+						const questions = reviewRecoveryQuestions(context, output, {
+							headSha: revision.headSha,
+							dirty: false,
+						});
+						if (questions.length)
+							output = {
+								...(output as Record<string, unknown>),
+								reviewBlocked: true,
+								questions,
+							};
+					} else if (step.type === "fanout") {
+						if (
+							step.groups?.some((group) =>
+								group.some(
+									(item) => item.askQuestions || item.tool === "human-review",
+								),
+							)
+						)
+							throw new Error(
+								"Human checkpoints belong outside fanout branches",
+							);
+						if (step.review && !state.reviewBaseline) {
+							const inventory = outputs[step.review.inventory] as
+								| Inventory
+								| undefined;
+							if (
+								!inventory?.digest ||
+								inventory.questions.length ||
+								inventory.conflicts.length ||
+								inventory.sourceReceipt.unavailable.length
+							)
+								throw new Error(
+									"Requirement extraction is missing or has unresolved scope/source blockers",
+								);
+							if (inventory.sourceContextDigest !== scopeContextDigest(input)) {
+								checkpoint.current = step.review.inventory;
+								checkpoint.active = undefined;
+								this.log(
+									run,
+									key,
+									"Scope changed after extraction; extracting a fresh inventory before starting reviewers.",
+								);
+								finishStepAttempt(context, "blocked");
+								continue;
+							}
+							const repo = outputs.repository as
+								| { baseBranch?: string }
+								| undefined;
+							const source = outputs.source as
+								| { baseRefName?: string }
+								| undefined;
+							const revision = await reviewedRunRevision(
+								run,
+								`refs/remotes/origin/${source?.baseRefName ?? repo?.baseBranch ?? "main"}`,
+							);
+							run.reviewRounds ??= [];
+							state.reviewBaseline = {
+								schemaVersion: 1,
+								round: run.reviewRounds.length + 1,
+								key,
+								inventory: structuredClone(inventory),
+								...revision,
+								historyLength: run.history.length,
+								at: new Date().toISOString(),
+								reviewers: (step.groups ?? []).flatMap((group, i) =>
+									group.map((s) => ({
+										id: s.id,
+										key: `${key}/${i}/${s.id}`,
+										group: i,
+										contract: s.reviewContract!,
+									})),
+								),
+								context: frozenReviewContext(input),
+							};
+							run.reviewRounds.push(state.reviewBaseline);
+						}
+						if (state.reviewBaseline)
+							checkpoint.reviewKey = state.reviewBaseline.key;
+						state.children ??= (step.groups ?? []).map((group) => ({
+							...this.newCheckpoint(group),
+							outputs: step.review ? {} : structuredClone(outputs),
+						}));
+						// Also fill older resumed branches, preserving reviews established within them.
+						for (const child of state.children)
+							child.reviewKey ??= checkpoint.reviewKey;
+						this.save(run);
+						const branchController = new AbortController();
+						const cancelBranches = () => branchController.abort(signal.reason);
+						signal.addEventListener("abort", cancelBranches, { once: true });
+						if (signal.aborted) cancelBranches();
+						let failure: unknown;
+						const branchResults = await Promise.allSettled(
+							(step.groups ?? []).map((group, index) =>
+								this.graph(
+									run,
+									group,
+									state.children![index]!.outputs!,
+									branchController.signal,
+									`${key}/${index}/`,
+									state.children![index]!,
+									workflowId,
+									chat,
+									true,
+									state.reviewBaseline ?? reviewBaseline,
+								).catch((error) => {
+									failure ??= error;
+									branchController.abort(error);
+									throw error;
+								}),
+							),
+						);
+						signal.removeEventListener("abort", cancelBranches);
+						if (failure) throw failure;
+						if (state.reviewBaseline) {
+							// All runner hooks have returned and cleaned up their temporary
+							// project configuration. Reject any remaining edits before
+							// accepting the round, without exempting runner directories.
+							const revision = await reviewedRunRevision(
+								run,
+								state.reviewBaseline,
+							);
+							if (revision.headSha !== state.reviewBaseline.headSha)
+								throw new Error("Revision changed during specialist review");
+						}
+						output = branchResults.map((result, index) =>
+							result.status === "fulfilled"
+								? step.review
+									? Object.fromEntries(
+											(step.groups?.[index] ?? []).map((s) => [
+												s.id,
+												result.value[s.id],
+											]),
+										)
+									: result.value
+								: undefined,
+						);
+						if (state.reviewBaseline)
+							for (const reviewer of state.reviewBaseline.reviewers) {
+								run.outputs[reviewer.key] = (
+									output as Record<string, unknown>[]
+								)[reviewer.group]![reviewer.id];
+							}
+					} else if (step.type === "workflow") {
+						const definition = run.workflowDefinitions?.find(
+							(item) => item.id === step.workflow,
+						);
+						if (!definition)
+							throw new Error(`Workflow unavailable: ${step.workflow}`);
+						requireTrigger(definition, "workflow");
+						if (!state.call) {
+							state.call = {
+								type: "workflow",
+								callerWorkflowId: workflowId,
+								step: step.id,
+								key,
+								workflowId: definition.id,
+							};
+							// Call receipts outlive the capped activity buffer, including interrupted calls.
+							run.workflowCalls ??= run.events
+								.filter((event) => event.call)
+								.map((event) => ({ call: event.call!, at: event.at }));
+							run.workflowCalls.push({
+								call: state.call,
+								at: new Date().toISOString(),
+							});
 							this.log(
 								run,
 								key,
-								"Scope changed after extraction; extracting a fresh inventory before starting reviewers.",
+								`Calling ${definition.name} from ${workflowId}/${step.id}`,
+								"workflow",
+								state.call,
 							);
-							continue;
 						}
-						const repo = outputs.repository as
-							| { baseBranch?: string }
-							| undefined;
-						const source = outputs.source as
-							| { baseRefName?: string }
-							| undefined;
-						const revision = await reviewedRunRevision(
+						state.children ??= [this.newCheckpoint(definition.steps)];
+						state.children[0]!.reviewKey ??= checkpoint.reviewKey;
+						this.save(run);
+						await this.graph(
 							run,
-							`refs/remotes/origin/${source?.baseRefName ?? repo?.baseBranch ?? "main"}`,
+							definition.steps,
+							outputs,
+							signal,
+							`${key}/`,
+							state.children[0]!,
+							definition.id,
+							definition.chat ?? chat,
+							parallel,
 						);
-						run.reviewRounds ??= [];
-						state.reviewBaseline = {
-							schemaVersion: 1,
-							round: run.reviewRounds.length + 1,
-							key,
-							inventory: structuredClone(inventory),
-							...revision,
-							historyLength: run.history.length,
-							at: new Date().toISOString(),
-							reviewers: (step.groups ?? []).flatMap((group, i) =>
-								group.map((s) => ({
-									id: s.id,
-									key: `${key}/${i}/${s.id}`,
-									group: i,
-									contract: s.reviewContract!,
-								})),
-							),
-							context: frozenReviewContext(input),
+						output = { workflow: definition.id, completed: true };
+						checkpoint.reviewKey = state.children[0]!.reviewKey;
+					} else {
+						run.capacityLeaves ??= {};
+						run.capacityLeaves[key] = {
+							phase:
+								step.tool === "ci" ||
+								step.tool === "merge-readiness" ||
+								step.tool === "handoff"
+									? "waiting-ci"
+									: step.tool === "human-review"
+										? "waiting-human"
+										: "executing",
 						};
-						run.reviewRounds.push(state.reviewBaseline);
-					}
-					if (state.reviewBaseline)
-						checkpoint.reviewKey = state.reviewBaseline.key;
-					state.children ??= (step.groups ?? []).map((group) => ({
-						...this.newCheckpoint(group),
-						outputs: step.review ? {} : structuredClone(outputs),
-					}));
-					// Also fill older resumed branches, preserving reviews established within them.
-					for (const child of state.children)
-						child.reviewKey ??= checkpoint.reviewKey;
-					this.save(run);
-					const branchController = new AbortController();
-					const cancelBranches = () => branchController.abort(signal.reason);
-					signal.addEventListener("abort", cancelBranches, { once: true });
-					if (signal.aborted) cancelBranches();
-					let failure: unknown;
-					const branchResults = await Promise.allSettled(
-						(step.groups ?? []).map((group, index) =>
-							this.graph(
-								run,
-								group,
-								state.children![index]!.outputs!,
-								branchController.signal,
-								`${key}/${index}/`,
-								state.children![index]!,
-								workflowId,
-								chat,
-								true,
-								state.reviewBaseline ?? reviewBaseline,
-							).catch((error) => {
-								failure ??= error;
-								branchController.abort(error);
-								throw error;
-							}),
-						),
-					);
-					signal.removeEventListener("abort", cancelBranches);
-					if (failure) throw failure;
-					if (state.reviewBaseline) {
-						// All runner hooks have returned and cleaned up their temporary
-						// project configuration. Reject any remaining edits before
-						// accepting the round, without exempting runner directories.
-						const revision = await reviewedRunRevision(
-							run,
-							state.reviewBaseline,
-						);
-						if (revision.headSha !== state.reviewBaseline.headSha)
-							throw new Error("Revision changed during specialist review");
-					}
-					output = branchResults.map((result, index) =>
-						result.status === "fulfilled"
-							? step.review
-								? Object.fromEntries(
-										(step.groups?.[index] ?? []).map((s) => [
-											s.id,
-											result.value[s.id],
-										]),
-									)
-								: result.value
-							: undefined,
-					);
-					if (state.reviewBaseline)
-						for (const reviewer of state.reviewBaseline.reviewers) {
-							run.outputs[reviewer.key] = (output as Record<string, unknown>[])[
-								reviewer.group
-							]![reviewer.id];
-						}
-				} else if (step.type === "workflow") {
-					const definition = run.workflowDefinitions?.find(
-						(item) => item.id === step.workflow,
-					);
-					if (!definition)
-						throw new Error(`Workflow unavailable: ${step.workflow}`);
-					requireTrigger(definition, "workflow");
-					if (!state.call) {
-						state.call = {
-							type: "workflow",
-							callerWorkflowId: workflowId,
-							step: step.id,
-							key,
-							workflowId: definition.id,
-						};
-						// Call receipts outlive the capped activity buffer, including interrupted calls.
-						run.workflowCalls ??= run.events
-							.filter((event) => event.call)
-							.map((event) => ({ call: event.call!, at: event.at }));
-						run.workflowCalls.push({
-							call: state.call,
-							at: new Date().toISOString(),
-						});
-						this.log(
-							run,
-							key,
-							`Calling ${definition.name} from ${workflowId}/${step.id}`,
-							"workflow",
-							state.call,
-						);
-					}
-					state.children ??= [this.newCheckpoint(definition.steps)];
-					state.children[0]!.reviewKey ??= checkpoint.reviewKey;
-					this.save(run);
-					await this.graph(
-						run,
-						definition.steps,
-						outputs,
-						signal,
-						`${key}/`,
-						state.children[0]!,
-						definition.id,
-						definition.chat ?? chat,
-						parallel,
-					);
-					output = { workflow: definition.id, completed: true };
-					checkpoint.reviewKey = state.children[0]!.reviewKey;
-				} else {
-					run.capacityLeaves ??= {};
-					run.capacityLeaves[key] = {
-						phase:
-							step.tool === "ci" ||
-							step.tool === "merge-readiness" ||
-							step.tool === "handoff"
-								? "waiting-ci"
-								: step.tool === "human-review"
-									? "waiting-human"
-									: "executing",
-					};
-					this.save(run);
-					try {
-						if (
-							step.type !== "agent" &&
-							isComputeIntensive(step) &&
-							this.hooks.capacity
-						) {
-							const lease = await this.hooks.capacity.acquireLease(signal, {
-								...context.capacity,
-								remote: step.tool?.startsWith("mcp__"),
-							});
-							try {
-								signal.throwIfAborted();
-								output = await lease.run(() =>
-									this.hooks[step.type as "script" | "tool"](context),
-								);
-							} finally {
-								await lease.release();
-							}
-						} else output = await this.hooks[step.type](context);
-						if (step.reviewContract) {
-							output = validateContractOutput(context, output);
-							if (step.reviewContract === "inventory-v1")
-								output = {
-									...(output as Inventory),
-									sourceContextDigest: scopeContextDigest(context.input),
-								};
-							if (step.reviewContract !== "inventory-v1") {
-								const revision = await reviewedRunRevision(
-									run,
-									reviewBaseline,
-									// Sibling runners may still own temporary project files.
-									// The fanout join checks cleanliness after every cleanup.
-									{ requireClean: false },
+						this.save(run);
+						try {
+							const execute = async () => {
+								const readiness = steps.find(
+									(item) =>
+										["ci", "handoff", "merge"].includes(item.tool ?? "") &&
+										item.branches.some(
+											(branch) =>
+												branch.next === step.id &&
+												branch.when.path === "fix" &&
+												branch.when.equals === true,
+										),
 								);
 								if (
-									!reviewBaseline ||
-									revision.headSha !== reviewBaseline.headSha
-								)
-									throw new Error(
-										"Reviewer changed the reviewed revision; review invalidated",
+									step.type === "agent" &&
+									readiness &&
+									!state.agent &&
+									readPath(outputs, "draft-pr.url")
+								) {
+									const fresh = await this.hooks.tool({
+										...context,
+										step: {
+											...readiness,
+											id: step.id,
+											tool: "ci-fix-readiness",
+										},
+									});
+									if (readPath(fresh, "skipFix") === true) {
+										context.log(
+											"Fresh readiness resolved the queued failure; skipping the obsolete fixer and retaining review/QA/approval gates.",
+										);
+										return {
+											summary:
+												"Queued provider failure resolved before correction",
+											checks: [],
+											reviewRequired: false,
+											skipped: true,
+										};
+									}
+									// Supply current head/base, feedback and checks, not the obsolete queued receipt.
+									context.input = {
+										...(context.input as Record<string, unknown>),
+										outputs: structuredClone(outputs),
+									};
+								}
+								if (
+									step.type !== "agent" &&
+									isComputeIntensive(step) &&
+									this.hooks.capacity
+								) {
+									const lease = await this.hooks.capacity.acquireLease(signal, {
+										...context.capacity,
+										remote: step.tool?.startsWith("mcp__"),
+									});
+									try {
+										signal.throwIfAborted();
+										return await lease.run(() =>
+											this.hooks[step.type as "script" | "tool"](context),
+										);
+									} finally {
+										await lease.release();
+									}
+								} else
+									return this.hooks[step.type as "agent" | "script" | "tool"](
+										context,
 									);
-								output = stampSpecialist(context, output);
+							};
+							const resources = resourceScopes(context);
+							const mutation = deliveryStep(run, step);
+							output =
+								mutation || resources.length
+									? await this.coordinate(
+											context,
+											execute,
+											resources.length ? resources : undefined,
+											mutation,
+										)
+									: await execute();
+							if (step.reviewContract) {
+								output = validateContractOutput(context, output);
+								if (step.reviewContract === "inventory-v1")
+									output = {
+										...(output as Inventory),
+										sourceContextDigest: scopeContextDigest(context.input),
+									};
+								if (step.reviewContract !== "inventory-v1") {
+									const revision = await reviewedRunRevision(
+										run,
+										reviewBaseline,
+										// Sibling runners may still own temporary project files.
+										// The fanout join checks cleanliness after every cleanup.
+										{ requireClean: false },
+									);
+									if (
+										!reviewBaseline ||
+										revision.headSha !== reviewBaseline.headSha
+									)
+										throw new Error(
+											"Reviewer changed the reviewed revision; review invalidated",
+										);
+									output = stampSpecialist(context, output);
+								}
 							}
+						} catch (error) {
+							if (!execution) throw error;
+							throw new Error(
+								execution.redact(
+									error instanceof Error ? error.message : String(error),
+								),
+							);
+						} finally {
+							if (!this.shuttingDown || run.status === "stopped")
+								delete run.capacityLeaves[key];
+							this.save(run);
 						}
-					} catch (error) {
-						if (!execution) throw error;
-						throw new Error(
-							execution.redact(
-								error instanceof Error ? error.message : String(error),
-							),
-						);
-					} finally {
-						if (!this.shuttingDown || run.status === "stopped")
-							delete run.capacityLeaves[key];
-						this.save(run);
 					}
+					signal.throwIfAborted();
+					if (execution && output !== undefined)
+						output = JSON.parse(execution.redact(JSON.stringify(output)));
+					outputs[step.id] = output;
+					if (step.reviewContract && step.reviewContract !== "inventory-v1")
+						run.outputs[key] = output;
+					run.history.push({
+						step: key,
+						output,
+						at: new Date().toISOString(),
+						...(state.call ? { call: state.call } : {}),
+					});
+					state.phase = "result";
+					finishStepAttempt(
+						context,
+						readPath(output, "status") === "failed"
+							? "failed"
+							: readPath(output, "status") === "blocked" ||
+									readPath(output, "reviewBlocked") === true ||
+									readPath(output, "reviewIncomplete") === true
+								? "blocked"
+								: "completed",
+					);
+					this.save(run);
+				} catch (error) {
+					finishStepAttempt(
+						context,
+						signal.aborted
+							? "interrupted"
+							: state.agent?.infrastructureFailure
+								? "blocked"
+								: "failed",
+					);
+					throw error;
 				}
-				signal.throwIfAborted();
-				if (execution && output !== undefined)
-					output = JSON.parse(execution.redact(JSON.stringify(output)));
-				outputs[step.id] = output;
-				if (step.reviewContract && step.reviewContract !== "inventory-v1")
-					run.outputs[key] = output;
-				run.history.push({
-					step: key,
-					output,
-					at: new Date().toISOString(),
-					...(state.call ? { call: state.call } : {}),
-				});
-				state.phase = "result";
-				this.save(run);
 			}
 			// Restored waits must use current gate logic, retaining all role evidence.
 			if (
@@ -1311,7 +1524,9 @@ export class WorkflowRuntime {
 				const merged =
 					step.tool === "merge" && readPath(output, "merged") === true;
 				const handoffFix =
-					step.tool === "handoff" && readPath(output, "fix") === true;
+					step.tool === "handoff" &&
+					(readPath(output, "fix") === true ||
+						readPath(output, "guideRecovery") !== undefined);
 				const stage = merged
 					? "done"
 					: step.tool === "handoff"
@@ -1360,6 +1575,114 @@ export class WorkflowRuntime {
 							body: `${delivery.name}: ${delivery.url}. ${body}`,
 						});
 				}
+			}
+			const ciAssistance = readPath(output, "ciAssistance");
+			if (
+				Array.isArray(ciAssistance) &&
+				ciAssistance.length &&
+				!(
+					readPath(output, "fix") === true &&
+					step.branches.some(
+						(branch) =>
+							branch.when.path === "fix" &&
+							branch.when.equals === true &&
+							branch.next !== "end",
+					)
+				) &&
+				["ci", "merge-readiness", "handoff", "merge"].includes(step.tool ?? "")
+			) {
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
+				if (ciAssistance.some((question) => typeof question !== "string"))
+					throw new Error("Invalid CI assistance receipt");
+				if (state.phase !== "answered")
+					await this.waitForAnswers(
+						run,
+						ciAssistance,
+						signal,
+						state,
+						undefined,
+						context,
+					);
+				checkpoint.active = undefined;
+				this.save(run);
+				continue;
+			}
+			if (
+				readPath(output, "reviewIncomplete") === true &&
+				["review-gate", "visual-gate"].includes(step.tool ?? "")
+			) {
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
+				const reviewer = steps.find(
+					(item) =>
+						item.id ===
+						(step.tool === "review-gate" ? "code-review" : "visual-review"),
+				);
+				if (
+					!reviewer ||
+					!["agent", "script"].includes(reviewer.type) ||
+					this.nextStep(steps, reviewer, {}) !== step.id
+				)
+					throw new Error(
+						"Incomplete review requires a configured reviewer → gate recovery path",
+					);
+				const questions = readPath(output, "questions");
+				if (
+					!Array.isArray(questions) ||
+					!questions.length ||
+					questions.some((question) => typeof question !== "string")
+				)
+					throw new Error("Incomplete review requires an assistance question");
+				if (state.phase !== "answered")
+					await this.waitForAnswers(
+						run,
+						questions,
+						signal,
+						state,
+						undefined,
+						context,
+					);
+				checkpoint.current = reviewer.id;
+				let reviewerSession = checkpoint.agentSessions?.[reviewer.id];
+				if (!reviewerSession?.sessionId && reviewer.type === "agent") {
+					// Older frames can retain native init events without a per-role map.
+					// Accept only the exact reviewer's initialization, never the last run session.
+					for (const event of [...run.events].reverse()) {
+						if (event.step !== `${prefix}${reviewer.id}`) continue;
+						try {
+							const message = JSON.parse(event.message);
+							if (
+								message.type === "system" &&
+								message.subtype === "init" &&
+								typeof message.session_id === "string" &&
+								message.session_id &&
+								message.session_id !== "pending"
+							) {
+								const runner = AgentSettingsSchema.shape.runner.safeParse(
+									reviewer.runner ?? run.runner ?? "claude",
+								);
+								if (runner.success && runner.data) {
+									reviewerSession = {
+										runner: runner.data,
+										sessionId: message.session_id,
+									};
+									break;
+								}
+							}
+						} catch {
+							/* Non-native activity does not establish a session identity. */
+						}
+					}
+				}
+				checkpoint.active = reviewerSession?.sessionId
+					? { phase: "executing", agent: { ...reviewerSession } }
+					: undefined;
+				if (checkpoint.active)
+					checkpoint.visits[reviewer.id] =
+						(checkpoint.visits[reviewer.id] ?? 0) + 1;
+				this.save(run);
+				continue;
 			}
 			if (
 				step.tool === "visual-gate" &&
@@ -1605,6 +1928,7 @@ export class WorkflowRuntime {
 			isDeepStrictEqual(run.questions, questions) &&
 			isDeepStrictEqual(run.questionRecommendations, recommendations);
 		state.phase = "waiting";
+		releaseDelivery(run, "Awaiting assistance");
 		run.questions = questions;
 		run.questionRecommendations = recommendations;
 		if (!restored || !run.questionBatchId) run.questionBatchId = randomUUID();
@@ -1724,6 +2048,7 @@ export class WorkflowRuntime {
 			};
 		state.phase = "waiting";
 		run.status = "waiting";
+		releaseDelivery(run, "Awaiting human review");
 		run.questions = [];
 		run.questionRecommendations = undefined;
 		run.questionBatchId = undefined;
@@ -1941,6 +2266,7 @@ export class WorkflowRuntime {
 			!["failed", "interrupted"].includes(run.status)
 		)
 			throw new Error("Only failed or interrupted runs can be retried");
+		releaseDelivery(run, "Explicit retry must re-enter delivery coordination");
 		// Retry is an explicit request for bounded additional work, never a global reset.
 		const extend = (
 			frame: GraphCheckpoint,
@@ -1952,12 +2278,21 @@ export class WorkflowRuntime {
 			const key = `${prefix}${step.id}`;
 			const agent =
 				frame.active?.phase === "executing" ? frame.active.agent : undefined;
+			if (
+				step.type === "agent" &&
+				agent?.rejected &&
+				agent.infrastructureFailure &&
+				!agent.rejected.exhausted
+			)
+				agent.rejected.retryGeneration =
+					(agent.rejected.retryGeneration ?? 0) + 1;
 			if (step.type === "agent" && agent?.rejected?.exhausted) {
 				// Explicit Retry authorizes a fresh bounded budget for this role.
 				// Keep the candidate, issues, revision and native conversation.
 				agent.rejected = {
 					...agent.rejected,
 					attempts: 0,
+					retryGeneration: (agent.rejected.retryGeneration ?? 0) + 1,
 					reserved: false,
 					exhausted: false,
 				};
@@ -2015,7 +2350,12 @@ export class WorkflowRuntime {
 		agent: AgentCheckpoint | undefined,
 		key: string,
 	): boolean {
-		if (!agent || agent.runner !== "codex" || agent.result || agent.rejected)
+		if (
+			!agent?.sessionId ||
+			agent.runner !== "codex" ||
+			agent.result ||
+			agent.rejected
+		)
 			return false;
 		const parse = (text: string) => {
 			try {

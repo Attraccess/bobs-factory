@@ -26,6 +26,7 @@ import {
 	type ExecutionContext,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { githubRequest } from "./fixtures/github-api.js";
 import { deliveryFixture } from "./fixtures/grouped-delivery.js";
 
 const directories: string[] = [];
@@ -170,6 +171,7 @@ it.each([
 				}
 			}
 			return {
+				status: "completed",
 				summary: "Reviewed complete scope",
 				findings: [],
 				disagreements: [],
@@ -275,7 +277,10 @@ it("recovers completion after cleanup only when every approved repository has co
 	).resolves.toMatchObject({ merged: true });
 	expect(
 		forge.commands.every(
-			(command) => command.executable === "gh" && command.args[1] === "view",
+			(command) =>
+				command.executable === "bobs-factory:github-api" &&
+				githubRequest(command.args).method === "GET" &&
+				/\/pulls\/\d+$/.test(githubRequest(command.args).path),
 		),
 	).toBe(true);
 	run.humanDecisions![0]!.repositories!.pop();
@@ -338,10 +343,15 @@ it("publishes only changed repositories to their own base branches and persists 
 	expect(forge.publications).toEqual(["app", "api"]);
 	expect(
 		forge.commands
-			.filter((command) => command.args[1] === "create")
+			.filter(
+				(command) =>
+					command.executable === "bobs-factory:github-api" &&
+					githubRequest(command.args).method === "POST" &&
+					githubRequest(command.args).path.endsWith("/pulls"),
+			)
 			.map((command) => [
 				command.repositoryId,
-				command.args[command.args.indexOf("--base") + 1],
+				(githubRequest(command.args).body as { base: string }).base,
 			]),
 	).toEqual([
 		["app", "main"],

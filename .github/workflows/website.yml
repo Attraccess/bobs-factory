@@ -1,13 +1,31 @@
 name: Website
 
-# Builds website/ from main and publishes it to GitHub Pages (no gh-pages branch).
+# Builds website PRs and publishes main/releases to GitHub Pages.
 on:
   push:
     branches:
       - main
     paths:
       - 'website/**'
+      - 'scripts/install.sh'
+      - 'scripts/sync-release-metadata.mjs'
+      - 'scripts/lib/*.mjs'
+      - 'docs/distribution/release-keys.json'
+      - 'scripts/sync-release-keys.mjs'
       - '.github/workflows/website.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'website/**'
+      - 'scripts/install.sh'
+      - 'scripts/sync-release-metadata.mjs'
+      - 'scripts/lib/*.mjs'
+      - 'docs/distribution/release-keys.json'
+      - 'scripts/sync-release-keys.mjs'
+      - '.github/workflows/website.yml'
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -16,7 +34,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'deploy' }}
   cancel-in-progress: false
 
 jobs:
@@ -42,6 +60,14 @@ jobs:
       - name: Install website dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Synchronize public installer and release metadata
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/sync-release-keys.mjs --check
+          node scripts/sync-release-metadata.mjs
+
       - name: Build website
         env:
           # "/bobs-factory" on github.io, "" once a custom domain is configured.
@@ -53,6 +79,7 @@ jobs:
           path: website/dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

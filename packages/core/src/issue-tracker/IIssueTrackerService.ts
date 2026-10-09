@@ -637,6 +637,11 @@ export interface IIssueTrackerService {
 	 * ```
 	 */
 	fetchAgentSession(sessionId: string): Promise<IssueTrackerAgentSession>;
+	/** Reconcile a manual transcript by its stable external run link; never infer from status. */
+	findAgentSessionForExternalLink?(
+		issueId: string,
+		externalLink: string,
+	): Promise<string | undefined>;
 
 	/**
 	 * Emit a stop signal webhook event for the EdgeWorker to handle.

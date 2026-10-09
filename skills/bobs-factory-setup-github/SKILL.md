@@ -1,81 +1,37 @@
 ---
 name: bobs-factory-setup-github
-description: Configure GitHub for Bob’s Factory — gh CLI login and git config for PRs, with optional webhook setup to enable @mention responses in PR comments, automated rebases and merges, and auto-fixing based on CI failures (coming soon).
+description: Connect GitHub through Bob’s Factory browser setup, or configure an optional GitHub App for webhook mentions.
 ---
 
 **CRITICAL: Never use `Read`, `Edit`, or `Write` tools on `~/.bobs-factory/.env` or any file inside `~/.bobs-factory/`. Use only `Bash` commands (`grep`, `printf >>`, etc.) to interact with env files — secrets must never be read into the conversation context.**
 
 # Setup GitHub
 
-Configures GitHub CLI and git so Bob’s Factory can create branches, commits, and pull requests. Optionally creates a GitHub App so Bob’s Factory can receive and respond to @mentions in PR comments and reviews, automate rebases and merges, and auto-fix based on CI failures (coming soon).
+Bob uses its built-in GitHub API provider for PRs, checks, reviews and merges.
+GitHub CLI authentication is an optional existing credential source.
 
----
+## Part A: Connect GitHub
 
-## Part A: GitHub CLI + Git Config (Outbound)
+1. Start `bobs-factory`, enroll or sign in with the operator's passkey, then open
+   the guided setup's GitHub connection.
+2. Reuse an existing working connection. Otherwise use the browser's classic
+   token link, select `repo` scope and an expiration, and submit the token only
+   through the protected local form. Classic tokens cover repositories available
+   to their account; they cannot be limited to individually selected repositories.
+   Fine-grained PATs can lack GitHub Checks access, so do not promise that they
+   support full readiness. Setup checks the selected project's PR/CI evidence
+   without mutations before saving. Keep the token out of chat, prompts, command
+   arguments and screenshots.
+3. Confirm the connection shows the intended account after its capability check.
+   If GitHub denies an organization repository, authorize the classic token for
+   its SSO if required. When organization policy blocks classic tokens, use a
+   prepared GitHub App binding; existing App/env/named CLI sources remain valid.
+   Preserve the user's existing Git/SSH/signing identity; configure a missing
+   commit identity for the chosen repository only after obtaining its values.
 
-### Step 1: Check Existing Configuration
-
-Check if `gh` is already authenticated:
-
-```bash
-gh auth status 2>&1
-```
-
-If authenticated, check git config:
-
-```bash
-git config --global user.name
-git config --global user.email
-```
-
-If both `gh` auth and git config are set, inform the user:
-
-> GitHub is already configured. Skipping to webhook setup.
-
-Skip to Part B.
-
-### Step 2: Authenticate GitHub CLI
-
-If `gh` is not authenticated:
-
-```bash
-gh auth login
-```
-
-This opens an interactive browser flow. Let the user complete it.
-
-After completion, verify:
-
-```bash
-gh auth status
-```
-
-### Step 3: Configure Git Identity
-
-If git user name or email are not set, ask the user for their preferred values:
-
-> **What name should appear on commits made by Bob’s Factory?**
-> (e.g., your name, or "Bob’s Factory Bot")
-
-> **What email should appear on commits?**
-> (e.g., your email, or a noreply address)
-
-Then set them:
-
-```bash
-git config --global user.name "<name>"
-git config --global user.email "<email>"
-```
-
-### Step 4: Verify
-
-```bash
-gh auth status
-git config --global user.name
-git config --global user.email
-```
-
----
+Finish when the selected repository can be accessed and Git is prepared. Continue
+below only when inbound webhook integration was requested. Outbound PR delivery
+works without a GitHub App or webhook setup.
 
 ## Part B: GitHub App + Webhooks (Inbound — Optional)
 
@@ -154,10 +110,13 @@ Construct the manifest, substituting `AGENT_NAME`, `HOMEPAGE_URL`, and `BOBS_FAC
   },
   "public": false,
   "default_permissions": {
+    "actions": "read",
+    "checks": "read",
     "contents": "write",
     "issues": "write",
     "pull_requests": "write",
-    "repository_hooks": "write"
+    "repository_hooks": "write",
+    "statuses": "read"
   },
   "default_events": [
     "issue_comment",
@@ -239,7 +198,11 @@ Extract the `code` parameter from the redirect URL.
 
 ```bash
 # Store the full response temporarily (one-time-use endpoint — do NOT call twice)
-gh api /app-manifests/<CODE>/conversions --method POST > /tmp/github-app-response.json
+umask 077
+curl --fail --silent --show-error -X POST \
+  -H 'Accept: application/vnd.github+json' \
+  'https://api.github.com/app-manifests/<CODE>/conversions' \
+  > /tmp/github-app-response.json
 
 # Extract values (these are all secrets — handle via Bash only)
 GITHUB_APP_ID=$(cat /tmp/github-app-response.json | jq -r '.id')
@@ -334,7 +297,7 @@ Must return 1.
 
 ## Completion
 
-> ✓ GitHub CLI authenticated
+> ✓ Built-in GitHub connection verified
 > ✓ Git identity configured: `<name>` <`email`>
 
 If webhooks were enabled:
