@@ -193,8 +193,12 @@ export class FactoryServer {
 				.map((c) => c.trim())
 				.find((c) => c.startsWith(`${name}=`))
 				?.slice(name.length + 1);
+		// Browsers use the HttpOnly cookie; the local terminal UI sends its session as a Bearer token.
 		const tokenFor = (request: FastifyRequest) =>
-			cookie(request, cookieName(originFor(request)!));
+			cookie(request, cookieName(originFor(request)!)) ??
+			/^Bearer ([A-Za-z0-9_-]{43})$/.exec(
+				request.headers.authorization ?? "",
+			)?.[1];
 		const setCookie = (
 			reply: import("fastify").FastifyReply,
 			origin: string,
@@ -216,6 +220,7 @@ export class FactoryServer {
 		]);
 		this.app.addHook("onRequest", async (request, reply) => {
 			this.auth.checkRecovery();
+			this.auth.checkTerminalRequests();
 			const origin = originFor(request);
 			if (!origin)
 				return reply.code(403).send({ error: "Invalid Factory authority" });

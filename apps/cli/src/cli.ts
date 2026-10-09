@@ -103,6 +103,26 @@ program
 	});
 
 program
+	.command("tui")
+	.description(
+		"Open the terminal dashboard for a running Bob's Factory on this machine",
+	)
+	.option("--theme <theme>", "auto, light or dark", "auto")
+	.action(async (options: { theme: string }) => {
+		const { runTui, tuiPort } = await import("./tui/index.js");
+		await runTui({
+			home: resolve(resolvePath(program.opts().home)),
+			port: tuiPort(
+				program.getOptionValueSource("port") === "default"
+					? undefined
+					: program.opts().port,
+			),
+			theme: options.theme,
+		});
+		process.exit(0);
+	});
+
+program
 	.command("local", { isDefault: true })
 	.description("Open Bob's Factory and resume or complete guided setup")
 	.action(async () => {

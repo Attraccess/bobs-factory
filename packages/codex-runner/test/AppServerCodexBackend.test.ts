@@ -996,7 +996,56 @@ describe("AppServerCodexBackend", () => {
 });
 
 describe("AppServerClient request timeout", () => {
-	it("rejects a request when no response arrives within the timeout", async () => {
+	it.each([
+		"thread/start",
+		"thread/resume",
+	])("allows slow %s setup beyond the control deadline while retaining a bound", async (method) => {
+		// A real stdio server holds setup until a separate control request releases it.
+		const client = new AppServerClient({
+			binaryPath: process.execPath,
+			args: [
+				"-e",
+				`const rl = require('node:readline').createInterface({ input: process.stdin });
+let pending;
+const reply = (id, result = {}) => process.stdout.write(JSON.stringify({ id, result }) + '\\n');
+rl.on('line', line => {
+  const request = JSON.parse(line);
+  if (request.method.startsWith('thread/')) { pending = request.id; return; }
+  if (request.method === 'finish') reply(pending, { thread: { id: 'saved-thread' } });
+  reply(request.id);
+});`,
+			],
+		});
+		client.start();
+		try {
+			await client.request("initialize", {});
+			vi.useFakeTimers();
+			const settled = vi.fn();
+			const opening = client.request(method, {});
+			void opening.then(settled, settled);
+			await vi.advanceTimersByTimeAsync(65_000);
+			expect(settled).not.toHaveBeenCalled();
+			await client.request("finish", {});
+			await expect(opening).resolves.toEqual({
+				thread: { id: "saved-thread" },
+			});
+
+			const wedged = client.request(method, {});
+			const rejected = expect(wedged).rejects.toThrow(
+				`${method} timed out after 180000ms`,
+			);
+			await vi.advanceTimersByTimeAsync(180_000);
+			await rejected;
+		} finally {
+			vi.useRealTimers();
+			await client.close();
+		}
+	});
+	it.each([
+		"initialize",
+		"thread/start",
+		"thread/resume",
+	])("honors the explicit timeout for %s", async (method) => {
 		// `sleep` ignores stdin and produces no stdout, so the request never
 		// resolves and must be rejected by the timeout.
 		const client = new AppServerClient({
@@ -1006,9 +1055,7 @@ describe("AppServerClient request timeout", () => {
 		});
 		client.start();
 		try {
-			await expect(client.request("initialize", {})).rejects.toThrow(
-				/timed out/i,
-			);
+			await expect(client.request(method, {})).rejects.toThrow(/timed out/i);
 		} finally {
 			await client.close();
 		}

@@ -129,16 +129,20 @@ manually. No automatic update daemon is added.
 - `migrationPreservation`: `passed`, covering home/config and native continuation.
 - `licensingAndSource`: `passed`, covering complete notices and exact runtime,
   dependency source/rebuild obligations.
-- `targets[TARGET].preparedAgents`: `passed`, or an explicit human `waived`
-  record with `approvedBy` and a receipt documenting its scope.
+- `targets[TARGET].preparedAgents`: `passed`, referencing the candidate-bound
+  `prepared-agent-boundaries.json` from that target's native build. The required
+  validation uses mocked agents and controlled protocols. Legacy `waived` records
+  retain their `approvedBy` and scope when publishing an already verified candidate.
 - `targets[TARGET].nativeHelpers`: `passed` for every target.
 
 Native startup/dashboard/protected API/MCP/shutdown/restart receipts are retrieved
 directly from each successful native binary build artifact, alongside
 `native-helpers.json` and `prepared-agent-boundaries.json`. Native helper identity
 and executable hash must match the verified archive. Scripted adapter boundary
-checks and synthetic GitHub credentials are useful evidence, but they do not
-claim authenticated coding-agent execution or supply a release waiver. Missing validation,
+checks and synthetic GitHub credentials satisfy the release's controlled test scope;
+they do not claim authenticated coding-agent execution. Live provider tests are
+manual-only and require explicit approval for the specific test. Releases never
+require them or a recurring live-test waiver. Missing validation,
 ambiguous artifacts, dirty builds, checksum mismatches or different source SHAs
 block staging and publication.
 

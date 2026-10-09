@@ -17,9 +17,9 @@ curl -fsSL https://jappyjan.github.io/bobs-factory/install.sh | sh
 ~/.local/bin/bobs-factory
 ```
 
-The first public release is being prepared. The installer becomes usable after
-that verified release is published; it reports unavailable downloads clearly.
-See [release availability](https://jappyjan.github.io/bobs-factory/releases/latest.json).
+The installer selects a verified public release. Before the first stable release,
+it selects the latest verified beta and labels it as a prerelease. See
+[release availability](https://jappyjan.github.io/bobs-factory/releases/latest.json).
 
 The installer detects your platform, checks the download and installs it under
 `~/.local`, preserving earlier versions and your state. It configures PATH for
@@ -57,6 +57,13 @@ tunnel is not permission to expose the dashboard. See
 [passkey setup and recovery](docs/FACTORY.md#passkey-access-and-first-setup) for
 remote access, additional keys and deliberate recovery.
 
+For daily work from another terminal, run `bobs-factory tui` while the factory is
+running. Start runs, follow live activity, answer questions, approve reviews and
+settle finished work. Use `--theme light` or `--theme dark` to override automatic
+theme detection; `t` switches themes, `ctrl-k` finds a run, and `?` shows keys.
+Select the running service's `--home` and `--port` when they differ from the defaults.
+See [terminal dashboard](docs/FACTORY.md#terminal-dashboard) for access and controls.
+
 ## Workflows and history
 
 Recipes include Simple, Factory and Takeover. Their stable IDs are `simple`,
@@ -68,7 +75,7 @@ existing session and retain its accepted definition. See [Factory docs](docs/FAC
 
 The dashboard retains runs, chats, evidence, review decisions and checkpoints.
 PWA installation still requires a browser-supported secure origin; a service
-worker/version guard cannot make an insecure remote dashboard safe. Every dashboard address requires a passkey session, including localhost.
+worker/version guard cannot make an insecure remote dashboard safe. Every browser dashboard address requires a passkey session, including localhost.
 Configure the exact public HTTPS origin and enroll a passkey using the local
 operator setup code; see [passkey setup and recovery](docs/FACTORY.md#passkey-access-and-first-setup).
 Current ngrok support remains; zrok2 (#39) and identity configuration (#57) are

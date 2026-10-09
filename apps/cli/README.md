@@ -17,6 +17,7 @@ Node described in the distribution guide.
 
 - `local` (default): start the local repository dashboard.
 - `start`: start the configured worker.
+- `tui`: open the fullscreen terminal dashboard of a running local factory.
 - `self-auth-linear`: authenticate your independent Linear OAuth application.
 - `self-add-repo [url] [workspace]`: clone and configure a repository.
 - `check-tokens` and `refresh-token`: inspect or refresh Linear credentials.
