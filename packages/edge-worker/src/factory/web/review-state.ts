@@ -15,7 +15,12 @@ export function guideRevision(run: any) {
 	);
 }
 export function reviewRevision(run: any) {
-	return run.reviewGate?.headSha ?? guideRevision(run)?.headSha ?? "";
+	return (
+		run.reviewGate?.externalDigest ??
+		run.reviewGate?.headSha ??
+		guideRevision(run)?.headSha ??
+		""
+	);
 }
 
 /** Preserve the progress identity used by both the preview and artifact reader. */
@@ -24,6 +29,8 @@ export function reviewKey(run: any, guide: unknown) {
 }
 
 export function guideMatchesGate(run: any) {
+	if (run.reviewGate?.mode === "external")
+		return run.outputs?.guide?.externalDigest === run.reviewGate.externalDigest;
 	const revision = guideRevision(run);
 	return !revision || revision.headSha === run.reviewGate?.headSha;
 }

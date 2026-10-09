@@ -49,3 +49,41 @@ does not rewrite their fields or interpret them as native conversation records.
 The issued egress certificate keeps its existing `cyrus-egress-ca.pem` filename
 inside the new home. Migration preserves certificate/key bytes and system trust;
 this retained artifact name does not enable an old command or home fallback.
+
+
+## Factory external ticket delivery
+
+New stock planning outputs use `delivery-v1`. Clarification classifies repository,
+external or mixed delivery; plan review confirms the exact contract digest.
+Execution authorization (or deferral) is a separate referenced instruction.
+Targets retain verified tracker coordinates, immutable IDs, URLs, complete
+before-state, allowed operations, preserved relationships and criterion references.
+The contract binds the accepted execution snapshot; credentials never appear in it.
+
+`FactoryRun.delivery` retains the frozen contract, operation intent/before-state,
+pending/applied/failed/uncertain/conflicted receipts and independent
+`external-evidence-v1` snapshots. Snapshot digests normalize relationship ordering
+and exclude lifecycle status, comments, PR links and volatile provider metadata.
+Human gates/decisions retain optional delivery mode and external digest alongside
+legacy Git evidence. Mixed decisions bind every exact repository revision as well.
+External guides retain linked resources, applied changes, executed criteria and
+limitations without inventing files, Git SHAs or screenshots.
+
+External completion requires independent verification, explicit acceptance and a
+fresh matching state check. Mixed delivery also requires provider-confirmed merges.
+Delayed Done synchronization rechecks external state without replaying mutations.
+Read failures and drift block closure. Requested changes preserve applied work and
+return through reviewed planning and reconciliation. Contract changes advance their
+version, preserve previous contracts/receipts and invalidate affected acceptance.
+
+Existing saved definitions remain readable and frozen. Authenticated external
+recovery creates a separate `recoveryWorkflow` overlay and `deliveryRecovery` audit
+record, retaining the original definition, checkpoint and history. It starts with
+current-state reconciliation/verification, never replaying historical mutations.
+See [the operator procedure](factory/external-delivery.md).
+
+`externalReverifications` audits explicit operator transitions after delayed
+external completion fails. The retained verification overlay resumes independent
+reads and a fresh human gate, supersedes stale completion receipts and preserves
+all applied work and confirmed merges. Tracking-only retries never start that
+execution transition.

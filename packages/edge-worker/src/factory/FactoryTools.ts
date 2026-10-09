@@ -11,6 +11,14 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnExecution as spawn } from "bobs-factory-core";
 import { z } from "zod";
+import {
+	DeliveryContractSchema,
+	digest,
+	freezeDelivery,
+	repositoryCompletionProven,
+	type TicketDelivery,
+} from "./Delivery.js";
+import { externalGuideEvidence } from "./ExternalGuide.js";
 import { feedbackInstructionFingerprint } from "./FeedbackPolicy.js";
 import { type GitProvider, resolveGitProvider } from "./GitProvider.js";
 import { groupedTool, scopeCommand } from "./GroupedTools.js";
@@ -320,6 +328,7 @@ export function verifiedScreenshot(path: string, directory: string): string {
 }
 
 export interface FactoryToolHooks {
+	ticketDelivery?: TicketDelivery;
 	postComment(runId: string, body: string): Promise<void>;
 	command?(
 		context: ExecutionContext,
@@ -506,7 +515,10 @@ export class FactoryTools {
 		}
 	}
 	async tool(context: ExecutionContext): Promise<unknown> {
-		if (runRepositories(context.run).length > 1) {
+		if (
+			runRepositories(context.run).length > 1 &&
+			context.run.delivery?.contract.mode !== "external"
+		) {
 			if (context.step.tool === "handoff" && context.step.qaContract) {
 				const gate = await this.qaGate(context, (exe, args) =>
 					scopeCommand(context, this.command.bind(this), exe, args),
@@ -612,6 +624,122 @@ export class FactoryTools {
 						`${pr?.baseRefName ?? readPath(run.outputs, "repository.baseBranch")}...HEAD`,
 					]),
 				};
+			}
+			case "delivery-mode":
+				return {
+					mode: run.delivery?.contract.mode ?? "repository",
+					repositoryComplete:
+						run.delivery?.contract.mode === "mixed" &&
+						(run.humanDecisions ?? []).some(
+							(decision) =>
+								decision.decision === "approve" &&
+								repositoryCompletionProven({
+									...run,
+									humanDecisions: [decision],
+								}),
+						),
+				};
+			case "delivery-route": {
+				const contract = DeliveryContractSchema.parse(
+					readPath(run.outputs, "plan.deliveryContract"),
+				);
+				if (
+					readPath(run.outputs, "plan-review.approved") !== true ||
+					readPath(run.outputs, "plan-review.deliveryContractDigest") !==
+						digest(contract)
+				)
+					throw new Error(
+						"Plan review must confirm the exact delivery contract digest",
+					);
+				if (
+					readPath(run.outputs, "clarify.deliveryMode") !==
+						readPath(contract, "mode") &&
+					!(run.deliveryRecovery && contract.mode === "external")
+				)
+					throw new Error(
+						"Clarified delivery mode must match the reviewed contract",
+					);
+				if (readPath(contract, "authorization.status") === "deferred")
+					return { deferred: true };
+				const delivery = freezeDelivery(run, contract);
+				context.save?.();
+				return { mode: delivery.contract.mode };
+			}
+			case "external-apply": {
+				if (!this.hooks.ticketDelivery)
+					throw new Error("Ticket delivery integration unavailable");
+				await this.hooks.ticketDelivery.apply(run);
+				return { applied: true, receipts: run.delivery!.receipts };
+			}
+			case "external-verify": {
+				if (!this.hooks.ticketDelivery)
+					throw new Error("Ticket delivery integration unavailable");
+				return this.hooks.ticketDelivery.verify(run);
+			}
+			case "external-guide": {
+				const delivery = run.delivery,
+					snapshot = delivery?.verification;
+				if (!snapshot || snapshot.criteria.some((c) => !c.passed))
+					throw new Error(
+						"Independent verification required before external guide",
+					);
+				const externalEvidence = externalGuideEvidence(run);
+				const guide = {
+					...externalEvidence,
+					deliveryMode: "external",
+					externalDigest: snapshot.digest,
+					goal: run.title,
+					summary:
+						"Authorized ticket changes applied and independently verified.",
+					decision: {
+						status: "ready",
+						summary:
+							"Accept the verified state or request changes. Applied changes remain after rejection.",
+					},
+					requirements: delivery.contract.targets.flatMap((t) =>
+						t.criteria.map((c) => ({
+							requirementId: c.id,
+							criterion: c.description,
+							status: "supported",
+							evidence: [
+								JSON.stringify(snapshot.criteria.find((x) => x.id === c.id)),
+							],
+						})),
+					),
+					behavior: delivery.receipts.map((r) => ({
+						scenario: r.intent.id,
+						before: JSON.stringify(r.before),
+						after: JSON.stringify(r.after),
+					})),
+					checks: [
+						"Complete ticket content and relationships fetched twice independently; every accepted criterion passed.",
+					],
+					risks: [...new Set(delivery.receipts.map((r) => r.limitation))],
+					reviewInstructions: [
+						"Open each linked ticket and inspect the applied changes. Accept completed work or request changes.",
+					],
+					resources: delivery.contract.targets.map((t) => ({
+						key: t.key,
+						url: t.resource.url,
+					})),
+					receipts: delivery.receipts,
+					verification: snapshot,
+				};
+				run.outputs.guide =
+					delivery.contract.mode === "mixed"
+						? {
+								...(run.outputs.guide as Record<string, unknown>),
+								...externalEvidence,
+							}
+						: guide;
+				context.save?.();
+				return run.outputs.guide;
+			}
+			case "external-final": {
+				if (!this.hooks.ticketDelivery)
+					throw new Error("Ticket delivery integration unavailable");
+				const valid = await this.hooks.ticketDelivery.finalCheck(run);
+				return { drift: !valid, complete: valid };
 			}
 			case "record-decisions": {
 				const decisions = run.outputs.clarify;
@@ -931,6 +1059,39 @@ export class FactoryTools {
 				}
 			}
 			case "human-review": {
+				if (
+					run.delivery?.contract.mode === "external" ||
+					context.step.id === "external-human-review"
+				) {
+					const delivery = run.delivery;
+					if (!delivery)
+						throw new Error("Accepted external delivery contract required");
+					const snapshot = delivery.verification;
+					if (
+						!snapshot ||
+						readPath(run.outputs, "guide.externalDigest") !== snapshot.digest
+					)
+						throw new Error(
+							"External guide must bind current independent verification",
+						);
+					if (delivery.contract.mode === "mixed") {
+						if (readPath(run.outputs, "merge.merged") !== true)
+							throw new Error(
+								"Mixed external reacceptance requires retained confirmed repository merge proof",
+							);
+						return {
+							...(run.outputs["draft-pr"] as Record<string, unknown>),
+							mode: "mixed",
+							externalDigest: snapshot.digest,
+						};
+					}
+					return {
+						headSha: "",
+						url: "",
+						mode: "external",
+						externalDigest: snapshot.digest,
+					};
+				}
 				const headSha = await command("git", ["rev-parse", "HEAD"]);
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");
 				const snapshot = await inspectReadinessWithRetry(context, command, url);
@@ -967,6 +1128,22 @@ export class FactoryTools {
 					throw new Error(
 						"Review guide revision changed; retry review before approving",
 					);
+				if (run.delivery?.contract.mode === "mixed") {
+					if (!this.hooks.ticketDelivery)
+						throw new Error("Ticket delivery integration unavailable");
+					const snapshot = await this.hooks.ticketDelivery.verify(run);
+					if (readPath(run.outputs, "guide.externalDigest") !== snapshot.digest)
+						return {
+							rework: true,
+							reason: "External evidence changed after guide; review it again",
+						};
+					return {
+						headSha,
+						url,
+						mode: "mixed",
+						externalDigest: snapshot.digest,
+					};
+				}
 				return { headSha, url };
 			}
 			case "merge": {

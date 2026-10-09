@@ -767,7 +767,8 @@ it("waits on blocked implementation across restart and supplies the answer witho
 		title: "Backlog installation",
 		repositoryId: "repo",
 		workspace: directory,
-		workflow: defaultWorkflows[1]!,
+		workflow: legacyReviewWorkflows()[1]!,
+		workflowDefinitions: legacyReviewWorkflows(),
 		input: "Private ticket and metadata",
 	});
 	const first = runtime.launch(run);

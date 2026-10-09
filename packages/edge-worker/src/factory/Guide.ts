@@ -1,4 +1,5 @@
 import { defaultWorkflows } from "./defaultWorkflows.js";
+import { ExternalGuideSchema, externalGuideEvidence } from "./ExternalGuide.js";
 import { GeneratedGuideSchema, GuideSchema } from "./FactoryResults.js";
 import { OutputValidationError } from "./OutputValidation.js";
 import {
@@ -15,6 +16,8 @@ export function validateGuideCoverage(
 	value: unknown,
 ): void {
 	const guide = GuideSchema.parse(value);
+	if (context.run.delivery?.contract.mode === "mixed")
+		ExternalGuideSchema.parse(externalGuideEvidence(context.run));
 	const aggregate = aggregateForContext(context);
 	if (aggregate) {
 		assertAggregateRevision(
@@ -197,6 +200,11 @@ export function attachRequirementCoverage(
 	context: ExecutionContext,
 	value: unknown,
 ): unknown {
+	const external =
+		context.run.delivery?.contract.mode === "mixed"
+			? externalGuideEvidence(context.run)
+			: undefined;
+	if (external) value = { ...(value as Record<string, unknown>), ...external };
 	const aggregate = aggregateForContext(context);
 	if (!aggregate) return value;
 	const guide = GuideSchema.parse(value);

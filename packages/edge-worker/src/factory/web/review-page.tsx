@@ -84,14 +84,24 @@ export function ReviewPage({
 					loaded review.
 				</p>
 			)}
+			{gate?.status === "pending" && run.outputs?.["external-final"]?.drift && (
+				<p className="notice" role="status">
+					Ticket state changed or could not be checked after acceptance. Review
+					the refreshed evidence and accept it again.
+				</p>
+			)}
 			{guide && gate?.status !== "pending" && (
 				<p className="notice" role="status">
 					{gate?.status === "approve"
 						? complete
 							? "This revision was approved. The run is complete."
-							: "You approved this revision. Bob is checking merge criteria."
+							: gate?.mode === "external"
+								? "You accepted the completed work. Bob is checking the current ticket state."
+								: "You approved this revision. Bob is checking merge criteria."
 						: gate?.status === "reject"
-							? "Changes were requested for this revision."
+							? gate?.mode === "external"
+								? "Changes requested. Applied ticket changes remain while corrections are prepared."
+								: "Changes were requested for this revision."
 							: "This guide remains available for reading."}{" "}
 					{complete
 						? "You can settle the run or send a follow-up."

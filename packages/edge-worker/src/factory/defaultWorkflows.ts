@@ -54,7 +54,7 @@ const definitions = [
 		icon: "🏭",
 		name: "Software factory",
 		description:
-			"Clarify → plan → implement → draft PR → requirements → specialist review → CI → QA and screenshot review → human guide.",
+			"Clarify and plan, then deliver repository, external ticket or mixed work with independent evidence and explicit human acceptance.",
 		labels: ["workflow:factory", "factory"],
 		steps: [
 			agent(
@@ -251,6 +251,113 @@ function installSpecialists(steps: Record<string, any>[]) {
 	}
 }
 installSpecialists(pipeline.steps);
+// Install only in newly accepted stock definitions; saved run snapshots are never rewritten.
+const deliveryInstructions = ` Delivery mode comes from accepted requirements: repository (including repository docs/config), external (ticket content/relationships), or mixed. Never infer it from an empty diff. No repository changes may authorize external edits; execution deferral remains separate. Runtime owns lifecycle status/comments and PR links. External review follows authorized application and independent verification. Missing integration access blocks execution.`;
+for (const step of pipeline.steps) {
+	if (["clarify", "plan", "plan-review"].includes(step.id) && "prompt" in step)
+		step.prompt += deliveryInstructions;
+	if (step.id === "clarify" && "prompt" in step)
+		step.prompt +=
+			' Include deliveryMode:"repository"|"external"|"mixed". Do not ask to authorize unrelated repository implementation for external tasks.';
+	if (step.id === "plan" && "prompt" in step)
+		step.prompt += ` Include deliveryContract:{format:"delivery-v1",version:1,mode:"repository"|"external"|"mixed",authorization:{status:"authorized"|"deferred",reference:"actual instruction/answer reference"},executionReference:"digest supplied in deliveryExecutionReference",targets:[{key:"stable target ID",resource:{provider:"linear",instance:"https://linear.app",workspaceId:"configured workspace",project:"immutable project or team ID",id:"immutable UUID",url:"verified URL"} OR {provider:"taskbot",server:"configured server",instance:"exact HTTPS origin",project:"project slug",id:"numeric ID as string",url:"exact URL"},capabilities:["read","content","relationships"],baseline:{fields:{title:"observed title",description:"complete observed content"},relationships:[{type:"blocks"|"related",from:"immutable ID",to:"immutable ID"}]},operations:[{id:"stable operation ID",kind:"content",fields:{description:"full desired content"}} OR {id:"stable ID",kind:"add"|"remove",relationship:{type:"blocks"|"related",from:"ID",to:"ID"}}],criteria:[{id:"stable criterion",requirementRef:"accepted requirement reference",description:"observable acceptance criterion",fields:{description:"full expected content"},relationships:[],absentRelationships:[]}],preservedRelationships:[]}]}. Repository mode uses targets:[]; external/mixed need complete targets. Fetch complete before-state and verify coordinates through configured integrations. Do not mutate. Store no credentials. Include full expected fields and preserved relationships. On correction increment version and use new operation IDs for changed intents; retain already-applied history.`;
+	if (step.id === "plan-review" && "prompt" in step)
+		step.prompt +=
+			" Confirm delivery mode, target identities, authorization, complete baseline, allowed operations and every criterion. Return deliveryContractDigest using the supplied deliveryCandidateDigest only when approving that exact contract. Incomplete or contradictory contracts cannot be approved.";
+
+	if (step.id === "merge")
+		Object.assign(step, {
+			branches: [
+				...("branches" in step ? (step.branches as any[]) : []),
+				{
+					when: { path: "externalPending", equals: true },
+					next: "external-final",
+				},
+			],
+		});
+}
+const planReview = pipeline.steps.find((s) => s.id === "plan-review")!;
+Object.assign(planReview, { next: "delivery-route" });
+(pipeline.steps as Record<string, any>[]).push(
+	tool(
+		"delivery-route",
+		"Validate accepted delivery contract",
+		"delivery-route",
+		{
+			branches: [
+				{ when: { path: "deferred", equals: true }, next: "delivery-deferred" },
+				{ when: { path: "mode", equals: "external" }, next: "external-apply" },
+				{ when: { path: "mode", equals: "mixed" }, next: "external-apply" },
+			],
+			next: "implement",
+		},
+	),
+	agent(
+		"delivery-deferred",
+		"Resolve execution deferral",
+		"The accepted delivery contract defers execution. Do not mutate tickets or files. Ask whether the named external/repository task should remain deferred or may proceed. Return questions while the deferral remains. Read answers; only explicit authorization may return questions:[], then the planner and plan reviewer renew the contract. Never infer execution permission from scope answers.",
+		{ askQuestions: true, next: "plan" },
+	),
+	tool("external-apply", "Apply authorized ticket changes", "external-apply", {
+		next: "external-verify",
+	}),
+	tool(
+		"external-verify",
+		"Independently verify ticket state",
+		"external-verify",
+		{ next: "external-after-verify" },
+	),
+	tool(
+		"external-after-verify",
+		"Route verified deliverables",
+		"delivery-mode",
+		{
+			branches: [
+				{
+					when: { path: "repositoryComplete", equals: true },
+					next: "external-guide",
+				},
+				{ when: { path: "mode", equals: "mixed" }, next: "implement" },
+			],
+			next: "external-guide",
+		},
+	),
+	tool("external-guide", "Prepare external review", "external-guide", {
+		next: "external-human-review",
+	}),
+	tool(
+		"external-human-review",
+		"Accept completed external work",
+		"human-review",
+		{
+			branches: [
+				{
+					when: { path: "decision", equals: "reject" },
+					next: "external-correction",
+				},
+			],
+			next: "external-final",
+		},
+	),
+	agent(
+		"external-correction",
+		"Plan requested ticket corrections",
+		"Read humanDecisions, the accepted delivery contract, operation receipts and verified state. Applied changes remain; rejection does not roll them back. Preserve feedback and before/after history. Do not mutate tickets or repository files, commit or push. Confirmed repository merges remain retained; corrections on this path concern external deliverables. Repository changes requested after merge need a separate follow-up, never replay publication or merge. Summarize the requested corrections for a revised plan and independent plan review.",
+		{ next: "plan" },
+	),
+	tool("external-final", "Check accepted external state", "external-final", {
+		branches: [
+			{ when: { path: "drift", equals: true }, next: "external-reverify" },
+		],
+		next: "end",
+	}),
+	tool(
+		"external-reverify",
+		"Verify changed external state",
+		"external-verify",
+		{ next: "external-guide" },
+	),
+);
 export const defaultWorkflows = validateWorkflows([
 	definitions[0],
 	{

@@ -58,6 +58,7 @@ export function FileLink({
 export function useReviewFiles(run: any, guide: Guide) {
 	return useQuery({
 		queryKey: ["review-files", run.id, signature(guide)],
+		enabled: guide.deliveryMode !== "external",
 		queryFn: async ({ signal }) => {
 			const bytes = await crypto.subtle.digest(
 					"SHA-256",

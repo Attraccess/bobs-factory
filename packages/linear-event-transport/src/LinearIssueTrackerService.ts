@@ -8,7 +8,7 @@
  * @module issue-tracker/adapters/LinearIssueTrackerService
  */
 
-import type { LinearClient } from "@linear/sdk";
+import { IssueRelationType, type LinearClient } from "@linear/sdk";
 
 /**
  * OAuth configuration for automatic token refresh.
@@ -315,6 +315,125 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 	/**
 	 * Fetch a single issue by ID or identifier.
 	 */
+	async fetchDeliveryTicket(id: string) {
+		const issue = await this.linearClient.issue(id);
+		const relationships: {
+			type: "blocks" | "related" | "duplicate" | "similar";
+			from: string;
+			to: string;
+		}[] = [];
+		for (const direction of ["relations", "inverseRelations"] as const) {
+			let after: string | undefined;
+			const seen = new Set<string>();
+			do {
+				const page = await issue[direction]({
+					first: 100,
+					...(after ? { after } : {}),
+				});
+				for (const relation of page.nodes) {
+					if (
+						relation.type !== "blocks" &&
+						relation.type !== "related" &&
+						relation.type !== "duplicate" &&
+						relation.type !== "similar"
+					)
+						throw new Error(
+							"Unsupported Linear relationship type prevents complete verification",
+						);
+					const [from, to] = await Promise.all([
+						relation.issue,
+						relation.relatedIssue,
+					]);
+					if (!from || !to) throw new Error("Incomplete Linear relationship");
+					if (
+						!relationships.some(
+							(r) =>
+								r.type === relation.type &&
+								r.from === from.id &&
+								r.to === to.id,
+						)
+					)
+						relationships.push({
+							type: relation.type,
+							from: from.id,
+							to: to.id,
+						});
+				}
+				if (!page.pageInfo.hasNextPage) break;
+				after = page.pageInfo.endCursor;
+				if (!after || seen.has(after))
+					throw new Error("Linear relationship pagination did not advance");
+				seen.add(after);
+			} while (after);
+		}
+		const project = await issue.project;
+		return {
+			id: issue.id,
+			url: issue.url,
+			project: project?.id ?? (await issue.team)?.id ?? "",
+			title: issue.title,
+			description: issue.description ?? null,
+			relationships,
+		};
+	}
+
+	async setDeliveryRelationship(
+		kind: "add" | "remove",
+		value: {
+			type: "blocks" | "related" | "duplicate" | "similar";
+			from: string;
+			to: string;
+		},
+	): Promise<void> {
+		if (kind === "add") {
+			const result = await this.linearClient.createIssueRelation({
+				issueId: value.from,
+				relatedIssueId: value.to,
+				type: {
+					blocks: IssueRelationType.Blocks,
+					related: IssueRelationType.Related,
+					duplicate: IssueRelationType.Duplicate,
+					similar: IssueRelationType.Similar,
+				}[value.type],
+			});
+			if (!result.success)
+				throw new Error("Linear relationship creation failed");
+			return;
+		}
+		const issue = await this.linearClient.issue(value.from);
+		for (const direction of value.type === "related"
+			? (["relations", "inverseRelations"] as const)
+			: (["relations"] as const)) {
+			let after: string | undefined;
+			const seen = new Set<string>();
+			do {
+				const page = await issue[direction]({
+					first: 100,
+					...(after ? { after } : {}),
+				});
+				for (const relation of page.nodes) {
+					if (
+						relation.type === value.type &&
+						(direction === "relations"
+							? (await relation.relatedIssue)?.id
+							: (await relation.issue)?.id) === value.to
+					) {
+						if (
+							!(await this.linearClient.deleteIssueRelation(relation.id))
+								.success
+						)
+							throw new Error("Linear relationship removal failed");
+					}
+				}
+				if (!page.pageInfo.hasNextPage) break;
+				after = page.pageInfo.endCursor;
+				if (!after || seen.has(after))
+					throw new Error("Linear relationship pagination did not advance");
+				seen.add(after);
+			} while (after);
+		}
+	}
+
 	async fetchIssue(idOrIdentifier: string): Promise<Issue> {
 		return await this.linearClient.issue(idOrIdentifier);
 	}
