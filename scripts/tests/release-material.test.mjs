@@ -175,6 +175,7 @@ test("evidence intake rejects a dirty version edit before retrieving build prove
 			"prepare-release-evidence.mjs",
 			"lib/binary-release.mjs",
 			"lib/release-material.mjs",
+			"lib/release-candidate.mjs",
 		])
 			writeFileSync(
 				join(work, "scripts", file),

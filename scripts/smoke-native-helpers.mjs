@@ -308,6 +308,8 @@ try {
 		validation: "native-helpers",
 		status: "passed",
 		version: build.version,
+		candidateDigest: build.candidateDigest,
+		workflowSha: build.workflowSha,
 		commit: build.commit,
 		target: build.target,
 		dirty: build.dirty,

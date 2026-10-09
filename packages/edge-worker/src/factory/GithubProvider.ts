@@ -3,7 +3,11 @@ import { inspectGithubReadiness } from "./GithubReadiness.js";
 import { inspectGithubPullRequest } from "./GithubTakeover.js";
 import type { GitProvider } from "./GitProvider.js";
 import { PullRequestSchema } from "./GitProviderContracts.js";
-import { pullRequestReference } from "./GitProviderReference.js";
+import {
+	pullRequestReference,
+	samePullRequestReference,
+	sameRepositoryReference,
+} from "./GitProviderReference.js";
 import type { ProviderCommand } from "./MergeReadiness.js";
 
 export function githubPullRequest(value: any) {
@@ -34,7 +38,10 @@ export function githubProvider(
 	const api = new GithubApi(command, repositoryUrl);
 	const path = (url: string) => {
 		const reference = pullRequestReference(url);
-		if (reference?.type !== "github" || reference.url !== api.repository.url)
+		if (
+			reference?.type !== "github" ||
+			!sameRepositoryReference("github", api.repository, reference)
+		)
 			throw new Error("PR must belong to the selected repository");
 		return `${api.pullRequestsPath}/${reference.number}`;
 	};
@@ -120,7 +127,7 @@ export function githubProvider(
 			const pr = payload.data?.repository?.pullRequest;
 			if (
 				!pr ||
-				pr.url !== url ||
+				!samePullRequestReference(url, pr.url) ||
 				pr.headRefOid !== sha ||
 				pr.isCrossRepository !== false ||
 				pr.isDraft !== false ||
@@ -143,7 +150,7 @@ export function githubProvider(
 				if (
 					!entry?.id ||
 					entry.pullRequest?.id !== pr.id ||
-					entry.pullRequest?.url !== url ||
+					!samePullRequestReference(url, entry.pullRequest?.url) ||
 					entry.pullRequest?.headRefOid !== sha
 				)
 					throw new Error(

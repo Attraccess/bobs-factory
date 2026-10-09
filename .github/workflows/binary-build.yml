@@ -1,23 +1,20 @@
 name: Verify Bob’s Factory binary candidate
 on:
+  workflow_call:
+    inputs:
+      candidate_json:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
-      candidate_sha:
-        description: Full immutable reviewed candidate commit
+      candidate_json:
+        description: Frozen candidate.json bytes, including digest and reviewed tooling SHA
         required: true
         type: string
-      version:
-        description: Exact committed CLI version
-        required: true
-        type: string
-      dry_run:
-        description: Build and verify only; this workflow never publishes
-        default: true
-        type: boolean
 permissions:
   contents: read
 concurrency:
-  group: bobs-factory-binary-${{ inputs.candidate_sha }}
+  group: bobs-factory-binary-${{ github.run_id }}
   cancel-in-progress: false
 jobs:
   binary:
@@ -38,7 +35,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ fromJSON(inputs.candidate_json).candidate.workflowSha }}
+          path: tooling
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ fromJSON(inputs.candidate_json).candidate.commit }}
+          path: source
       - uses: actions/setup-node@v7
         with:
           node-version: '24.18.0'
@@ -46,31 +48,37 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: '1.4.2'
-      - name: Validate immutable candidate and version
+      - name: Validate frozen source and workflow
         env:
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          REQUESTED_VERSION: ${{ inputs.version }}
+          CANDIDATE_JSON: ${{ inputs.candidate_json }}
         run: |
-          [[ "$CANDIDATE_SHA" =~ ^[a-f0-9]{40}$ ]]
-          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
-          node --input-type=module -e 'import p from "./apps/cli/package.json" with {type:"json"}; if(p.version !== process.env.REQUESTED_VERSION) process.exit(1)'
+          node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {validateCandidate} from "./tooling/scripts/lib/release-candidate.mjs"; const r=validateCandidate(JSON.parse(process.env.CANDIDATE_JSON)); if(r.candidate.workflowSha !== process.env.GITHUB_SHA) throw Error("Dispatch from the frozen tooling ref"); writeFileSync(process.env.RUNNER_TEMP+"/candidate.json",process.env.CANDIDATE_JSON)'
           corepack enable
-          corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
+          corepack prepare "$(node -p 'require("./source/package.json").packageManager')" --activate
       - run: pnpm install --frozen-lockfile
+        working-directory: source
       - run: pnpm --filter 'bobs-factory...' build
-      - run: bun run scripts/build-binary.ts --target '${{ matrix.target }}' --output artifacts
+        working-directory: source
+      - name: Build the frozen release version without editing source
+        env:
+          VERSION: ${{ fromJSON(inputs.candidate_json).candidate.version }}
+          TARGET: ${{ matrix.target }}
+        run: bun run tooling/scripts/build-binary.ts --source-root source --candidate "$RUNNER_TEMP/candidate.json" --release-version "$VERSION" --target "$TARGET" --output "$RUNNER_TEMP/artifacts"
       - name: Native runtime and isolated installer smoke
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ fromJSON(inputs.candidate_json).candidate.version }}
           TARGET: ${{ matrix.target }}
         run: |
-          ./scripts/install-binary.sh "artifacts/bobs-factory-$VERSION-$TARGET.tar.gz" "artifacts/bobs-factory-$VERSION-$TARGET.manifest.json" "$RUNNER_TEMP/factory-prefix"
-          ./scripts/smoke-binary.sh "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" | tee artifacts/runtime-smoke.txt
+          ./tooling/scripts/install-binary.sh "$RUNNER_TEMP/artifacts/bobs-factory-$VERSION-$TARGET.tar.gz" "$RUNNER_TEMP/artifacts/bobs-factory-$VERSION-$TARGET.manifest.json" "$RUNNER_TEMP/factory-prefix"
+          ./tooling/scripts/smoke-binary.sh "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" | tee "$RUNNER_TEMP/artifacts/runtime-smoke.txt"
       - name: Native scoped helpers with controlled HTTPS
-        run: node scripts/smoke-native-helpers.mjs --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output artifacts
+        run: node tooling/scripts/smoke-native-helpers.mjs --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output "$RUNNER_TEMP/artifacts"
       - name: Prepared agent protocol boundaries without live inference
-        run: node scripts/smoke-prepared-agent-boundaries.mjs --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output artifacts
+        run: node tooling/scripts/smoke-prepared-agent-boundaries.mjs --source-root source --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output "$RUNNER_TEMP/artifacts"
+      - name: Publisher signature interoperability
+        run: node --test tooling/scripts/tests/release-signature.test.mjs
       - uses: actions/upload-artifact@v6
         with:
-          name: bobs-factory-${{ matrix.target }}-${{ inputs.candidate_sha }}
-          path: artifacts/
+          name: bobs-factory-${{ matrix.target }}-${{ fromJSON(inputs.candidate_json).digest }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/artifacts/
+          if-no-files-found: error

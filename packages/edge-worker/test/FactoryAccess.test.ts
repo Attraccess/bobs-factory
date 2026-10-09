@@ -2,6 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
+import { requestFactoryTerminalSession } from "../src/factory/FactoryAuthOperator.js";
 import { FactoryServer } from "../src/factory/FactoryServer.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
 import { factoryHttp } from "./fixtures/factory-http.js";
@@ -325,4 +326,63 @@ it.each([
 	} finally {
 		vi.unstubAllEnvs();
 	}
+});
+it("accepts local terminal sessions as Bearer tokens on the localhost authority only", async () => {
+	const f = fixture();
+	const token = requestFactoryTerminalSession(f.home);
+	const local = { host: "localhost", authorization: `Bearer ${token}` };
+	expect(
+		(await f.server.app.inject({ url: "/api/runs", headers: local }))
+			.statusCode,
+	).toBe(200);
+	expect(
+		(
+			await f.server.app.inject({
+				url: "/api/runs",
+				headers: { host, authorization: `Bearer ${token}` },
+			})
+		).statusCode,
+	).toBe(401);
+	expect(
+		(
+			await f.server.app.inject({
+				url: "/api/runs",
+				headers: {
+					host: "localhost",
+					authorization: `Bearer ${"x".repeat(43)}`,
+				},
+			})
+		).statusCode,
+	).toBe(401);
+	// Writes keep the browser CSRF requirements.
+	expect(
+		(
+			await f.server.app.inject({
+				method: "POST",
+				url: "/api/runs/missing/stop",
+				headers: local,
+			})
+		).statusCode,
+	).toBe(403);
+	expect(
+		(
+			await f.server.app.inject({
+				method: "POST",
+				url: "/api/runs/missing/stop",
+				headers: {
+					...local,
+					origin: "http://localhost",
+					"x-factory-request": "1",
+				},
+			})
+		).statusCode,
+	).toBe(404);
+	expect(
+		(
+			await f.server.app.inject({
+				url: "/api/auth/credentials",
+				headers: local,
+			})
+		).statusCode,
+	).not.toBe(200);
 });

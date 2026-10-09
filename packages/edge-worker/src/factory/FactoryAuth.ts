@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import {
 	type AuthenticationResponseJSON,
@@ -24,6 +24,12 @@ const grantSchema = z.object({
 	expires: z.number(),
 });
 const maxPending = 100;
+const terminalRequest = /^terminal-[a-f0-9]{32}\.json$/;
+const terminalRequestSchema = z.object({
+	hash: z.string().regex(/^[a-f0-9]{64}$/),
+	expires: z.number(),
+});
+const maxTerminalSessions = 50;
 export interface FactoryAccess {
 	origins: string[];
 	sessionHours?: number;
@@ -67,6 +73,8 @@ export class FactoryAuth {
 	private attempts = 0;
 	private window = Date.now();
 	private recoveryTimer: ReturnType<typeof setInterval>;
+	/** Terminal sessions are memory-only: a restart revokes them and the TUI re-requests one locally. */
+	private terminal = new Map<string, { origin: string; expires: number }>();
 	readonly sessionMs: number;
 	constructor(
 		directory: string,
@@ -102,7 +110,10 @@ export class FactoryAuth {
 		// An enrollment authorization never survives a server restart.
 		if (existsSync(this.grantPath)) unlinkSync(this.grantPath);
 		if (!this.store.state.credentials.length) this.createGrant();
-		this.recoveryTimer = setInterval(() => this.checkRecovery(), 1000);
+		this.recoveryTimer = setInterval(() => {
+			this.checkRecovery();
+			this.checkTerminalRequests();
+		}, 1000);
 		this.recoveryTimer.unref();
 	}
 	get grantPath() {
@@ -126,8 +137,57 @@ export class FactoryAuth {
 		unlinkSync(path);
 		this.epoch++;
 		this.ceremonies.clear();
+		this.terminal.clear();
 		this.createGrant();
 		this.changed();
+	}
+	/**
+	 * Accept terminal-session requests written by the local operator (see
+	 * requestFactoryTerminalSession). Like enrollment grants and recovery, authority
+	 * comes from the private auth directory. Sessions bind to the localhost origin only.
+	 */
+	checkTerminalRequests() {
+		const origin = this.access.origins.find(
+			(item) => new URL(item).hostname === "localhost",
+		);
+		let names: string[];
+		try {
+			names = readdirSync(this.store.directory).filter((name) =>
+				terminalRequest.test(name),
+			);
+		} catch {
+			return;
+		}
+		for (const name of names) {
+			const path = join(this.store.directory, name);
+			try {
+				const request = terminalRequestSchema.parse(
+					JSON.parse(privateFile(path)),
+				);
+				const now = Date.now();
+				if (origin && request.expires > now && request.expires <= now + 60000)
+					this.terminal.set(request.hash, {
+						origin,
+						expires: now + this.sessionMs,
+					});
+			} catch {
+				/* Malformed or foreign requests are discarded without granting access. */
+			} finally {
+				try {
+					unlinkSync(path);
+				} catch {
+					// An invalid directory or a request already removed by the operator grants nothing.
+				}
+			}
+		}
+		const now = Date.now();
+		for (const [key, session] of this.terminal)
+			if (session.expires <= now) this.terminal.delete(key);
+		for (const key of [...this.terminal.keys()].slice(
+			0,
+			Math.max(0, this.terminal.size - maxTerminalSessions),
+		))
+			this.terminal.delete(key);
 	}
 	subscribe(listener: () => void) {
 		this.listeners.add(listener);
@@ -139,18 +199,39 @@ export class FactoryAuth {
 	close() {
 		clearInterval(this.recoveryTimer);
 		this.ceremonies.clear();
+		this.terminal.clear();
 		this.listeners.clear();
 	}
 	session(token: string | undefined, origin: string) {
 		if (!token || token.length > 100) return undefined;
-		return this.store.state.sessions.find(
+		const stored = this.store.state.sessions.find(
 			(s) =>
 				s.hash === hash(token) && s.origin === origin && s.expires > Date.now(),
 		);
+		if (stored) return stored;
+		const terminal = this.terminal.get(hash(token));
+		if (
+			!terminal ||
+			terminal.origin !== origin ||
+			terminal.expires <= Date.now()
+		)
+			return undefined;
+		// verifiedAt 0: terminal sessions never satisfy recent passkey verification.
+		return {
+			hash: hash(token),
+			credential: "terminal",
+			origin,
+			expires: terminal.expires,
+			verifiedAt: 0,
+		};
 	}
 	recent(token: string | undefined, origin: string) {
 		const session = this.session(token, origin);
-		if (!session || Date.now() - session.verifiedAt > 300000)
+		if (
+			!session ||
+			session.credential === "terminal" ||
+			Date.now() - session.verifiedAt > 300000
+		)
 			throw new Error("Verify your passkey again before managing credentials");
 		return session;
 	}
@@ -345,6 +426,7 @@ export class FactoryAuth {
 	}
 	logout(token: string | undefined, origin: string) {
 		const session = this.session(token, origin);
+		if (session?.credential === "terminal") this.terminal.delete(session.hash);
 		if (session)
 			this.store.update((state) => {
 				state.sessions = state.sessions.filter((s) => s.hash !== session.hash);

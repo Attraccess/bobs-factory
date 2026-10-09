@@ -22,6 +22,7 @@ import {
 } from "./GithubApi.js";
 import { type GitProvider, resolveGitProvider } from "./GitProvider.js";
 import { groupedTool, scopeCommand } from "./GroupedTools.js";
+import { guideGapRecovery } from "./GuideRecovery.js";
 import { dependencyCovers, dependencyHashes } from "./Incremental.js";
 import {
 	assessFeedback,
@@ -1173,12 +1174,9 @@ export class FactoryTools {
 					run.outputs.ci = readiness;
 					return readiness;
 				}
+				let readiness: MergeReadiness;
 				for (;;) {
-					const readiness = await inspectReadinessWithRetry(
-						context,
-						command,
-						url,
-					);
+					readiness = await inspectReadinessWithRetry(context, command, url);
 					assessFeedback(context, readiness);
 					reportReadiness(context, readiness);
 					if (readiness.ciAssistance?.length) return readiness;
@@ -1236,6 +1234,11 @@ export class FactoryTools {
 					// The provider may recalculate mergeability or start checks while the
 					// guide is being written. Wait as CI does, without replaying roles.
 					await delay(context.signal);
+				}
+				const recovery = guideGapRecovery(context, readiness);
+				if (recovery) {
+					run.outputs.ci = recovery;
+					return recovery;
 				}
 				if (readPath(run.outputs, "guide.decision.status") !== "ready")
 					throw new Error(

@@ -75,7 +75,7 @@ async function availablePort(): Promise<number> {
 	return address.port;
 }
 
-it("publishes the actual record-decisions hook as one durable Linear comment while lifecycle milestones stay in the transcript", async () => {
+it("publishes the actual record-decisions hook as one durable Linear comment while completion preserves the native lifecycle", async () => {
 	const home = mkdtempSync(join(tmpdir(), "factory-decision-docs-"));
 	const workflow = WorkflowSchema.parse({
 		id: "decision-documentation",
@@ -168,7 +168,7 @@ it("publishes the actual record-decisions hook as one durable Linear comment whi
 		expect(receipt.delivered).toBe(true);
 		expect(provider.activities.map((entry) => entry.content.type)).toEqual([
 			"thought",
-			"thought",
+			"response",
 		]);
 	} finally {
 		await worker.stop();

@@ -9,6 +9,7 @@ import {
 	accessGeneration,
 	accessRequired,
 	accessSignal,
+	accessState,
 	checkAccess,
 	onAccessLost,
 	useAccess,
@@ -56,7 +57,7 @@ async function ceremony(
 	// The verified ceremony rotated the session. Refresh its deadline without
 	// unmounting an in-progress credential management action. Failed checks
 	// still clear access through the normal boundary.
-	await checkAccess(true);
+	await checkAccess();
 }
 // Local-launch fragments never reach HTTP logs. Consume before the router or browser
 // history can retain the one-time grant, and keep it only in this component's memory.
@@ -100,8 +101,11 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 		window.addEventListener("pageshow", page);
 		document.addEventListener("visibilitychange", visible);
 		window.addEventListener("online", page);
-		const offline = () =>
-			accessRequired("Factory is offline. Reconnect to sign in.");
+		// A signed-in UI stays mounted while offline; the header shows reconnection.
+		const offline = () => {
+			if (accessState().status !== "authenticated")
+				accessRequired("Factory is offline. Reconnect to sign in.");
+		};
 		window.addEventListener("offline", offline);
 		return () => {
 			window.removeEventListener("pageshow", page);
