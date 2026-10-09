@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Route unresolved review-guide requirements and delivery gaps back through the existing fixer, with a resumable assistance wait after unsuccessful correction; retain evidence and explicit human approval. ([#76](https://github.com/jappyjan/bobs-factory/pull/76), [F1 recovery validation](apps/f1/test-drives/2026-10-09-guide-gap-recovery.md))
+
 - Allow slow Codex thread startup and resume to finish within a bounded three-minute deadline, and preserve conversation checkpoints and correction budgets if setup still times out. ([#67](https://github.com/jappyjan/bobs-factory/pull/67))
 
 - Resume Factory roles with uncommitted work by requesting artifact submission only when the scoped MCP server has a clean revision binding; prevent repeated missing-tool startup failures. ([#66](https://github.com/jappyjan/bobs-factory/pull/66))
