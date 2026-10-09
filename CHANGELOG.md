@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Align the incremental-result fixture and complete routing prompt expectation with validated Linear publication. ([#73](https://github.com/jappyjan/bobs-factory/pull/73))
+
 - Route recorded QA product failures to the existing visual fixer even when a reviewer reports a failed or blocked review; require fresh QA and a completed review before approval. Clarify that review completion describes execution, not a passing product. ([#78](https://github.com/jappyjan/bobs-factory/pull/78), [F1 validation](apps/f1/test-drives/2026-10-09-qa-product-failure-routing.md))
 
 - Reject incomplete or mismatched signed beta inventories before Nix unpacks an archive. Require all four targets and their validation receipts, with unique valid records matching the signed manifest ([#70](https://github.com/jappyjan/bobs-factory/pull/70)).

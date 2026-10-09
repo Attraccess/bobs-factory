@@ -113,6 +113,7 @@ it("keeps explanation progress and completion separate from the blocked role rev
 	expect(explanationProgress.previousOutput).toBeUndefined();
 	expect(explanationProgress.visit).toBe(1);
 	const worker = Object.create(EdgeWorker.prototype);
+	worker.agentSessionManager = { getSession: vi.fn() };
 	await (worker as any).finalizeFactoryAgentOutput(explanation, {
 		questions: ["Clearer decision?"],
 	});
