@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Prepare frozen stable and nightly binary candidates with signed channel discovery, exact-asset stable approval and recoverable publication. Nightlies remain opt-in and publication stays disabled pending protected signing and rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117)).
+
 ### Fixed
 
 - Resume Factory roles with uncommitted work by requesting artifact submission only when the scoped MCP server has a clean revision binding; prevent repeated missing-tool startup failures. ([#66](https://github.com/jappyjan/bobs-factory/pull/66))

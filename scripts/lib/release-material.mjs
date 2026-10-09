@@ -69,6 +69,8 @@ export function validateSourceMaterials(materials, directory, commit) {
 					"pnpm-lock.yaml",
 					"factory-source.tar.gz",
 					"source-materials.json",
+					"candidate.json",
+					"release-tooling.tar.gz",
 				].includes(record.file),
 			"Unsafe/duplicate source material filename",
 		);

@@ -3,5 +3,5 @@
 	"product": "bobs-factory",
 	"repository": "jappyjan/bobs-factory",
 	"status": "pending",
-	"message": "No verified stable release is available. Publisher signing and complete validation are required."
+	"message": "No verified nightly release is available. Publisher signing and complete validation are required."
 }

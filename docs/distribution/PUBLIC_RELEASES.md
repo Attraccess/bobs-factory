@@ -1,126 +1,213 @@
 # Public binary installation and publication
 
-The public installer requires curl and standard macOS/Linux tools. It does not
-require GitHub sign-in, `gh`, Node, Bun or sudo. The supported command is:
+The supported bootstrap is downloaded over the documented HTTPS Pages endpoint:
 
 ```sh
 curl -fsSL https://jappyjan.github.io/bobs-factory/install.sh | sh
 ```
 
-It selects the native target, verifies the downloaded archive, sidecar and
-matching verifier, installs under `~/.local`, and configures the user's shell
-PATH. Existing shell settings are backed up before appending. Managed symlinked
-or read-only profiles are left to their owner. The final output includes the
-full launch path, which works immediately in the current terminal. New terminals
-can use `bobs-factory` by name. Git and coding-agent preparation are onboarding
-concerns, not dependencies of the installer.
+The bootstrap is the initial trust boundary. Obtain it from that endpoint or a
+reviewed immutable checkout, not from release-supplied code. It uses pinned
+publisher keys and system OpenSSL to authenticate the exact manifest bytes
+before reading release fields, executing a downloaded verifier or changing an
+installation. Standard macOS/Linux tools and curl are required; Node, Bun, npm,
+GitHub sign-in, GitHub CLI and sudo are not installer prerequisites.
 
-For an explicit version or custom prefix, download the script and run
-`sh install.sh --version VERSION --prefix /absolute/path`. `--no-modify-path`
-keeps shell profiles untouched. The installer never changes factory state or
-services, replaces a foreign executable, or overwrites a different immutable
-version. A repeat install verifies the installed bytes and preserves the previous
-rollback link. Drain and stop an existing worker before intentionally replacing
-its executable; older versions remain available for manual rollback.
-
-## Shared metadata
-
-`scripts/install.sh` is canonical. The Pages build copies it to `/install.sh`.
-The homepage and installer consume `/releases/latest.json`; Nix can pin the same
-`release.json` asset at an immutable release tag and its hash. No consumer needs a
-workflow-run ID or manually copied platform hash in its own configuration.
-
-Before the first approved public release, metadata has `status: "pending"` and
-the homepage explains availability. The installer fails with the same guidance.
-Do not advertise a currently unavailable public binary as downloadable.
-
-An available manifest is schema version 1, with product `bobs-factory`, repository
-`jappyjan/bobs-factory`, `status: "available"`, exact `version`, matching `tag`,
-full immutable `commit`, and integer `buildRunId`. `installer`, `verifier` and
-`source` each contain `file`, `sha256` and `size`. The `targets` object contains
-all four `darwin-arm64`, `darwin-x64`, `linux-x64` and `linux-arm64` entries. Each
-entry has `archive`, `archiveSha256`, `archiveSize`, `manifest`,
-`manifestSha256` and `manifestSize`. Filenames are fixed by the product/version/
-target contract, and the download origin is always the canonical repository's
-immutable release URL. Hashes verify bytes; trust in publication remains rooted
-in that repository and the HTTPS Pages endpoint.
-
-New manifests include `channel: "stable"` or `"prerelease"`, matching their exact
-version. Pages chooses the highest verified stable binary release. Before a
-stable binary release exists, it chooses the highest verified prerelease, such
-as `1.0.0-beta`, and the homepage and installer label it accordingly. Drafts and
-releases without the shared manifest are never install candidates. GitHub's
-[`releases/latest` endpoint](https://docs.github.com/en/rest/releases/releases#get-the-latest-release)
-excludes prereleases, so Pages reads the public release list instead. Beta
-publication leaves GitHub's stable latest designation unchanged. An explicit
-`--version 1.0.0-beta` always pins that immutable version.
-
-The publisher emits canonical JSON with two-space indentation and one property
-per line. Preserve that formatting: the portable installer parses this narrowly
-defined format without a JSON runtime. The JavaScript metadata validator checks
-the full schema before Pages writes the public pointer. Pages verifies the
-GitHub release asset digest and the asset inventory against the same manifest.
-
-## Maintainer publication
-
-The build workflow remains build/verification only. Publication is a separate
-operation, after the user has reviewed the implementation and approved a release.
-This implementation does not turn the older preview into a published release.
-
-1. Commit the exact CLI version and review the full candidate SHA. Dispatch
-   `binary-build.yml` from a ref whose head is that SHA, selecting the same full
-   SHA and version. All four native jobs must succeed.
-2. Gather real release validation and source/rebuild material. Package
-   `release-evidence.json`, `source-rebuild.tar.gz` and the referenced receipt
-   files under `release-evidence/` in a tar.gz archive. Dispatch
-   `release-evidence.yml` from the exact candidate ref with its SHA, exact
-   version, successful binary build run ID, HTTPS archive URL and independently
-   checked archive SHA-256. It checks the candidate, four-target build provenance,
-   archive safety and every existing evidence gate, then uploads
-   `bobs-factory-release-evidence-SHA`. It never generates passed statuses or
-   human waivers. Keep material free of secrets; no repository token is sent to
-   supplied storage. The evidence downloader requires this specific successful
-   candidate workflow, its artifact digest and exact source SHA.
-3. Dispatch `binary-release.yml` with the candidate, version, build run ID and
-   evidence artifact ID, leaving `publish` false. Inspect the uploaded public
-   assets and `publication-plan.json`.
-4. After separate release approval, run the same workflow with `publish` true.
-   It verifies the existing CI ZIP digests and archives; it never rebuilds the
-   candidate. A new tag points to the reviewed SHA, assets are uploaded to a
-   draft release, their digests are checked, then the draft is published.
-
-For local dry runs, the equivalent maintainer command is:
+Default installation selects verified stable, with a clearly labeled verified
+beta fallback until the first stable exists. Nightly is opt-in:
 
 ```sh
-node scripts/publish-binary-release.mjs \
-  --sha FULL_SHA --version VERSION --run-id RUN_ID \
-  --evidence /path/to/release-evidence.json --output /path/to/empty-output
+curl -fsSL https://jappyjan.github.io/bobs-factory/install.sh | sh -s -- --channel nightly
 ```
 
-The publisher requires `jappyjan/bobs-factory` to be publicly accessible, checks
-visibility during validation, and checks again before tag creation and publication.
-Private/internal repositories cannot serve anonymous release downloads. Changing
-repository visibility is a separate maintainer decision; the publisher never
-changes it. Pages also reads release metadata and assets without authentication.
+Use `--version VERSION --channel stable|nightly` for an immutable exact version.
+The signed version must match the requested channel. `--prefix /absolute/path`
+and `--no-modify-path` retain their existing meaning. Installation keeps owned
+immutable versions and an atomic executable link, preserves the prior rollback
+link, and refuses foreign executables or changed installed bytes. Shell settings
+are backed up before PATH changes; managed profiles are left to their owner.
+Installation and launch remain separate. Factory state, workflows/results,
+checkpoints, gates, worktrees, native session IDs and host credentials are never
+migrated or modified by release tooling. Worker restart, update polling, per-instance
+policy, pause/pin controls, desktop packages and package-manager delivery belong
+to their respective follow-up tickets (#118–#124).
 
-Maintainer artifact retrieval/publication uses `GH_TOKEN`. End users do not need
-that token or the GitHub CLI. For offline artifact verification, provide
-`--artifact-zips DIRECTORY` containing `TARGET.zip` for all four targets. Their
-hashes must match the authenticated GitHub artifact metadata.
+## Frozen candidates and channels
 
-The version/tag must not exist already, and the version must be newer than the
-current stable release. Old releases and assets are retained. Failed publication
-retains the tag and any draft for inspection; it never silently deletes a tag,
-overwrites assets or moves stable backwards. Use a new version for a corrected
-release. The publisher explicitly dispatches Pages after success because
-`GITHUB_TOKEN`-created release events do not start other Actions workflows. If
-that final dispatch fails, the release remains published and Pages can be run
-manually. No automatic update daemon is added.
+`candidate.json` contains a schema-1 candidate record and its SHA-256 digest.
+The digest covers canonical JSON with recursively sorted object keys: product,
+repository, channel, version/tag, full runtime source SHA, committed package
+version, frozen workflow/tooling SHA, pinned Bun/Node recipe and all four native
+targets. Stable also records its verified nightly origin, manifest digest and
+provider release ID. Build run/attempt and provider artifact IDs are recorded in
+`build-provenance.json` after building; they never regenerate candidate identity.
+
+`release-channel.yml` polls hourly and supports manual preparation. It resolves
+main once for nightly or the latest complete signed published nightly once for
+stable promotion. Stable freezes that nightly's source even if main or nightly
+advances afterward. Stable bytes embed the requested stable version and require
+new native builds and byte-bound validation. Source-only assessments can be
+reused only with a reviewed explanation of why they still apply.
+
+A nightly version is `CORE-nightly.YYYYMMDD.SEQUENCE`. CORE is the committed
+package core; UTC date comes from the originating workflow run's creation time;
+SEQUENCE is its globally unique, increasing GitHub run ID. The frozen artifact is
+restored on retries. Failed attempts retain their sequence, while later starts
+reserve new run IDs. Ordering uses sequence across core changes. Reusing an
+older sequence blocks preparation/publication; manual dispatch has no bypass.
+Nightly requires changed main, a descendant of the last verified published
+nightly, and at least six hours since successful publication. The first nightly
+has no cooldown. Failed preparation does not reset the clock. A frozen candidate
+that no longer matches main skips publication. Eligibility is checked inside the
+repository publication lock and again immediately before making a draft public.
+
+The four targets are `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`.
+Windows and musl are unsupported. Minimum OS/libc/CPU claims require observed
+native execution; cross-compilation is insufficient.
+
+## Signed release contract and discovery
+
+New `release.json` assets use schema 2, canonical two-space JSON, product
+`bobs-factory`, canonical repository, `status: available`, exact `channel`
+(`stable`, `nightly`, or `beta`), `version`, `tag`, source `commit`, `buildRunId`,
+`candidateDigest` and `workflowSha`. Installer, verifier, source and target
+records retain `file`/hash/size (or the target archive/sidecar equivalents).
+`assets` binds the complete inventory: archives, sidecars, installers,
+source/rebuild archive, candidate, validation evidence/receipt archive, build
+provenance and native receipts. Detached `release.json.sig` (binary RSA/SHA-256)
+and `release.json.key-id` (one trusted identifier) remain outside that inventory
+so signing has no circular dependency. Publisher verification signs exact bytes;
+consumers never reserialize a signed pointer.
+
+Pages verifies signatures, candidate identity, provider tag/source, complete
+asset inventory and digests before preparing stable/default and nightly pointers
+in one website build. `/releases/latest.json` remains the default compatibility
+endpoint; `/releases/stable.json` has the same stable/beta selection;
+`/releases/nightly.json` is independent. Each available pointer has matching
+`.sig` and `.key-id` sidecars. Drafts, incomplete releases and untrusted signatures
+are excluded. Invalid newer candidates cannot displace older valid candidates.
+Transport failure aborts the build without deploying new pointers. An empty
+channel produces an unavailable notice, never a fabricated download. Pagination
+fails explicitly above 10,000 entries rather than selecting from an incomplete list.
+
+Nix takes reviewed immutable `releaseManifest`, `releaseSignature` and
+`releaseKeyId` inputs. It does not fetch mutable latest during evaluation and
+verifies with a pinned key before unpacking/building. Hash-pinned archives alone
+are insufficient publisher authentication. Nix installations remain owned by Nix.
+
+## Signing keys and historical beta
+
+The reviewed inventory is `docs/distribution/release-keys.json`. It intentionally
+contains no production key. **Rollout is blocked** until the authentic publisher
+public key is supplied through a reviewed change and protected signing is configured.
+Never invent a key, commit private keys, copy a host signing store or send credentials
+in tickets. Set the protected `BOBS_FACTORY_RELEASE_SIGNING_KEY` secret and
+`BOBS_FACTORY_RELEASE_KEY_ID` variable in release environments; local tools take
+only `BOBS_FACTORY_RELEASE_SIGNING_KEY_FILE`, an infrastructure-owned file binding.
+
+Identifiers are lowercase letters/digits/hyphens, at most 64 characters. Keys
+use RSA of at least 3072 bits with SHA-256; `status: active` pins are accepted.
+Unknown, malformed, retired or revoked keys fail closed. A downloaded key ID
+selects an existing pin; it cannot introduce a key. For rotation, add the next
+public key as active, run `node scripts/sync-release-keys.mjs`, review/redeploy the
+bootstrap and release tooling, then sign with the new key. Keep overlapping active
+keys until consumers have the new bootstrap. Retire/revoke by changing status
+and rebuilding the trusted consumers. An older bootstrap must be reacquired from
+the HTTPS endpoint to learn a new key; changing release metadata cannot do that.
+Revocation can make old releases unavailable to updated consumers. Tests use
+only ephemeral keys. `node scripts/sync-release-keys.mjs --check` detects pin drift.
+
+Historical beta manifests remain immutable schema 1. Authenticating one requires
+additive detached manifest signatures plus signed `release-attestation.json` and
+its signature/key-ID sidecars, binding the exact old manifest and complete validated
+asset inventory. `prepare-beta-attestation.mjs --assets IMMUTABLE_ASSETS --output
+EMPTY_DIRECTORY --approval APPROVAL.json --key-id KEY_ID` validates all existing
+native/source/evidence gates. Approval binds `manifestSha256`, the sorted inventory's
+`assetsDigest` and `approvedBy`. It prepares additive authentication only, never
+changes archives, the old manifest or tag, and never uploads anything. Separate
+publication approval is required for those additive assets. Nix additionally takes
+`releaseAttestation`, `releaseAttestationSignature` and its pinned key ID. Without
+that genuine material, unsigned beta is unavailable and nightly never replaces it
+as default. Checked-in website pointers currently show this verification blocker.
+
+## Preparation, signing, approval and recovery
+
+Publication is disabled by default. Do not dispatch publication, install on a
+production host or provision signing secrets as part of implementation validation.
+
+1. Freeze with `release-channel.yml`. It calls `binary-build.yml` at the same immutable
+   workflow revision for native validation only. Manual builds dispatch from the
+   frozen tooling ref and pass exact candidate JSON.
+   The build checks out runtime source and tooling separately and uses
+   `build-binary.ts --source-root SOURCE --candidate FILE --release-version VERSION`
+   without editing tracked packages. Ordinary local builds still use the committed
+   version. Candidate digests and run-attempt suffixes distinguish stable/nightly artifacts
+   and retain previous attempts without overwriting their bytes.
+2. Assemble real source/rebuild and release evidence. Use
+   `build-release-source.mjs --sha SOURCE_SHA --candidate FILE --materials DIRECTORY
+   --output EMPTY_DIRECTORY`; the bundle also carries candidate/recipe and exact
+   tooling source. Document the version override in reviewed rebuild/relink instructions.
+   Dispatch `release-evidence.yml` with candidate JSON, successful binary run ID,
+   archive HTTPS URL and independently reviewed archive SHA-256. It imports receipts;
+   it never invents passed or not-applicable gates. Candidate review, full-payload F1,
+   migration/state preservation and licensing/source evidence must actually exist.
+3. `binary-release.yml` prepares on successful evidence intake or manual dispatch.
+   Preparation has read-only repository credentials and no signing secret. Inspect
+   its `bobs-factory-prepared-release-DIGEST` artifact and `publication-plan.json`.
+   Signing remains a reported blocker when unconfigured. Local equivalent:
+
+   ```sh
+   node scripts/publish-binary-release.mjs --candidate candidate.json --run-id RUN_ID \
+     --evidence /path/to/release-evidence.json --output /path/to/empty-output
+   ```
+
+4. For stable, dispatch `binary-release.yml` with that prepared artifact ID and
+   `sign_only: true`. Protected signing returns the signed publication plan in a
+   retained artifact. Review its exact `assetsDigest`, then dispatch with that artifact
+   ID, `publish: true` and `approved_assets_digest`. Configure required reviewers in
+   `binary-stable-release`; approval binds both candidate and signed asset inventory.
+   Stable publication sets GitHub latest only after all gates pass.
+5. Automatic nightlies require separate rollout approval, protected environment
+   `binary-nightly-release`, keys and explicit `BOBS_FACTORY_AUTOMATIC_NIGHTLIES=enabled`.
+   A successful evidence workflow then signs/publishes eligible nightlies without
+   per-nightly approval. Missing review/migration/F1/license evidence still blocks
+   intake; the hourly poll cannot fabricate it. Manual nightlies enforce the same
+   eligibility and activation. Nightlies use prerelease=true and make_latest=false.
+   Automatic triggers also require the workflow entrypoint SHA to match frozen
+   tooling. If workflow code advanced since evidence, manually dispatch from the
+   frozen tooling ref; retain the original runtime source and prepared bytes.
+
+All mutations share `bobs-factory-repository-publication` concurrency; builds may
+run in parallel. Never run another mutation client outside that lock. Local
+publication requires infrastructure to establish the same repository lock and
+set `BOBS_FACTORY_RELEASE_PUBLICATION_LOCK=repository`; the marker itself does not
+implement a distributed lock. A local directory lock also serializes publishers
+on the same host; an interrupted owner requires inspection before clearing it. Local preparation/dry run performs no tag, draft,
+upload, dispatch, channel deployment or host installation.
+
+Recovery uses the exact retained prepared/signed artifact (`--resume` locally),
+not a rebuild or refreshed clock. `publication-receipt.json` tracks candidate,
+tag/release IDs, expected assets, completed stages and synchronization. Annotated
+tags include the candidate digest and point to frozen runtime source. Matching
+drafts/assets are reused; missing draft assets are uploaded. Different identities,
+bytes, duplicate assets or incomplete public releases block without deletion or
+overwrite. Ambiguous tag/draft/upload/publication responses are reconciled against
+provider state. Already-public matching releases count as published; only unfinished
+Pages synchronization is retried. The publisher explicitly dispatches `website.yml`
+after publication because token-created release events may not start workflows.
+A synchronization failure preserves publication success and prior deployed pointers;
+retry the retained publication artifact. Partial/failed-run artifacts remain usable
+for recovery only after fresh identity, signature and full validation checks.
+
+Artifact transport is authenticated for maintainers only. End users never receive
+`GH_TOKEN`. `--artifact-zips DIRECTORY` supplies offline TARGET.zip build artifacts
+whose digests must still match provider provenance. No repository token is forwarded
+to signed archive storage or operator-supplied evidence URLs.
 
 ## Required evidence
 
 `release-evidence.json` has `schemaVersion: 1`, `product`, exact `version`,
-`commit` and `buildRunId`. Each validation record has a `status` and
+`commit`, `buildRunId`, `candidateDigest` and `workflowSha`. Each validation record has a `status` and
 `receipt: { file, sha256 }`, with a receipt inside the evidence directory:
 
 - `reviewedCandidate`: `passed`.
@@ -156,7 +243,7 @@ not a substitute for that review. Evidence and receipt hashes accompany the publ
 release so the exact approval and validation remain inspectable.
 
 To assemble reviewed material, use `scripts/build-release-source.mjs --sha
-FULL_SHA --materials DIRECTORY --output EMPTY_DIRECTORY`. The input directory
+FULL_SHA --candidate FILE --materials DIRECTORY --output EMPTY_DIRECTORY`. The input directory
 contains precise reviewed rebuild/relink instructions in `README.md`, regular
 source files/archives, and `source-materials.json` with `schemaVersion: 1`, exact
 `commit`, `bunVersion: "1.4.2"` and `records`. Each record names its `kind`, flat
