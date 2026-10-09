@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Resume Factory roles with uncommitted work by requesting artifact submission only when the scoped MCP server has a clean revision binding; prevent repeated missing-tool startup failures. ([#66](https://github.com/jappyjan/bobs-factory/pull/66))
+
 - Preserve infrastructure checkpoints and output-correction budgets when Codex cannot initialize a required MCP server, so retries retain completed work and native conversations. ([#64](https://github.com/jappyjan/bobs-factory/pull/64))
 
 - Build the homepage with published beta metadata, advertise verified release availability, and check website builds on pull requests before deploying. ([#63](https://github.com/jappyjan/bobs-factory/pull/63))
