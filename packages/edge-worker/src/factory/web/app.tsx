@@ -67,6 +67,7 @@ import { ReviewPage } from "./review-page";
 import {
 	readStored,
 	readTextStored,
+	ticketTrackingPending,
 	todayContext,
 	writeStored,
 	writeTextStored,
@@ -905,7 +906,8 @@ function RunPage({
 							↩ Bring back
 						</Button>
 					) : (
-						finished(run.status) && (
+						finished(run.status) &&
+						!ticketTrackingPending(run) && (
 							<Button
 								variant="ghost"
 								onClick={() => void settle.change(run, "settle")}
