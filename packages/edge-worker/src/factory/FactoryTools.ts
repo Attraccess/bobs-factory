@@ -795,7 +795,26 @@ export class FactoryTools {
 				const source =
 					context.step.tool === "review-gate" ? "code-review" : "visual-review";
 				const review = filterReview(run.outputs[source]);
-				if (review.status !== "completed" || review.blockers.length)
+				if (review.status !== "completed" || review.blockers.length) {
+					if (source === "visual-review" && context.step.qaContract) {
+						const capture = QaCaptureSchema.safeParse(run.outputs.capture);
+						// An incomplete reviewer cannot approve, but recorded product failures
+						// still need correction before fresh QA and a complete review.
+						if (
+							capture.success &&
+							(capture.data.results.some((result) =>
+								result.criteria.some(
+									(criterion) => criterion.outcome === "failed",
+								),
+							) ||
+								capture.data.findings.some(
+									(finding) => finding.status === "open",
+								))
+						) {
+							const gate = await this.qaGate(context, command);
+							if (gate.findings.length) return recovery(gate);
+						}
+					}
 					return {
 						approved: false,
 						findings: review.findings.filter(
@@ -806,6 +825,7 @@ export class FactoryTools {
 							`${source} did not complete (${review.status ?? "legacy outcome missing"}). ${review.blockers.join("; ") || review.summary} Restore the required input/tools, then answer to retry only this reviewer. Missing findings do not approve or waive the review.`,
 						],
 					};
+				}
 				const open = review.findings.filter(
 					(finding) => finding.status === "open",
 				);
