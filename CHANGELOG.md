@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Completed steps can advance while older Linear transcript updates drain, and interrupted tracker deliveries recover without duplicating updates. ([#68](https://github.com/jappyjan/bobs-factory/pull/68))
+
 - Preserve infrastructure checkpoints and output-correction budgets when Codex cannot initialize a required MCP server, so retries retain completed work and native conversations. ([#64](https://github.com/jappyjan/bobs-factory/pull/64))
 
 - Build the homepage with published beta metadata, advertise verified release availability, and check website builds on pull requests before deploying. ([#63](https://github.com/jappyjan/bobs-factory/pull/63))

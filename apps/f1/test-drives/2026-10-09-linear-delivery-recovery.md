@@ -13,7 +13,8 @@ The regression suite first failed all three cases: SDK error wrapping in both
 forms, and completion while an unrelated transcript write remains pending. The
 fix recognizes confirmed absence of the queried entity while preserving other
 ambiguous errors, reuses the original delivery ID, and releases a caller only
-after its own receipt is durably saved. All 60 Linear transport tests passed. The additional operational-thought case
+after its own receipt is durably saved. All 60 Linear transport tests and 30 ticket-tracking tests passed. The additional
+operational-thought case
 places older routine backlog first and verifies the milestone receives priority.
 
 The scoped F1 drive seeds a real private delivery store with an ambiguous final
@@ -36,7 +37,7 @@ Commands:
 pnpm --filter bobs-factory-linear-event-transport test:run
 pnpm build
 node node_modules/.cache/linear-recovery/fixture.mjs
-BOBS_FACTORY_PORT=3812 apps/f1/f1 create-issue --title 'Recover Linear transcript delivery' --description '[workflow=delivery-recovery] Complete the mock implementation despite an unrelated transcript backlog.'
+BOBS_FACTORY_PORT=3812 apps/f1/f1 create-issue --title 'Recover prioritized Linear milestone' --description '[workflow=delivery-recovery] Complete the mock implementation while older routine transcript work remains queued.'
 BOBS_FACTORY_PORT=3812 apps/f1/f1 start-session --issue-id issue-1
 ```
 
