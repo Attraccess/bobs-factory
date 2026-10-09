@@ -54,6 +54,35 @@ export function pullRequestReference(value: string | undefined) {
 	}
 }
 
+/** GitHub owner/repository names are case-insensitive, including on Enterprise. */
+export function sameRepositoryReference(
+	type: "github" | "gitlab",
+	expected: ReturnType<typeof repositoryReference>,
+	actual: ReturnType<typeof repositoryReference>,
+): boolean {
+	return (
+		expected.host === actual.host &&
+		(type === "github"
+			? expected.project.toLowerCase() === actual.project.toLowerCase()
+			: expected.project === actual.project)
+	);
+}
+
+export function samePullRequestReference(
+	expected: string,
+	actual: string | undefined,
+): boolean {
+	const left = pullRequestReference(expected);
+	const right = pullRequestReference(actual);
+	return Boolean(
+		left &&
+			right &&
+			left.type === right.type &&
+			left.number === right.number &&
+			sameRepositoryReference(left.type, left, right),
+	);
+}
+
 /** Other forge URLs are validated against the selected custom adapter at setup. */
 export function isPullRequestSource(value: string | undefined): boolean {
 	if (pullRequestReference(value)) return true;

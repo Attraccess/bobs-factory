@@ -7,6 +7,7 @@ import {
 import {
 	pullRequestReference,
 	repositoryReference,
+	sameRepositoryReference,
 } from "./GitProviderReference.js";
 import type { ProviderCommand } from "./MergeReadiness.js";
 
@@ -25,7 +26,7 @@ export async function inspectGithubPullRequest(
 		selectedRepository ??
 			(await command("git", ["remote", "get-url", "origin"])),
 	);
-	if (selected.url.toLowerCase() !== reference.url.toLowerCase())
+	if (!sameRepositoryReference("github", selected, reference))
 		throw new Error("PR must belong to the selected repository");
 	const api = new GithubApi(command, selected.url);
 	const pr = githubPullRequest(

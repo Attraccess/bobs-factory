@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Accept GitHub owner and repository capitalization differences when publishing, inspecting and merging pull requests, so retries can reuse a draft PR created before a delivery failure.
+
 - Allow slow Codex thread startup and resume to finish within a bounded three-minute deadline, and preserve conversation checkpoints and correction budgets if setup still times out. ([#67](https://github.com/jappyjan/bobs-factory/pull/67))
 
 - Resume Factory roles with uncommitted work by requesting artifact submission only when the scoped MCP server has a clean revision binding; prevent repeated missing-tool startup failures. ([#66](https://github.com/jappyjan/bobs-factory/pull/66))
