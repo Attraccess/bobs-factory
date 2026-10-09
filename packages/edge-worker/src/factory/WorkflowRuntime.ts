@@ -29,8 +29,11 @@ import { ciFixRuntimeInstructions } from "./CISupervision.js";
 import {
 	acquireDelivery,
 	type DeliveryCoordination,
+	deliveryScopes,
 	deliveryStep,
 	releaseDelivery,
+	resourceScopes,
+	restoreDelivery,
 } from "./DeliveryCoordination.js";
 import {
 	defaultWorkflows,
@@ -66,6 +69,7 @@ import {
 	stampSpecialist,
 	validateContractOutput,
 } from "./SpecialistReview.js";
+import { recordTicketMilestone } from "./TicketTracking.js";
 import {
 	isComputeIntensive,
 	readPath,
@@ -191,6 +195,7 @@ export interface FactoryRun {
 	ciSupervision?: import("./CISupervision.js").CISupervision;
 	stepAttempts?: import("./Provenance.js").StepAttempt[];
 	deliveryCoordination?: DeliveryCoordination;
+	deliveryReservations?: Record<string, DeliveryCoordination>;
 	repositories?: import("./RepositoryScope.js").RunRepository[];
 	/** Durable per-repository receipts, including partial publication and merges. */
 	repositoryOutputs?: Record<string, Record<string, unknown>>;
@@ -278,6 +283,10 @@ export interface ChatMessage {
 	step: string;
 }
 export interface ExecutionContext {
+	/** Revalidate the complete grouped approval under the operation reservation. */
+	validateDelivery?: () => Promise<Record<string, unknown> | undefined>;
+	/** Nested publication discovered by passive grouped readiness must also claim targets. */
+	coordinateDelivery?: <T>(operation: () => Promise<T>) => Promise<T>;
 	/** Runtime-owned home, never inferred from a worktree or a private runner HOME. */
 	factoryHome?: string;
 	attemptId?: string;
@@ -406,6 +415,9 @@ export class WorkflowRuntime {
 				readFileSync(join(this.directory, "runs", filename), "utf8"),
 			);
 			run.workflow = WorkflowSchema.parse(run.workflow);
+			// Process-owned operations must reacquire after restart. Legacy broad
+			// ownership cannot block restored passive parent/CI frames.
+			restoreDelivery(run);
 
 			// Persisted definitions are immutable. Legacy contract migration occurs
 			// explicitly at retry/start, preserving graph positions and native IDs.
@@ -888,9 +900,76 @@ export class WorkflowRuntime {
 		milestone: import("./TicketTracking.js").TicketMilestone,
 	): Promise<void> {
 		try {
-			await this.hooks.track?.(run, milestone);
+			if (!run.ticketReference || !this.hooks.track) return;
+			recordTicketMilestone(run, milestone);
+			this.save(run);
+			// The outbox owns retries and deduplication. External tracking never
+			// holds a graph step, execution capacity, or repository reservation.
+			void Promise.resolve(this.hooks.track(run, milestone)).catch((error) =>
+				this.log(
+					run,
+					"ticket-sync",
+					`Ticket tracking failed: ${String(error)}`,
+				),
+			);
 		} catch (error) {
 			this.log(run, "ticket-sync", `Ticket tracking failed: ${String(error)}`);
+		}
+	}
+	private async coordinate<T>(
+		context: ExecutionContext,
+		operation: () => Promise<T>,
+		scopes?: string[],
+		mutation = !scopes,
+	): Promise<T> {
+		const key = `${context.stepKey ?? context.step.id}:${mutation ? "mutation" : "resources"}`;
+		const targets = () =>
+			[
+				...new Set([
+					...(mutation ? deliveryScopes(context.run) : []),
+					...(scopes ?? []),
+				]),
+			].sort();
+		const admit = () =>
+			acquireDelivery(
+				context.run,
+				() => this.runs.values(),
+				context.signal,
+				() => this.save(context.run),
+				context.log,
+				{
+					key,
+					scopes: targets,
+					reason: mutation
+						? "Repository integration/publication"
+						: "Shared QA/environment resource",
+				},
+			);
+		await admit();
+		try {
+			context.signal.throwIfAborted();
+			const nested = context.coordinateDelivery;
+			if (mutation)
+				context.coordinateDelivery = async (operation) => {
+					const owned = context.run.deliveryReservations?.[key];
+					if (
+						owned?.phase !== "active" ||
+						targets().some((target) => !owned.scopes.includes(target))
+					)
+						// Suspend this operation and reconcile its whole scope before any
+						// new publication, retaining ownership until the outer operation settles.
+						await admit();
+					context.signal.throwIfAborted();
+					return operation();
+				};
+			try {
+				return await operation();
+			} finally {
+				context.coordinateDelivery = nested;
+			}
+		} finally {
+			releaseDelivery(context.run, "Operation settled", key);
+			this.save(context.run);
 		}
 	}
 	async retryTracking(id: string): Promise<void> {
@@ -913,14 +992,6 @@ export class WorkflowRuntime {
 			signal.throwIfAborted();
 			const step = steps.find((item) => item.id === checkpoint.current)!;
 			const key = `${prefix}${step.id}`;
-			if (!parallel && deliveryStep(run, step))
-				await acquireDelivery(
-					run,
-					() => this.runs.values(),
-					signal,
-					() => this.save(run),
-					(message) => this.log(run, key, message),
-				);
 			if (!checkpoint.active) {
 				checkpoint.visits[step.id] = (checkpoint.visits[step.id] ?? 0) + 1;
 				checkpoint.active = { phase: "executing" };
@@ -1020,6 +1091,8 @@ export class WorkflowRuntime {
 				},
 				save: () => this.save(run),
 			};
+			context.coordinateDelivery = (operation) =>
+				this.coordinate(context, operation);
 			if (
 				step.type === "agent" &&
 				(step.id === "ci-fix" ||
@@ -1272,24 +1345,82 @@ export class WorkflowRuntime {
 						};
 						this.save(run);
 						try {
-							if (
-								step.type !== "agent" &&
-								isComputeIntensive(step) &&
-								this.hooks.capacity
-							) {
-								const lease = await this.hooks.capacity.acquireLease(signal, {
-									...context.capacity,
-									remote: step.tool?.startsWith("mcp__"),
-								});
-								try {
-									signal.throwIfAborted();
-									output = await lease.run(() =>
-										this.hooks[step.type as "script" | "tool"](context),
-									);
-								} finally {
-									await lease.release();
+							const execute = async () => {
+								const readiness = steps.find(
+									(item) =>
+										["ci", "handoff", "merge"].includes(item.tool ?? "") &&
+										item.branches.some(
+											(branch) =>
+												branch.next === step.id &&
+												branch.when.path === "fix" &&
+												branch.when.equals === true,
+										),
+								);
+								if (
+									step.type === "agent" &&
+									readiness &&
+									!state.agent &&
+									readPath(outputs, "draft-pr.url")
+								) {
+									const fresh = await this.hooks.tool({
+										...context,
+										step: {
+											...readiness,
+											id: step.id,
+											tool: "ci-fix-readiness",
+										},
+									});
+									if (readPath(fresh, "skipFix") === true) {
+										context.log(
+											"Fresh readiness resolved the queued failure; skipping the obsolete fixer and retaining review/QA/approval gates.",
+										);
+										return {
+											summary:
+												"Queued provider failure resolved before correction",
+											checks: [],
+											reviewRequired: false,
+											skipped: true,
+										};
+									}
+									// Supply current head/base, feedback and checks, not the obsolete queued receipt.
+									context.input = {
+										...(context.input as Record<string, unknown>),
+										outputs: structuredClone(outputs),
+									};
 								}
-							} else output = await this.hooks[step.type](context);
+								if (
+									step.type !== "agent" &&
+									isComputeIntensive(step) &&
+									this.hooks.capacity
+								) {
+									const lease = await this.hooks.capacity.acquireLease(signal, {
+										...context.capacity,
+										remote: step.tool?.startsWith("mcp__"),
+									});
+									try {
+										signal.throwIfAborted();
+										return await lease.run(() =>
+											this.hooks[step.type as "script" | "tool"](context),
+										);
+									} finally {
+										await lease.release();
+									}
+								} else
+									return this.hooks[step.type as "agent" | "script" | "tool"](
+										context,
+									);
+							};
+							const resources = resourceScopes(context);
+							const mutation = deliveryStep(run, step);
+							output =
+								mutation || resources.length
+									? await this.coordinate(
+											context,
+											execute,
+											resources.length ? resources : undefined,
+											mutation,
+										)
+									: await execute();
 							if (step.reviewContract) {
 								output = validateContractOutput(context, output);
 								if (step.reviewContract === "inventory-v1")

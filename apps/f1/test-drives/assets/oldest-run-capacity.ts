@@ -491,6 +491,10 @@ try {
 	runtime.answer(human.run.id, "Resume");
 	await until(() => human.run.status === "completed", "human resumed");
 	// Provider operations are simulated; delivery coordination and capacity are real.
+	let finishIntegration!: () => void;
+	const integrating = new Promise<void>((resolve) => {
+		finishIntegration = resolve;
+	});
 	let finishCI!: () => void;
 	const ci = new Promise<void>((resolve) => {
 		finishCI = resolve;
@@ -512,6 +516,8 @@ try {
 			},
 			script: async () => ({}),
 			tool: async ({ run, step }) => {
+				if (run.input === "first" && step.tool === "draft-pr")
+					await integrating;
 				if (run.input === "first" && step.tool === "ci") await ci;
 				return { url: "https://github.com/f1/local-test/pull/1", merged: true };
 			},
@@ -565,12 +571,18 @@ try {
 			githubUrl: "https://github.com/f1/local-test",
 			baseBranch: "main",
 		};
+		// Simulated implementation makes no edits. An existing publication receipt
+		// identifies this repository as a delivery target under affected-only admission.
+		run.outputs.source = {
+			url: "https://github.com/f1/local-test/pull/1",
+			baseRefName: "main",
+		};
 		return run;
 	});
 	const firstDelivery = deliveryRuntime.launch(deliveries[0]!);
 	await until(
-		() => deliveries[0]!.capacityLeaves?.ci?.phase === "waiting-ci",
-		"passive CI reached",
+		() => deliveries[0]!.deliveryCoordination?.phase === "active",
+		"integration ownership reached",
 	);
 	const secondDelivery = deliveryRuntime.launch(deliveries[1]!);
 	await until(
@@ -583,6 +595,15 @@ try {
 		join(directory, "delivery-wait.json"),
 		JSON.stringify(deliveries, null, 2),
 	);
+	finishIntegration();
+	await until(
+		() => deliveries[0]!.capacityLeaves?.ci?.phase === "waiting-ci",
+		"passive CI reached",
+	);
+	await secondDelivery;
+	assert.equal(deliveries[1]!.status, "completed");
+	assert.equal((await worker.runnerSlots.snapshot()).active, 0);
+	assert.equal((await worker.runnerSlots.snapshot()).queued, 0);
 	finishCI();
 	await Promise.all([firstDelivery, secondDelivery]);
 	assert(deliveries.every((run) => run.status === "completed"));

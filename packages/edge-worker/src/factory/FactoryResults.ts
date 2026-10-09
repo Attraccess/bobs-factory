@@ -14,8 +14,8 @@ import {
 
 const text = z.string().min(1);
 /** Bump when runtime result interpretation or validation changes. Frozen flags remain separate. */
-export const FACTORY_RESULT_CONTRACT_VERSION = "factory-results-v3";
-export const reviewCompletionInstructions = `Every code, visual or specialist reviewer must return status:"completed"|"blocked"|"failed" and blockers:[concrete missing-input/tooling reasons]. Use completed only after the actual required review was performed. An empty findings list never establishes review completion. If input or tools are unavailable, return blocked with a precise summary/recovery reason; do not manufacture a clean review.`;
+export const FACTORY_RESULT_CONTRACT_VERSION = "factory-results-v4";
+export const reviewCompletionInstructions = `Every code, visual or specialist reviewer must return status:"completed"|"blocked"|"failed" and blockers:[concrete missing-input/tooling reasons]. Status describes execution of your review, not whether the product passed QA. Use completed after the actual required review was performed, including when it found defects or failed QA criteria; report those failures as open findings with blockers:[]. Reserve failed for a failure to execute the review itself. An empty findings list never establishes review completion. If input or tools are unavailable, return blocked with a precise summary/recovery reason; do not manufacture a clean review.`;
 export const VisualScopeSchema = z
 	.object({
 		changed: z.boolean(),

@@ -79,3 +79,31 @@ Forge CI and merge responses are simulated. This drive does not publish or merge
 anything, validate real model output, or provide dashboard screenshot evidence.
 Background starvation bounds, equal-age ordering, old state compatibility,
 conflicting metadata and migration preservation are covered by targeted tests.
+
+## Revalidation after delivery-boundary changes
+
+Reran the fixture on 2026-10-09 after merging main
+`4d0ffd783d1510edd796ec220688695e6fb17b6d` into branch head
+`9a66e39b101057991448d78acaf810fc0290b5b9`, with the conflict resolution and
+fixture updates uncommitted. Core and EdgeWorker were freshly built.
+
+Main now reserves only affected repositories during concrete publication
+operations. The delivery fixture supplies a simulated existing-PR receipt because
+its simulated implementation produces no edits. It holds the first publication,
+checks that the second delivery queues without occupying execution capacity,
+then releases publication. The second delivery completes while the first waits
+for CI, with zero active or queued capacity requests. All other scheduling,
+recovery, cancellation and activity assertions passed with simulated agents.
+
+The initial rerun timed out because the old fixture expected an unchanged
+repository to reserve a delivery target. This was corrected in the fixture;
+no production behavior was changed by the conflict resolution. The conflicting
+unit test was updated to the same publication/CI boundary, preserving main's
+new tests. All 283 tests across seven targeted scheduling, delivery, runtime,
+tracking and pipeline suites passed.
+
+Command: `F1_AGENT_MODE=mock bun apps/f1/test-drives/assets/oldest-run-capacity.ts`.
+Logs are retained in the run evidence directory as `ci-fix-second-f1.log`
+(initial failed fixture) and `ci-fix-second-f1-corrected.log` (passing rerun).
+The passing log identifies the temporary receipt directory. Real agents and
+external forge operations remain untested by this drive.

@@ -17,6 +17,8 @@ const condition = z.object({ path: z.string().min(1), equals: z.unknown() });
 const reviewSources = z.object({ inventory: id, fanout: id.optional() });
 const base = {
 	id,
+	delivery: z.literal("exclusive").optional(),
+	resources: z.array(z.string().min(1)).min(1).optional(),
 	name: z.string().min(1),
 	next: id.optional(),
 	branches: z.array(z.object({ when: condition, next: id })).default([]),
@@ -42,6 +44,8 @@ export const AgentStepSchema = z.object({
 export type AgentStep = z.infer<typeof AgentStepSchema>;
 export interface WorkflowStep {
 	id: string;
+	delivery?: "exclusive";
+	resources?: string[];
 	name: string;
 	type: "agent" | "script" | "tool" | "fanout" | "workflow";
 	next?: string;
@@ -75,6 +79,8 @@ export const StepSchema: z.ZodType<WorkflowStep> = z.lazy(() =>
 		z.object({
 			...base,
 			type: z.literal("workflow"),
+			delivery: z.never().optional(),
+			resources: z.never().optional(),
 			workflow: id,
 			computeIntensive: z.never().optional(),
 		}),
@@ -95,6 +101,8 @@ export const StepSchema: z.ZodType<WorkflowStep> = z.lazy(() =>
 		z.object({
 			...base,
 			type: z.literal("fanout"),
+			delivery: z.never().optional(),
+			resources: z.never().optional(),
 			computeIntensive: z.never().optional(),
 			groups: z.array(z.array(StepSchema).min(1)).min(1).max(8),
 		}),

@@ -65,7 +65,7 @@ function createRun(
 	return run;
 }
 
-it("finishes one overlapping delivery before another integrates, while both implementations run in parallel", async () => {
+it("allows an overlapping delivery to review and finish while another prepares its guide", async () => {
 	let release!: () => void;
 	const firstGuide = new Promise<void>((resolve) => {
 		release = resolve;
@@ -100,11 +100,12 @@ it("finishes one overlapping delivery before another integrates, while both impl
 	const b = runtime.launch(second);
 	await vi.waitFor(() => expect(roles).toContain("second:implement"));
 	await new Promise((resolve) => setTimeout(resolve, 20));
-	expect(roles).not.toContain("second:capture");
-	expect(observedBases.second).toBeUndefined();
+	expect(roles).toContain("second:capture");
+	expect(second.status).toBe("completed");
+	expect(observedBases.second).toEqual(["base-1"]);
 	release();
 	await Promise.all([a, b]);
-	expect(observedBases).toEqual({ first: ["base-1"], second: ["base-2"] });
+	expect(observedBases).toEqual({ first: ["base-1"], second: ["base-1"] });
 	expect(roles.filter((value) => value.endsWith(":capture"))).toEqual([
 		"first:capture",
 		"second:capture",
@@ -267,8 +268,10 @@ it("releases an overlapping target while a human is absent and retains its pendi
 it("restores the finalizing owner ahead of queued deliveries after shutdown, and cancellation does not starve the next oldest run", async () => {
 	const directory = home();
 	const firstRuntime = new WorkflowRuntime(directory, {
-		agent: async ({ step, signal }) => {
-			if (step.id === "guide")
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async ({ step, signal }) => {
+			if (step.tool === "draft-pr")
 				await new Promise<void>((_resolve, reject) =>
 					signal.addEventListener(
 						"abort",
@@ -278,14 +281,12 @@ it("restores the finalizing owner ahead of queued deliveries after shutdown, and
 				);
 			return {};
 		},
-		script: async () => ({}),
-		tool: async () => ({}),
 	});
 	const owner = createRun(firstRuntime, "owner"),
 		cancelled = createRun(firstRuntime, "cancelled"),
 		next = createRun(firstRuntime, "next");
 	void firstRuntime.launch(owner);
-	await vi.waitFor(() => expect(owner.step).toBe("guide"));
+	await vi.waitFor(() => expect(owner.step).toBe("draft-pr"));
 	void firstRuntime.launch(cancelled);
 	void firstRuntime.launch(next);
 	await vi.waitFor(() =>
@@ -308,14 +309,22 @@ it("restores the finalizing owner ahead of queued deliveries after shutdown, and
 	runtime.resumeAll();
 	await vi.waitFor(() => expect(runtime.get(next.id).status).toBe("completed"));
 	expect(runtime.get(cancelled.id).status).toBe("stopped");
-	expect(visits).toEqual([
-		"owner:guide",
-		"owner:merge",
+	expect(visits.filter((visit) => visit.endsWith(":draft-pr"))).toEqual([
+		"owner:draft-pr",
 		"next:draft-pr",
-		"next:capture",
-		"next:guide",
-		"next:merge",
 	]);
+	expect(visits).toEqual(
+		expect.arrayContaining([
+			"owner:draft-pr",
+			"owner:capture",
+			"owner:guide",
+			"owner:merge",
+			"next:draft-pr",
+			"next:capture",
+			"next:guide",
+			"next:merge",
+		]),
+	);
 	expect(
 		runtime.get(owner.id).history.filter((entry) => entry.step === "capture"),
 	).toHaveLength(1);
@@ -327,24 +336,26 @@ it("uses a stable run identity to order equally old queued deliveries", async ()
 	vi.setSystemTime(new Date("2026-10-08T10:00:00Z"));
 	const admitted: string[] = [];
 	const runtime = new WorkflowRuntime(home(), {
-		agent: async ({ run, step, signal }) => {
-			if (run.input === "owner" && step.id === "guide")
-				await new Promise<void>((_resolve, reject) =>
-					signal.addEventListener("abort", () => reject(new Error("stopped")), {
-						once: true,
-					}),
-				);
-			return {};
-		},
+		agent: async () => ({}),
 		script: async () => ({}),
-		tool: async ({ run, step }) => {
-			if (step.tool === "draft-pr") admitted.push(run.input);
+		tool: async ({ run, step, signal }) => {
+			if (step.tool === "draft-pr") {
+				admitted.push(run.input);
+				if (run.input === "owner")
+					await new Promise<void>((_resolve, reject) =>
+						signal.addEventListener(
+							"abort",
+							() => reject(new Error("stopped")),
+							{ once: true },
+						),
+					);
+			}
 			return {};
 		},
 	});
 	const owner = createRun(runtime, "owner");
 	void runtime.launch(owner);
-	await vi.waitFor(() => expect(owner.step).toBe("guide"));
+	await vi.waitFor(() => expect(owner.step).toBe("draft-pr"));
 	const queued = (id: string) => {
 		const run = runtime.create({
 			id,
@@ -370,7 +381,7 @@ it("uses a stable run identity to order equally old queued deliveries", async ()
 	await runtime.shutdown();
 });
 
-it("coordinates renamed corrective and review roles after a human rejection", async () => {
+it("allows renamed correction alongside independent review after rejection", async () => {
 	const custom = validateWorkflows([
 		...defaultWorkflows,
 		{
@@ -441,7 +452,7 @@ it("coordinates renamed corrective and review roles after a human rejection", as
 		feedback: "Correct the feature",
 	});
 	await new Promise((resolve) => setTimeout(resolve, 20));
-	expect(roles).not.toContain("custom:repair-feature");
+	expect(roles).toContain("custom:repair-feature");
 	runtime.stop(other.id);
 	await Promise.all([a, b]);
 	expect(roles.slice(-2)).toEqual([
@@ -450,7 +461,7 @@ it("coordinates renamed corrective and review roles after a human rejection", as
 	]);
 });
 
-it("re-admits a restored inactive owner behind a new active delivery even when resume launches directly", async () => {
+it("restores passive guide work without reacquiring legacy broad ownership", async () => {
 	const directory = home();
 	const runtime = new WorkflowRuntime(directory, {
 		agent: async ({ step, signal }) => {
@@ -496,7 +507,7 @@ it("re-admits a restored inactive owner behind a new active delivery even when r
 	restored.status = "running";
 	const a = recovered.launch(restored);
 	await new Promise((resolve) => setTimeout(resolve, 20));
-	expect(visits).not.toContain("old:guide");
+	expect(visits).toContain("old:guide");
 	recovered.stop(current.id);
 	await Promise.all([a, b]);
 	expect(restored.status).toBe("completed");
@@ -645,6 +656,8 @@ it("recognizes two native worktrees of the same repository without configured fo
 	);
 	git("worktree", "add", "-qb", "one", one);
 	git("worktree", "add", "-qb", "two", two);
+	writeFileSync(join(one, "feature"), "one");
+	writeFileSync(join(two, "feature"), "two");
 	let release!: () => void;
 	const hold = new Promise<void>((resolve) => {
 		release = resolve;
@@ -653,11 +666,14 @@ it("recognizes two native worktrees of the same repository without configured fo
 	const runtime = new WorkflowRuntime(directory, {
 		agent: async ({ run, step }) => {
 			roles.push(`${run.input}:${step.id}`);
-			if (run.input === "first" && step.id === "guide") await hold;
+
 			return {};
 		},
 		script: async () => ({}),
-		tool: async () => ({}),
+		tool: async ({ run, step }) => {
+			if (run.input === "first" && step.tool === "draft-pr") await hold;
+			return {};
+		},
 	});
 	const first = createRun(runtime, "first"),
 		second = createRun(runtime, "second");
@@ -666,10 +682,11 @@ it("recognizes two native worktrees of the same repository without configured fo
 	first.outputs.repository = { baseBranch: "main" };
 	second.outputs.repository = { baseBranch: "main" };
 	const a = runtime.launch(first);
-	await vi.waitFor(() => expect(roles).toContain("first:guide"));
+	await vi.waitFor(() => expect(first.step).toBe("draft-pr"));
 	const b = runtime.launch(second);
 	await vi.waitFor(() => expect(roles).toContain("second:implement"));
 	await new Promise((resolve) => setTimeout(resolve, 20));
+	expect(second.deliveryCoordination?.phase).toBe("queued");
 	expect(roles).not.toContain("second:guide");
 	release();
 	await Promise.all([a, b]);
@@ -678,6 +695,10 @@ it("recognizes two native worktrees of the same repository without configured fo
 it("keeps a queued overlapping delivery out of execution capacity", async () => {
 	const { SessionSemaphore } = await import("../src/RunnerConcurrency.js");
 	const capacity = new SessionSemaphore(1);
+	let finishIntegration!: () => void;
+	const integrating = new Promise<void>((resolve) => {
+		finishIntegration = resolve;
+	});
 	let finishCI!: () => void;
 	const waitingCI = new Promise<void>((resolve) => {
 		finishCI = resolve;
@@ -697,6 +718,7 @@ it("keeps a queued overlapping delivery out of execution capacity", async () => 
 		},
 		script: async () => ({}),
 		tool: async ({ run, step }) => {
+			if (step.id === "draft-pr" && run.input === "first") await integrating;
 			if (step.id === "ci" && run.input === "first") await waitingCI;
 			return {};
 		},
@@ -718,11 +740,7 @@ it("keeps a queued overlapping delivery out of execution capacity", async () => 
 	second.workflow = definition;
 	const a = runtime.launch(first);
 	await vi.waitFor(() =>
-		expect({
-			status: first.status,
-			error: first.error,
-			phase: first.capacityLeaves?.ci?.phase,
-		}).toMatchObject({ status: "running", phase: "waiting-ci" }),
+		expect(first.deliveryCoordination?.phase).toBe("active"),
 	);
 	const b = runtime.launch(second);
 	await vi.waitFor(() =>
@@ -732,8 +750,613 @@ it("keeps a queued overlapping delivery out of execution capacity", async () => 
 	expect(capacity.waiting).toBe(0);
 	const spare = await capacity.acquireLease();
 	await spare.release();
+	finishIntegration();
+	await vi.waitFor(() =>
+		expect(first.capacityLeaves?.ci?.phase).toBe("waiting-ci"),
+	);
+	await b;
+	expect(second.status).toBe("completed");
+	expect(capacity.active).toBe(0);
+	expect(capacity.waiting).toBe(0);
 	finishCI();
 	await Promise.all([a, b]);
 	expect([first.status, second.status]).toEqual(["completed", "completed"]);
 	expect(capacity.active).toBe(0);
+});
+
+it("reserves three affected repositories out of seven and atomically adds newly changed targets", async () => {
+	const { acquireDelivery, deliveryScopes, releaseDelivery } = await import(
+		"../src/factory/DeliveryCoordination.js"
+	);
+	const root = home();
+	const runtime = new WorkflowRuntime(root, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const group = createRun(runtime, "group");
+	group.repositories = Array.from({ length: 7 }, (_, index) => {
+		const workspace = join(root, `repo-${index}`);
+		mkdirSync(workspace);
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: workspace, stdio: "ignore" });
+		git("init", "-qb", "main");
+		writeFileSync(join(workspace, "base"), "base");
+		git("add", ".");
+		git(
+			"-c",
+			"user.name=F1",
+			"-c",
+			"user.email=f1@example.test",
+			"-c",
+			"commit.gpgsign=false",
+			"commit",
+			"-qm",
+			"base",
+		);
+		git("checkout", "-qb", "feature");
+		if (index === 0) writeFileSync(join(workspace, "new"), "dirty");
+		if (index === 1) {
+			// Inherited commits, without any new agent edit.
+			writeFileSync(join(workspace, "inherited"), "inherited");
+			git("add", ".");
+			git(
+				"-c",
+				"user.name=F1",
+				"-c",
+				"user.email=f1@example.test",
+				"-c",
+				"commit.gpgsign=false",
+				"commit",
+				"-qm",
+				"inherited",
+			);
+		}
+		return {
+			id: `repo-${index}`,
+			name: `Repo ${index}`,
+			repositoryPath: workspace,
+			workspace,
+			baseBranch: "main",
+			githubUrl: `https://github.com/test/repo-${index}`,
+		};
+	});
+	group.repositoryOutputs = {
+		"repo-2": {
+			"draft-pr": {
+				url: "https://github.com/test/repo-2/pull/1",
+				headSha: "receipt",
+			},
+		},
+	};
+	const signal = new AbortController();
+	const all = () => runtime.runs.values();
+	const save = () => runtime.save(group);
+	const log = vi.fn();
+	await acquireDelivery(group, all, signal.signal, save, log);
+	expect(group.deliveryCoordination?.scopes).toEqual(
+		[0, 1, 2].map((index) =>
+			JSON.stringify([`https://github.com/test/repo-${index}`, "main"]),
+		),
+	);
+	const context = createRun(runtime, "context");
+	context.repositories = [group.repositories[3]!];
+	// An inherited PR still reserves its target even with a now-clean worktree.
+	context.repositoryOutputs = {
+		"repo-3": { source: { url: "https://github.com/test/repo-3/pull/3" } },
+	};
+	await acquireDelivery(
+		context,
+		all,
+		signal.signal,
+		() => runtime.save(context),
+		log,
+	);
+	expect(context.deliveryCoordination?.phase).toBe("active");
+	writeFileSync(join(group.repositories[3]!.workspace, "new"), "new target");
+	expect(deliveryScopes(group)).toHaveLength(4);
+	const expansion = acquireDelivery(group, all, signal.signal, save, log);
+	await vi.waitFor(() =>
+		expect(group.deliveryCoordination?.phase).toBe("queued"),
+	);
+	expect(group.deliveryCoordination?.blockers).toEqual([
+		{
+			runId: context.id,
+			operation: "delivery",
+			targets: [JSON.stringify(["https://github.com/test/repo-3", "main"])],
+		},
+	]);
+	releaseDelivery(context, "Context publication settled");
+	await expansion;
+	expect(group.deliveryCoordination?.scopes).toHaveLength(4);
+	releaseDelivery(group, "Finished");
+	await runtime.shutdown();
+});
+
+it.each([
+	"worktree",
+	"shared",
+	"legacy",
+])("keeps QA %s isolation separate from repository integration", async (isolation) => {
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const visits: string[] = [];
+	const runtime = new WorkflowRuntime(home(), {
+		agent: async ({ run, step }) => {
+			visits.push(`${run.input}:${step.id}`);
+			if (run.input === "first" && step.id === "capture") await held;
+			return {};
+		},
+		script: async () => ({}),
+		tool: async () => ({}),
+	});
+	const first = createRun(runtime, "first"),
+		second = createRun(runtime, "second");
+	for (const run of [first, second])
+		run.outputs["visual-scope"] =
+			isolation === "legacy"
+				? {}
+				: {
+						environment: {
+							isolation,
+							resources: ["cluster:qa/database:fixture"],
+						},
+					};
+	const a = runtime.launch(first);
+	await vi.waitFor(() => expect(visits).toContain("first:capture"));
+	const b = runtime.launch(second);
+	try {
+		await vi.waitFor(() =>
+			expect(second.step).toBe(isolation === "worktree" ? "merge" : "capture"),
+		);
+		if (isolation === "worktree") expect(visits).toContain("second:capture");
+		else {
+			expect(visits).not.toContain("second:capture");
+			expect(second.deliveryCoordination?.reason).toBe(
+				"Shared QA/environment resource",
+			);
+			expect(second.deliveryCoordination?.blockers?.[0]?.runId).toBe(first.id);
+		}
+		// A third run can integrate on the same repository throughout the shared QA wait.
+		const integrator = createRun(runtime, "integrator");
+		integrator.workflow = { ...delivery, steps: [delivery.steps[1]!] };
+		await runtime.launch(integrator);
+		expect(integrator.status).toBe("completed");
+	} finally {
+		release();
+		await Promise.all([a, b]);
+		await runtime.shutdown();
+	}
+});
+
+it("expands nested publication admission atomically and retains it until the outer operation settles", async () => {
+	let releaseOwner!: () => void, releaseGroup!: () => void;
+	const ownerHeld = new Promise<void>((resolve) => {
+		releaseOwner = resolve;
+	});
+	const groupHeld = new Promise<void>((resolve) => {
+		releaseGroup = resolve;
+	});
+	let published = false;
+	const runtime = new WorkflowRuntime(home(), {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async (context) => {
+			if (context.run.input === "owner") await ownerHeld;
+			else {
+				context.run.repositoryOutputs!.b = {
+					source: { url: "https://github.com/test/b/pull/2" },
+				};
+				await context.coordinateDelivery!(async () => {
+					published = true;
+				});
+				await groupHeld;
+			}
+			return {};
+		},
+	});
+	const repositories = ["a", "b"].map((id) => {
+		const workspace = join(home(), id);
+		mkdirSync(workspace);
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: workspace, stdio: "ignore" });
+		git("init", "-qb", "main");
+		writeFileSync(join(workspace, "base"), "base");
+		git("add", ".");
+		git(
+			"-c",
+			"user.name=F1",
+			"-c",
+			"user.email=f1@example.test",
+			"-c",
+			"commit.gpgsign=false",
+			"commit",
+			"-qm",
+			"base",
+		);
+		return {
+			id,
+			name: id,
+			workspace,
+			repositoryPath: workspace,
+			baseBranch: "main",
+			githubUrl: `https://github.com/test/${id}`,
+		};
+	});
+	const owner = createRun(runtime, "owner"),
+		group = createRun(runtime, "group");
+	for (const run of [owner, group])
+		run.workflow = { ...delivery, steps: [delivery.steps[1]!] };
+	owner.repositories = [repositories[1]!];
+	owner.repositoryOutputs = {
+		b: { source: { url: "https://github.com/test/b/pull/1" } },
+	};
+	group.repositories = repositories;
+	group.repositoryOutputs = {
+		a: { source: { url: "https://github.com/test/a/pull/1" } },
+	};
+	const a = runtime.launch(owner);
+	await vi.waitFor(() =>
+		expect(owner.deliveryCoordination?.phase).toBe("active"),
+	);
+	const b = runtime.launch(group);
+	try {
+		await vi.waitFor(() =>
+			expect(group.deliveryCoordination?.phase).toBe("queued"),
+		);
+		expect(published).toBe(false);
+		expect(group.deliveryCoordination?.scopes).toHaveLength(2);
+		expect(group.deliveryCoordination?.blockers?.[0]?.runId).toBe(owner.id);
+		releaseOwner();
+		await vi.waitFor(() => expect(published).toBe(true));
+		expect(group.deliveryCoordination?.phase).toBe("active");
+		expect(group.deliveryCoordination?.scopes).toHaveLength(2);
+	} finally {
+		releaseOwner();
+		releaseGroup();
+		await Promise.all([a, b]);
+		await runtime.shutdown();
+	}
+	expect(group.deliveryCoordination?.phase).toBe("released");
+});
+
+it.each([
+	"green",
+	"base",
+	"failed",
+	"dirty",
+	"comment",
+	"scope",
+	"qa-gap",
+])("refreshes a queued CI fixer before invoking it (%s)", async (condition) => {
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	let green = false;
+	const agents: string[] = [];
+	const tools = new FactoryTools({
+		postComment: vi.fn(),
+		command: async (_context, exe, args) => {
+			if (exe === "git")
+				return args[0] === "rev-parse"
+					? "head"
+					: condition === "dirty" && green
+						? " M source.ts"
+						: "";
+			const request = githubRequest(args);
+			if (
+				condition === "comment" &&
+				green &&
+				request.path.includes("/issues/1/comments")
+			)
+				return JSON.stringify([
+					{
+						id: "comment",
+						body: "Please correct the implementation",
+						user: { login: "reviewer" },
+					},
+				]);
+			if (request.path === "graphql")
+				return JSON.stringify(
+					providerReceipt({
+						baseRefOid: green && condition === "base" ? "new-base" : "base",
+						statusCheckRollup: {
+							contexts: {
+								pageInfo: {},
+								nodes: [
+									{
+										name: "tests",
+										status: "COMPLETED",
+										conclusion:
+											green && condition !== "failed" ? "SUCCESS" : "FAILURE",
+									},
+								],
+							},
+						},
+						comments: {
+							pageInfo: {},
+							nodes:
+								condition === "comment" && green
+									? [
+											{
+												id: "comment",
+												body: "Please correct the implementation",
+												author: { login: "reviewer" },
+											},
+										]
+									: [],
+						},
+					}),
+				);
+			return JSON.stringify(githubApiReceipt(args));
+		},
+	});
+	const workflow = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "refresh",
+			name: "Refresh",
+			steps: [
+				{
+					id: "ci",
+					name: "CI",
+					type: "tool",
+					tool: "ci",
+					branches: [{ when: { path: "fix", equals: true }, next: "repair" }],
+					next: "end",
+				},
+				{
+					id: "repair",
+					name: "Repair",
+					type: "agent",
+					prompt: "Repair",
+					next: "after",
+				},
+				{
+					id: "after",
+					name: "Route unchanged",
+					type: "tool",
+					tool: "review-after-fix",
+					next: "end",
+				},
+			],
+		},
+	]).at(-1)!;
+	const runtime = new WorkflowRuntime(home(), {
+		agent: async ({ step }) => {
+			agents.push(step.id);
+			return {};
+		},
+		script: async () => ({}),
+		tool: async (context) => {
+			if (context.run.input === "owner" && context.step.tool === "draft-pr") {
+				await held;
+				return {};
+			}
+			return context.step.tool === "review-after-fix" && condition !== "base"
+				? {}
+				: tools.tool(context);
+		},
+	});
+	const owner = createRun(runtime, "owner");
+	owner.workflow = { ...delivery, steps: [delivery.steps[1]!] };
+	const a = runtime.launch(owner);
+	await vi.waitFor(() =>
+		expect(owner.deliveryCoordination?.phase).toBe("active"),
+	);
+	const fixer = createRun(runtime, "fixer");
+	fixer.workflow = workflow;
+	fixer.outputs["draft-pr"] = {
+		url: "https://github.com/test/repo/pull/1",
+		headSha: "head",
+	};
+	fixer.roleRevisions = {
+		"code-review": { headSha: "head", dirty: false, at: "", historyLength: 0 },
+	};
+	fixer.outputs["review-gate"] = { approved: true };
+	const b = runtime.launch(fixer);
+	try {
+		await vi.waitFor(() =>
+			expect(fixer.deliveryCoordination?.phase).toBe("queued"),
+		);
+		green = true;
+		if (condition === "scope")
+			fixer.outputs.plan = { plan: "Authorized new requirement" };
+		if (condition === "qa-gap")
+			fixer.outputs["visual-gate"] = { approved: false, qaBlocked: true };
+	} finally {
+		release();
+		await Promise.all([a, b]);
+	}
+	expect(fixer.status).toBe("completed");
+	const resolved = ["green", "base"].includes(condition);
+	expect(agents).toEqual(resolved ? [] : ["repair"]);
+	expect(
+		fixer.history.find((entry) => entry.step === "repair")?.output,
+	).toMatchObject(resolved ? { skipped: true } : {});
+	if (condition === "base")
+		expect(
+			fixer.history.find((entry) => entry.step === "after")?.output,
+		).toMatchObject({
+			reviewRequired: true,
+			invalidation: {
+				kind: "base-change",
+				previousBaseSha: "base",
+				baseSha: "new-base",
+			},
+		});
+	await runtime.shutdown();
+});
+
+it("keeps passive CI polling and green QA runnable behind an overlapping fixer after restart", async () => {
+	const directory = home();
+	let green = false;
+	let polls = 0;
+	const visits: string[] = [];
+	const tools = new FactoryTools({
+		postComment: vi.fn(),
+		command: async (_context, exe, args) => {
+			if (exe === "git") return args[0] === "rev-parse" ? "head" : "";
+			if (githubRequest(args).path === "graphql") {
+				polls++;
+				return JSON.stringify(
+					providerReceipt(
+						green
+							? {}
+							: {
+									statusCheckRollup: {
+										contexts: {
+											pageInfo: {},
+											nodes: [{ name: "test", status: "QUEUED" }],
+										},
+									},
+								},
+					),
+				);
+			}
+			return JSON.stringify(githubApiReceipt(args));
+		},
+	});
+	const hooks = {
+		agent: async ({
+			run,
+			step,
+			signal,
+		}: import("../src/factory/WorkflowRuntime.js").ExecutionContext) => {
+			visits.push(`${run.input}:${step.id}`);
+			if (run.input === "fixer")
+				await new Promise<void>((_resolve, reject) =>
+					signal.addEventListener(
+						"abort",
+						() => reject(new Error("Stopped fixture")),
+						{ once: true },
+					),
+				);
+			return {};
+		},
+		script: async () => ({}),
+		tool: (
+			context: import("../src/factory/WorkflowRuntime.js").ExecutionContext,
+		) => tools.tool(context),
+	};
+	let runtime = new WorkflowRuntime(directory, hooks);
+	const fixer = createRun(runtime, "fixer");
+	fixer.workflow = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "active-fixer",
+			name: "Fixer",
+			steps: [
+				{
+					id: "ci-fix",
+					name: "Fix",
+					type: "agent",
+					prompt: "Mock integration",
+					next: "end",
+				},
+			],
+		},
+	]).at(-1)!;
+	const watcher = createRun(runtime, "watcher");
+	watcher.workflow = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "passive-watcher",
+			name: "Watcher",
+			steps: [
+				{ id: "ci", name: "CI", type: "tool", tool: "ci" },
+				{
+					id: "capture",
+					name: "QA",
+					type: "agent",
+					prompt: "Mock QA",
+					next: "end",
+				},
+			],
+		},
+	]).at(-1)!;
+	watcher.outputs["draft-pr"] = {
+		url: "https://github.com/test/repo/pull/1",
+		headSha: "head",
+	};
+	watcher.outputs["visual-scope"] = { environment: { isolation: "worktree" } };
+	void runtime.launch(fixer);
+	await vi.waitFor(() =>
+		expect(fixer.deliveryCoordination?.phase).toBe("active"),
+	);
+	void runtime.launch(watcher);
+	await vi.waitFor(() => expect(polls).toBe(1));
+	expect(watcher.deliveryCoordination).toBeUndefined();
+	await runtime.shutdown();
+	green = true;
+	runtime = new WorkflowRuntime(directory, hooks);
+	runtime.resumeAll();
+	await vi.waitFor(() =>
+		expect(runtime.get(watcher.id).status).toBe("completed"),
+	);
+	expect(polls).toBe(2);
+	expect(visits.filter((visit) => visit === "watcher:capture")).toHaveLength(1);
+	expect(runtime.get(fixer.id).deliveryCoordination?.phase).toBe("active");
+	expect(
+		runtime.get(watcher.id).history.filter((entry) => entry.step === "ci"),
+	).toHaveLength(1);
+	runtime.stop(fixer.id);
+	await runtime.shutdown();
+});
+
+it("releases merge ownership between provider polls and revalidates approval before the next request", async () => {
+	vi.useFakeTimers();
+	let submitted = 0;
+	let currentHead = "head";
+	const tools = new FactoryTools({
+		postComment: vi.fn(),
+		command: async (_context, exe, args) => {
+			if (exe === "git") return args[0] === "rev-parse" ? "head" : "";
+			const request = githubRequest(args);
+			if (request.path.endsWith("/merge")) submitted++;
+			return JSON.stringify(
+				githubApiReceipt(args, {
+					headRefOid: currentHead,
+					isDraft: false,
+					reviewDecision: "APPROVED",
+					mergeStateStatus: "CLEAN",
+					isInMergeQueue: submitted > 0,
+				}),
+			);
+		},
+	});
+	const runtime = new WorkflowRuntime(home(), {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: (context) =>
+			context.step.tool === "merge" ? tools.tool(context) : Promise.resolve({}),
+	});
+	const merging = createRun(runtime, "merging");
+	merging.workflow = { ...delivery, steps: [delivery.steps.at(-1)!] };
+	merging.outputs["draft-pr"] = {
+		url: "https://github.com/test/repo/pull/1",
+		headSha: "head",
+	};
+	merging.humanDecisions = [
+		{ decision: "approve", headSha: "head", reviewId: "review", at: "" },
+	];
+	const a = runtime.launch(merging);
+	await vi.waitFor(() => expect(submitted).toBe(1));
+	await vi.waitFor(() =>
+		expect(merging.deliveryCoordination?.phase).toBe("released"),
+	);
+	const independent = createRun(runtime, "independent");
+	independent.workflow = { ...delivery, steps: [delivery.steps[1]!] };
+	await runtime.launch(independent);
+	expect(independent.status).toBe("completed");
+	currentHead = "unapproved-head";
+	await vi.advanceTimersByTimeAsync(10000);
+	await a;
+	expect(submitted).toBe(1);
+	expect(merging.outputs.merge).toMatchObject({ fix: true, rework: false });
+	expect(merging.humanDecisions[0]?.headSha).toBe("head");
+	await runtime.shutdown();
 });
