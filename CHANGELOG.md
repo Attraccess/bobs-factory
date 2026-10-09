@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve infrastructure checkpoints and output-correction budgets when Codex cannot initialize a required MCP server, so retries retain completed work and native conversations.
+
 - Build the homepage with published beta metadata, advertise verified release availability, and check website builds on pull requests before deploying. ([#63](https://github.com/jappyjan/bobs-factory/pull/63))
 
 - Switching tabs or brief connection drops no longer reload the dashboard or discard unsent edits. Factory reconnects in the background while Bob looks around for it, the header shows "Reconnecting…" only for longer outages, and repeated failures open a dialog with retry over the still-loaded page. The dashboard only signs you out when Factory confirms the session ended. ([Taskbot #113](https://taskbot.apps.janjaap.de/p/bobs-factory/t/113), [#62](https://github.com/jappyjan/bobs-factory/pull/62))
