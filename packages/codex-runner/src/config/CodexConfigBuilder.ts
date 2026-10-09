@@ -39,7 +39,7 @@ export class CodexConfigBuilder {
 		const webSearchMode =
 			this.config.webSearchMode ??
 			(this.config.includeWebSearch ? "live" : undefined);
-		const mode = this.config.sandbox || "workspace-write";
+		const mode = this.config.sandbox ?? "danger-full-access";
 		const writableRoots = this.getAdditionalDirectories();
 		const gitMetadataRoots =
 			mode === "workspace-write"
