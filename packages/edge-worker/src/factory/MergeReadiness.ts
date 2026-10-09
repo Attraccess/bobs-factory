@@ -45,6 +45,7 @@ export interface ProviderCheck {
 }
 export interface MergeReadiness {
 	metadata?: { title: string };
+	guideRecovery?: { fingerprint: string };
 	ciAssistance?: string[];
 	headSha: string;
 	/** Local revision that a synchronization attempt must publish to this PR. */

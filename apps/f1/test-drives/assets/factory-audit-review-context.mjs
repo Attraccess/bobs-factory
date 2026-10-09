@@ -25,6 +25,11 @@ const evidence =
 mkdirSync(evidence, { recursive: true });
 const malformedMode = process.env.FACTORY_AUDIT_MALFORMED === "1";
 const nativeFailureMode = process.env.FACTORY_AUDIT_NATIVE_FAILURE;
+const handshakeFailureMode =
+	process.env.FACTORY_AUDIT_STARTUP_FAILURE === "handshake";
+const startupFailureMessage = handshakeFailureMode
+	? "thread/start failed: error creating thread: Fatal error: Failed to initialize session: required MCP servers failed to initialize: factory-context: timed out handshaking with MCP server after 44.999999833s"
+	: "Required MCP server 'factory-context' is unavailable before model work: scripted fresh native attachment failure";
 const git = (...args) =>
 	execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
 git("init", "-b", "main");
@@ -233,9 +238,7 @@ function scriptedRunner(_type, config) {
 			if (!role) return delegate.start(prompt);
 			if (role === "review" && !startupFailureReplayed) {
 				startupFailureReplayed = true;
-				throw new Error(
-					"Required MCP server 'factory-context' is unavailable before model work: scripted fresh native attachment failure",
-				);
+				throw new Error(startupFailureMessage);
 			}
 			const scoped = config.mcpConfig["factory-context"];
 			const input = JSON.parse(readFileSync(scoped.args.at(-1), "utf8"));
@@ -464,9 +467,9 @@ try {
 		const run = await api(`/api/runs/${id}`);
 		return run.status === "failed" && run;
 	});
-	assert.match(
+	assert.equal(
 		startupFailed.checkpoint.active.agent.infrastructureFailure.reason,
-		/fresh native attachment/,
+		startupFailureMessage,
 	);
 	assert.equal(startupFailed.checkpoint.active.agent.sessionId, undefined);
 	assert.equal(reviewTurns, 0);

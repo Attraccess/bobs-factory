@@ -130,3 +130,24 @@ F1_AGENT_MODE=mock bun /Users/jappy/.bobs-factory/factory/evidence/manual-ca2bb7
 The driver, log and receipts are retained beside the original evidence as
 `architecture-assets-f1-drive.ts`, `architecture-assets-f1-drive.log` and
 `architecture-assets-f1-results.json`. No real-agent validation was run.
+
+## Latest-main conflict resolution
+
+Validated the merge working tree combining architecture fix `1361514f` with
+main `01cdf241` for PR #74. The capability description preserves architecture
+acceptance and the newer guide-gap recovery instructions. The full routing
+prompt fixture now asserts both behaviors.
+
+All five affected test files passed (211 tests): architecture, pipeline, runtime,
+Git provider and full routing prompt. EdgeWorker type checking and Biome checks
+for the resolved source and prompt fixture passed. The diff against main has no
+whitespace errors. An initial incorrectly filtered test invocation started the
+broader suite and reported failures outside these files; it was interrupted.
+This validation does not claim a full-suite pass.
+
+The existing asset F1 driver passed all four simulated-agent scenarios again:
+Factory and Takeover revision, rejection, restart, exact-version acceptance,
+frozen asset handoff and routine bypass. The merge receipts and log are retained
+in the evidence directory as `architecture-merge-f1-results.json` and
+`architecture-merge-f1-drive.log`. No real-agent inference or remote delivery was
+exercised. Existing dashboard screenshots remain historical evidence.

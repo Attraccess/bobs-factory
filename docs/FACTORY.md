@@ -42,14 +42,15 @@ use `pnpm factory` with the same onboarding.
 `bobs-factory start` uses configured repositories/integrations and starts the
 dashboard on port 3457. Set `BOBS_FACTORY_FACTORY_PORT` to choose another port,
 or `0` to disable it. The dashboard binds to loopback separately from the
-webhook listener and is intended for one operator. Every dashboard address
+webhook listener and is intended for one operator. Every browser dashboard address
 requires a passkey session, including localhost. Provider webhooks and OAuth
 callbacks stay independent of dashboard authentication.
 
 ## Passkey access and first setup
 
-Factory requires a server-verified passkey session for all dashboard data and
-controls. Localhost has no authentication bypass. An empty store displays the
+Factory requires a server-verified passkey session for browser dashboard data and
+controls. The terminal dashboard uses a separate authenticated local-operator session
+as described below. Localhost has no unauthenticated bypass. An empty store displays the
 first-passkey setup screen; it does not give a remote visitor permission to enroll.
 Development checkouts use Node 22 or newer (SimpleWebAuthn 14). The binary includes its runtime.
 
@@ -151,6 +152,7 @@ or deliberately recover rather than silently rebinding existing keys.
 | Surface | Access |
 | --- | --- |
 | Local and public dashboard data/actions/media/SSE | Passkey session required |
+| Terminal dashboard on localhost | Private local-operator request; expiring Bearer session, bound to localhost |
 | Static app shell, version, access status and ceremonies | Public; no run or configuration data |
 | First or recovery enrollment | Operator setup code; one key only |
 | Additional enrollment/removal | Recently verified session or a fresh operator code |
@@ -172,6 +174,61 @@ and reopen the installed app. Chromium emulation and a virtual authenticator do
 not prove biometric, Safari or synced-phone behavior. Connection failure means
 reconnect to sign in; a browser cancellation means retry with a fresh setup code
 when enrollment has consumed its previous authorization.
+
+## Terminal dashboard
+
+Start the factory as usual, then open another interactive terminal:
+
+```sh
+bobs-factory tui
+bobs-factory --home /absolute/path/to/factory-home --port 3457 tui --theme light
+```
+
+From a development checkout, use `pnpm factory tui` (it builds the CLI first).
+The TUI connects to the existing loopback dashboard; it does not start a service.
+An explicit `--port` wins over `BOBS_FACTORY_FACTORY_PORT`, then 3457. Choose the
+same home and OS user as the running service. A disabled dashboard (port 0) cannot
+serve the TUI. Settings, integration setup and the full guided review remain in
+the browser; `o` opens the relevant run or review.
+
+Today groups questions, stuck runs and reviews under **Needs you**, with compact
+working/queued rows and a collapsible **Settled** section. Selection expands its
+available actions. Changes and conversation activity refresh through the server's
+event stream, with reconnect and a manual refresh key.
+
+| Key | Action |
+| --- | --- |
+| `j`/`k`, arrows, Enter | Select and open a run |
+| `n` | New run: repository, recipe, recipe inputs, optional agent/model |
+| `a`, `y` | Answer/approve; accept all question recommendations |
+| `r`, `c`, `m` | Request changes, retry/continue, message/follow-up |
+| `s`, `S`, `x` | Settle/bring back, show Settled, stop (with confirmation) |
+| Ctrl-K | Find any run by title, repository or ID |
+| `[`/`]`, Esc | Previous/next run; return to Today |
+| `t`, F8 | Switch light/dark theme |
+| Ctrl-R, `?`, Ctrl-C | Refresh, help, quit |
+
+Forms use Tab/Shift-Tab to move and left/right to choose. Ctrl-S submits;
+Alt-Enter adds a newline. Escape closes a new-run form while keeping its draft
+in memory until launch or exit. Empty question answers use displayed recommendations;
+questions without recommendations require an answer. Review submissions include
+the displayed gate ID/head SHA, and answers include the question batch context,
+so the server can reject stale decisions.
+
+Themes use the web palette, inverted selection colours and 256-colour fallback
+when truecolor is unavailable. Auto detection queries the terminal background,
+then uses `COLORFGBG`, then dark. `--theme light|dark` overrides detection.
+Use a terminal at least 60 columns by 16 rows; larger sizes show more context.
+
+Local login writes a one-minute request containing only a token hash under the
+operator-owned `<home>/factory/auth` directory. The server consumes that request
+and grants an expiring memory-only session for its localhost origin. The raw
+token stays in terminal process memory. The private directory is the authority;
+HTTP headers or a loopback connection alone never grant access. Remote origins
+cannot use this terminal session. It cannot manage passkeys, and browser links
+still require browser passkey login. Sessions follow the configured 1–24 hour
+lifetime; expiry/restart causes a fresh local request. Deliberate auth recovery
+revokes them along with browser sessions. No native credential store is changed.
 
 ## Execution identities and tools
 

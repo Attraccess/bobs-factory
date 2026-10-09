@@ -1,4 +1,9 @@
-# Local browser tools with sandboxed Cyrus
+# Local browser tools with Bob’s Factory
+
+Bob’s Factory defaults Codex commands to native full access, allowing installed
+shell tools, process inspection and local browser startup. The restrictions and
+exceptions below apply when the operator explicitly selects `workspace-write`
+or `read-only` with `codexSandboxMode`.
 
 On macOS, Codex's command sandbox can prevent Chromium from accessing
 LaunchServices and WindowServer, even in headless mode. A browser tool may report
@@ -10,12 +15,12 @@ not disable the outer command sandbox.
 ## Native command exceptions as an alternative
 
 Codex supports operator-managed execution rules for commands that need host
-access. This mechanism applies to any trusted executable; Cyrus does not need a
+access. This mechanism applies to any trusted executable; Bob’s Factory does not need a
 CLI-specific wrapper, argument parser, daemon protocol, or LaunchAgent.
 
 For example, to allow the installed browser CLI, add this rule to a `.rules` file
 under `~/.codex/rules/` (or the `rules/` directory under the Codex home used by
-Cyrus). Use the actual absolute path to the trusted executable on your machine:
+Bob’s Factory). Use the actual absolute path to the trusted executable on your machine:
 
 ```python
 prefix_rule(
@@ -46,7 +51,7 @@ codex execpolicy check --pretty \
 
 The example assumes the rule was saved as `local-browser.rules`. Rules load at
 Codex startup; existing processes do not automatically gain the exception. If
-Cyrus retains an existing runner process, restart Cyrus while idle. A restrictive
+Bob’s Factory retains an existing runner process, restart Bob’s Factory while idle. A restrictive
 managed policy may prevent an operator-defined exception. Complex shell scripts,
 variable assignments, or substitutions may not match a command rule; use separate
 plain invocations. See the [official Codex rules documentation](https://learn.chatgpt.com/docs/agent-configuration/rules)
@@ -63,11 +68,11 @@ Run the original CLI directly with a unique session name for each agent/worktree
 /opt/homebrew/bin/agent-browser --session smoke-chrome close
 ```
 
-The Cyrus process may set `AGENT_BROWSER_EXECUTABLE_PATH` to Chrome. When testing
+The Bob’s Factory process may set `AGENT_BROWSER_EXECUTABLE_PATH` to Chrome. When testing
 Brave in that environment, use its `--executable-path` on every command, or set a
 consistent executable in the runner environment. Changing it only for `open`
 caused subsequent commands to switch to a blank Chrome session during validation.
-There is no Cyrus wrapper to retain tool-specific options automatically.
+There is no Bob’s Factory wrapper to retain tool-specific options automatically.
 
 The native-rule smoke test used `workspace-write` and approval policy `never`.
 Chrome and Brave passed open/title/screenshot/close, while an unrelated Python
@@ -77,13 +82,14 @@ and F1 records describe the superseded launcher prototype.
 
 ## Filesystem settings and broader alternatives
 
-`sandbox.enabled` in Cyrus controls the egress proxy; disabling it does not
-remove Codex's command sandbox. Cyrus currently defaults the Codex runner to
-`workspace-write`. The operator can select a different mode with `codexSandboxMode`. Changing
-`~/.codex/config.toml` alone is insufficient when Cyrus explicitly supplies the
+`sandbox.enabled` in Bob’s Factory controls the egress proxy; disabling it does not
+remove an explicitly configured Codex command sandbox. Bob’s Factory defaults the
+Codex runner to `danger-full-access`. The operator can select a different mode
+with `codexSandboxMode`. Changing
+`~/.codex/config.toml` alone is insufficient when Bob’s Factory explicitly supplies the
 thread's mode.
 
-For trusted local execution, Cyrus exposes the generic `codexSandboxMode` setting:
+Bob’s Factory exposes the generic `codexSandboxMode` setting:
 
 ```json
 {
@@ -91,8 +97,8 @@ For trusted local execution, Cyrus exposes the generic `codexSandboxMode` settin
 }
 ```
 
-This removes the sandbox for every Codex command in the session. Use
-`workspace-write` or remove the field to retain the default sandbox. The setting
+This removes the sandbox for every Codex command in the session. Use explicit
+`workspace-write` to enable the sandbox; removing the field restores full access. The setting
 is independent of the browser CLI and the egress proxy; it also supports native
 `read-only` execution. It affects issue and chat sessions when new runners are
 constructed. See [configuration reference](CONFIG_FILE.md#codexsandboxmode) and
@@ -107,5 +113,5 @@ Another option is an externally launched browser exposing a loopback Chrome
 DevTools Protocol endpoint. CDP-capable tools can attach through their own
 connection options while their commands stay sandboxed. This needs separate
 browser lifecycle/profile management, but can avoid granting host execution to an
-entire CLI. Any future Cyrus integration should use the standard endpoint rather
+entire CLI. Any future Bob’s Factory integration should use the standard endpoint rather
 than a particular client's command line or private daemon protocol.

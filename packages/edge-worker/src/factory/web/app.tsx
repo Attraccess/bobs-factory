@@ -50,7 +50,12 @@ import { Composer, Recipes } from "./forms";
 import { NotificationsControl } from "./notifications-ui";
 import { SetupBoundary } from "./onboarding";
 import { pwaState, startPwa, usePwa } from "./pwa";
-import { ConnectionNotice, InstallControl } from "./pwa-ui";
+import {
+	ConnectionNotice,
+	ConnectionStatus,
+	InstallControl,
+	useConnectionIndicator,
+} from "./pwa-ui";
 import { useReadingPosition } from "./reading-position";
 import {
 	completeRestoration,
@@ -165,18 +170,25 @@ function Header({
 	onShortcuts: () => void;
 }) {
 	const location = useLocation(),
-		theme = useTheme();
+		theme = useTheme(),
+		connection = useConnectionIndicator();
 	return (
 		<header className="site-header">
 			<div>
-				<Link
-					to="/"
-					state={todayContext(location.pathname, location.state)}
-					className="brand"
+				<div
+					className="brand-area"
+					data-connection={connection.status ? "" : undefined}
 				>
-					<Bob mood={mood} />
-					<strong>Bob's Factory</strong>
-				</Link>
+					<Link
+						to="/"
+						state={todayContext(location.pathname, location.state)}
+						className="brand"
+					>
+						<Bob mood={connection.mood ?? mood} />
+						<strong>Bob's Factory</strong>
+					</Link>
+					<ConnectionStatus status={connection.status} />
+				</div>
 				<nav className="nav-pill" aria-label="Main navigation">
 					<Link
 						aria-current={

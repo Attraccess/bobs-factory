@@ -9,6 +9,9 @@ Read `apps/cli/RELEASING.md` and `docs/distribution/README.md` before release wo
 Follow the canonical F1 applicability policy for the full payload. Build from an
 immutable reviewed SHA and committed exact version. Require native runtime smoke,
 prepared-agent/helper validation and preservation evidence for all four targets.
+Use mocked agents and controlled protocol checks for every release. Live provider
+tests are manual-only and require explicit approval for that specific test; they
+are never a release prerequisite or a reason to request a release waiver.
 
 `binary-build.yml` builds and verifies only. It never publishes. Workspace npm
 packages are private; historical upstream scripts in `scripts/archive` are retired.

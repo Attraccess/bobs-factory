@@ -10,9 +10,25 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Draft PR delivery no longer fails on every retry when a repository's commit hooks run long or failing full-suite checks; Factory's own commit skips commit hooks while implementation checks, review and CI keep owning verification. Push hooks such as Git LFS still run. ([#59](https://github.com/jappyjan/bobs-factory/pull/59))
+- Route unresolved review-guide requirements and delivery gaps back through the existing fixer, with a resumable assistance wait after unsuccessful correction; retain evidence and explicit human approval. ([#76](https://github.com/jappyjan/bobs-factory/pull/76), [F1 recovery validation](apps/f1/test-drives/2026-10-09-guide-gap-recovery.md))
+- Accept GitHub owner and repository capitalization differences when publishing, inspecting and merging pull requests, so retries can reuse a draft PR created before a delivery failure. ([#75](https://github.com/jappyjan/bobs-factory/pull/75))
+
+- Allow slow Codex thread startup and resume to finish within a bounded three-minute deadline, and preserve conversation checkpoints and correction budgets if setup still times out. ([#67](https://github.com/jappyjan/bobs-factory/pull/67))
+
+- Resume Factory roles with uncommitted work by requesting artifact submission only when the scoped MCP server has a clean revision binding; prevent repeated missing-tool startup failures. ([#66](https://github.com/jappyjan/bobs-factory/pull/66))
+
+- Preserve infrastructure checkpoints and output-correction budgets when Codex cannot initialize a required MCP server, so retries retain completed work and native conversations. ([#64](https://github.com/jappyjan/bobs-factory/pull/64))
+
+- Build the homepage with published beta metadata, advertise verified release availability, and check website builds on pull requests before deploying. ([#63](https://github.com/jappyjan/bobs-factory/pull/63))
+
+- Switching tabs or brief connection drops no longer reload the dashboard or discard unsent edits. Factory reconnects in the background while Bob looks around for it, the header shows "Reconnecting…" only for longer outages, and repeated failures open a dialog with retry over the still-loaded page. The dashboard only signs you out when Factory confirms the session ended. ([Taskbot #113](https://taskbot.apps.janjaap.de/p/bobs-factory/t/113), [#62](https://github.com/jappyjan/bobs-factory/pull/62))
+- Draft PR delivery no longer fails on every retry when a repository's commit hooks run long or failing full-suite checks; Factory's own commit skips commit hooks while implementation checks, review and CI keep owning verification. Push hooks such as Git LFS still run. ([#59](https://github.com/jappyjan/bobs-factory/pull/59), [F1 delivery validation](apps/f1/test-drives/2026-10-09-delivery-commit-hooks.md))
 
 ### Changed
+
+- Default Codex execution to full host access so installed shell commands, process inspection and local browsers can run; preserve explicit `workspace-write` and `read-only` settings and managed tool-source conflict checks. ([#69](https://github.com/jappyjan/bobs-factory/pull/69))
+
+- Use mocked agent protocol checks for every release; live provider tests are manual-only and require explicit approval for the specific test. ([#61](https://github.com/jappyjan/bobs-factory/pull/61))
 
 - Include the pinned Bun production dependency notices and corresponding MPL source in beta release materials ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).
 
@@ -27,6 +43,8 @@ All notable changes to this project will be documented in this file.
 
 
 ### Added
+
+- Add `bobs-factory tui` for starting runs, following live activity, answering questions, reviewing, retrying and settling work from a fullscreen terminal inbox. Share the web palette and light/dark themes, with Ctrl-K run search and authenticated local-operator access. ([Taskbot #114](https://taskbot.apps.janjaap.de/p/bobs-factory/t/114), [#65](https://github.com/jappyjan/bobs-factory/pull/65))
 
 - Submit large structured role results as bounded, revision-bound artifacts with complete runtime-owned file coverage. Expose actual runtime build identity and secret-safe per-attempt workflow, contract and instruction provenance across recovery. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))
 

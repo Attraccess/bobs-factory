@@ -6,10 +6,11 @@ GitHub login, GitHub CLI, Node or Bun. First launch opens protected browser setu
 for a project, prepared agent and GitHub connection. Agents may have their own
 runtime and login requirements.
 
-The first public release is being prepared. The shared
-[`release.json` contract](PUBLIC_RELEASES.md) drives the installer, homepage and
-Nix package. Until a reviewed release is published, the homepage and installer
-report unavailable downloads. CI artifacts remain maintainer validation material.
+The shared [`release.json` contract](PUBLIC_RELEASES.md) drives the installer,
+homepage and Nix package. The installer selects verified stable releases, or the
+latest verified beta before the first stable release. When no reviewed release is
+available, the homepage and installer report unavailable downloads. CI artifacts
+remain maintainer validation material.
 
 The artifact contract is `bobs-factory-VERSION-TARGET.tar.gz` with a matching
 `.manifest.json`: schema version, product, exact version, commit, target, byte size
