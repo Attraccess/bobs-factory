@@ -42,6 +42,8 @@ export interface TicketMilestone {
 	purpose?: "documentation" | "operational";
 	deliveryId?: string;
 	stage?: TicketStage;
+	stageSuperseded?: boolean;
+	stageApplied?: boolean;
 	pr?: string;
 	merged?: boolean;
 	delivered?: boolean;
@@ -524,6 +526,24 @@ export function nativeAdapter(
 	};
 }
 
+/** Persist first; newer status intent does not discard pending documentation or links. */
+export function recordTicketMilestone(
+	run: FactoryRun,
+	milestone: TicketMilestone,
+): void {
+	if (!run.ticketReference || run.workflow.id === "simple") return;
+	if (milestone.stage === "done" && !milestone.merged)
+		throw new Error("Done requires a confirmed merge receipt");
+	run.ticketSync ??= { receipts: [] };
+	if (run.ticketSync.receipts.some((receipt) => receipt.key === milestone.key))
+		return;
+	if (milestone.stage)
+		for (const receipt of run.ticketSync.receipts)
+			if (!receipt.delivered && receipt.stage && !receipt.merged)
+				receipt.stageSuperseded = true;
+	run.ticketSync.receipts.push({ ...milestone });
+}
+
 /** Durable outbox. Errors are visible but do not replay development or merge. */
 export class TicketTracking {
 	private queues = new Map<string, Promise<void>>();
@@ -541,17 +561,8 @@ export class TicketTracking {
 	) {}
 	async record(run: FactoryRun, milestone: TicketMilestone): Promise<void> {
 		if (!run.ticketReference || run.workflow.id === "simple") return;
-		if (milestone.stage === "done" && !milestone.merged)
-			throw new Error("Done requires a confirmed merge receipt");
-		run.ticketSync ??= { receipts: [] };
-		const sync = run.ticketSync;
-		if (!sync.receipts.some((r) => r.key === milestone.key)) {
-			if (milestone.stage)
-				for (const r of sync.receipts)
-					if (!r.delivered && r.stage && !r.merged) r.superseded = true;
-			sync.receipts.push({ ...milestone });
-			this.save(run);
-		}
+		recordTicketMilestone(run, milestone);
+		this.save(run);
 		await this.flush(run);
 	}
 	async flush(run: FactoryRun, reassess = false): Promise<void> {
@@ -583,7 +594,10 @@ export class TicketTracking {
 									"",
 							);
 						const merged = sync.receipts.some((r) => r.merged && !r.superseded);
-						const applyStage = receipt.stage && (!merged || receipt.merged);
+						const applyStage =
+							receipt.stage &&
+							!receipt.stageSuperseded &&
+							(!merged || receipt.merged);
 						const terminal =
 							["done", "cancelled"].includes(String(snapshot.status)) ||
 							["completed", "canceled"].includes(
@@ -623,10 +637,13 @@ export class TicketTracking {
 						}
 						const marker = `<!-- factory:${run.id}:${createHash("sha256").update(receipt.key).digest("hex").slice(0, 20)} -->`;
 						if (!snapshot.comments.some((c) => c.body.includes(marker))) {
-							receipt.limitation =
-								receipt.stage && (!merged || receipt.merged)
-									? await adapter.stage(receipt.stage, snapshot)
-									: undefined;
+							if (applyStage && !receipt.stageApplied) {
+								receipt.limitation = await adapter.stage(
+									receipt.stage!,
+									snapshot,
+								);
+								receipt.stageApplied = true;
+							}
 							sync.lastStatus = statusOf(await adapter.read());
 							this.save(run);
 							receipt.deliveryId ??= randomUUID();
