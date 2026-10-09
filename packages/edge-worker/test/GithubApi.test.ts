@@ -412,6 +412,108 @@ it("lists, creates, reads, transitions and edits PRs using native APIs without g
 	).rejects.toThrow("same-repository open draft");
 });
 
+it.each([
+	{ host: "github.com", queue: false },
+	{ host: "github.example", queue: true },
+])("accepts GitHub repository casing through publication, inspection and merge ($host)", async ({
+	host,
+	queue,
+}) => {
+	const selected = `https://${host}/TeSt/RePo`;
+	const canonical = `https://${host}/test/repo/pull/1`;
+	const supplied = `${selected}/pull/1/`;
+	let draft = true;
+	const command = vi.fn(async (_exe: string, args: string[]) => {
+		const req = githubRequest(args);
+		const query = (req.body as { query?: string } | undefined)?.query;
+		if (query?.includes("enqueuePullRequest"))
+			return JSON.stringify({
+				data: {
+					enqueuePullRequest: {
+						mergeQueueEntry: {
+							id: "queue-entry",
+							pullRequest: {
+								id: "PR_node",
+								url: canonical,
+								headRefOid: "head",
+							},
+						},
+					},
+				},
+			});
+		const extra = {
+			url: canonical,
+			isDraft: draft,
+			isMergeQueueEnabled: queue,
+		};
+		if (req.path.includes("?state=open") || req.path.endsWith("/pulls")) {
+			const pr = githubApiReceipt(
+				[JSON.stringify({ ...req, path: `repos/${req.project}/pulls/1` })],
+				extra,
+			);
+			return JSON.stringify(req.method === "POST" ? pr : [pr]);
+		}
+		return JSON.stringify(githubApiReceipt(args, extra));
+	});
+	const provider = gitProvider(command, {
+		type: "github",
+		repositoryUrl: selected,
+	});
+	await expect(provider.list("feature")).resolves.toEqual([
+		{ url: canonical, isDraft: true },
+	]);
+	await expect(
+		provider.create({
+			branch: "feature",
+			baseBranch: "main",
+			title: "Change",
+			body: "Description",
+		}),
+	).resolves.toBe(canonical);
+	await expect(provider.view(supplied)).resolves.toMatchObject({
+		url: canonical,
+		headRefOid: "head",
+	});
+	await expect(provider.inspect(supplied)).resolves.toMatchObject({
+		url: canonical,
+	});
+	await expect(provider.readiness(supplied)).resolves.toMatchObject({
+		url: canonical,
+	});
+	await provider.description(supplied, "Updated");
+	await provider.draft(supplied, false);
+	draft = false;
+	await expect(
+		provider.merge(supplied, "head", "squash"),
+	).resolves.toBeUndefined();
+	const last = githubRequest(command.mock.calls.at(-1)![1]);
+	if (queue)
+		expect((last.body as { variables: unknown }).variables).toEqual({
+			id: "PR_node",
+			sha: "head",
+		});
+	else
+		expect(last).toMatchObject({
+			method: "PUT",
+			body: { sha: "head", merge_method: "squash" },
+		});
+});
+
+it.each([
+	"https://github.com/test/repo/pull/2",
+	"https://github.com/other/repo/pull/1",
+	"https://github.example/test/repo/pull/1",
+	"https://github.com/test/repo/pull/1?redirect=1",
+	"https://user@github.com/test/repo/pull/1",
+])("rejects a different or unsafe GitHub PR receipt (%s)", async (returned) => {
+	const command = vi.fn(async (_exe: string, args: string[]) =>
+		JSON.stringify(githubApiReceipt(args, { url: returned })),
+	);
+	await expect(
+		gitProvider(command, { type: "github", repositoryUrl }).view(url),
+	).rejects.toThrow();
+});
+
 it("retains every check and nested discussion page instead of approving a truncated receipt", async () => {
 	const command = vi.fn(async (exe: string, args: string[]) => {
 		expect(exe).toBe(GITHUB_API_COMMAND);
