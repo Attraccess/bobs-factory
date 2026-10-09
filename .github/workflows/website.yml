@@ -1,6 +1,6 @@
 name: Website
 
-# Builds website/ from main and publishes it to GitHub Pages (no gh-pages branch).
+# Builds website PRs and publishes main/releases to GitHub Pages.
 on:
   push:
     branches:
