@@ -1,4 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -10,6 +17,61 @@ const roots: string[] = [];
 afterEach(() => {
 	for (const root of roots.splice(0))
 		rmSync(root, { recursive: true, force: true });
+});
+
+it("retains operator connection repairs across local restart and protects repository identity", async () => {
+	const { EdgeWorker } = await import("bobs-factory-edge-worker");
+	const root = mkdtempSync(join(tmpdir(), "factory-local-repair-"));
+	roots.push(root);
+	const repo = join(root, "repo"),
+		home = join(root, "home");
+	mkdirSync(repo);
+	execFileSync("git", ["init", "-q", "-b", "main", repo]);
+	const start = vi.fn().mockResolvedValue(undefined),
+		setConfigPath = vi.fn();
+	vi.mocked(EdgeWorker).mockImplementation(function () {
+		return { start, setConfigPath } as unknown as InstanceType<
+			typeof EdgeWorker
+		>;
+	});
+	const options = { repo, home, port: "3457", agent: "codex" };
+	const signals = new Map(
+		["SIGINT", "SIGTERM"].map((signal) => [
+			signal,
+			new Set(process.listeners(signal)),
+		]),
+	);
+	const previousPort = process.env.BOBS_FACTORY_FACTORY_PORT;
+	try {
+		await launchLocal(options);
+		const path = join(home, "local-config.json");
+		const saved = JSON.parse(readFileSync(path, "utf8"));
+		Object.assign(saved.repositories[0], {
+			mcpConfigPath: [join(home, "repair.json")],
+			allowedTools: ["mcp__taskbot__get_ticket"],
+			disallowedTools: ["mcp__taskbot__delete_ticket"],
+		});
+		writeFileSync(path, JSON.stringify(saved));
+		await launchLocal(options);
+		expect(
+			vi.mocked(EdgeWorker).mock.calls.at(-1)?.[0].repositories[0],
+		).toMatchObject(saved.repositories[0]);
+		expect(setConfigPath).toHaveBeenLastCalledWith(path);
+		const other = join(root, "other");
+		execFileSync("git", ["init", "-q", "-b", "main", other]);
+		await expect(launchLocal({ ...options, repo: other })).rejects.toThrow(
+			"different local repository",
+		);
+		expect(start).toHaveBeenCalledTimes(2);
+	} finally {
+		for (const [signal, before] of signals)
+			for (const listener of process.listeners(signal))
+				if (!before.has(listener)) process.removeListener(signal, listener);
+		if (previousPort === undefined)
+			delete process.env.BOBS_FACTORY_FACTORY_PORT;
+		else process.env.BOBS_FACTORY_FACTORY_PORT = previousPort;
+		vi.mocked(EdgeWorker).mockReset();
+	}
 });
 
 it.each([

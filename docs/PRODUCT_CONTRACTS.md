@@ -19,6 +19,7 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | Prepared Cursor SDK | binary runner / external Node host | `BOBS_FACTORY_CURSOR_SDK_PATH`, `BOBS_FACTORY_CURSOR_NODE` | Keep SDK/native files external; preserve native IDs |
 | Distribution | build, CI, installer, metadata | versioned four-target archives + SHA-256 manifest | Stage replacement separately from mutable state |
 | External wire protocol | upstream HTTP adapters / MCP contexts | `X-Cyrus-Team-Id`, `X-Cyrus-Config-Capabilities`, `x-cyrus-mcp-context-id` | Retain ASCII protocol names; no hosted enrollment |
+| Operator MCP | CLI, worker, operator grant store | `bobs-factory-operator`, `operator`, `operator-mcp`, `<home>/factory/operator` | Local owner grants; dashboard passkeys and accepted run profiles remain separate |
 | Dashboard access | CLI, FactoryServer, private authentication store | `factory-auth`, `--origin`, `--session-hours`, `BOBS_FACTORY_FACTORY_*`, `<home>/factory/auth` | Preserve authentication files; existing origin bindings require explicit recovery when changed |
 | Dashboard | FactoryWebAssets, build script, server | immutable shell inventory, existing PWA protocol | Rebuild shell; keep API/SSE and workflow IDs |
 
@@ -49,3 +50,7 @@ does not rewrite their fields or interpret them as native conversation records.
 The issued egress certificate keeps its existing `cyrus-egress-ca.pem` filename
 inside the new home. Migration preserves certificate/key bytes and system trust;
 this retained artifact name does not enable an old command or home fallback.
+
+Factory operator setup and recovery contracts are documented in
+[factory-operator-mcp.md](factory-operator-mcp.md). Operator grants do not approve
+review or merge; profile MCP repairs apply only to future accepted snapshots.

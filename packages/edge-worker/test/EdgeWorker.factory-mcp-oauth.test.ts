@@ -9,6 +9,11 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
+import {
+	checkOperatorTransport,
+	inspectOperatorTransport,
+	type OperatorTransport,
+} from "../src/factory/OperatorTransport.js";
 import type { FactoryRun } from "../src/factory/WorkflowRuntime.js";
 
 const { nativeCall, directCall } = vi.hoisted(() => ({
@@ -57,14 +62,7 @@ function fixture(runner: RunnerType, acceptedRunner?: RunnerType) {
 			runnerType: RunnerType;
 			config: AgentRunnerConfig;
 		}>;
-		factoryMcpConfig(run: FactoryRun): Promise<{
-			callTool(
-				server: string,
-				tool: string,
-				args: Record<string, unknown>,
-				signal: AbortSignal,
-			): Promise<unknown>;
-		}>;
+		factoryMcpConfig(run: FactoryRun): Promise<OperatorTransport>;
 		factoryTicketAdapter(
 			run: FactoryRun,
 		): Promise<{ read(): Promise<unknown> }>;
@@ -188,6 +186,68 @@ it.each([
 		expect.any(AbortSignal),
 		run.workspace,
 		childEnvironment,
+	);
+	expect(nativeCall).not.toHaveBeenCalled();
+});
+
+it("operator diagnosis and connectivity share native Codex selection while direct authentication rejects", async () => {
+	const codex = fixture("claude", "codex");
+	nativeCall.mockResolvedValue({
+		id: 77,
+		status: "in_progress",
+		comments: [],
+		attachments: [],
+	});
+	const resolved = await codex.edge.factoryMcpConfig(codex.run);
+	expect(inspectOperatorTransport(codex.run, resolved)).toMatchObject({
+		runner: "codex",
+		connections: [
+			{
+				server: "taskbot",
+				authentication: "codex_native",
+				permissionForTicketRead: true,
+			},
+		],
+	});
+	expect(await checkOperatorTransport(codex.run, resolved)).toMatchObject({
+		connected: true,
+		runner: "codex",
+		authentication: "codex_native",
+	});
+	const direct = fixture("opencode");
+	directCall.mockRejectedValue(new Error("401 Unauthorized"));
+	await expect(
+		checkOperatorTransport(
+			direct.run,
+			await direct.edge.factoryMcpConfig(direct.run),
+		),
+	).rejects.toThrow("Unauthorized");
+	expect(nativeCall).toHaveBeenCalledOnce();
+});
+it("operator diagnosis distinguishes missing, ambiguous and denied ticket transports", async () => {
+	const f = fixture("codex");
+	f.config.mcpConfig = {};
+	expect(
+		inspectOperatorTransport(f.run, await f.edge.factoryMcpConfig(f.run))
+			.selection?.error?.code,
+	).toBe("missing_transport");
+	f.config.mcpConfig = {
+		taskbot: { type: "http", url: "https://taskbot.example/mcp" },
+		duplicate: { type: "sse", url: "https://taskbot.example/other" },
+	};
+	expect(
+		inspectOperatorTransport(f.run, await f.edge.factoryMcpConfig(f.run))
+			.selection?.error?.code,
+	).toBe("ambiguous_transport");
+	delete f.config.mcpConfig.duplicate;
+	f.config.disallowedTools = ["mcp__taskbot__*"];
+	const resolved = await f.edge.factoryMcpConfig(f.run);
+	expect(
+		inspectOperatorTransport(f.run, resolved).connections[0]
+			?.permissionForTicketRead,
+	).toBe(false);
+	await expect(checkOperatorTransport(f.run, resolved)).rejects.toThrow(
+		"restricted",
 	);
 	expect(nativeCall).not.toHaveBeenCalled();
 });

@@ -224,6 +224,15 @@ import {
 	confirmedMerge,
 	pendingMergeConfirmation,
 } from "./factory/MergeRecovery.js";
+import { OperatorConfiguration } from "./factory/OperatorConfiguration.js";
+import { OperatorGrants } from "./factory/OperatorGrants.js";
+import { OperatorServer } from "./factory/OperatorServer.js";
+import { OperatorError, OperatorService } from "./factory/OperatorService.js";
+import {
+	checkOperatorTransport,
+	inspectOperatorTransport,
+	operatorSanitize,
+} from "./factory/OperatorTransport.js";
 import {
 	OutputValidationError,
 	outputValidationError,
@@ -391,6 +400,8 @@ export class EdgeWorker extends EventEmitter {
 	private preparationStarts = new Map<string, AbortController>();
 	private stopping = false;
 	private factoryServer?: FactoryServer;
+	private operatorServer?: OperatorServer;
+	private operatorSecrets = new Set<string>();
 	private factoryPush?: FactoryPush;
 	private factoryChat = new SessionChat();
 	private chatContinuations = new Set<string>();
@@ -1053,18 +1064,7 @@ export class EdgeWorker extends EventEmitter {
 				start: (input) => this.startManualFactoryRun(input),
 				followup: (id, feedback) => this.startFactoryFollowup(id, feedback),
 				retryTitle: (id) => this.retryRunTitle(id),
-				stop: (id) => {
-					this.settleTicketLaunch(id);
-					this.factoryRuntime?.runs.has(id) && this.factoryRuntime.stop(id);
-					this.cancelRunTitle(id);
-					const chatHandler = this.chatHandlerForSession(id);
-					if (chatHandler) chatHandler.stopSession(id);
-					else {
-						this.agentSessionManager.requestSessionStop(id);
-						this.titleSession(id)?.agentRunner?.stop();
-					}
-					void this.savePersistedState();
-				},
+				stop: (id) => this.stopFactoryOperatorRun(id),
 			});
 			await this.factoryServer.start(
 				Number(process.env.BOBS_FACTORY_FACTORY_PORT),
@@ -1073,6 +1073,129 @@ export class EdgeWorker extends EventEmitter {
 				`Software factory UI: http://127.0.0.1:${process.env.BOBS_FACTORY_FACTORY_PORT}`,
 			);
 		}
+		const runtime = this.getFactoryRuntime();
+		const grants = new OperatorGrants(this.factoryHome);
+		const configuration = new OperatorConfiguration(
+			this.factoryHome,
+			runtime,
+			() => this.configPath,
+			async (run) => {
+				const resolved = await this.factoryMcpConfig(run);
+				return {
+					allowed: resolved.built.config.allowedTools,
+					denied: resolved.built.config.disallowedTools,
+				};
+			},
+			(id, paths, allowed) => {
+				const repo = this.repositories.get(id);
+				return (
+					JSON.stringify(repo?.mcpConfigPath) === JSON.stringify(paths) &&
+					JSON.stringify(repo?.allowedTools) === JSON.stringify(allowed)
+				);
+			},
+			() => this.configManager.reload(),
+		);
+		const service = new OperatorService(
+			runtime,
+			{
+				chat: (id) => this.factoryChatState(id),
+				message: (id, text, messageId) =>
+					this.sendFactoryChat(id, text, messageId),
+				stop: (id) => this.stopFactoryOperatorRun(id),
+				mcp: async (run) => {
+					const resolved = await this.factoryMcpConfig(run);
+					let configRevision: string | undefined,
+						configurationError: string | undefined;
+					try {
+						configRevision = configuration.revision(run);
+					} catch {
+						configurationError = "unsupported_source";
+					}
+					return {
+						instance: grants.instance(),
+						configRevision,
+						configurationError,
+						...inspectOperatorTransport(run, resolved),
+					};
+				},
+				check: async (run) => ({
+					instance: grants.instance(),
+					...(await checkOperatorTransport(
+						run,
+						await this.factoryMcpConfig(run),
+					)),
+				}),
+				sanitize: (text) => {
+					const sources: unknown[] = [
+						{
+							headers: Object.fromEntries(
+								[...this.operatorSecrets].map((secret, i) => [
+									String(i),
+									secret,
+								]),
+							),
+						},
+						this.config,
+						{
+							env: Object.fromEntries(
+								Object.entries(process.env).filter(([key]) =>
+									/TOKEN|SECRET|PASSWORD|KEY|COOKIE|AUTH/i.test(key),
+								),
+							),
+						},
+					];
+					for (const repo of this.repositories.values())
+						for (const path of repo.mcpConfigPath
+							? Array.isArray(repo.mcpConfigPath)
+								? repo.mcpConfigPath
+								: [repo.mcpConfigPath]
+							: []) {
+							try {
+								sources.push(JSON.parse(readFileSync(path, "utf8")));
+							} catch {}
+						}
+					return operatorSanitize(text, sources);
+				},
+				update: async (run, input) => {
+					const result = await configuration.update(run, input);
+					if (result.applied) {
+						const resolved = await this.factoryMcpConfig(run);
+						const server = resolved.servers[input.server];
+						const verified =
+							!!server &&
+							"url" in server &&
+							server.url === input.connection.url &&
+							input.permissions.every((tool: string) => {
+								try {
+									assertFactoryToolAllowed(
+										`mcp__${input.server}__${tool}`,
+										resolved.built.config.allowedTools,
+										resolved.built.config.disallowedTools,
+									);
+									return true;
+								} catch {
+									return false;
+								}
+							});
+						if (!verified)
+							return {
+								...result,
+								applied: false,
+								appliedRevision: undefined,
+								error: {
+									code: "reload_failure",
+									message:
+										"Saved configuration is not effective for this run. Inspect source precedence and permissions.",
+								},
+							};
+					}
+					return result;
+				},
+			},
+			grants.instance(),
+		);
+		this.operatorServer = new OperatorServer(grants, service);
+		await this.operatorServer.start();
 		// 1. Platform-specific initialization
 		if (this.config.platform === "cli") {
 			// CLI mode: ensure a CLIIssueTrackerService exists for each repo workspace.
@@ -3254,6 +3377,7 @@ ${taskSection}`;
 		await this.titleGenerator?.shutdown();
 		this.ticketTracking?.stop();
 		await this.factoryRuntime?.shutdown();
+		await this.operatorServer?.stop();
 		await this.factoryServer?.stop();
 		// Stop config file watcher
 		await this.configManager.stop();
@@ -7416,6 +7540,19 @@ ${taskSection}`;
 		});
 	}
 
+	private stopFactoryOperatorRun(id: string) {
+		this.settleTicketLaunch(id);
+		if (this.factoryRuntime?.runs.has(id)) this.factoryRuntime.stop(id);
+		this.cancelRunTitle(id);
+		const chatHandler = this.chatHandlerForSession(id);
+		if (chatHandler) chatHandler.stopSession(id);
+		else {
+			this.agentSessionManager.requestSessionStop(id);
+			this.titleSession(id)?.agentRunner?.stop();
+		}
+		void this.savePersistedState();
+	}
+
 	private async factoryMcpConfig(run: FactoryRun) {
 		const repositories = this.factoryRepositories(run);
 		const repository = repositories.find(
@@ -7456,9 +7593,22 @@ ${taskSection}`;
 			run.workspace || repository.repositoryPath,
 			this.logger,
 		);
+		for (const server of Object.values(servers)) {
+			if (!("headers" in server)) continue;
+			for (const value of Object.values(server.headers ?? {})) {
+				if (!value.includes("${") && value) this.operatorSecrets.add(value);
+				for (const ref of value.matchAll(/\$\{([A-Z][A-Z0-9_]*)\}/g)) {
+					const secret = built.config.childEnvironment
+						? built.config.childEnvironment[ref[1]!]
+						: process.env[ref[1]!];
+					if (secret) this.operatorSecrets.add(secret);
+				}
+			}
+		}
 		return {
 			built,
 			servers,
+			runnerType,
 			callTool: async (
 				serverName: string,
 				tool: string,
@@ -7475,13 +7625,39 @@ ${taskSection}`;
 					throw new Error(
 						`MCP server ${serverName} is not configured as a process/HTTP transport`,
 					);
+				const transport =
+					"url" in server && server.headers
+						? {
+								...server,
+								headers: Object.fromEntries(
+									Object.entries(server.headers ?? {}).map(([key, value]) => [
+										key,
+										value.replace(
+											/\$\{([A-Z][A-Z0-9_]*)\}/g,
+											(_match, name: string) => {
+												const secret = built.config.childEnvironment
+													? built.config.childEnvironment[name]
+													: process.env[name];
+												if (!secret)
+													throw new OperatorError(
+														"missing_authentication",
+														"A configured header credential reference is unavailable in the accepted execution environment",
+													);
+												return secret;
+											},
+										),
+									]),
+								),
+							}
+						: server;
+
 				try {
 					const result =
 						runnerType === "codex" && "url" in server
 							? await callCodexMcpTool(
 									{ ...built.config, workingDirectory: run.workspace },
 									serverName,
-									server,
+									transport,
 									tool,
 									args,
 									signal,
@@ -7492,7 +7668,7 @@ ${taskSection}`;
 												...server,
 												env: { ...server.env, ...executionEnvironment() },
 											}
-										: server,
+										: transport,
 									tool,
 									args,
 									signal,

@@ -8,6 +8,14 @@ export {
 	prepareFactoryContext,
 } from "./factoryContext.js";
 export {
+	createFactoryOperatorBridge,
+	operatorCatalog,
+	operatorConnectionSchema,
+	operatorScopes,
+	operatorTools,
+	serveFactoryOperator,
+} from "./factoryOperator.js";
+export {
 	createFetchFailureModesClient,
 	type FetchFailureModesClientOptions,
 } from "./tools/bobs-factory-tools/failure-modes-http-client.js";

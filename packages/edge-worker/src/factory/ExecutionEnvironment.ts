@@ -1185,6 +1185,13 @@ export class ExecutionEnvironmentResolver {
 			config.mcpConfigPath = undefined;
 			config.mcpConfig = resolved.mcp;
 			config.strictMcpConfig = true;
+			if (snapshot.tools.allowTools?.length && config.allowedTools?.length)
+				config.allowedTools = [
+					...new Set([
+						...(config.allowedTools ?? []),
+						...(snapshot.tools.allowTools ?? []),
+					]),
+				];
 			config.disallowedTools = [
 				...(config.disallowedTools ?? []),
 				...snapshot.tools.denyTools,

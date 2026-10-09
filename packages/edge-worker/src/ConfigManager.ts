@@ -237,14 +237,17 @@ export class ConfigManager extends EventEmitter {
 	// Internal helpers
 	// ------------------------------------------------------------------
 
-	/**
-	 * Handle a config file change event: load, validate, diff, and emit.
-	 */
-	private async handleConfigChange(): Promise<void> {
+	/** Reload on an operator write without relying on filesystem notification timing. */
+	async reload(): Promise<boolean> {
+		return this.handleConfigChange();
+	}
+
+	/** Handle a config file change event: load, validate, diff, and emit. */
+	private async handleConfigChange(): Promise<boolean> {
 		try {
 			const newConfig = await this.loadConfigSafely();
 			if (!newConfig) {
-				return;
+				return false;
 			}
 
 			const changes = this.detectRepositoryChanges(newConfig);
@@ -259,7 +262,7 @@ export class ConfigManager extends EventEmitter {
 
 			if (!hasRepoChanges && !hasGlobalChanges) {
 				this.logger.info("ℹ️  No config changes detected");
-				return;
+				return true;
 			}
 
 			if (hasRepoChanges) {
@@ -272,14 +275,18 @@ export class ConfigManager extends EventEmitter {
 			}
 
 			// Emit the diff so EdgeWorker can orchestrate the mutations.
-			this.emit("configChanged", {
+			const change = {
 				added: changes.added,
 				modified: changes.modified,
 				removed: changes.removed,
 				newConfig,
-			} satisfies RepositoryChanges);
+			} satisfies RepositoryChanges;
+			for (const listener of this.rawListeners("configChanged"))
+				await listener.call(this, change);
+			return true;
 		} catch (error) {
 			this.logger.error("❌ Failed to reload configuration:", error);
+			return false;
 		}
 	}
 

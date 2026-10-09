@@ -6,6 +6,7 @@ import {
 } from "bobs-factory-core";
 import {
 	authorizeFactoryEnrollment,
+	OperatorGrants,
 	requestFactoryAuthRecovery,
 } from "bobs-factory-edge-worker";
 import { Command } from "commander";
@@ -74,6 +75,49 @@ program
 				`Single-use Factory setup code (expires in ten minutes): ${authorizeFactoryEnrollment(home)}`,
 			);
 	});
+
+const operator = program
+	.command("operator")
+	.description(
+		"Manage local Factory operator MCP grants (separate from passkeys)",
+	);
+operator
+	.command("grant")
+	.requiredOption("--label <label>", "Client label")
+	.requiredOption(
+		"--scopes <scopes>",
+		"Comma-separated inspect,operate,configure capabilities",
+	)
+	.action((options: { label: string; scopes: string }) => {
+		const grants = new OperatorGrants(
+			resolve(resolvePath(program.opts().home)),
+		);
+		console.log(
+			JSON.stringify(
+				grants.issue(
+					options.label,
+					options.scopes.split(",").map((scope) => scope.trim()),
+				),
+				null,
+				2,
+			),
+		);
+	});
+operator
+	.command("list")
+	.action(() =>
+		console.log(
+			JSON.stringify(
+				new OperatorGrants(resolve(resolvePath(program.opts().home))).list(),
+				null,
+				2,
+			),
+		),
+	);
+operator.command("revoke <id>").action((id: string) => {
+	new OperatorGrants(resolve(resolvePath(program.opts().home))).revoke(id);
+	console.log("Operator grant revoked");
+});
 
 program
 	.command("local", { isDefault: true })

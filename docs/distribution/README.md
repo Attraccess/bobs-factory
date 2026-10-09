@@ -104,3 +104,12 @@ and a default dry run. It does not publish releases or move stable tags. Upstrea
 npm publishing scripts/workflow are retained as historical files in `scripts/archive`;
 they are not supported fork commands. Future publishing must retain the exact
 reviewed candidate, all-target evidence and manifest checks.
+
+## Operator MCP smoke
+
+The installed executable supports `operator grant|list|revoke` and the protocol-only
+`operator-mcp --home PATH --credential-file PATH` bridge. Follow
+[operator setup](../factory-operator-mcp.md) using a fresh private home. Verify scoped
+MCP discovery and an inspection against the running isolated worker; revoke the
+grant and verify the same client can no longer discover/call tools. The bridge
+must not start another worker or bypass dashboard passkeys.
