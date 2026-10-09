@@ -57,3 +57,6 @@ this retained artifact name does not enable an old command or home fallback.
 Factory operator setup and recovery contracts are documented in
 [factory-operator-mcp.md](factory-operator-mcp.md). Operator grants do not approve
 review or merge; profile MCP repairs apply only to future accepted snapshots.
+Listener errors identify the instance and requested run (when
+supplied), with sanitized context and recovery guidance. Overlapping connection
+edits return `stale_configuration`; overlapping run actions return `stale_state`.

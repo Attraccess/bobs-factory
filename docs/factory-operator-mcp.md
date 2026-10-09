@@ -71,7 +71,10 @@ grant there; copying another instance's grant does not authorize access.
 
 Discover the exact input schemas and descriptions with MCP `tools/list`. Calls
 return structured `{ok: true, result: ...}` results or
-`{ok: false, error: {code, message}}`. Run results identify the instance and run.
+`{ok: false, instance, runId?, error: {code, message, nextStep}}`. Listener errors
+identify the instance and include the requested run ID when supplied. Invalid
+run IDs are bounded and sanitized. `nextStep` explains how to recover or discover
+the correct operation. Run results identify the instance and run.
 
 | Tool | Behavior |
 | --- | --- |
@@ -156,7 +159,8 @@ Omitting `--model` restores provider defaults.
 5. Call `check_mcp_connection`. This invokes only `get_ticket` for the originating
    project and ticket ID, with a 15-second transport deadline, and returns
    diagnostic evidence without ticket contents. It cannot invoke arbitrary tools.
-   Other trackers/connections currently return `unsupported_probe`.
+   For other connections, supply `server` to perform read-only `tools/list`
+   discovery through the affected run's transport and authentication.
 6. Obtain a new run revision and call `retry_run`. Initial Taskbot setup retries
    check connectivity before acceptance. If authentication is missing, recovery
    remains failed instead of queueing another setup attempt. Inspect again to

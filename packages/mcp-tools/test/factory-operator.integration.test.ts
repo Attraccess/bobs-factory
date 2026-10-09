@@ -151,6 +151,103 @@ it("discovers scopes without Linear and revokes existing SDK clients durably", a
 	expect(statSync(c.meta.credentialFile).mode & 0o777).toBe(0o600);
 	expect(JSON.stringify(f.grants.list())).not.toContain("token");
 });
+it("returns instance/run context and recovery guidance for rejected SDK requests without acting", async () => {
+	const f = fixture(),
+		c = await sdk(f);
+	const preserved = JSON.stringify(f.run);
+	const unknownTool = await c.call("unknown_operator_tool", {});
+	expect(unknownTool).toEqual({
+		ok: false,
+		instance: f.grants.instance(),
+		error: {
+			code: "not_found",
+			message: "Operator tool not found",
+			nextStep: expect.stringContaining("tools/list"),
+		},
+	});
+	const unknownRun = await c.call("inspect_run", { runId: "unknown-run" });
+	expect(unknownRun).toMatchObject({
+		ok: false,
+		instance: f.grants.instance(),
+		runId: "unknown-run",
+		error: {
+			code: "not_found",
+			nextStep: expect.stringContaining("list_runs"),
+		},
+	});
+	const invalid = await c.call("retry_run", { runId: f.run.id, extra: true });
+	expect(invalid).toMatchObject({
+		ok: false,
+		instance: f.grants.instance(),
+		runId: f.run.id,
+		error: {
+			code: "invalid_request",
+			nextStep: expect.stringContaining("input schema"),
+		},
+	});
+	const secretId = await c.call("inspect_run", {
+		runId: "fixture-secret-value",
+	});
+	expect(secretId.runId).toBe("[redacted]");
+	expect(JSON.stringify(secretId)).not.toContain("fixture-secret-value");
+	expect(
+		(await c.call("inspect_run", { runId: "x".repeat(201) })).runId,
+	).toHaveLength(200);
+	expect(JSON.stringify(f.run)).toBe(preserved);
+	expect(f.agent).not.toHaveBeenCalled();
+});
+it("rejects overlapping SDK connection edits as stale_configuration without dispatching another edit", async () => {
+	const f = fixture(),
+		c = await sdk(f);
+	let release!: () => void;
+	const pending = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	f.service.hooks.update = vi.fn(async () => {
+		await pending;
+		return { runId: f.run.id, persisted: true, applied: true };
+	});
+	const request = {
+		runId: f.run.id,
+		expectedConfigRevision: "current",
+		server: "taskbot",
+		connection: { type: "http", url: "https://taskbot.example/mcp" },
+		permissions: ["get_ticket"],
+	};
+	const first = c.call("update_mcp_connection", request);
+	try {
+		await vi.waitFor(() =>
+			expect(f.service.hooks.update).toHaveBeenCalledTimes(1),
+		);
+		expect(await c.call("update_mcp_connection", request)).toMatchObject({
+			ok: false,
+			instance: f.grants.instance(),
+			runId: f.run.id,
+			error: {
+				code: "stale_configuration",
+				nextStep: expect.stringContaining("inspect_mcp_connections"),
+			},
+		});
+		expect(
+			(
+				await c.call("retry_run", {
+					runId: f.run.id,
+					expectedRevision: f.service.revision(f.run),
+				})
+			).error.code,
+		).toBe("stale_state");
+		expect(f.service.hooks.update).toHaveBeenCalledTimes(1);
+		expect(f.run.status).toBe("failed");
+	} finally {
+		release();
+	}
+	expect(await first).toMatchObject({
+		ok: true,
+		result: { persisted: true, applied: true },
+	});
+	expect((await c.call("update_mcp_connection", request)).ok).toBe(true);
+	expect(f.service.hooks.update).toHaveBeenCalledTimes(2);
+});
 it("rejects stale and parallel actions while preserving checkpoint and publication work", async () => {
 	const f = fixture(),
 		c = await sdk(f);
@@ -261,7 +358,11 @@ it("does not approve reviews, blocks disabled chat, pages activity and sanitizes
 	expect(
 		operatorError(new Error("401 provider body with fixture-secret-value"))
 			.error,
-	).toEqual({ code: "missing_authentication", message: expect.any(String) });
+	).toEqual({
+		code: "missing_authentication",
+		message: expect.any(String),
+		nextStep: expect.stringContaining("authentication"),
+	});
 });
 it("commits connection and exact permissions together, preserves other settings and reports failed reload", async () => {
 	const f = fixture(),

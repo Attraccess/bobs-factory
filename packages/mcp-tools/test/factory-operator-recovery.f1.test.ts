@@ -139,6 +139,34 @@ it("F1: repairs missing Taskbot transport entirely through compiled stdio MCP, p
 	cleanup.push(() => client.close());
 	const call = async (name: string, args: Record<string, unknown>) =>
 		(await client.callTool({ name, arguments: args })).structuredContent as any;
+	expect(await call("unknown_operator_tool", {})).toMatchObject({
+		ok: false,
+		instance: grants.instance(),
+		error: {
+			code: "not_found",
+			nextStep: expect.stringContaining("tools/list"),
+		},
+	});
+	expect(await call("inspect_run", { runId: "unknown-run" })).toMatchObject({
+		ok: false,
+		instance: grants.instance(),
+		runId: "unknown-run",
+		error: {
+			code: "not_found",
+			nextStep: expect.stringContaining("list_runs"),
+		},
+	});
+	expect(
+		await call("inspect_run", { runId: run.id, extra: true }),
+	).toMatchObject({
+		ok: false,
+		instance: grants.instance(),
+		runId: run.id,
+		error: {
+			code: "invalid_request",
+			nextStep: expect.stringContaining("input schema"),
+		},
+	});
 	const before = (await call("inspect_mcp_connections", { runId: run.id }))
 		.result;
 	expect(before.runner).toBe("opencode");
@@ -158,7 +186,15 @@ it("F1: repairs missing Taskbot transport entirely through compiled stdio MCP, p
 		new Error("401 Unauthorized fixture-provider-secret"),
 	);
 	const rejected = await call("check_mcp_connection", { runId: run.id });
-	expect(rejected.error.code).toBe("missing_authentication");
+	expect(rejected).toMatchObject({
+		ok: false,
+		instance: grants.instance(),
+		runId: run.id,
+		error: {
+			code: "missing_authentication",
+			nextStep: expect.stringContaining("authentication"),
+		},
+	});
 	expect(JSON.stringify(rejected)).not.toContain("fixture-provider-secret");
 	direct.mockRejectedValueOnce(new Error("401 Unauthorized"));
 	const stillFailed = (await call("inspect_run", { runId: run.id })).result;

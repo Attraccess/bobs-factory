@@ -4,7 +4,7 @@ import { operatorCatalog } from "bobs-factory-mcp-tools";
 import Fastify from "fastify";
 import { atomicPrivateFile, privateFile } from "./FactoryAuthStore.js";
 import type { OperatorGrants } from "./OperatorGrants.js";
-import { type OperatorService, operatorError } from "./OperatorService.js";
+import { OperatorError, type OperatorService } from "./OperatorService.js";
 export class OperatorServer {
 	private port?: number;
 	readonly app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
@@ -26,27 +26,24 @@ export class OperatorServer {
 			try {
 				authorize(req.headers);
 			} catch {
-				return reply.code(401).send({
-					ok: false,
-					error: {
-						code: "unauthorized",
-						message: "Invalid or revoked operator grant",
-					},
-				});
+				return reply
+					.code(401)
+					.send(
+						service.error(
+							new OperatorError(
+								"unauthorized",
+								"Invalid or revoked operator grant",
+							),
+						),
+					);
 			}
 		});
 		this.app.post("/tools", (req) => operatorCatalog(authorize(req.headers)));
 		this.app.post("/call", async (req) => {
+			const body = req.body as { name?: unknown; arguments?: unknown };
 			try {
-				const body = req.body as { name?: unknown; arguments?: unknown };
 				if (typeof body?.name !== "string")
-					return {
-						ok: false,
-						error: {
-							code: "invalid_request",
-							message: "Tool name is required",
-						},
-					};
+					throw new OperatorError("invalid_request", "Tool name is required");
 				return {
 					ok: true,
 					result: await service.call(
@@ -56,17 +53,17 @@ export class OperatorServer {
 					),
 				};
 			} catch (error) {
-				return operatorError(error);
+				return service.error(error, body?.arguments);
 			}
 		});
 		this.app.setErrorHandler((_error, _req, reply) =>
-			reply.code(400).send({
-				ok: false,
-				error: {
-					code: "invalid_request",
-					message: "Invalid operator request",
-				},
-			}),
+			reply
+				.code(400)
+				.send(
+					service.error(
+						new OperatorError("invalid_request", "Invalid operator request"),
+					),
+				),
 		);
 	}
 	async start() {

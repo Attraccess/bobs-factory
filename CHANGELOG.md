@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Include instance/run context and recovery guidance in operator MCP errors, and report overlapping connection edits as configuration conflicts. ([#81](https://github.com/jappyjan/bobs-factory/pull/81))
+
 - Use the operating system's temporary directory for operator MCP test fixtures and allow the reload-failure check to finish its bounded wait, so recovery and integration checks run in CI on Linux as well as macOS. ([#81](https://github.com/jappyjan/bobs-factory/pull/81))
 
 - Release Factory delivery ownership after publication instead of waiting on ticket synchronization or independent review/QA. Reserve affected repositories, protect shared QA resources, refresh queued fixers and revalidate merge attempts while preserving pending documentation and approval gates. ([Taskbot #126](https://taskbot.apps.janjaap.de/p/bobs-factory/t/126), [#77](https://github.com/jappyjan/bobs-factory/pull/77), [F1 validation](apps/f1/test-drives/2026-10-09-delivery-boundaries.md))

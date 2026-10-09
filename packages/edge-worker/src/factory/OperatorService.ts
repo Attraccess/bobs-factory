@@ -12,34 +12,64 @@ export class OperatorError extends Error {
 		super(message);
 	}
 }
-export function operatorError(error: unknown) {
-	if (error instanceof OperatorError)
-		return { ok: false, error: { code: error.code, message: error.message } };
+export function operatorError(
+	error: unknown,
+	context?: { instance: string; runId?: string },
+) {
 	const text = String(error);
-	const code = /unauthorized|401|403|authentication|oauth|credential/i.test(
-		text,
-	)
-		? "missing_authentication"
-		: /found 0|not configured|missing.*transport/i.test(text)
-			? "missing_transport"
-			: /found [2-9]|ambiguous/i.test(text)
-				? "ambiguous_transport"
-				: /denied|not allowed|disallowed|restricted/i.test(text)
-					? "denied_tool"
-					: /changed|stale/i.test(text)
-						? "stale_state"
-						: /Only .*|not waiting|disabled|unavailable/i.test(text)
-							? "invalid_state"
-							: "connectivity_failure";
+	const code =
+		error instanceof OperatorError
+			? error.code
+			: /unauthorized|401|403|authentication|oauth|credential/i.test(text)
+				? "missing_authentication"
+				: /found 0|not configured|missing.*transport/i.test(text)
+					? "missing_transport"
+					: /found [2-9]|ambiguous/i.test(text)
+						? "ambiguous_transport"
+						: /denied|not allowed|disallowed|restricted/i.test(text)
+							? "denied_tool"
+							: /changed|stale/i.test(text)
+								? "stale_state"
+								: /Only .*|not waiting|disabled|unavailable/i.test(text)
+									? "invalid_state"
+									: "connectivity_failure";
 	return {
 		ok: false,
+		...context,
 		error: {
 			code,
 			message:
-				"Operation failed. Inspect the run and its connection configuration before retrying.",
+				error instanceof OperatorError
+					? error.message
+					: "Operation failed. Inspect the run and its connection configuration before retrying.",
+			nextStep:
+				operatorRecovery[code] ??
+				"Call inspect_run and inspect_mcp_connections to check the run and its configuration before retrying.",
 		},
 	};
 }
+const operatorRecovery: Record<string, string> = {
+	not_found:
+		"Use MCP tools/list to discover available operations and list_runs to find a run ID on this instance.",
+	invalid_request:
+		"Use MCP tools/list to read the operation's input schema, correct the arguments and call it again.",
+	unauthorized:
+		"Select the correct Factory home and obtain a valid operator grant there before reconnecting.",
+	insufficient_scope:
+		"Ask the operator to issue a grant with the capability required by this tool, then reconnect.",
+	stale_configuration:
+		"Wait for the current operation to finish, then call inspect_mcp_connections and use its fresh configRevision before editing again.",
+	stale_state:
+		"Wait for the current operation to finish, then call inspect_run and use its fresh revision before acting again.",
+	invalid_state:
+		"Call inspect_run and check which recovery actions are available in the current state.",
+	workflow_restriction:
+		"Call inspect_run to check the workflow's available actions and restrictions.",
+	frozen_configuration:
+		"Update a saved tool profile for a new launch; the current run's accepted profile cannot be changed.",
+	missing_authentication:
+		"Call inspect_mcp_connections to identify the run's runner and authentication path, restore authentication for that path, then call check_mcp_connection.",
+};
 export function operatorDigest(value: unknown) {
 	return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -90,6 +120,20 @@ export class OperatorService {
 	}
 	private text(value: string) {
 		return operatorText(this.hooks.sanitize?.(value) ?? value);
+	}
+	error(error: unknown, input?: unknown) {
+		const runId =
+			input && typeof input === "object" && "runId" in input
+				? input.runId
+				: undefined;
+		const response = operatorError(error, {
+			instance: this.instance,
+			...(typeof runId === "string"
+				? { runId: this.text(runId).slice(0, 200) }
+				: {}),
+		});
+		response.error.message = this.text(response.error.message);
+		return response;
 	}
 	inspect(id: string) {
 		const run = this.run(id),
@@ -248,7 +292,7 @@ export class OperatorService {
 				try {
 					mcp = await this.hooks.mcp(run);
 				} catch (error) {
-					mcp = operatorError(error);
+					mcp = this.error(error, { runId: run.id });
 				}
 			}
 			const state = this.inspect(run.id);
@@ -288,8 +332,10 @@ export class OperatorService {
 			return this.hooks.check!(run, args.server);
 		if (this.busy.has(run.id))
 			throw new OperatorError(
-				"stale_state",
-				"Another operation is in progress. Inspect again after it finishes.",
+				name === "update_mcp_connection"
+					? "stale_configuration"
+					: "stale_state",
+				"Another operation is in progress. Wait for it to finish before inspecting again.",
 			);
 		this.busy.add(run.id);
 		try {
