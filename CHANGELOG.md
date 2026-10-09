@@ -19,7 +19,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Default Codex execution to full host access so installed shell commands, process inspection and local browsers can run; preserve explicit `workspace-write` and `read-only` settings and managed tool-source conflict checks.
+- Default Codex execution to full host access so installed shell commands, process inspection and local browsers can run; preserve explicit `workspace-write` and `read-only` settings and managed tool-source conflict checks. ([#69](https://github.com/jappyjan/bobs-factory/pull/69))
 
 - Use mocked agent protocol checks for every release; live provider tests are manual-only and require explicit approval for the specific test. ([#61](https://github.com/jappyjan/bobs-factory/pull/61))
 
