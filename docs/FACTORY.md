@@ -46,6 +46,33 @@ webhook listener and is intended for one operator. Every dashboard address
 requires a passkey session, including localhost. Provider webhooks and OAuth
 callbacks stay independent of dashboard authentication.
 
+## Protected remote access design
+
+Factory uses application passkeys for one operator and retains separate dashboard
+and provider listeners. Network reachability and browser identity are separate
+checks: a permitted network connection still needs a verified Factory session.
+
+| Design | Practical consequence |
+| --- | --- |
+| Application passkeys, separate listeners (selected) | Protects dashboard data and actions independently of the proxy. Provider webhooks and OAuth keep their own verification and do not need a human login. |
+| Tailnet or proxy identity | Can limit network reachability, but trusting forwarded identity requires securing every direct-port path and the forwarding proxy. It is not Factory's authentication mechanism. |
+| Shared listener with public routes | Possible with strict public-route isolation, but adds routing risk. Existing separate listeners avoid that restructuring. |
+
+Local desktop browsers use `http://localhost:3457`; the IP entrypoint redirects
+there for WebAuthn. Remote desktop and mobile browsers use the exact configured
+HTTPS origin and enroll a key at that address. Neither path bypasses login.
+The HTTPS proxy terminates TLS and forwards to the loopback dashboard while
+preserving the external **Host** authority and browser **Origin** header.
+Its loopback TCP connection and `X-Forwarded-*` headers never establish identity.
+Direct requests to the dashboard port also require a session.
+
+The hostname in the example below is deployment context from Taskbot #40, not a
+request to change tunnels. Keep the operator's currently configured webhook/OAuth
+URL and confirm it still routes to the separate provider listener before rollout.
+Historical tickets contain differing provider hostnames; do not use either as a
+replacement integration URL. Production zrok2/Nix setup and retirement of the
+legacy Tailscale proxy belong to the separate host setup work.
+
 ## Passkey access and first setup
 
 Factory requires a server-verified passkey session for all dashboard data and
@@ -104,8 +131,11 @@ to `http://localhost:3457` because WebAuthn rejects IP addresses as RP IDs.
 Both addresses protect data; the redirect provides a usable local login.
 `Settings` in the main navigation contains passkey management and sign-out.
 The sign-in screen folds new-key setup under `Set up a new passkey` once the
-first key exists. First-time setup opens automatically. In Settings, add a named
-phone/security key or remove a saved key; each change explicitly verifies an
+first key exists. First-time setup opens automatically. A new key can be enrolled
+from that screen with a fresh machine-authorized code while signed out, or from
+Settings using recent passkey verification without a setup code. A stale signed-in
+session must verify again; a code does not bypass that requirement. In Settings,
+add a named phone/security key or remove a saved key; each change explicitly verifies an
 existing passkey first. Viewing keys also requires verification within the last
 five minutes, with a verification button when that window has expired. Keep at least one key per enrolled address;
 removing the last key requires local recovery. Removing a key revokes its sessions
@@ -153,25 +183,64 @@ or deliberately recover rather than silently rebinding existing keys.
 | Local and public dashboard data/actions/media/SSE | Passkey session required |
 | Static app shell, version, access status and ceremonies | Public; no run or configuration data |
 | First or recovery enrollment | Operator setup code; one key only |
-| Additional enrollment/removal | Recently verified session or a fresh operator code |
+| Additional enrollment | Recently verified session, or operator code from an unauthenticated setup screen |
+| Credential listing/removal | Recently verified session; setup codes do not authorize removal |
 | Provider webhook/OAuth listener (3456 in production) | Existing provider signature/OAuth checks; independent of dashboard login |
 
 ### Rollout and device checks
 
-This change does not deploy, restart or alter production Nix/zrok2 services.
-The parent must review the code, configure the reserved HTTPS origin, confirm
-that zrok2 preserves authority/Origin and retire the legacy localhost-rewriting
-proxy before public rollout. The UI tunnel can keep target `127.0.0.1:3457`;
-authentication applies even to rewritten localhost requests. Verify signed
-Linear deliveries, rejection of unsigned deliveries and OAuth callback access
-on the separate provider listener.
+Production deployment is separate from this implementation. Before rollout,
+configure the exact HTTPS origin, confirm that zrok2 preserves Host/Origin and
+retire the legacy localhost-rewriting proxy in the host setup thread. The UI
+tunnel can keep target `127.0.0.1:3457`; authentication still applies to direct
+or rewritten localhost requests, but rewriting Host prevents correct remote
+origin checks. Verify signed Linear deliveries, rejection of unsigned deliveries
+and OAuth callback routing on the independent provider listener. Do not perform
+live provider authorization merely to check dashboard access.
 
 Physical iPhone Safari and installed-PWA validation remains a human check: enroll
-at the public HTTPS origin, log out/in, add a second key, revoke it, test expiry
-and reopen the installed app. Chromium emulation and a virtual authenticator do
-not prove biometric, Safari or synced-phone behavior. Connection failure means
-reconnect to sign in; a browser cancellation means retry with a fresh setup code
-when enrollment has consumed its previous authorization.
+at the configured public origin, log out/in, add a second key, revoke it, test
+expiry and reopen the installed app. Headless Chromium with a software
+authenticator does not establish biometric, Safari, synced-key or cross-device
+QR behavior. A local HTTPS proxy test does not establish production zrok2 routing.
+
+| Mobile symptom | Next step |
+| --- | --- |
+| Offline or disconnected | Reconnect, then let Factory verify the session before using controls. Private content is not available offline. |
+| Session expired or key revoked | Sign in again with a remaining key at this address. Recover locally if all keys are lost. |
+| Ceremony cancelled | Retry login. For code-based enrollment, obtain a fresh code if the previous authorization was consumed. |
+| Browser does not support passkeys | Use a current browser with WebAuthn and a supported secure origin; test the intended Safari/installed-app flow on the physical phone. |
+| Wrong origin or no matching key | Check the exact HTTPS hostname and port, proxy Host/Origin preservation and configured origin. Enroll a separate key for this address; do not silently rebind existing keys. |
+
+### Access and validation map
+
+The dashboard rejects private requests before their handlers run. Its public
+allowlist serves only static assets, version and authentication bootstrap or
+ceremonies; it does not expose runs, settings or credentials. Unknown routes also
+require authentication. Private responses use `Cache-Control: no-store`.
+
+| Surface and representative routes | Boundary and existing verification |
+| --- | --- |
+| Run reads, provenance and delivery/configuration (`/api/runs`, `/api/config`, `/api/delivery-status`) | Session for GET/HEAD; `FactoryAccess.test.ts`, `FactoryServer.test.ts`. |
+| Settings, recipes, capacity, execution profiles and onboarding (`/api/workflows`, `/api/capacity`, `/api/execution-profiles`, `/api/onboarding/*`) | Session plus exact Origin and action header for writes; `FactoryServer.test.ts`, `FactoryAccess.test.ts`. |
+| Transcripts/raw activity (`/api/runs/:id/activity`, `/activity/entries/:index`) | Session before entry hooks; `FactoryAccess.test.ts`, `FactoryServer.test.ts`. |
+| Screenshots and question images (`/api/runs/:id/screenshots/:index`, `/question-images/:name`) | Session, no private offline cache; `FactoryAccess.test.ts`, `FactoryPwa.test.ts`. |
+| Artifacts and review files (`/api/runs/:id/artifacts/:name`, `/review-files/*`) | Session plus existing path/file boundaries; `FactoryAccess.test.ts`, `ReviewFiles.test.ts`. |
+| Video media, posters and captions (`/api/runs/:id/videos/:id/*`) | Same session boundary; `FactoryAccess.test.ts`, `Video.test.ts`. |
+| Live events (`/api/events`) | Session at connection and reconnect; idle streams close on logout, expiry or recovery; `FactoryAccess.test.ts`. |
+| Run actions (messages, answers, review, follow-up, stop, retry, ticket sync) | Session plus Origin/action header before mutation; `FactoryAccess.test.ts`, `FactoryServer.test.ts`. |
+| Public shell, `/api/version`, `/api/auth/status`, login/register ceremonies | No sensitive data. Enrollment requires operator code or recent session; exact Origin, browser-bound challenge, user verification and replay checks; `FactoryAuth.test.ts`, `FactoryAccess.test.ts`. |
+| Credential management and logout (`/api/auth/credentials`, `/api/auth/logout`) | Listing/removal need verification within five minutes. Logout revokes session/streams; `FactoryAuth.test.ts`, `FactoryAccess.test.ts`. |
+| Provider listener (`/linear-webhook`, OAuth callback routes) | Independent provider signature/OAuth checks, no dashboard cookie; `packages/linear-event-transport/test/LinearEventTransport.test.ts`, `apps/cli/src/commands/SelfAuthCommand.test.ts`. |
+
+Browser evidence must complement these server checks: actual registration/login
+through a Host/Origin-preserving HTTPS proxy, secure cookies, authenticated
+read/action, logout, offline/reconnect, expiry/revocation, restart/reopen and
+mobile-width setup/data/error screens. Record the tested revision and limitations
+with fresh evidence; historical passkey reports do not validate a new revision.
+Local recovery checks must preserve run records, worktrees, integrations and
+host-owned credentials. Use isolated homes/services and test certificates without
+changing host trust or production configuration.
 
 ## Execution identities and tools
 

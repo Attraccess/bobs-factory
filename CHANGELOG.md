@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Clarify protected remote Factory access, separate dashboard/provider routing, passkey enrollment and removal requirements, and mobile rollout checks. ([Taskbot #40](https://taskbot.apps.janjaap.de/p/bobs-factory/t/40))
+
 - Include the pinned Bun production dependency notices and corresponding MPL source in beta release materials ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).
 
 - Prepare `1.0.0-beta` binary candidates, keep beta downloads distinct from stable releases, and verify installed native helpers before publication ([#57](https://github.com/jappyjan/bobs-factory/pull/57)).
