@@ -95,6 +95,7 @@ export function manifestAssets(manifest) {
 		...(manifest.desktop?.artifacts ?? []).flatMap((item) => [
 			item.archive,
 			item.updateMetadata,
+			item.validation,
 		]),
 	];
 }

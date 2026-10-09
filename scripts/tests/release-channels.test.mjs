@@ -26,7 +26,10 @@ import {
 	releaseChannel,
 	requiredSupportingFiles,
 } from "../lib/release-channels.mjs";
-import { githubClient } from "../lib/release-discovery.mjs";
+import {
+	githubClient,
+	readPublishedManifest,
+} from "../lib/release-discovery.mjs";
 import {
 	publicationMarker,
 	publishStagedRelease,
@@ -317,7 +320,7 @@ test("receipt archives have reproducible bytes and can be read by tar", () => {
 		rmSync(work, { recursive: true, force: true });
 	}
 });
-test("candidate preparation freezes an old nightly, edits only version metadata, and never writes remote refs in dry run", () => {
+test("candidate preparation freezes an old nightly, edits only version metadata, and never writes remote refs in dry run", async (t) => {
 	const work = mkdtempSync(join(tmpdir(), "factory-candidate-"));
 	try {
 		const git = (...args) =>
@@ -441,6 +444,75 @@ test("candidate preparation freezes an old nightly, edits only version metadata,
 			digest: `sha256:${sha256(bytes)}`,
 			browser_download_url: url,
 		});
+		const desktopManifest = structuredClone(manifest);
+		desktopManifest.desktop = {
+			schemaVersion: 1,
+			artifacts: [
+				{
+					version: manifest.version,
+					commit: manifest.commit,
+					channel: manifest.channel,
+					target: "darwin-arm64",
+					platformRequirements: "macOS ARM64",
+					archive: record("desktop.tar.gz"),
+					updateMetadata: record("desktop-update.json"),
+					validation: record("desktop-validation.json"),
+				},
+			],
+		};
+		const desktopBytes = jsonBytes(validateReleaseManifest(desktopManifest));
+		const desktopRelease = {
+			tag_name: manifest.tag,
+			draft: false,
+			prerelease: true,
+			assets: [
+				...assets.filter((asset) => asset.name !== "release.json"),
+				...[
+					"desktop.tar.gz",
+					"desktop-update.json",
+					"desktop-validation.json",
+				].map((name) => ({
+					name,
+					size: 42,
+					digest: `sha256:${"c".repeat(64)}`,
+				})),
+				{
+					name: "release.json",
+					size: desktopBytes.length,
+					digest: `sha256:${sha256(desktopBytes)}`,
+					browser_download_url: url,
+				},
+			],
+		};
+		await t.test(
+			"published desktop inventory requires an intact validation receipt",
+			async () => {
+				const transport = async () => new Response(desktopBytes);
+				assert.deepEqual(
+					(await readPublishedManifest(desktopRelease, transport)).manifest,
+					desktopManifest,
+				);
+				for (const fault of ["missing", "size", "digest", "duplicate"]) {
+					const broken = structuredClone(desktopRelease);
+					const validation = broken.assets.find(
+						(asset) => asset.name === "desktop-validation.json",
+					);
+					if (fault === "missing")
+						broken.assets = broken.assets.filter(
+							(asset) => asset !== validation,
+						);
+					if (fault === "size") validation.size++;
+					if (fault === "digest")
+						validation.digest = `sha256:${"d".repeat(64)}`;
+					if (fault === "duplicate") broken.assets.push({ ...validation });
+					await assert.rejects(
+						readPublishedManifest(broken, transport),
+						/Public release asset is missing or inconsistent: desktop-validation\.json/,
+						fault,
+					);
+				}
+			},
+		);
 		const published = {
 			tag_name: manifest.tag,
 			draft: false,

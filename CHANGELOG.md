@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Prepare immutable stable and nightly candidates, enforce a six-hour nightly publication cooldown, resume identical draft uploads, and expose separate verified channel downloads. Automation remains disabled pending rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117)).
+- Prepare immutable stable and nightly candidates, enforce a six-hour nightly publication cooldown, resume identical draft uploads, and expose separate verified channel downloads. Public inventory checks also require intact desktop validation receipts when desktop artifacts are included. Automation remains disabled pending rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117), [#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 
 ### Fixed
 
