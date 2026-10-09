@@ -680,8 +680,13 @@ export class FactoryTools {
 						.slice(0, 72)
 						.trim()
 						.replace(/\.+$/, "");
+					// Repository commit hooks can run unbounded full-suite checks that a
+					// mechanical step can neither finish nor repair, failing delivery on
+					// every retry. Implementation checks, review and CI with its fixer
+					// own verification. Push hooks still run (for example Git LFS).
 					await command("git", [
 						"commit",
+						"--no-verify",
 						"-m",
 						`chore: ${subject || "factory changes"}`,
 					]);

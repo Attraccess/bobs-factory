@@ -465,7 +465,12 @@ it("publishes with a conventional commit message instead of a raw ticket title",
 		([, exe, args]) => exe === "git" && args[0] === "commit",
 	);
 	expect(commits.map(([, , args]) => args)).toEqual([
-		["commit", "-m", "chore: power consumption billing with clarification"],
+		[
+			"commit",
+			"--no-verify",
+			"-m",
+			"chore: power consumption billing with clarification",
+		],
 	]);
 });
 
