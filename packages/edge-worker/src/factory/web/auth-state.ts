@@ -62,14 +62,34 @@ export function useAccess() {
 }
 let request = 0;
 let connectionLost = () => {};
-// A failed check proves only that Factory is unreachable, not that the session ended.
+const rotationListeners = new Set<() => () => void>();
+// A verified passkey replaces the cookie and invalidates streams using the old
+// session. Suspend those streams explicitly, without discarding private forms.
+export function onSessionRotation(pause: () => () => void) {
+	rotationListeners.add(pause);
+	return () => rotationListeners.delete(pause);
+}
+export async function rotateSession(action: () => Promise<void>) {
+	const resume = [...rotationListeners].map((pause) => pause());
+	// Requests sent with the old cookie must not revoke the newly verified
+	// session when their responses arrive after rotation.
+	generation++;
+	abort.abort();
+	abort = new AbortController();
+	try {
+		await action();
+	} finally {
+		for (const restart of resume) restart();
+	}
+}
+// Connection loss hides private data without revoking the server session.
 export function onConnectionLost(handler: () => void) {
 	connectionLost = handler;
 }
 export async function checkAccess() {
 	const id = ++request,
 		epoch = generation;
-	// Re-checks keep an authenticated UI mounted; only a definitive answer unloads it.
+	// Keep verified credential management mounted while a re-check is pending.
 	if (state.status !== "authenticated")
 		publish({ ...state, status: "checking" });
 	try {
@@ -99,11 +119,10 @@ export async function checkAccess() {
 		}
 	} catch {
 		if (id !== request || epoch !== generation) return;
-		if (state.status === "authenticated") connectionLost();
-		else
-			accessRequired(
-				"Connect to Factory to sign in. Offline access is unavailable.",
-			);
+		connectionLost();
+		accessRequired(
+			"Connect to Factory to sign in. Offline access is unavailable.",
+		);
 	}
 }
 const channel =
