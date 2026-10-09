@@ -179,6 +179,7 @@ export async function snapshotProposal(
 					throw new Error("Architecture asset exceeds 25 MiB");
 				chunks.push(chunk);
 			}
+			if (size === 0) throw new Error("Architecture asset has no body");
 			bytes = Buffer.concat(chunks);
 		} else {
 			if (!isAbsolute(asset.path))

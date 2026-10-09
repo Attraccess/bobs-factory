@@ -6,6 +6,7 @@ import {
 	symlinkSync,
 	writeFileSync,
 } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -153,6 +154,123 @@ async function finished(runtime: WorkflowRuntime, run: FactoryRun) {
 }
 
 describe("architecture authorization boundary", () => {
+	it("rejects absent and empty HTTP assets before approval or implementation", async () => {
+		const server = createServer((request, response) => {
+			response.statusCode = request.url === "/absent" ? 204 : 200;
+			response.end(request.url === "/success" ? "remote specification" : "");
+		});
+		await new Promise<void>((resolve) =>
+			server.listen(0, "127.0.0.1", resolve),
+		);
+		const address = server.address();
+		if (!address || typeof address === "string")
+			throw new Error("No HTTP port");
+		try {
+			for (const path of ["absent", "empty", "success"]) {
+				const value = proposal();
+				value.candidate.assets = [
+					{
+						path: `http://127.0.0.1:${address.port}/${path}`,
+						purpose: "specification",
+					},
+				];
+				const { runtime, run, running, implemented } = setup("meaningful", {
+					agent: async (context) =>
+						context.step.architectureContract === "architecture-v1"
+							? value
+							: { approved: true, feedback: [] },
+				});
+				try {
+					if (path === "success") {
+						await waiting(run);
+						expect(
+							readFileSync(
+								run.architectureProposals![0]!.content.candidate.assets[0]!
+									.path,
+								"utf8",
+							),
+						).toBe("remote specification");
+					} else {
+						await running;
+						expect(run.status).toBe("failed");
+						expect(run.error).toMatch(/no body/);
+						expect(run.architectureProposals).toEqual([]);
+						expect(run.architectureGate).toBeUndefined();
+					}
+					expect(implemented).toEqual([]);
+				} finally {
+					await runtime.shutdown();
+				}
+			}
+		} finally {
+			await new Promise<void>((resolve, reject) =>
+				server.close((error) => (error ? reject(error) : resolve())),
+			);
+		}
+	});
+	it("deduplicates architecture explanation ticket notifications through restart and notifies a revised proposal", async () => {
+		const notifications: string[] = [];
+		const { runtime, run, home, hooks, implemented } = setup("meaningful", {
+			track: async (tracked, milestone) => {
+				tracked.ticketSync ??= { receipts: [] };
+				if (
+					!tracked.ticketSync.receipts.some(
+						(receipt) => receipt.key === milestone.key,
+					)
+				) {
+					tracked.ticketSync.receipts.push({ ...milestone, delivered: true });
+					if (milestone.key.startsWith("questions:"))
+						notifications.push(milestone.key);
+				}
+			},
+		});
+		run.ticketReference = {
+			provider: "taskbot",
+			instance: "https://taskbot.test",
+			project: "test",
+			id: 1,
+			url: "https://taskbot.test/p/test/t/1",
+			server: "taskbot",
+		};
+		await waiting(run);
+		const first = run.architectureProposals![0]!;
+		const batch = run.questionBatchId;
+		expect(notifications).toHaveLength(1);
+		for (let count = 1; count <= 2; count++) {
+			decide(runtime, run, "explain", "Why separate approval?");
+			await vi.waitFor(() =>
+				expect(
+					first.feedback.filter((item) => item.kind === "explanation"),
+				).toHaveLength(count),
+			);
+			await waiting(run);
+			expect(run.questionBatchId).toBe(batch);
+			expect(notifications).toHaveLength(1);
+		}
+		await runtime.shutdown();
+		const restored = new WorkflowRuntime(home, hooks);
+		const resumed = restored.get(run.id);
+		try {
+			restored.resumeAll();
+			await waiting(resumed);
+			expect(resumed.questionBatchId).toBe(batch);
+			expect(notifications).toHaveLength(1);
+			expect(implemented).toEqual([]);
+			decide(restored, resumed, "revise", "Retain the existing interface");
+			await vi.waitFor(() =>
+				expect(resumed.architectureProposals).toHaveLength(2),
+			);
+			await waiting(resumed);
+			expect(resumed.questionBatchId).not.toBe(batch);
+			expect(notifications).toHaveLength(2);
+			expect(implemented).toEqual([]);
+			decide(restored, resumed);
+			await finished(restored, resumed);
+			expect(implemented).toHaveLength(1);
+		} finally {
+			await restored.shutdown();
+		}
+	});
 	it("rejects malformed diagrams, missing rationale, meaningful proposals without visuals, and model-authored approval", () => {
 		const value = proposal();
 		expect(

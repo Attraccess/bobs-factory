@@ -2104,7 +2104,10 @@ export class WorkflowRuntime {
 				state.questionExplanation = undefined;
 				run.questions = questions;
 				run.questionRecommendations = recommendations;
-				run.questionBatchId = randomUUID();
+				// Explaining architecture keeps the exact proposal pending. Reuse its
+				// ticket receipt; a revised proposal gets a new batch on the next wait.
+				if (context.step.tool !== "architecture-decision")
+					run.questionBatchId = randomUUID();
 				this.save(run);
 			}
 			run.status = "waiting";

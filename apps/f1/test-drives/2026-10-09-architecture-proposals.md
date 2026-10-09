@@ -151,3 +151,58 @@ frozen asset handoff and routine bypass. The merge receipts and log are retained
 in the evidence directory as `architecture-merge-f1-results.json` and
 `architecture-merge-f1-drive.log`. No real-agent inference or remote delivery was
 exercised. Existing dashboard screenshots remain historical evidence.
+
+
+## QA fixes: empty HTTP assets and explanation notifications
+
+Validated the working tree based on `2bc8a0ab5e8f291b9732374ad4f9267b7f38401a`
+with the two QA corrections for PR #74. Empty HTTP 200 and HTTP 204 assets now
+stop before proposal approval or implementation. Explaining architecture retains
+the pending question batch and its ticket receipt; a revised proposal gets a new
+batch. Ordinary assistance-question batch behavior remains covered by the runtime
+tests.
+
+Commands:
+
+```sh
+cd packages/edge-worker
+pnpm exec vitest run test/Architecture.test.ts test/WorkflowRuntime.test.ts test/FactoryPush.test.ts test/TicketTracking.test.ts
+# 180 tests passed across four files.
+pnpm exec vitest run test/Architecture.test.ts
+# 17 tests passed after correcting the test ticket metadata.
+cd ../..
+pnpm --filter bobs-factory-edge-worker typecheck
+pnpm exec biome check packages/edge-worker/src/factory/Architecture.ts packages/edge-worker/src/factory/WorkflowRuntime.ts packages/edge-worker/test/Architecture.test.ts
+git diff --check
+F1_AGENT_MODE=mock bun /Users/jappy/.bobs-factory/factory/evidence/manual-ca2bb7eb-c67e-4b8b-ac2f-1e62bf6cad37/architecture-qa-fix-f1-drive.ts
+F1_AGENT_MODE=mock bun /Users/jappy/.bobs-factory/factory/evidence/manual-ca2bb7eb-c67e-4b8b-ac2f-1e62bf6cad37/qa-fix-targeted-boundaries.ts
+```
+
+All eight F1 scenarios passed through an isolated EdgeWorker and the F1
+`MockAgentRunner`: Factory and Takeover each rejected absent/empty HTTP assets,
+completed discussion/revision/restart/exact acceptance with frozen assets, and
+recorded a routine bypass. The ticket sink was simulated and retained persisted
+receipts. Explanation and restart kept one notification for the proposal; each
+new proposal version received one notification. Forge inspection and ticket
+preparation were isolated fixtures; no production ticket writes or delivery ran.
+
+All 13 targeted boundary checks passed under Bun 1.3.5, including HTTP success,
+503, absent content, empty content, exactly 25 MiB and over 25 MiB. The attention
+check retained 2 total ticket receipts before and after explanation. Simulated
+push remained deduplicated through restart and sent new attention on revision.
+The required `architecture-assets-http-boundary` and
+`architecture-attention-dedup` criteria were retested successfully.
+
+Complete evidence is in the run evidence directory:
+
+- `architecture-qa-fix-f1-drive.ts`, `.log`, and `architecture-qa-fix-f1-results.json`
+- `qa-fix-targeted-boundaries.ts`, `.log`, and `qa-fix-targeted-boundary-results.json`
+- `qa-fix-targeted-attention-detail.json`
+
+The broader `qa-fix-boundaries.ts` run recorded passing assertions but exited
+with Bun/Fastify `ERR_HTTP_HEADERS_SENT` from API injection. The same error exists
+in the original `qa-boundaries.log`; this is not claimed as a clean full-harness
+pass. Targeted retests omit those unrelated API-injection sections and exit
+successfully. Existing approved screenshots remain historical evidence; these
+fixes change no layout. Real-agent recommendation quality and physical-device
+push delivery remain unverified.
