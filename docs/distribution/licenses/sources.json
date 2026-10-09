@@ -342,5 +342,12 @@
 		"source": "https://raw.githubusercontent.com/sru-systems/rust-argon2/ed81866f163f0c7026aa6fd8388adf37242eb32a/LICENSE-APACHE",
 		"sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
 		"packages": ["bun-runtime"]
+	},
+	"bun-cargo-production-notices.txt": {
+		"source": "https://raw.githubusercontent.com/oven-sh/bun/744846f844374847c902b5e7fd59b4342a51ef99/Cargo.lock",
+		"sha256": "b7635dd18621be2db3d7e29062a4939db5122bad83c5edb88e4adcd572ffa35b",
+		"packages": ["bun-runtime"],
+		"derived": true,
+		"provenance": "bun-cargo-production-notices.provenance.json"
 	}
 }
