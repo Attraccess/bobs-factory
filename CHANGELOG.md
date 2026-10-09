@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Use mocked agent protocol checks for every release; live provider tests are manual-only and require explicit approval for the specific test. ([#61](https://github.com/jappyjan/bobs-factory/pull/61))
+
 - Include the pinned Bun production dependency notices and corresponding MPL source in beta release materials ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).
 
 - Prepare `1.0.0-beta` binary candidates, keep beta downloads distinct from stable releases, and verify installed native helpers before publication ([#57](https://github.com/jappyjan/bobs-factory/pull/57)).
