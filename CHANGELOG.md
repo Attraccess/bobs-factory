@@ -24,6 +24,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Add `bobs-factory tui` for starting runs, following live activity, answering questions, reviewing, retrying and settling work from a fullscreen terminal inbox. Share the web palette and light/dark themes, with Ctrl-K run search and authenticated local-operator access. ([Taskbot #114](https://taskbot.apps.janjaap.de/p/bobs-factory/t/114), [#65](https://github.com/jappyjan/bobs-factory/pull/65))
+
 - Submit large structured role results as bounded, revision-bound artifacts with complete runtime-owned file coverage. Expose actual runtime build identity and secret-safe per-attempt workflow, contract and instruction provenance across recovery. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))
 
 - Capture authentic feature demonstrations for Factory review guides and the inspector, with lazy playback, transcripts, validated revision evidence and safe seeking. Changed QA scenarios require fresh recordings, and expired recordings from every capture round are cleaned up across restarts. Keep optional recording failures visible and preserve screenshots and explicit human approval. ([Taskbot #31](https://taskbot.apps.janjaap.de/p/bobs-factory/t/31), [#33](https://github.com/Attraccess/bobs-factory/pull/33))
