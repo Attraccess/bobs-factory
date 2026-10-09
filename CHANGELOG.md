@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Release Factory delivery ownership after publication instead of waiting on ticket synchronization or independent review/QA. Reserve affected repositories, protect shared QA resources, refresh queued fixers and revalidate merge attempts while preserving pending documentation and approval gates. ([Taskbot #126](https://taskbot.apps.janjaap.de/p/bobs-factory/t/126), [#77](https://github.com/jappyjan/bobs-factory/pull/77), [F1 validation](apps/f1/test-drives/2026-10-09-delivery-boundaries.md))
 - Route recorded QA product failures to the existing visual fixer even when a reviewer reports a failed or blocked review; require fresh QA and a completed review before approval. Clarify that review completion describes execution, not a passing product. ([#78](https://github.com/jappyjan/bobs-factory/pull/78), [F1 validation](apps/f1/test-drives/2026-10-09-qa-product-failure-routing.md))
 
 - Reject incomplete or mismatched signed beta inventories before Nix unpacks an archive. Require all four targets and their validation receipts, with unique valid records matching the signed manifest ([#70](https://github.com/jappyjan/bobs-factory/pull/70)).

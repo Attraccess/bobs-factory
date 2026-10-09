@@ -6,6 +6,7 @@ import {
 	feedbackPolicies,
 } from "./FeedbackPolicy.js";
 import { providerForUrl, resolveGitProvider } from "./GitProvider.js";
+import { scopeContextDigest } from "./SpecialistReview.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 export type ProviderCommand = (
@@ -44,6 +45,9 @@ export interface ProviderCheck {
 	};
 }
 export interface MergeReadiness {
+	scopeDigest?: string;
+	/** Base observed before a queued correction; refreshing CI must not erase invalidation. */
+	correctionBaseSha?: string;
 	metadata?: { title: string };
 	guideRecovery?: { fingerprint: string };
 	ciAssistance?: string[];
@@ -123,11 +127,14 @@ export async function inspectReadinessWithRetry(
 	for (let attempt = 0; ; attempt++) {
 		try {
 			const provider = await resolveGitProvider(context, command, url);
-			return await superviseCI(
+			const snapshot = await superviseCI(
 				context,
 				provider,
 				await provider.readiness(url),
 			);
+			if (context.currentScope)
+				snapshot.scopeDigest = scopeContextDigest(context.currentScope());
+			return snapshot;
 		} catch (error) {
 			context.signal.throwIfAborted();
 			const message = error instanceof Error ? error.message : String(error);

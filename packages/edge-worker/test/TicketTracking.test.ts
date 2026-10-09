@@ -405,7 +405,7 @@ it("recovers ambiguous comments after restart without duplicate comments or stag
 	});
 	expect(
 		restored.ticketSync?.receipts.find((r) => r.key === "old-review")
-			?.superseded,
+			?.stageSuperseded,
 	).toBe(true);
 	expect(f.ticket.status).toBe("done");
 });
@@ -973,4 +973,127 @@ it("keeps an ambiguous transcript creation identity when a later reconciliation 
 		),
 	).rejects.toThrow("unconfirmed");
 	expect(creates).toBe(1);
+});
+
+it("persists publication before delayed tracking and lets another delivery advance, with idempotent restart", async () => {
+	const f = fixture();
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const original = f.call.getMockImplementation()!;
+	f.call.mockImplementation(async (tool, args) => {
+		await held;
+		return original(tool, args);
+	});
+	const published: string[] = [];
+	const runtime = new WorkflowRuntime(f.home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async ({ run }) => {
+			published.push(run.id);
+			return { url: "https://github.com/test/repo/pull/1", headSha: "head" };
+		},
+		track: (run, milestone) => f.service.record(run, milestone),
+	});
+	const definition = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "published",
+			name: "Published",
+			steps: [
+				{
+					id: "draft-pr",
+					name: "Publish",
+					type: "tool",
+					tool: "draft-pr",
+					next: "end",
+				},
+			],
+		},
+	]).at(-1)!;
+	const first = runtime.get(f.run.id);
+	first.ticketReference = f.run.ticketReference;
+	first.workflow = definition;
+	first.outputs.repository = {
+		githubUrl: "https://github.com/test/repo",
+		baseBranch: "main",
+	};
+	await runtime.launch(first);
+	expect(first.status).toBe("completed");
+	expect(
+		first.ticketSync?.receipts.find((receipt) => receipt.pr)?.delivered,
+	).toBeUndefined();
+	expect(first.deliveryCoordination?.phase).toBe("released");
+	const second = runtime.create({
+		workflow: definition,
+		repositoryId: "repo",
+		workspace: f.home,
+		input: "Independent",
+		triggerOrigin: { type: "manual", workflowId: definition.id, at: "" },
+	});
+	second.outputs.repository = first.outputs.repository;
+	await runtime.launch(second);
+	expect(second.status).toBe("completed");
+	expect(published).toEqual([first.id, second.id]);
+	// The serialized receipt exists before any remote side effect can finish.
+	const restoredRuntime = new WorkflowRuntime(f.home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => {
+			throw new Error("Must not republish");
+		},
+	});
+	const restored = restoredRuntime.get(first.id);
+	expect(restored.ticketSync?.receipts.find((receipt) => receipt.pr)?.pr).toBe(
+		"https://github.com/test/repo/pull/1",
+	);
+	release();
+	await f.service.flush(first);
+	const calls = f.calls.filter((call) =>
+		["comment", "set_status", "add_attachment"].includes(call.tool),
+	);
+	await f.service.flush(restored);
+	expect(
+		f.calls.filter((call) =>
+			["comment", "set_status", "add_attachment"].includes(call.tool),
+		),
+	).toEqual(calls);
+	expect(f.ticket.attachments).toHaveLength(1);
+	await runtime.shutdown();
+	await restoredRuntime.shutdown();
+});
+
+it("retains failed documentation and links when newer status milestones supersede old status intent", async () => {
+	const f = fixture();
+	const original = f.call.getMockImplementation()!;
+	f.call.mockRejectedValue(new Error("offline"));
+	await f.service.record(f.run, {
+		key: "implementation",
+		purpose: "documentation",
+		body: "Implemented the accepted decision",
+		pr: "https://github.com/test/repo/pull/1",
+		stage: "in_progress",
+	});
+	await f.service.record(f.run, {
+		key: "review",
+		body: "Review pending",
+		stage: "in_review",
+	});
+	expect(f.run.ticketSync?.receipts[0]).toMatchObject({
+		stageSuperseded: true,
+		error: "offline",
+	});
+	expect(f.run.ticketSync?.receipts[0]?.superseded).toBeUndefined();
+	f.call.mockImplementation(original);
+	await f.service.flush(f.run);
+	expect(
+		f.ticket.comments.map((comment) => comment.body.split("\n")[0]),
+	).toEqual(["Implemented the accepted decision", "Review pending"]);
+	expect(f.ticket.attachments).toHaveLength(1);
+	expect(
+		f.calls
+			.filter((call) => call.tool === "set_status")
+			.map((call) => call.args.to),
+	).toEqual(["in_review"]);
 });
