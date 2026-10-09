@@ -8160,14 +8160,6 @@ ${taskSection}`;
 			context.evidenceDir,
 		];
 		built.config.onAskUserQuestion = undefined; // Clarification uses the persisted workflow checkpoint.
-		built.config.allowedTools = [
-			...(step.id === "question-explanation"
-				? []
-				: (built.config.allowedTools ?? [])),
-			"mcp__factory-context__list_context",
-			"mcp__factory-context__read_context",
-			"mcp__factory-context__submit_result_artifact",
-		];
 		const originalMessage = built.config.onMessage;
 		let agentCheckpoint = context.resumeAgent;
 		let startupConfirmed = false;
@@ -8216,6 +8208,19 @@ ${taskSection}`;
 			!context.progress.currentRevision.dirty
 				? roleResultArtifactBinding(context)
 				: undefined;
+		// Required-server readiness checks every requested tool. Artifact submission
+		// exists only when the scoped server has a clean-revision binding, including
+		// on resume with uncommitted work from the previous turn.
+		built.config.allowedTools = [
+			...(step.id === "question-explanation"
+				? []
+				: (built.config.allowedTools ?? [])),
+			"mcp__factory-context__list_context",
+			"mcp__factory-context__read_context",
+			...(artifactBinding
+				? ["mcp__factory-context__submit_result_artifact"]
+				: []),
+		];
 		if (artifactBinding)
 			await mkdir(artifactBinding.directory, { recursive: true });
 		const factoryContext = prepareFactoryContext(
@@ -9675,7 +9680,7 @@ ${taskSection}`;
 				return new CodexRunner({
 					...config,
 					configOverrides: { features: { multi_agent: false } },
-					sandbox: this.config.codexSandboxMode ?? "workspace-write",
+					sandbox: this.config.codexSandboxMode ?? "danger-full-access",
 				});
 			case "cursor":
 				return new CursorRunner(config);

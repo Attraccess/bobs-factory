@@ -18,6 +18,8 @@ import {
 import {
 	pullRequestReference,
 	repositoryReference,
+	samePullRequestReference,
+	sameRepositoryReference,
 } from "./GitProviderReference.js";
 import type {
 	MergeReadiness,
@@ -174,7 +176,8 @@ export function gitProvider(
 			(snapshot.type === "custom"
 				? parsed.origin !== repositoryWebUrl.origin ||
 					!parsed.pathname.startsWith(`${repositoryWebUrl.pathname}/`)
-				: ref?.type !== snapshot.type || ref.url !== repository.url)
+				: ref?.type !== snapshot.type ||
+					!sameRepositoryReference(snapshot.type, repository, ref))
 		)
 			throw new Error(
 				"Pull/merge request must belong to the selected repository and provider",
@@ -182,9 +185,13 @@ export function gitProvider(
 		return url;
 	};
 	const sameRequest = (expected: string, returned: string) => {
+		checkedUrl(expected);
+		checkedUrl(returned);
 		if (
-			new URL(checkedUrl(expected)).href.replace(/\/$/, "") !==
-			new URL(checkedUrl(returned)).href.replace(/\/$/, "")
+			snapshot.type === "github"
+				? !samePullRequestReference(expected, returned)
+				: new URL(expected).href.replace(/\/$/, "") !==
+					new URL(returned).href.replace(/\/$/, "")
 		)
 			throw new Error("Provider returned a different pull/merge request");
 	};

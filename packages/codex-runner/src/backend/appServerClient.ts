@@ -19,9 +19,10 @@ interface PendingRequest {
 	timer?: ReturnType<typeof setTimeout>;
 }
 
-/** Default control-plane request timeout. Turn execution is awaited separately
- * (via notifications), so this only bounds quick request/response calls. */
+/** Quick control calls and native thread setup need different budgets. Setup
+ * reloads plugins, native auth and MCP transports before any model turn starts. */
 const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+const DEFAULT_THREAD_SETUP_TIMEOUT_MS = 180_000;
 
 interface JsonRpcMessage {
 	jsonrpc?: string;
@@ -42,7 +43,8 @@ export interface AppServerClientOptions {
 	 * Per-request timeout in milliseconds for control-plane calls
 	 * (`initialize`, `thread/*`, `turn/start`, `turn/steer`, `turn/interrupt`).
 	 * A wedged app-server then rejects the pending request instead of hanging
-	 * the session forever. Defaults to 60s. Set to 0 to disable.
+	 * the session forever. Defaults to 180s for `thread/start` / `thread/resume`
+	 * and 60s for other calls. An explicit value overrides both; 0 disables it.
 	 */
 	requestTimeoutMs?: number;
 }
@@ -150,7 +152,10 @@ export class AppServerClient extends EventEmitter {
 		const id = this.nextId++;
 		const message = { jsonrpc: "2.0", id, method, params };
 		const timeoutMs =
-			this.options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+			this.options.requestTimeoutMs ??
+			(method === "thread/start" || method === "thread/resume"
+				? DEFAULT_THREAD_SETUP_TIMEOUT_MS
+				: DEFAULT_REQUEST_TIMEOUT_MS);
 		return new Promise<T>((resolve, reject) => {
 			const entry: PendingRequest = {
 				resolve: resolve as (value: unknown) => void,

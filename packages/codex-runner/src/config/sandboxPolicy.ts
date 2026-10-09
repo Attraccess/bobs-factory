@@ -27,7 +27,7 @@ export interface CyrusSandboxFilesystem {
 }
 
 export interface SandboxResolveInput {
-	/** Coarse Codex sandbox mode (defaults to workspace-write upstream). */
+	/** Native Codex sandbox mode selected by the caller. */
 	mode: SandboxMode;
 	/** Session working directory (the worktree; maps to `:workspace_roots`). */
 	workingDirectory?: string;

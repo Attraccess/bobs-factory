@@ -1,6 +1,9 @@
 import {
 	chmodSync,
+	existsSync,
+	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	rmSync,
 	statSync,
@@ -13,6 +16,7 @@ import { FactoryAuth } from "../src/factory/FactoryAuth.js";
 import {
 	authorizeFactoryEnrollment,
 	requestFactoryAuthRecovery,
+	requestFactoryTerminalSession,
 } from "../src/factory/FactoryAuthOperator.js";
 import { FactoryAuthStore } from "../src/factory/FactoryAuthStore.js";
 import { authenticator } from "./fixtures/webauthn.js";
@@ -282,4 +286,74 @@ it("supports valid zero-counter passkeys rather than requiring a positive signat
 	);
 	expect(f.auth.session(session.token, origin)).toBeDefined();
 	expect(f.auth.store.state.credentials[0]!.counter).toBe(0);
+});
+it("grants localhost-only terminal sessions from local operator requests that cannot manage passkeys", () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-terminal-test-"));
+	homes.push(home);
+	const factory = join(home, "factory"),
+		local = "http://localhost:3457";
+	mkdirSync(factory);
+	const auth = new FactoryAuth(factory, { origins: [local, origin] });
+	services.push(auth);
+	const token = requestFactoryTerminalSession(home);
+	const requests = () =>
+		readdirSync(auth.store.directory).filter((name) =>
+			name.startsWith("terminal-"),
+		);
+	expect(requests()).toHaveLength(1);
+	// Only the token hash reaches disk.
+	expect(
+		readFileSync(join(auth.store.directory, requests()[0]!), "utf8"),
+	).not.toContain(token);
+	expect(auth.session(token, local)).toBeUndefined();
+	auth.checkTerminalRequests();
+	expect(requests()).toHaveLength(0);
+	expect(auth.session(token, local)).toMatchObject({ credential: "terminal" });
+	expect(auth.session(token, origin)).toBeUndefined();
+	expect(() => auth.credentials(token, local)).toThrow("again");
+	// Terminal sessions are memory-only and never persisted with passkey sessions.
+	expect(auth.store.state.sessions).toHaveLength(0);
+	auth.logout(token, local);
+	expect(auth.session(token, local)).toBeUndefined();
+
+	const expired = join(auth.store.directory, `terminal-${"a".repeat(32)}.json`);
+	writeFileSync(
+		expired,
+		JSON.stringify({ hash: "b".repeat(64), expires: Date.now() - 1 }),
+		{ mode: 0o600 },
+	);
+	auth.checkTerminalRequests();
+	expect(existsSync(expired)).toBe(false);
+	expect(auth.session("x".repeat(43), local)).toBeUndefined();
+
+	const revoked = requestFactoryTerminalSession(home);
+	auth.checkTerminalRequests();
+	expect(auth.session(revoked, local)).toBeDefined();
+	writeFileSync(
+		join(auth.store.directory, "recover"),
+		"RESET FACTORY AUTHENTICATION",
+	);
+	auth.checkRecovery();
+	expect(auth.session(revoked, local)).toBeUndefined();
+	// Malformed request paths cannot crash the server, and a restart revokes terminal access.
+	mkdirSync(join(auth.store.directory, `terminal-${"c".repeat(32)}.json`));
+	expect(() => auth.checkTerminalRequests()).not.toThrow();
+	const beforeRestart = requestFactoryTerminalSession(home);
+	auth.checkTerminalRequests();
+	expect(auth.session(beforeRestart, local)).toBeDefined();
+	auth.close();
+	const restarted = new FactoryAuth(factory, { origins: [local, origin] });
+	services.push(restarted);
+	expect(restarted.session(beforeRestart, local)).toBeUndefined();
+});
+it("ignores terminal requests without a localhost origin", () => {
+	const home = mkdtempSync(join(tmpdir(), "factory-terminal-test-"));
+	homes.push(home);
+	const factory = join(home, "factory");
+	mkdirSync(factory);
+	const auth = new FactoryAuth(factory, { origins: [origin] });
+	services.push(auth);
+	const token = requestFactoryTerminalSession(home);
+	auth.checkTerminalRequests();
+	expect(auth.session(token, origin)).toBeUndefined();
 });

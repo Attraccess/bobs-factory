@@ -87,7 +87,7 @@ describe("EdgeWorker - Runner Selection Based on Labels", () => {
 		(worker as any).buildRunnerForType("codex", {
 			workingDirectory: "/test/repo",
 		});
-		expect(capturedRunnerConfig.sandbox).toBe(mode ?? "workspace-write");
+		expect(capturedRunnerConfig.sandbox).toBe(mode ?? "danger-full-access");
 	});
 
 	let edgeWorker: EdgeWorker;

@@ -104,6 +104,8 @@ export function feedbackInstructionFingerprint(
 export function factoryFeedbackContext(context: ExecutionContext) {
 	return {
 		readiness: context.run.outputs["merge-readiness"] ?? context.run.outputs.ci,
+		handoff: context.run.outputs.handoff,
+		guide: context.run.outputs.guide,
 		userInstructions: {
 			input: context.run.input,
 			answers: context.run.answers ?? [],

@@ -1397,7 +1397,9 @@ export class WorkflowRuntime {
 				const merged =
 					step.tool === "merge" && readPath(output, "merged") === true;
 				const handoffFix =
-					step.tool === "handoff" && readPath(output, "fix") === true;
+					step.tool === "handoff" &&
+					(readPath(output, "fix") === true ||
+						readPath(output, "guideRecovery") !== undefined);
 				const stage = merged
 					? "done"
 					: step.tool === "handoff"

@@ -16,6 +16,7 @@ import { parseArgs } from "node:util";
 
 const { values } = parseArgs({
 	options: {
+		"source-root": { type: "string" },
 		binary: { type: "string" },
 		output: { type: "string" },
 		"allow-dirty-development": { type: "boolean", default: false },
@@ -32,7 +33,9 @@ assert(
 	!build.dirty || values["allow-dirty-development"],
 	"Release smoke requires a clean build",
 );
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const root = values["source-root"]
+	? resolve(values["source-root"])
+	: resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const work = mkdtempSync(join(tmpdir(), "factory-prepared-boundaries-"));
 const sdk = join(work, "sdk"),
 	workspace = join(work, "workspace"),
@@ -165,6 +168,8 @@ try {
 		validation: "prepared-agent-boundaries",
 		status: "passed",
 		version: build.version,
+		candidateDigest: build.candidateDigest,
+		workflowSha: build.workflowSha,
 		commit: build.commit,
 		target: build.target,
 		dirty: build.dirty,

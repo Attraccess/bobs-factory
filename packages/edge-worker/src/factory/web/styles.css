@@ -465,6 +465,52 @@ kbd {
 	color: var(--text);
 	font-size: 17px;
 }
+.brand-area {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+.brand strong,
+.connection-status {
+	transition:
+		opacity 0.35s,
+		transform 0.35s;
+}
+.brand-area[data-connection] .brand strong {
+	opacity: 0;
+	transform: translateY(-6px);
+}
+/* Occupies the wordmark's place while Factory reconnects. */
+.connection-status {
+	position: absolute;
+	left: 46px;
+	opacity: 0;
+	transform: translateY(6px);
+	pointer-events: none;
+	white-space: nowrap;
+	color: var(--muted);
+	font-size: 14px;
+	font-weight: 700;
+}
+.brand-area[data-connection] .connection-status {
+	opacity: 1;
+	transform: none;
+	pointer-events: auto;
+}
+.connection-status button {
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+	text-decoration: underline dotted;
+	text-underline-offset: 3px;
+}
+.connection-modal {
+	display: grid;
+	gap: 12px;
+}
 .nav-pill {
 	display: flex;
 	background: var(--surface);
@@ -2062,6 +2108,23 @@ kbd {
 .bob-sleepy {
 	animation: none !important;
 }
+/* Factory is unreachable: Bob slows down and looks around for it. */
+.bob-reconnecting {
+	animation: bob-bounce 3.6s ease-in-out infinite;
+	opacity: 0.85;
+}
+.bob-reconnecting .bob-eyes g {
+	animation: bob-scan 1.8s ease-in-out infinite;
+}
+@keyframes bob-scan {
+	0%,
+	100% {
+		transform: translateX(-5px);
+	}
+	50% {
+		transform: translateX(5px);
+	}
+}
 .new-run-glow {
 	animation: glow 1.6s ease-out;
 }
@@ -2180,6 +2243,13 @@ kbd {
 		gap: 8px;
 	}
 	.brand strong {
+		display: none;
+	}
+	.connection-status {
+		position: static;
+		margin-left: 8px;
+	}
+	.brand-area:not([data-connection]) .connection-status {
 		display: none;
 	}
 	.brand .bob {

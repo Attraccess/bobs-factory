@@ -1,0 +1,65 @@
+name: Freeze eligible nightly or stable promotion
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Nightly preparation or stable promotion from latest signed nightly
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+      version:
+        description: Stable version (nightly version is allocated once)
+        type: string
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: bobs-factory-candidate-preparation
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      candidate_json: ${{ steps.candidate.outputs.candidate_json }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - name: Restore candidate on retry
+        if: github.run_attempt != '1'
+        uses: actions/download-artifact@v8
+        with:
+          name: bobs-factory-frozen-candidate-${{ github.run_id }}
+          path: ${{ runner.temp }}/candidate
+      - name: Freeze eligibility and promotion source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel || 'nightly' }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/candidate"
+          created=$(node --input-type=module -e 'import {githubClient} from "./scripts/lib/github-release.mjs"; console.log((await githubClient().api("actions/runs/"+process.env.GITHUB_RUN_ID)).created_at)')
+          node scripts/prepare-release-candidate.mjs --channel "$CHANNEL" --version "$VERSION" --sequence "$GITHUB_RUN_ID" --date "$created" --workflow-sha "$GITHUB_SHA" --output "$RUNNER_TEMP/candidate/candidate.json"
+      - uses: actions/upload-artifact@v6
+        if: github.run_attempt == '1'
+        with:
+          name: bobs-factory-frozen-candidate-${{ github.run_id }}
+          path: ${{ runner.temp }}/candidate/
+          if-no-files-found: ignore
+      - name: Retain candidate for the native matrix
+        id: candidate
+        run: |
+          if [ -f "$RUNNER_TEMP/candidate/candidate.json" ]; then
+            node --input-type=module -e 'import {readFileSync,appendFileSync} from "node:fs"; const c=JSON.parse(readFileSync(process.env.RUNNER_TEMP+"/candidate/candidate.json")); appendFileSync(process.env.GITHUB_OUTPUT,"candidate_json="+JSON.stringify(c)+"\n")'
+            echo 'Publication remains blocked until candidate review, full-payload F1, migration and source/license evidence are supplied through release-evidence.yml.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+  binary:
+    needs: prepare
+    if: needs.prepare.outputs.candidate_json != ''
+    uses: ./.github/workflows/binary-build.yml
+    with:
+      candidate_json: ${{ needs.prepare.outputs.candidate_json }}
