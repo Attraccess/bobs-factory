@@ -27,6 +27,11 @@ External cyrus-hosted tool catalogs are absent from this repository. They cannot
 be updated here. This independent fork does not enroll with the upstream hosted
 control plane. Migration must flag hosted-only setup for explicit conversion.
 
+Dashboard passkey verification rotates the session cookie. The client suspends
+the old live stream and cancels requests bound to the old cookie without clearing
+the credential-management form. It reconnects after session verification;
+connection loss, expiry and current-session rejection still clear private views.
+
 Migration blocks `CYRUS_CAPACITY_DIRECTORY` and `BOBS_FACTORY_CAPACITY_DIRECTORY`
 in the source `.env` or the helper's inherited environment. These overrides no
 longer select a runtime pool. Reconcile custom/shared coordinator state and all

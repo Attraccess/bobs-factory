@@ -13,6 +13,7 @@ import {
 	accessRequired,
 	accessState,
 	checkAccess,
+	rotateSession,
 } from "../src/factory/web/auth-state.js";
 import {
 	api,
@@ -512,6 +513,44 @@ it("handles 401 before version errors, clears sensitive caches and prevents late
 	await expect(late).rejects.toThrow("Session changed");
 	expect(client.getQueryData(["run", "private"])).toBeUndefined();
 	expect(accessState().status).toBe("required");
+});
+
+it("ignores old-cookie denials after passkey verification while retaining private state", async () => {
+	client.setQueryData(["run", "private"], { transcript: "private content" });
+	let respond!: (response: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					respond = resolve;
+				}),
+		),
+	);
+	const late = api("/api/runs");
+	await rotateSession(async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				factoryResponse({ authenticated: true, expires: Date.now() + 120000 }),
+			),
+		);
+		await checkAccess();
+	});
+	respond(factoryResponse({}, { status: 401 }));
+	await expect(late).rejects.toThrow("Session changed");
+	expect(accessState().status).toBe("authenticated");
+	expect(client.getQueryData(["run", "private"])).toEqual({
+		transcript: "private content",
+	});
+	// A denial sent with the current cookie must still clear private content.
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => factoryResponse({}, { status: 401 })),
+	);
+	await expect(api("/api/runs")).rejects.toThrow("Sign in required");
+	expect(accessState().status).toBe("required");
+	expect(client.getQueryData(["run", "private"])).toBeUndefined();
 });
 
 it("keeps credential management mounted during verified-session refresh, but clears private state on denial", async () => {

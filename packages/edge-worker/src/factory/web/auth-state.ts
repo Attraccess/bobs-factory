@@ -62,6 +62,26 @@ export function useAccess() {
 }
 let request = 0;
 let connectionLost = () => {};
+const rotationListeners = new Set<() => () => void>();
+// A verified passkey replaces the cookie and invalidates streams using the old
+// session. Suspend those streams explicitly, without discarding private forms.
+export function onSessionRotation(pause: () => () => void) {
+	rotationListeners.add(pause);
+	return () => rotationListeners.delete(pause);
+}
+export async function rotateSession(action: () => Promise<void>) {
+	const resume = [...rotationListeners].map((pause) => pause());
+	// Requests sent with the old cookie must not revoke the newly verified
+	// session when their responses arrive after rotation.
+	generation++;
+	abort.abort();
+	abort = new AbortController();
+	try {
+		await action();
+	} finally {
+		for (const restart of resume) restart();
+	}
+}
 // Connection loss hides private data without revoking the server session.
 export function onConnectionLost(handler: () => void) {
 	connectionLost = handler;

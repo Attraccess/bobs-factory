@@ -11,6 +11,7 @@ import {
 	accessSignal,
 	checkAccess,
 	onAccessLost,
+	rotateSession,
 	useAccess,
 } from "./auth-state";
 import { uiBuild, usePwa, versionMismatch } from "./pwa";
@@ -31,6 +32,7 @@ async function authRequest(path: string, body: unknown = {}, method = "POST") {
 		},
 		...(method !== "GET" ? { body: JSON.stringify(body) } : {}),
 	});
+	if (epoch !== accessGeneration()) throw new Error("Session changed");
 	if (response.status === 401)
 		accessRequired("Your session expired. Sign in again.");
 	const result = await response.json();
@@ -52,11 +54,13 @@ async function ceremony(
 		purpose === "login"
 			? await startAuthentication({ optionsJSON: options })
 			: await startRegistration({ optionsJSON: options });
-	await authRequest(`${purpose}/verify`, { transaction, response });
-	// The verified ceremony rotated the session. Refresh its deadline without
-	// unmounting an in-progress credential management action. Failed checks
-	// still clear access through the normal boundary.
-	await checkAccess();
+	await rotateSession(async () => {
+		await authRequest(`${purpose}/verify`, { transaction, response });
+		// The verified ceremony rotated the session. Refresh its deadline without
+		// unmounting an in-progress credential management action. Failed checks
+		// still clear access through the normal boundary.
+		await checkAccess();
+	});
 }
 // Local-launch fragments never reach HTTP logs. Consume before the router or browser
 // history can retain the one-time grant, and keep it only in this component's memory.
