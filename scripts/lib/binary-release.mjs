@@ -664,6 +664,6 @@ export function validatePreparedAgentBoundaries(
 			`Prepared adapter boundary evidence missing: ${target}/${runner}`,
 		);
 	}
-	// This proves protocol boundaries; it never grants the authenticated-agent gate.
+	// Required release checks use mocks; authenticated live tests are manual-only.
 	return receipt;
 }

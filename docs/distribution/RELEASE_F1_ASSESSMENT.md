@@ -5,6 +5,11 @@ Factory binary is the baseline. Upstream `v0.2.73` is useful inherited evidence,
 not a previous Bob release or proof of the fork’s new runtime. The assessment
 therefore includes the maintained fork functionality and its integration with
 the inherited issue/session/agent paths, rather than only the version or PR #55.
+The user subsequently established mocked agent testing for every release, with
+live provider tests restricted to manual work after explicit approval. The first
+beta at `3e117128` retains that explicit authorization in its release evidence;
+authenticated live turns remain unverified and are not a release gate. The gaps
+below retain the original assessment's historical scope.
 The reviewed runtime integration is `ce846e8d` (PR #55, including PR #56).
 The final beta SHA and build run must be supplied after the release tooling and
 exact version are committed. This document does not assign a release pass.
@@ -52,7 +57,8 @@ relevant scenarios again.
 - `prepared-agent-boundaries.json`: the compiled factory’s external Cursor IPC
   create/resume/dispose with a synthetic SDK, and mocked protocol/environment
   checks for Claude, Codex, Gemini, OpenCode and Cursor. It explicitly records
-  no authenticated provider or inference. It cannot satisfy `preparedAgents`.
+  no authenticated provider or inference. It satisfies the required mocked
+  `preparedAgents` protocol scope; live provider execution is a separate manual test.
 
 On 2026-10-09 these new checks passed the clean installed Darwin ARM64 artifact
 from `67c493c8f2edce81cf06d1efda6950ea7577651a`: macOS 26.6.2, Darwin kernel 25.6.0,
@@ -65,7 +71,7 @@ validation, not evidence of a future beta build or the other targets.
 Only successful candidate-bound native CI runs establish their actual platform
 versions. No lower OS/glibc/CPU minimum, musl or Windows support is inferred.
 
-## Concrete release gaps
+## Original release gaps
 
 1. A final reviewed, committed exact beta SHA, successful four-target native build
    and artifact-bound receipts are still required. Cross-compilation and old

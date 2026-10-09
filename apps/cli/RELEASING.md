@@ -17,11 +17,14 @@ reviewed candidate from a mutable branch. Verify the entire runtime payload unde
 the canonical F1 policy before a release. Retain backups and the prior executable
 for manual rollback. Automatic updates are separate work.
 
-The first beta requires final-candidate four-target native validation, current
-authenticated prepared-agent evidence or an explicit scoped human waiver, reviewed
-full-payload F1 coverage, migration preservation and complete runtime source/relink
-material. Cursor is user-prepared and excluded from distributed archives. Scripted
-protocol checks do not satisfy authenticated-agent validation. Minimum macOS/libc
+Every release requires final-candidate four-target native validation, mocked
+prepared-agent protocol evidence, reviewed full-payload F1 coverage, migration
+preservation and complete runtime source/relink material. Use mocks for all release
+agent tests. Live provider tests are manual-only and require explicit approval for
+the specific test; they are not a release gate and need no recurring waiver.
+Mock receipts must identify their controlled scope and never claim authenticated
+provider execution. Cursor is user-prepared and excluded from distributed archives.
+Minimum macOS/libc
 support must be backed by native execution evidence before publication. See
 [the public release procedure](../../docs/distribution/PUBLIC_RELEASES.md) and
 [the full-payload assessment](../../docs/distribution/RELEASE_F1_ASSESSMENT.md).
