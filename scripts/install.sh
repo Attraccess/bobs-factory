@@ -6,15 +6,16 @@ repository=jappyjan/bobs-factory
 site=https://jappyjan.github.io/bobs-factory
 prefix=${BOBS_FACTORY_INSTALL_PREFIX:-"$HOME/.local"}
 version=
+channel=stable
 modify_path=true
 usage() {
-  echo 'Usage: install.sh [--prefix DIRECTORY] [--version VERSION] [--no-modify-path]'
+  echo 'Usage: install.sh [--prefix DIRECTORY] [--version VERSION] [--channel stable|nightly] [--no-modify-path]'
 }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --prefix|--version)
+    --prefix|--version|--channel)
       [ "$#" -ge 2 ] || { usage >&2; exit 1; }
-      case "$1" in --prefix) prefix=$2;; --version) version=$2;; esac
+      case "$1" in --prefix) prefix=$2;; --version) version=$2;; --channel) channel=$2;; esac
       shift 2;;
     --no-modify-path) modify_path=false; shift;;
     --help) usage; exit 0;;
@@ -26,7 +27,8 @@ case "$prefix" in /*) ;; *) fail 'Install prefix must be an absolute path.';; es
 case "$prefix" in *:*) fail 'Install prefix must not contain a PATH separator (:).';; esac
 case "$prefix" in *'
 '*) fail 'Install prefix must not contain a newline.';; esac
-for tool in curl tar sed awk grep cut wc uname mktemp diff find; do
+case "$channel" in stable|nightly) ;; *) fail 'Channel must be stable or nightly.';; esac
+for tool in openssl curl tar sed awk grep cut wc uname mktemp diff find; do
   command -v "$tool" >/dev/null 2>&1 || fail "Required system tool is missing: $tool"
 done
 if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
@@ -80,11 +82,34 @@ if [ -n "$version" ]; then
   valid_version "$version" || fail 'Invalid version.'
   metadata="https://github.com/$repository/releases/download/v$version/release.json"
 else
-  metadata="$site/releases/latest.json"
+  case "$channel" in stable) metadata="$site/releases/latest.json";; nightly) metadata="$site/releases/nightly.json";; esac
 fi
 echo "Finding Bob's Factory for $target..."
 download "$metadata" "$work/release.json"
-[ "$(number "$work/release.json" schemaVersion)" = 1 ] || fail 'Unsupported release metadata. Download a fresh installer.'
+# Pending website metadata is an unsigned availability hint. It can only stop
+# installation; it cannot authorize downloads or execution of release assets.
+if [ "$(field "$work/release.json" status)" = pending ]; then
+  [ "$(number "$work/release.json" schemaVersion)" = 2 ] || fail 'Unsupported release metadata. Download a fresh installer.'
+  [ "$(field "$work/release.json" product)" = bobs-factory ] || fail 'Unexpected product in release metadata.'
+  [ "$(field "$work/release.json" repository)" = "$repository" ] || fail 'Unexpected release repository.'
+  fail "No verified $channel release is available. Please check the homepage for availability."
+fi
+# Authenticate exact bytes before accepting any installable release fields or code.
+verify_signature() {
+  key_id=$(cat "$3")
+  printf '%s' "$key_id" | LC_ALL=C grep -Eq '^[a-z0-9][a-z0-9-]{0,63}$' || fail 'Malformed publisher key identifier.'
+# BEGIN PINNED RELEASE KEYS
+case "$key_id" in
+  *) fail 'Unknown or retired publisher key. Obtain a fresh trusted installer; release rollout may still be pending.';;
+esac
+# END PINNED RELEASE KEYS
+  openssl dgst -sha256 -verify "$work/publisher.pem" -signature "$2" "$1" >/dev/null 2>&1 || fail 'Invalid publisher signature. No installed files were changed.'
+}
+download "$metadata.sig" "$work/release.json.sig"
+download "$metadata.key-id" "$work/release.json.key-id"
+verify_signature "$work/release.json" "$work/release.json.sig" "$work/release.json.key-id"
+schema=$(number "$work/release.json" schemaVersion)
+case "$schema" in 1|2) ;; *) fail 'Unsupported release metadata. Download a fresh installer.';; esac
 [ "$(field "$work/release.json" product)" = bobs-factory ] || fail 'Unexpected product in release metadata.'
 [ "$(field "$work/release.json" repository)" = "$repository" ] || fail 'Unexpected release repository.'
 status=$(field "$work/release.json" status)
@@ -92,6 +117,18 @@ status=$(field "$work/release.json" status)
 release_version=$(field "$work/release.json" version)
 valid_version "$release_version" || fail 'Invalid release version.'
 [ -z "$version" ] || [ "$version" = "$release_version" ] || fail 'Requested version does not match release metadata.'
+case "$release_version" in
+  *-nightly.*) release_channel=nightly;;
+  *-beta|*-beta.*) release_channel=beta;;
+  *-*) fail 'Unsupported release channel.';;
+  *) release_channel=stable;;
+esac
+case "$channel:$release_channel" in stable:stable|stable:beta|nightly:nightly) ;; *) fail 'Requested channel does not match the signed version.';; esac
+if [ "$schema" = 2 ]; then
+  [ "$(field "$work/release.json" channel)" = "$release_channel" ] || fail 'Signed release channel mismatch.'
+else
+  [ "$release_channel" = beta ] || fail 'Legacy metadata is supported only for an authenticated beta.'
+fi
 tag=$(field "$work/release.json" tag)
 [ "$tag" = "v$release_version" ] || fail 'Invalid immutable release tag.'
 commit=$(field "$work/release.json" commit)
@@ -105,8 +142,16 @@ verifier=$(field "$work/verifier.json" file)
 [ "$manifest" = "bobs-factory-$release_version-$target.manifest.json" ] || fail 'Unexpected manifest filename.'
 [ "$verifier" = install-binary.sh ] || fail 'Unexpected verifier filename.'
 base="https://github.com/$repository/releases/download/$tag"
+if [ "$schema" = 1 ]; then
+  download "$base/release-attestation.json" "$work/attestation.json"
+  download "$base/release-attestation.json.sig" "$work/attestation.sig"
+  download "$base/release-attestation.json.key-id" "$work/attestation.key-id"
+  verify_signature "$work/attestation.json" "$work/attestation.sig" "$work/attestation.key-id"
+  section "$work/attestation.json" manifest "$work/attested-manifest.json"
+  verify "$work/release.json" "$(field "$work/attested-manifest.json" sha256)" "$(number "$work/attested-manifest.json" size)"
+fi
 echo "Downloading $release_version..."
-case "$release_version" in *-*) printf 'This is a prerelease of Bob\047s Factory.\n';; esac
+case "$release_channel" in beta) printf 'This is a verified beta of Bob\047s Factory until stable is available.\n';; nightly) echo 'Nightly is an opt-in prerelease.';; esac
 download "$base/$archive" "$work/$archive"
 download "$base/$manifest" "$work/$manifest"
 download "$base/$verifier" "$work/$verifier"

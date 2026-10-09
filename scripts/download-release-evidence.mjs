@@ -8,20 +8,30 @@ import {
 	mkdirSync,
 	openSync,
 	readdirSync,
+	readFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
 import { REPOSITORY, requireValue, sha256File } from "./lib/binary-release.mjs";
+import { validateCandidate } from "./lib/release-candidate.mjs";
 
 const { values } = parseArgs({
 	options: {
+		candidate: { type: "string" },
 		sha: { type: "string" },
 		"artifact-id": { type: "string" },
 		output: { type: "string" },
 	},
 });
+const candidate = values.candidate
+	? validateCandidate(
+			JSON.parse(readFileSync(resolve(values.candidate), "utf8")),
+		)
+	: null;
+if (candidate) values.sha = candidate.candidate.commit;
+const workflowSha = candidate?.candidate.workflowSha ?? values.sha;
 requireValue(
 	/^[a-f0-9]{40}$/.test(values.sha),
 	"Full immutable candidate SHA required",
@@ -50,8 +60,9 @@ requireValue(
 );
 const artifact = await metadataResponse.json();
 requireValue(
-	artifact.name === `bobs-factory-release-evidence-${values.sha}` &&
-		artifact.workflow_run?.head_sha === values.sha &&
+	artifact.name ===
+		`bobs-factory-release-evidence-${candidate?.digest ?? values.sha}` &&
+		artifact.workflow_run?.head_sha === workflowSha &&
 		!artifact.expired &&
 		/^sha256:[a-f0-9]{64}$/.test(artifact.digest),
 	"Evidence artifact source/name/digest mismatch",
@@ -65,7 +76,7 @@ const run = await runResponse.json();
 requireValue(
 	run.repository?.full_name === REPOSITORY &&
 		run.head_repository?.full_name === REPOSITORY &&
-		run.head_sha === values.sha &&
+		run.head_sha === workflowSha &&
 		run.event === "workflow_dispatch" &&
 		run.path === ".github/workflows/release-evidence.yml" &&
 		run.status === "completed" &&

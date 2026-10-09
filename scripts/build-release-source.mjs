@@ -14,10 +14,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { fileRecord, jsonBytes, requireValue } from "./lib/binary-release.mjs";
+import { validateCandidate } from "./lib/release-candidate.mjs";
 import { validateSourceMaterials } from "./lib/release-material.mjs";
 
 const { values } = parseArgs({
 	options: {
+		candidate: { type: "string" },
 		sha: { type: "string" },
 		materials: { type: "string" },
 		output: { type: "string" },
@@ -54,6 +56,23 @@ requireValue(
 );
 const stage = join(output, "source-rebuild");
 mkdirSync(stage, { recursive: true });
+if (values.candidate) {
+	const candidate = validateCandidate(
+		JSON.parse(readFileSync(resolve(values.candidate), "utf8")),
+	);
+	requireValue(candidate.candidate.commit === sha, "Source candidate mismatch");
+	writeFileSync(join(stage, "candidate.json"), jsonBytes(candidate));
+	execFileSync(
+		"git",
+		[
+			"archive",
+			"--format=tar.gz",
+			`--output=${join(stage, "release-tooling.tar.gz")}`,
+			candidate.candidate.workflowSha,
+		],
+		{ cwd: root },
+	);
+}
 writeFileSync(join(stage, "commit.txt"), `${sha}\n`);
 copyFileSync(join(materialsDirectory, "README.md"), join(stage, "README.md"));
 writeFileSync(join(stage, "source-materials.json"), jsonBytes(materials));
