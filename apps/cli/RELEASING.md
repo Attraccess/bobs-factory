@@ -24,7 +24,7 @@ agent tests. Live provider tests are manual-only and require explicit approval f
 the specific test; they are not a release gate and need no recurring waiver.
 Mock receipts must identify their controlled scope and never claim authenticated
 provider execution. Cursor is user-prepared and excluded from distributed archives.
-Minimum macOS/libc
-support must be backed by native execution evidence before publication. See
+Minimum macOS/libc support must be backed by native execution evidence before
+publication. See
 [the public release procedure](../../docs/distribution/PUBLIC_RELEASES.md) and
 [the full-payload assessment](../../docs/distribution/RELEASE_F1_ASSESSMENT.md).
