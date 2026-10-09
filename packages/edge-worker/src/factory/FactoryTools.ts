@@ -555,12 +555,17 @@ export class FactoryTools {
 			const output = await groupedTool(
 				context,
 				this.command.bind(this),
-				(child) =>
-					this.repositoryTool(
-						child.run === context.run
-							? child
-							: { ...child, step: { ...child.step, qaContract: undefined } },
-					),
+				(child) => {
+					const execute = () =>
+						this.repositoryTool(
+							child.run === context.run
+								? child
+								: { ...child, step: { ...child.step, qaContract: undefined } },
+						);
+					return child.step.tool === "draft-pr" && child.coordinateDelivery
+						? child.coordinateDelivery(execute)
+						: execute();
+				},
 			);
 			if (context.step.tool === "ci-fix-readiness") {
 				context.run.outputs.ci = output;
@@ -568,7 +573,9 @@ export class FactoryTools {
 			}
 			return output;
 		}
-		return this.repositoryTool(context);
+		return context.step.tool === "draft-pr" && context.coordinateDelivery
+			? context.coordinateDelivery(() => this.repositoryTool(context))
+			: this.repositoryTool(context);
 	}
 	private command(
 		context: ExecutionContext,

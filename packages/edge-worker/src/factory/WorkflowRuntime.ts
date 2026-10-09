@@ -919,27 +919,45 @@ export class WorkflowRuntime {
 		mutation = !scopes,
 	): Promise<T> {
 		const key = `${context.stepKey ?? context.step.id}:${mutation ? "mutation" : "resources"}`;
-		await acquireDelivery(
-			context.run,
-			() => this.runs.values(),
-			context.signal,
-			() => this.save(context.run),
-			context.log,
-			{
-				key,
-				scopes: scopes
-					? () =>
-							mutation ? [...deliveryScopes(context.run), ...scopes] : scopes
-					: undefined,
-				reason: mutation
-					? "Repository integration/publication"
-					: "Shared QA/environment resource",
-			},
-		);
+		const targets = () =>
+			[
+				...new Set([
+					...(mutation ? deliveryScopes(context.run) : []),
+					...(scopes ?? []),
+				]),
+			].sort();
+		const admit = () =>
+			acquireDelivery(
+				context.run,
+				() => this.runs.values(),
+				context.signal,
+				() => this.save(context.run),
+				context.log,
+				{
+					key,
+					scopes: targets,
+					reason: mutation
+						? "Repository integration/publication"
+						: "Shared QA/environment resource",
+				},
+			);
+		await admit();
 		try {
 			context.signal.throwIfAborted();
 			const nested = context.coordinateDelivery;
-			if (mutation) context.coordinateDelivery = (operation) => operation();
+			if (mutation)
+				context.coordinateDelivery = async (operation) => {
+					const owned = context.run.deliveryReservations?.[key];
+					if (
+						owned?.phase !== "active" ||
+						targets().some((target) => !owned.scopes.includes(target))
+					)
+						// Suspend this operation and reconcile its whole scope before any
+						// new publication, retaining ownership until the outer operation settles.
+						await admit();
+					context.signal.throwIfAborted();
+					return operation();
+				};
 			try {
 				return await operation();
 			} finally {

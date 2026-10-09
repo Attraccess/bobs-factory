@@ -859,6 +859,97 @@ it.each([
 	}
 });
 
+it("expands nested publication admission atomically and retains it until the outer operation settles", async () => {
+	let releaseOwner!: () => void, releaseGroup!: () => void;
+	const ownerHeld = new Promise<void>((resolve) => {
+		releaseOwner = resolve;
+	});
+	const groupHeld = new Promise<void>((resolve) => {
+		releaseGroup = resolve;
+	});
+	let published = false;
+	const runtime = new WorkflowRuntime(home(), {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async (context) => {
+			if (context.run.input === "owner") await ownerHeld;
+			else {
+				context.run.repositoryOutputs!.b = {
+					source: { url: "https://github.com/test/b/pull/2" },
+				};
+				await context.coordinateDelivery!(async () => {
+					published = true;
+				});
+				await groupHeld;
+			}
+			return {};
+		},
+	});
+	const repositories = ["a", "b"].map((id) => {
+		const workspace = join(home(), id);
+		mkdirSync(workspace);
+		const git = (...args: string[]) =>
+			execFileSync("git", args, { cwd: workspace, stdio: "ignore" });
+		git("init", "-qb", "main");
+		writeFileSync(join(workspace, "base"), "base");
+		git("add", ".");
+		git(
+			"-c",
+			"user.name=F1",
+			"-c",
+			"user.email=f1@example.test",
+			"-c",
+			"commit.gpgsign=false",
+			"commit",
+			"-qm",
+			"base",
+		);
+		return {
+			id,
+			name: id,
+			workspace,
+			repositoryPath: workspace,
+			baseBranch: "main",
+			githubUrl: `https://github.com/test/${id}`,
+		};
+	});
+	const owner = createRun(runtime, "owner"),
+		group = createRun(runtime, "group");
+	for (const run of [owner, group])
+		run.workflow = { ...delivery, steps: [delivery.steps[1]!] };
+	owner.repositories = [repositories[1]!];
+	owner.repositoryOutputs = {
+		b: { source: { url: "https://github.com/test/b/pull/1" } },
+	};
+	group.repositories = repositories;
+	group.repositoryOutputs = {
+		a: { source: { url: "https://github.com/test/a/pull/1" } },
+	};
+	const a = runtime.launch(owner);
+	await vi.waitFor(() =>
+		expect(owner.deliveryCoordination?.phase).toBe("active"),
+	);
+	const b = runtime.launch(group);
+	try {
+		await vi.waitFor(() =>
+			expect(group.deliveryCoordination?.phase).toBe("queued"),
+		);
+		expect(published).toBe(false);
+		expect(group.deliveryCoordination?.scopes).toHaveLength(2);
+		expect(group.deliveryCoordination?.blockers?.[0]?.runId).toBe(owner.id);
+		releaseOwner();
+		await vi.waitFor(() => expect(published).toBe(true));
+		expect(group.deliveryCoordination?.phase).toBe("active");
+		expect(group.deliveryCoordination?.scopes).toHaveLength(2);
+	} finally {
+		releaseOwner();
+		releaseGroup();
+		await Promise.all([a, b]);
+		await runtime.shutdown();
+	}
+	expect(group.deliveryCoordination?.phase).toBe("released");
+});
+
 it.each([
 	"green",
 	"base",
