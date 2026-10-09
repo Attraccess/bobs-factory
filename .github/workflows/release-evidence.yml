@@ -2,12 +2,8 @@ name: Validate and upload Bob's Factory release evidence
 on:
   workflow_dispatch:
     inputs:
-      candidate_sha:
-        description: Full reviewed candidate SHA; dispatch from that exact candidate ref
-        required: true
-        type: string
-      version:
-        description: Exact version committed at candidate, including prerelease suffix
+      candidate_json:
+        description: Exact frozen candidate.json from preparation
         required: true
         type: string
       binary_run_id:
@@ -32,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.candidate_sha }}
+          ref: ${{ fromJSON(inputs.candidate_json).candidate.workflowSha }}
       - uses: actions/setup-node@v7
         with:
           node-version: '24.18.0'
@@ -40,16 +36,17 @@ jobs:
       - name: Validate exact workflow source and import reviewed evidence
         env:
           GH_TOKEN: ${{ github.token }}
-          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
-          RELEASE_VERSION: ${{ inputs.version }}
+          CANDIDATE_JSON: ${{ inputs.candidate_json }}
           BINARY_RUN_ID: ${{ inputs.binary_run_id }}
           EVIDENCE_URL: ${{ inputs.evidence_url }}
           EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
         run: |
-          test "$GITHUB_SHA" = "$CANDIDATE_SHA"
-          node scripts/prepare-release-evidence.mjs --sha "$CANDIDATE_SHA" --version "$RELEASE_VERSION" --run-id "$BINARY_RUN_ID" --url "$EVIDENCE_URL" --sha256 "$EVIDENCE_SHA256" --output "$RUNNER_TEMP/release-evidence"
+          node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {validateCandidate} from "./scripts/lib/release-candidate.mjs"; const r=validateCandidate(JSON.parse(process.env.CANDIDATE_JSON)); if(r.candidate.workflowSha !== process.env.GITHUB_SHA) throw Error("Wrong workflow revision"); writeFileSync(process.env.RUNNER_TEMP+"/candidate.json",process.env.CANDIDATE_JSON)'
+          source_sha=$(node -p 'JSON.parse(require("fs").readFileSync(process.env.RUNNER_TEMP+"/candidate.json")).candidate.commit')
+          if ! git cat-file -e "$source_sha^{commit}"; then git fetch --no-tags --depth=1 origin "$source_sha"; fi
+          node scripts/prepare-release-evidence.mjs --candidate "$RUNNER_TEMP/candidate.json" --run-id "$BINARY_RUN_ID" --url "$EVIDENCE_URL" --sha256 "$EVIDENCE_SHA256" --output "$RUNNER_TEMP/release-evidence"
       - uses: actions/upload-artifact@v6
         with:
-          name: bobs-factory-release-evidence-${{ inputs.candidate_sha }}
+          name: bobs-factory-release-evidence-${{ fromJSON(inputs.candidate_json).digest }}
           path: ${{ runner.temp }}/release-evidence/
           if-no-files-found: error

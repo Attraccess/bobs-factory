@@ -33,10 +33,10 @@ jobs:
     - name: Install dependencies
       uses: ./.github/actions/install-dependencies
 
-    - name: Install video test tools
+    - name: Install video and release test tools
       run: |
         sudo apt-get update
-        sudo apt-get install --no-install-recommends -y ffmpeg
+        sudo apt-get install --no-install-recommends -y ffmpeg jq
         ffmpeg -version
         ffprobe -version
     
@@ -60,7 +60,7 @@ jobs:
       run: pnpm -r test:run
 
     - name: Verify public installation and immutable publication guards
-      run: node --test scripts/tests/public-install.test.mjs scripts/tests/release-material.test.mjs scripts/tests/native-receipts.test.mjs
+      run: node --test scripts/tests/public-install.test.mjs scripts/tests/release-material.test.mjs scripts/tests/native-receipts.test.mjs scripts/tests/nix-beta-attestation.test.mjs
     
     - name: Upload coverage
       uses: codecov/codecov-action@v7

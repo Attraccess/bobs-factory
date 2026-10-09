@@ -9,7 +9,9 @@ on:
       - 'website/**'
       - 'scripts/install.sh'
       - 'scripts/sync-release-metadata.mjs'
-      - 'scripts/lib/binary-release.mjs'
+      - 'scripts/lib/*.mjs'
+      - 'docs/distribution/release-keys.json'
+      - 'scripts/sync-release-keys.mjs'
       - '.github/workflows/website.yml'
   pull_request:
     branches:
@@ -18,7 +20,9 @@ on:
       - 'website/**'
       - 'scripts/install.sh'
       - 'scripts/sync-release-metadata.mjs'
-      - 'scripts/lib/binary-release.mjs'
+      - 'scripts/lib/*.mjs'
+      - 'docs/distribution/release-keys.json'
+      - 'scripts/sync-release-keys.mjs'
       - '.github/workflows/website.yml'
   release:
     types: [published]
@@ -58,7 +62,11 @@ jobs:
 
       - name: Synchronize public installer and release metadata
         working-directory: .
-        run: node scripts/sync-release-metadata.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/sync-release-keys.mjs --check
+          node scripts/sync-release-metadata.mjs
 
       - name: Build website
         env:

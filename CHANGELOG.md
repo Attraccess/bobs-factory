@@ -7,9 +7,11 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Factory and Takeover architecture proposals with repository evidence, diagrams, discussion-driven revision and exact-version acceptance before implementation. Routine work records an approval bypass. Assets stay within authorized directories and accepted plans reference frozen snapshots. ([Taskbot #90](https://taskbot.apps.janjaap.de/p/bobs-factory/t/90), [#74](https://github.com/jappyjan/bobs-factory/pull/74))
+- Prepare frozen stable and nightly binary candidates with signed channel discovery, exact-asset stable approval and recoverable publication. Check stable ordering against complete provider history, block nightly eligibility when the latest published nightly cannot be verified, authenticate efficient website discovery, and explain unavailable installer channels. Nightlies remain opt-in and publication stays disabled pending protected signing and rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117), [#70](https://github.com/jappyjan/bobs-factory/pull/70)).
 
 ### Fixed
 
+- Reject incomplete or mismatched signed beta inventories before Nix unpacks an archive. Require all four targets and their validation receipts, with unique valid records matching the signed manifest ([#70](https://github.com/jappyjan/bobs-factory/pull/70)).
 - Route unresolved review-guide requirements and delivery gaps back through the existing fixer, with a resumable assistance wait after unsuccessful correction; retain evidence and explicit human approval. ([#76](https://github.com/jappyjan/bobs-factory/pull/76), [F1 recovery validation](apps/f1/test-drives/2026-10-09-guide-gap-recovery.md))
 - Accept GitHub owner and repository capitalization differences when publishing, inspecting and merging pull requests, so retries can reuse a draft PR created before a delivery failure. ([#75](https://github.com/jappyjan/bobs-factory/pull/75))
 
