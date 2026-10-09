@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -38,7 +39,7 @@ it("F1: repairs missing Taskbot transport entirely through compiled stdio MCP, p
 	vi.stubEnv("F1_AGENT_MODE", "mock");
 	vi.stubEnv("BOBS_FACTORY_INTERNAL_EXECUTABLE", undefined);
 	vi.stubEnv("BOBS_FACTORY_FACTORY_PORT", "0");
-	const home = mkdtempSync("/private/tmp/f1-operator-");
+	const home = mkdtempSync(join(tmpdir(), "f1-operator-"));
 	cleanup.push(() => rmSync(home, { recursive: true, force: true }));
 	const repo = join(home, "repo");
 	execFileSync("git", ["init", "-b", "main", repo]);

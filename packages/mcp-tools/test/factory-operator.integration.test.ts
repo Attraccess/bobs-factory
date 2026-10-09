@@ -5,6 +5,7 @@ import {
 	statSync,
 	writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -28,7 +29,7 @@ afterEach(async () => {
 	for (const fn of cleanup.splice(0).reverse()) await fn();
 });
 function fixture() {
-	const home = mkdtempSync("/private/tmp/operator-test-");
+	const home = mkdtempSync(join(tmpdir(), "operator-test-"));
 	cleanup.push(() => rmSync(home, { recursive: true, force: true }));
 	const agent = vi.fn(async () => ({ status: "completed", questions: [] }));
 	const runtime = new WorkflowRuntime(home, {
@@ -325,7 +326,7 @@ it("commits connection and exact permissions together, preserves other settings 
 			expectedConfigRevision: denied.revision(f.run),
 		}),
 	).rejects.toMatchObject({ code: "denied_tool" });
-});
+}, 10_000); // Allow the five-second reload observation deadline to expire.
 it("compiled CLI connects over stdio without starting another worker", async () => {
 	const f = fixture();
 	await f.server.start();
