@@ -12,6 +12,16 @@ const text = z.string().min(1);
 const task = z.object({ area: text, state: text });
 export const QaScopeFields = {
 	...VideoScopeFields,
+	// Optional for frozen plans; unknown isolation keeps the legacy QA exclusion.
+	environment: z
+		.discriminatedUnion("isolation", [
+			z.object({ isolation: z.literal("worktree") }),
+			z.object({
+				isolation: z.literal("shared"),
+				resources: z.array(text).min(1),
+			}),
+		])
+		.optional(),
 	qaContract: z.literal(QA_CONTRACT),
 	stories: z.array(
 		z.object({

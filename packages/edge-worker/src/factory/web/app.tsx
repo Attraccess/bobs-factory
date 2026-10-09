@@ -11,6 +11,7 @@ import {
 	useNavigate,
 	useParams,
 } from "react-router-dom";
+import { deliveryTargetLabel } from "../RunAttention";
 import { ArchitecturePanel } from "./architecture";
 import { ArtifactCard, Inspector } from "./artifacts";
 import { AccessBoundary } from "./auth";
@@ -918,7 +919,40 @@ function RunPage({
 			</header>
 			<ArchitecturePanel key={run.id} run={run} />
 			<ExecutionDetails run={run} />
+			{run.deliveryCoordination?.phase === "queued" && (
+				<p role="status">
+					{workingLabel(run)}.{" "}
+					{(run.deliveryCoordination.blockers ?? []).map(
+						(
+							blocker: { runId: string; operation: string; targets: string[] },
+							index: number,
+						) => (
+							<span key={`${blocker.runId}:${blocker.operation}`}>
+								{index > 0 && "; "}Blocked by{" "}
+								<Link to={`/runs/${blocker.runId}`}>run {blocker.runId}</Link>{" "}
+								at {blocker.operation.replace(/:(mutation|resources)$/, "")} for{" "}
+								{blocker.targets.map(deliveryTargetLabel).join(", ")}.
+							</span>
+						),
+					)}
+				</p>
+			)}
 			<RunOrigin run={run} />
+			{run.ticketSync?.receipts?.some(
+				(receipt: { delivered?: boolean; superseded?: boolean }) =>
+					!receipt.delivered && !receipt.superseded,
+			) && (
+				<p role="status">
+					{run.ticketSync.receipts.some(
+						(receipt: { conflict?: boolean }) => receipt.conflict,
+					)
+						? "Ticket synchronization needs ownership reassessment"
+						: "Ticket synchronization pending"}
+					.{" "}
+					{run.ticketSync.error ??
+						"Saved updates are being delivered in the background."}
+				</p>
+			)}
 			{kind && !reason && (
 				<FocusCard
 					summary={run}

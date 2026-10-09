@@ -192,7 +192,7 @@ it("preserves an older build receipt while a frozen run resumes on the current r
 		expect(current.runtime).toEqual(factoryRuntimeIdentity);
 		expect(current.workflowHash).toBe(retained.workflowHash);
 		expect(current.contract).toMatchObject({
-			validator: "factory-results-v3",
+			validator: "factory-results-v4",
 			version: 2,
 		});
 		expect(current.contract.hash).not.toBe(retained.contract.hash);
@@ -427,7 +427,7 @@ it("retains secret-safe per-step provenance across restart without inventing old
 			outcome: "completed",
 			reason: "initial",
 			runtime: { commit: null, packaged: false },
-			contract: { validator: "factory-results-v3" },
+			contract: { validator: "factory-results-v4" },
 		});
 		expect(attempts[0].workflowHash).toMatch(/^[a-f0-9]{64}$/);
 		expect(attempts[0].instructionsHash).toMatch(/^[a-f0-9]{64}$/);

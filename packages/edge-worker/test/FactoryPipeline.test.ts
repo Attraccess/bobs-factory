@@ -1411,6 +1411,36 @@ it("generates an actionable stable QA finding when a reviewer approves failed be
 	stampQa(ctx, qaExecution());
 	await expect(qaTools().tool(ctx)).resolves.toMatchObject({ approved: true });
 });
+it.each([
+	"failed",
+	"blocked",
+] as const)("routes recorded product failures to correction when the QA reviewer reports %s", async (status) => {
+	const ctx = qaContext();
+	stampQa(ctx, qaExecution("failed"));
+	Object.assign(ctx.run.outputs["visual-review"] as object, {
+		status,
+		blockers: ["The required save behavior failed during QA."],
+	});
+	const gate = await qaTools().tool(ctx);
+	expect(gate).toMatchObject({
+		approved: false,
+		findings: [expect.objectContaining({ criterionId: "saved" })],
+	});
+	expect(gate).not.toHaveProperty("reviewIncomplete");
+	expect(gate).not.toHaveProperty("questions");
+
+	// Repairing the product does not establish that an incomplete review ran.
+	stampQa(ctx, qaExecution());
+	Object.assign(ctx.run.outputs["visual-review"] as object, {
+		status,
+		blockers: ["The reviewer cannot read the required diff."],
+	});
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		reviewIncomplete: true,
+		questions: [expect.stringContaining("cannot read the required diff")],
+	});
+});
 it("keeps independently reported consequential findings blocking even when all criteria pass", async () => {
 	const ctx = qaContext(),
 		capture = qaExecution();

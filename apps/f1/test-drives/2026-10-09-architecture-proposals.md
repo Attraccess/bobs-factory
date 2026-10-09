@@ -206,3 +206,33 @@ pass. Targeted retests omit those unrelated API-injection sections and exit
 successfully. Existing approved screenshots remain historical evidence; these
 fixes change no layout. Real-agent recommendation quality and physical-device
 push delivery remain unverified.
+
+## Integration with delivery coordination changes
+
+Validated the merge working tree combining architecture head
+`0b38368254ca2b73ccc2f95d48ff1af5d7df28d2` with main
+`4d0ffd783d1510edd796ec220688695e6fb17b6d` for PR #74. The resolution
+retains both architecture decisions and current delivery-readiness inspection,
+plus the architecture panel and delivery status display. The simulated ticket
+sink now marks runtime-recorded pending receipts delivered, matching the durable
+outbox introduced on main.
+
+Workspace build, EdgeWorker typecheck, repository-wide Biome and whitespace
+checks passed. All 280 tests across Architecture, WorkflowRuntime,
+FactoryPipeline, FactoryProvenance, DeliveryCoordination, TicketTracking,
+FactoryWebClient and FactoryPush passed. The first test run exposed the old
+simulated sink assumption; the updated fixture passed the full targeted rerun.
+
+`F1_AGENT_MODE=mock bun <evidence>/ci-merge3-f1-drive.ts` passed all eight
+Factory/Takeover scenarios: absent and empty HTTP assets reject before
+implementation, discussion and revision preserve frozen handoff, restart retains
+notification identity, exact acceptance starts implementation once, and routine
+work bypasses the decision. The harness uses isolated repositories, simulated
+forge inspection and ticket delivery, and stops after implementation. Real-agent
+quality and remote delivery remain untested. Existing screenshot evidence is
+historical; this merge adds no new layout behavior beyond the upstream display.
+
+Logs and structured results remain in the run evidence directory as
+`ci-merge3-build.log`, `ci-merge3-typecheck-retest.log`,
+`ci-merge3-biome.log`, `ci-merge3-tests-retest.log`, `ci-merge3-f1.log`
+and `ci-merge3-f1-results.json`. Prior evidence was retained.

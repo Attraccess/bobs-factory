@@ -212,13 +212,11 @@ describe("architecture authorization boundary", () => {
 		const notifications: string[] = [];
 		const { runtime, run, home, hooks, implemented } = setup("meaningful", {
 			track: async (tracked, milestone) => {
-				tracked.ticketSync ??= { receipts: [] };
-				if (
-					!tracked.ticketSync.receipts.some(
-						(receipt) => receipt.key === milestone.key,
-					)
-				) {
-					tracked.ticketSync.receipts.push({ ...milestone, delivered: true });
+				const receipt = tracked.ticketSync?.receipts.find(
+					(item) => item.key === milestone.key,
+				);
+				if (receipt && !receipt.delivered) {
+					receipt.delivered = true;
 					if (milestone.key.startsWith("questions:"))
 						notifications.push(milestone.key);
 				}
