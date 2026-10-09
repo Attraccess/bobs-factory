@@ -1,6 +1,9 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { LinearClient } from "@linear/sdk";
 import type { EdgeWorkerConfig } from "bobs-factory-core";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 
 // Mock modules
@@ -51,9 +54,17 @@ describe("EdgeWorker LinearClient Wrapper", () => {
 	let edgeWorker: EdgeWorker;
 	let mockConfig: EdgeWorkerConfig;
 	let mockLinearClient: any;
+	let factoryHome: string;
+
+	afterEach(() => {
+		for (const tracker of (edgeWorker as any)?.issueTrackers?.values() ?? [])
+			tracker.stopDelivery();
+		rmSync(factoryHome, { recursive: true, force: true });
+	});
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		factoryHome = mkdtempSync(join(tmpdir(), "factory-linear-wrapper-"));
 
 		// Setup mock config
 		mockConfig = {
@@ -74,7 +85,7 @@ describe("EdgeWorker LinearClient Wrapper", () => {
 					linearWorkspaceName: "Test Workspace",
 				},
 			},
-			factoryHome: "/test/.bobs-factory",
+			factoryHome,
 			serverPort: 3456,
 			serverHost: "localhost",
 		};

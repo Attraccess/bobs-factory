@@ -234,7 +234,8 @@ const githubSetupQuery = `query FactoryGithubSetup($owner:String!,$name:String!)
     }
     pullRequests(first:1,states:OPEN) {
       nodes {
-        headRefOid baseRefOid reviewDecision mergeQueueEntry { id }
+        title headRefOid baseRefOid reviewDecision
+        isMergeQueueEnabled isInMergeQueue mergeQueueEntry { id }
         autoMergeRequest { enabledAt }
         statusCheckRollup { ...FactorySetupChecks }
         reviewThreads(first:1) {
@@ -248,8 +249,8 @@ fragment FactorySetupChecks on StatusCheckRollup {
   contexts(first:100) {
     nodes {
       __typename
-      ... on CheckRun { name status conclusion }
-      ... on StatusContext { context state }
+      ... on CheckRun { databaseId name status conclusion detailsUrl }
+      ... on StatusContext { context state targetUrl }
     }
   }
 }`;

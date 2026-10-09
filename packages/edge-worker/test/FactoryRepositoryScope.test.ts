@@ -171,6 +171,7 @@ it.each([
 				}
 			}
 			return {
+				status: "completed",
 				summary: "Reviewed complete scope",
 				findings: [],
 				disagreements: [],

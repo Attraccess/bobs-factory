@@ -236,6 +236,9 @@ function executeProcessCommand(
 }
 
 export const ReviewResultSchema = z.object({
+	/** Older accepted artifacts remain readable; an unlabelled new gate fails closed. */
+	status: z.enum(["completed", "blocked", "failed"]).optional(),
+	blockers: z.array(z.string().min(1)).default([]),
 	acceptedVideos: z.array(VideoReceiptSchema).max(3).optional(),
 	qaContract: z.literal(QA_CONTRACT).optional(),
 	qaReviewStamp: z
@@ -530,6 +533,8 @@ export class FactoryTools {
 		}
 	}
 	async tool(context: ExecutionContext): Promise<unknown> {
+		// Projected grouped runs share retry identities and immutable check receipts.
+		context.run.ciSupervision ??= { retries: [] };
 		if (runRepositories(context.run).length > 1) {
 			if (context.step.tool === "handoff" && context.step.qaContract) {
 				const gate = await this.qaGate(context, (exe, args) =>
@@ -768,6 +773,17 @@ export class FactoryTools {
 				const source =
 					context.step.tool === "review-gate" ? "code-review" : "visual-review";
 				const review = filterReview(run.outputs[source]);
+				if (review.status !== "completed" || review.blockers.length)
+					return {
+						approved: false,
+						findings: review.findings.filter(
+							(finding) => finding.status === "open",
+						),
+						reviewIncomplete: true,
+						questions: [
+							`${source} did not complete (${review.status ?? "legacy outcome missing"}). ${review.blockers.join("; ") || review.summary} Restore the required input/tools, then answer to retry only this reviewer. Missing findings do not approve or waive the review.`,
+						],
+					};
 				const open = review.findings.filter(
 					(finding) => finding.status === "open",
 				);
@@ -852,7 +868,9 @@ export class FactoryTools {
 					);
 				context.log(
 					reviewRequired
-						? "Changed revision, substantive feedback or missing review provenance requires code review."
+						? previousBase && previousBase !== readiness.baseSha
+							? `Base changed from ${String(previousBase)} to ${readiness.baseSha}; integration context requires review and relevant validation.`
+							: "Changed source revision, substantive feedback or missing review provenance requires code review."
 						: "Accepted code and base are unchanged; returning directly to merge readiness.",
 				);
 				const previousChecks = readPath(run.outputs, "ci.checks");
@@ -896,6 +914,24 @@ export class FactoryTools {
 					(!reviewRequired || repeated);
 				return {
 					reviewRequired,
+					invalidation: {
+						kind:
+							previousBase && previousBase !== readiness.baseSha
+								? "base-change"
+								: reviewed?.headSha !== headSha ||
+										dirty ||
+										readiness.headSha !== headSha
+									? "source-change"
+									: substantiveFeedback
+										? "new-feedback"
+										: reviewRequired
+											? "missing-provenance"
+											: "none",
+						previousBaseSha: previousBase,
+						baseSha: readiness.baseSha,
+						previousHeadSha: reviewed?.headSha,
+						headSha,
+					},
 					headSha,
 					baseSha: readiness.baseSha,
 					...(unchangedRevision || unchangedFailures || unchangedWork
@@ -949,7 +985,12 @@ export class FactoryTools {
 						blockRevisionMismatch(snapshot, headSha);
 					}
 					reportReadiness(context, snapshot);
-					if (snapshot.fix || snapshot.reviewReady || snapshot.approved)
+					if (
+						snapshot.ciAssistance?.length ||
+						snapshot.fix ||
+						snapshot.reviewReady ||
+						snapshot.approved
+					)
 						return snapshot;
 					await delay(context.signal);
 				}
@@ -1012,6 +1053,7 @@ export class FactoryTools {
 					}
 					assessFeedback(context, snapshot);
 					reportReadiness(context, snapshot);
+					if (snapshot.ciAssistance?.length) return snapshot;
 					const aggregate = aggregateForContext(context);
 					if (
 						aggregate &&
@@ -1118,6 +1160,7 @@ export class FactoryTools {
 					);
 					assessFeedback(context, readiness);
 					reportReadiness(context, readiness);
+					if (readiness.ciAssistance?.length) return readiness;
 					if (readiness.headSha !== headSha || readiness.state !== "OPEN")
 						throw new Error(
 							`Merge readiness changed; handoff blocked: ${readiness.blockers.map((blocker) => blocker.message).join("; ") || "PR state or revision changed"}`,

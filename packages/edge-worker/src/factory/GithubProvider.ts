@@ -27,6 +27,9 @@ export function githubPullRequest(value: any) {
 export function githubProvider(
 	command: ProviderCommand,
 	repositoryUrl: string,
+	checkReceipts?: NonNullable<
+		import("./CISupervision.js").CISupervision["checkReceipts"]
+	>,
 ): GitProvider {
 	const api = new GithubApi(command, repositoryUrl);
 	const path = (url: string) => {
@@ -36,6 +39,22 @@ export function githubProvider(
 		return `${api.pullRequestsPath}/${reference.number}`;
 	};
 	return {
+		retryCheck: async (url, retry) => {
+			if (retry.kind !== "github-run" || !/^\d+$/.test(retry.id))
+				throw new Error("Invalid GitHub retry receipt");
+			const pr = githubPullRequest(await api.request("GET", path(url)));
+			if (pr.headRefOid !== retry.headSha || pr.state !== "OPEN")
+				throw new Error("CI retry revision changed");
+			const runPath = `repos/${api.repository.project}/actions/runs/${retry.id}`;
+			const receipt = await api.request("GET", runPath);
+			if (
+				receipt.head_sha !== retry.headSha ||
+				receipt.run_attempt !== retry.attempt ||
+				receipt.status !== "completed"
+			)
+				return;
+			await api.request("POST", `${runPath}/rerun-failed-jobs`);
+		},
 		list: async (branch) =>
 			(
 				await api.pages<any>(
@@ -67,7 +86,7 @@ export function githubProvider(
 		view: async (url) => githubPullRequest(await api.request("GET", path(url))),
 		inspect: (url) =>
 			inspectGithubPullRequest(command, url, api.repository.url),
-		readiness: (url) => inspectGithubReadiness(command, url),
+		readiness: (url) => inspectGithubReadiness(command, url, checkReceipts),
 		draft: async (url, draft) => {
 			const pr = await api.request<any>("GET", path(url));
 			if (typeof pr.node_id !== "string")

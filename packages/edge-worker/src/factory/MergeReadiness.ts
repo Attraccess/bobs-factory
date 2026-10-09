@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { superviseCI } from "./CISupervision.js";
 import {
 	authorizeFeedbackPolicies,
 	feedbackInstructionFingerprint,
@@ -17,7 +18,34 @@ export interface MergeBlocker {
 	message: string;
 	action: "fix" | "wait" | "human";
 }
+export interface ProviderCheck {
+	name: string;
+	state: string;
+	bucket: string;
+	link?: string;
+	failure?: {
+		kind: "infrastructure" | "metadata" | "unknown";
+		evidence: string;
+	};
+	retry?: {
+		id: string;
+		attempt: number;
+		headSha: string;
+		kind: "github-run" | "gitlab-job";
+		metadataRecheck?: boolean;
+		lineage?: string;
+		status?:
+			| "queued"
+			| "in_progress"
+			| "completed"
+			| "waiting"
+			| "pending"
+			| "requested";
+	};
+}
 export interface MergeReadiness {
+	metadata?: { title: string };
+	ciAssistance?: string[];
 	headSha: string;
 	/** Local revision that a synchronization attempt must publish to this PR. */
 	worktreeHeadSha?: string;
@@ -29,7 +57,7 @@ export interface MergeReadiness {
 	reviewReady: boolean;
 	fix: boolean;
 	blockers: MergeBlocker[];
-	checks: { name: string; state: string; bucket: string; link?: string }[];
+	checks: ProviderCheck[];
 	threads: unknown[];
 	comments: unknown[];
 	reviews: unknown[];
@@ -93,8 +121,11 @@ export async function inspectReadinessWithRetry(
 ): Promise<MergeReadiness> {
 	for (let attempt = 0; ; attempt++) {
 		try {
-			return await (await resolveGitProvider(context, command, url)).readiness(
-				url,
+			const provider = await resolveGitProvider(context, command, url);
+			return await superviseCI(
+				context,
+				provider,
+				await provider.readiness(url),
 			);
 		} catch (error) {
 			context.signal.throwIfAborted();

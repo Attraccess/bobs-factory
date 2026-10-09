@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CursorRunner } from "bobs-factory-cursor-runner";
@@ -37,6 +43,7 @@ import {
 	type RuntimeHooks,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { FactoryServer } from "./fixtures/authenticated-factory.js";
 import { githubApiReceipt } from "./fixtures/github-api.js";
 import { qaExecution, qaScope } from "./fixtures/qa.js";
 
@@ -111,6 +118,8 @@ function baseline(): ReviewBaseline {
 }
 function review() {
 	return {
+		status: "completed" as const,
+		blockers: [],
 		summary: "Reviewed input validation",
 		findings: [],
 		coverage: [
@@ -125,6 +134,23 @@ function review() {
 		],
 	};
 }
+it("blocks an explicitly unexecuted specialist even with clean coverage and no findings", () => {
+	const b = baseline();
+	const result = aggregateReview(b, [
+		{
+			business: receipt(b, {
+				...review(),
+				status: "blocked",
+				blockers: ["Current review input tools unavailable"],
+			}),
+		},
+	]);
+	expect(result.approved).toBe(false);
+	expect(result.reviewers[0]).toMatchObject({
+		status: "blocked",
+		blockers: ["Current review input tools unavailable"],
+	});
+});
 function receipt(b = baseline(), value: unknown = review()) {
 	return {
 		...validateSpecialist(value, b, true),
@@ -139,6 +165,108 @@ function receipt(b = baseline(), value: unknown = review()) {
 		},
 	};
 }
+
+it("keeps approved historical review receipts and guides readable without backfilling completion", async () => {
+	const directory = mkdtempSync(join(tmpdir(), "factory-historical-review-"));
+	dirs.push(directory);
+	const hooks = {
+		agent: async () => ({}),
+		tool: async () => ({}),
+		script: async () => ({}),
+	};
+	const runtime = new WorkflowRuntime(directory, hooks);
+	const workflow = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "historical",
+			name: "Historical",
+			steps: [{ id: "guide", name: "Guide", type: "agent", prompt: "Guide" }],
+		},
+	]).at(-1)!;
+	const run = runtime.create({
+		title: "Historical delivered work",
+		repositoryId: "repo",
+		workspace: directory,
+		workflow,
+		input: "Accepted scope",
+		triggerOrigin: {
+			type: "manual",
+			workflowId: workflow.id,
+			at: "2025-01-01",
+		},
+	});
+	const b = baseline();
+	const historical = structuredClone(
+		aggregateReview(b, [{ business: receipt(b) }]),
+	);
+	for (const reviewer of historical.reviewers) {
+		delete reviewer.status;
+		delete (reviewer as Partial<typeof reviewer>).blockers;
+	}
+	const guide = GuideSchema.parse({
+		goal: "Validation",
+		summary: "Reviewed",
+		decision: { status: "ready", summary: "Ready" },
+		requirements: [
+			{
+				requirementId: "R1",
+				criterion: "Reject invalid input",
+				status: "supported",
+				evidence: ["validator.ts:4"],
+			},
+		],
+		behavior: [],
+		checks: [],
+		risks: [],
+		reviewInstructions: ["Inspect input validation"],
+	});
+	run.status = "completed";
+	run.outputs = { "aggregate-review": historical, guide };
+	run.history = [
+		{ step: "aggregate-review", output: historical, at: "2025-01-01" },
+		{ step: "guide", output: guide, at: "2025-01-01" },
+	];
+	runtime.save(run);
+	await runtime.shutdown();
+	const file = join(runtime.directory, "runs", `${run.id}.json`);
+	const persisted = readFileSync(file, "utf8");
+	const restored = new WorkflowRuntime(directory, hooks);
+	const server = new FactoryServer(restored, {
+		repositories: () => [],
+		sessions: () => [],
+		entries: () => [],
+		start: async () => {
+			throw new Error("Unused");
+		},
+		stop: (id) => restored.stop(id),
+	});
+	try {
+		const receiptResponse = await server.app.inject({
+			url: `/api/runs/${run.id}/artifacts/aggregate-review`,
+		});
+		const guideResponse = await server.app.inject({
+			url: `/api/runs/${run.id}/artifacts/guide`,
+		});
+		expect(receiptResponse.statusCode).toBe(200);
+		expect(receiptResponse.json()).toEqual(historical);
+		expect(guideResponse.statusCode).toBe(200);
+		expect(guideResponse.json()).toEqual(guide);
+		expect(() =>
+			assertAggregateRevision(
+				restored.get(run.id).outputs["aggregate-review"] as AggregateReview,
+				b.headSha,
+				b.baseSha,
+			),
+		).toThrow("changed after approval");
+		expect(restored.get(run.id).outputs["aggregate-review"]).toEqual(
+			historical,
+		);
+		expect(readFileSync(file, "utf8")).toBe(persisted);
+	} finally {
+		await server.stop();
+		await restored.shutdown();
+	}
+});
 it.each([
 	"resolved",
 	"accepted-rejection",
@@ -226,7 +354,7 @@ it.each([
 					? inventory()
 					: context.step.reviewContract === "coverage-v1"
 						? review()
-						: { summary: "Reviewed", findings: [] };
+						: { status: "completed", summary: "Reviewed", findings: [] };
 			accepted = aggregateForContext(context);
 			expect(accepted?.approved).toBe(true);
 			const guide = {
@@ -285,6 +413,7 @@ it.each([
 					capture,
 					"visual-review": {
 						qaContract: "qa-v1",
+						status: "completed",
 						summary: "Inspected executed QA receipts",
 						findings: [],
 						qaReviewStamp: {
@@ -800,7 +929,7 @@ function setup(hooks: Partial<RuntimeHooks> = {}) {
 				? inventory()
 				: ctx.step.reviewContract === "coverage-v1"
 					? review()
-					: { summary: "Reviewed", findings: [] },
+					: { status: "completed", summary: "Reviewed", findings: [] },
 		tool: async () => ({}),
 		script: async () => ({}),
 		...hooks,
@@ -859,6 +988,7 @@ it("pauses unchanged specialist rejections and resumes the fixer after assistanc
 			if (ctx.step.reviewContract === "inventory-v1") return inventory();
 			if (ctx.step.reviewContract === "coverage-v1") return review();
 			return {
+				status: "completed",
 				summary: "Reviewed",
 				findings:
 					ctx.step.id === "security-review"
@@ -934,7 +1064,7 @@ it("shares immutable revision/context across six branches and preserves each bra
 			expect(progress.previousOutput).toBeUndefined();
 			return ctx.step.reviewContract === "coverage-v1"
 				? review()
-				: { summary: "Reviewed", findings: [] };
+				: { status: "completed", summary: "Reviewed", findings: [] };
 		},
 	});
 	await fixture.runtime.launch(fixture.run);
@@ -989,7 +1119,7 @@ it("waits for mixed-runner cleanup before checking the review worktree", async (
 			} else await ready;
 			return ctx.step.reviewContract === "coverage-v1"
 				? review()
-				: { summary: "Reviewed", findings: [] };
+				: { status: "completed", summary: "Reviewed", findings: [] };
 		},
 	});
 	await fixture.runtime.launch(fixture.run);
@@ -1019,7 +1149,7 @@ it.each([
 			}
 			return ctx.step.reviewContract === "coverage-v1"
 				? review()
-				: { summary: "Reviewed", findings: [] };
+				: { status: "completed", summary: "Reviewed", findings: [] };
 		},
 	});
 	await fixture.runtime.launch(fixture.run);
@@ -1050,7 +1180,7 @@ it("cancels incomplete reviewers without approving; retry restores the same base
 			}
 			return ctx.step.reviewContract === "coverage-v1"
 				? review()
-				: { summary: "Reviewed", findings: [] };
+				: { status: "completed", summary: "Reviewed", findings: [] };
 		},
 	});
 	await fixture.runtime.launch(fixture.run);
@@ -1184,7 +1314,7 @@ it("re-extracts refined requirements after a real fix, preserves settled finding
 							]
 						: [{ ...review().coverage[0], status: "not_met" }],
 				};
-			return { summary: "Reviewed", findings: [] };
+			return { status: "completed", summary: "Reviewed", findings: [] };
 		},
 	});
 	const definition = structuredClone(fixture.workflow);
@@ -1234,7 +1364,7 @@ it("holds late steering for a fresh extraction before fanout and rejects dirty r
 			}
 			return ctx.step.reviewContract === "coverage-v1"
 				? review()
-				: { summary: "Reviewed", findings: [] };
+				: { status: "completed", summary: "Reviewed", findings: [] };
 		},
 	});
 	await fixture.runtime.launch(fixture.run);

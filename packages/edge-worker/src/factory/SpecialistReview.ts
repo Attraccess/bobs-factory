@@ -55,6 +55,8 @@ export const AssessmentSchema = z.object({
 	decisionId: id.optional(),
 });
 export const SpecialistSchema = z.object({
+	status: z.enum(["completed", "blocked", "failed"]).optional(),
+	blockers: z.array(text).default([]),
 	summary: text,
 	findings: z.array(
 		z.object({
@@ -477,6 +479,7 @@ export function validateContractOutput(
 				| Inventory
 				| undefined,
 		);
+	z.object({ status: z.enum(["completed", "blocked", "failed"]) }).parse(value);
 	const baseline = roundFor(context);
 	if (!baseline)
 		throw new Error("Specialist has no runtime-owned review baseline");
@@ -614,6 +617,10 @@ export function aggregateReview(
 			disagreements.push(dispute);
 	return {
 		approved:
+			reviewers.every(
+				(reviewer) =>
+					reviewer.status === "completed" && !reviewer.blockers.length,
+			) &&
 			!findings.length &&
 			!disagreements.length &&
 			coverage.every((a) => a.status !== "not_met"),

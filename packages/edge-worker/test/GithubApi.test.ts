@@ -19,7 +19,7 @@ import {
 import { inspectGithubReadiness } from "../src/factory/GithubReadiness.js";
 import { gitProvider } from "../src/factory/GitProvider.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
-import { githubRequest } from "./fixtures/github-api.js";
+import { githubApiReceipt, githubRequest } from "./fixtures/github-api.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
 
 const repositoryUrl = "https://github.com/test/repo";
@@ -56,6 +56,59 @@ const response = (payload: unknown, status = 200) =>
 		status,
 		headers: { "Content-Type": "application/json" },
 	});
+
+it("confirms a guarded CI retry with GitHub's empty HTTP 201 acknowledgement", async () => {
+	vi.stubEnv("GH_TOKEN", "private-token");
+	vi.stubEnv("PATH", "");
+	const fetch = vi.fn(async (endpoint: URL, init: RequestInit) => {
+		if (endpoint.pathname === "/repos/test/repo/pulls/1")
+			return response(githubApiReceipt([request()]));
+		if (endpoint.pathname === "/repos/test/repo/actions/runs/42")
+			return response({
+				id: 42,
+				head_sha: "head",
+				run_attempt: 1,
+				status: "completed",
+			});
+		expect(endpoint.pathname).toBe(
+			"/repos/test/repo/actions/runs/42/rerun-failed-jobs",
+		);
+		expect(init.method).toBe("POST");
+		return new Response(null, { status: 201 });
+	});
+	vi.stubGlobal("fetch", fetch);
+	const ctx = context();
+	const command = vi.fn(async (exe: string, args: string[]) => {
+		expect(exe).toBe(GITHUB_API_COMMAND);
+		return executeCommand(ctx, exe, args);
+	});
+	await expect(
+		gitProvider(command, { type: "github", repositoryUrl }).retryCheck!(url, {
+			kind: "github-run",
+			id: "42",
+			attempt: 1,
+			headSha: "head",
+		}),
+	).resolves.toBeUndefined();
+	expect(fetch).toHaveBeenCalledTimes(3);
+});
+
+it.each([
+	{ path: "repos/test/repo/pulls", body: null },
+	{ path: "repos/test/repo/actions/runs/42/rerun-failed-jobs", body: "broken" },
+])("rejects missing PR creation evidence and malformed retry receipts ($path)", async ({
+	path,
+	body,
+}) => {
+	vi.stubEnv("GH_TOKEN", "private-token");
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => new Response(body, { status: 201 })),
+	);
+	await expect(
+		executeGithubApi(context(), [request({ method: "POST", path })]),
+	).rejects.toThrow("invalid API response");
+});
 
 it("runs GitHub requests in process with no gh or Node executable and no token in receipts/logs", async () => {
 	vi.stubEnv("PATH", "");

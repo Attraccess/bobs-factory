@@ -296,6 +296,7 @@ export function aggregateDeliveries(
 			result[field] = deliveries.some((item) => item.output[field] === true);
 	for (const field of [
 		"questions",
+		"ciAssistance",
 		"blockers",
 		"checks",
 		"threads",

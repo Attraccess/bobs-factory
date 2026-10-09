@@ -19,7 +19,11 @@ import {
 	pullRequestReference,
 	repositoryReference,
 } from "./GitProviderReference.js";
-import type { MergeReadiness, ProviderCommand } from "./MergeReadiness.js";
+import type {
+	MergeReadiness,
+	ProviderCheck,
+	ProviderCommand,
+} from "./MergeReadiness.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 export type GitProviderSnapshot = GitProviderConfig & { repositoryUrl: string };
@@ -36,6 +40,10 @@ export function normalizeGitProviderConfig(
 		: config;
 }
 export interface GitProvider {
+	retryCheck?(
+		url: string,
+		retry: NonNullable<ProviderCheck["retry"]>,
+	): Promise<void>;
 	list(branch: string): Promise<{ url: string; isDraft: boolean }[]>;
 	create(input: {
 		branch: string;
@@ -140,12 +148,17 @@ export async function resolveGitProvider(
 					}
 				: ({ type, repositoryUrl: reference.url } as GitProviderSnapshot);
 	}
-	return gitProvider(command, run.gitProvider);
+	run.ciSupervision ??= { retries: [] };
+	run.ciSupervision.checkReceipts ??= {};
+	return gitProvider(command, run.gitProvider, run.ciSupervision.checkReceipts);
 }
 
 export function gitProvider(
 	command: ProviderCommand,
 	snapshot: GitProviderSnapshot,
+	checkReceipts?: NonNullable<
+		import("./CISupervision.js").CISupervision["checkReceipts"]
+	>,
 ): GitProvider {
 	const repository = repositoryReference(snapshot.repositoryUrl);
 	const repositoryWebUrl = new URL(repository.url);
@@ -177,7 +190,7 @@ export function gitProvider(
 	};
 	let provider: GitProvider;
 	if (snapshot.type === "github") {
-		provider = githubProvider(command, repository.url);
+		provider = githubProvider(command, repository.url, checkReceipts);
 	} else if (snapshot.type === "gitlab")
 		provider = gitlabProvider(command, repository);
 	else if (snapshot.type === "custom") {
@@ -251,6 +264,14 @@ export function gitProvider(
 	} else throw new Error("Unknown Git provider");
 	// Provider output must not redirect subsequent mutations to another repository.
 	return {
+		...(provider.retryCheck
+			? {
+					retryCheck: (
+						url: string,
+						retry: NonNullable<ProviderCheck["retry"]>,
+					) => provider.retryCheck!(checkedUrl(url), retry),
+				}
+			: {}),
 		list: async (branch) =>
 			(await provider.list(branch)).map((item) => ({
 				...item,

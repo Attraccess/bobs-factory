@@ -411,8 +411,26 @@ export async function executeGithubApi(
 		context.signal.throwIfAborted();
 		throw new Error("GitHub API network request failed or timed out");
 	}
+	const retryPrefix = `repos/${request.project}/actions/runs/`;
+	const retryAcknowledged =
+		response.status === 201 &&
+		request.method === "POST" &&
+		request.path.startsWith(retryPrefix) &&
+		/^\d+\/rerun-failed-jobs$/.test(request.path.slice(retryPrefix.length));
 	const payload: any =
-		response.status === 204 ? {} : await response.json().catch(() => undefined);
+		response.status === 204
+			? {}
+			: await response
+					.text()
+					.then((body) => {
+						if (retryAcknowledged && !body.trim()) return {};
+						try {
+							return JSON.parse(body);
+						} catch {
+							return undefined;
+						}
+					})
+					.catch(() => undefined);
 	if (!response.ok)
 		throw new Error(
 			`GitHub API HTTP ${response.status}. ${response.status === 401 ? "Reconnect GitHub in setup." : response.status === 403 || response.status === 429 ? "Check repository permissions, branch rules or API rate limits." : response.status === 409 || response.status === 422 ? "The requested change was rejected; recheck the PR revision and repository rules." : "The provider request could not be completed."}`,

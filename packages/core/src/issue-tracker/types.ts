@@ -413,6 +413,8 @@ export type IssueTrackerAgentSessionPayload = Pick<
 	LinearSDK.AgentSessionPayload,
 	"success" | "lastSyncId"
 > & {
+	// Mutation receipt getter avoids an additional SDK relationship request.
+	agentSessionId?: string;
 	// AgentSession property - use Promise instead of LinearFetch
 	agentSession?: Promise<IssueTrackerAgentSession>;
 };

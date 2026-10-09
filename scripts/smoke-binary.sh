@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 binary="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+build_json="$(dirname "$binary")/build.json"
+[[ -f "$build_json" && ! -L "$build_json" ]] || { echo 'Native smoke requires the adjacent build.json'; exit 1; }
+# The build identity contains only flat string/boolean fields. Keep this check
+# usable with the restricted OS-only PATH, without jq, Node or Bun.
+json_scalar() { sed -nE "s/^.*\"$2\"[[:space:]]*:[[:space:]]*(\"[^\"]*\"|true|false|null)[[:space:]]*[,}].*$/\\1/p" "$1"; }
+check_runtime_identity() {
+  local response="$1" identity="$2" field expected actual
+  sed -nE 's/^.*"runtime"[[:space:]]*:[[:space:]]*(\{[^{}]*\}).*$/\1/p' "$response" > "$identity"
+  [[ -s "$identity" ]] || { echo "Runtime identity missing: $response"; return 1; }
+  for field in version commit dirty target resourceDigest; do
+    expected="$(json_scalar "$build_json" "$field")"
+    actual="$(json_scalar "$identity" "$field")"
+    [[ -n "$expected" && "$expected" == "$actual" ]] || { echo "Runtime identity mismatch for $field: $response"; return 1; }
+  done
+  [[ "$(json_scalar "$identity" packaged)" == true ]] || { echo "Expected packaged runtime identity: $response"; return 1; }
+}
 smoke_root="$(mktemp -d)"
 worker_pid=""
 port="${BOBS_FACTORY_SMOKE_PORT:-4397}"
@@ -52,6 +68,11 @@ for attempt in 1 2; do
   grep -q '"onboarding"' "$smoke_root/state.json"
   grep -q '"required":true' "$smoke_root/state.json"
   echo "Startup $attempt: guided setup without an agent; unauthenticated API 401; authenticated API 200"
+  curl -fsS "http://127.0.0.1:$port/version" > "$smoke_root/version.json"
+  curl -fsS -H "Cookie: factory-local-session=$session_token" "http://127.0.0.1:$port/api/version" > "$smoke_root/api-version.json"
+  check_runtime_identity "$smoke_root/version.json" "$smoke_root/version-identity.json"
+  check_runtime_identity "$smoke_root/api-version.json" "$smoke_root/api-version-identity.json"
+  echo "Startup $attempt: runtime identity matches build.json on /version and /api/version"
   curl -fsS http://127.0.0.1:$port/manifest.webmanifest >/dev/null
   curl -fsS http://127.0.0.1:$port/sw.js >/dev/null
   kill -TERM "$worker_pid"
