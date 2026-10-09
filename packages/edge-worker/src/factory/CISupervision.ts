@@ -35,6 +35,7 @@ export async function superviseCI(
 	const coordination = context.run.deliveryCoordination;
 	if (
 		coordination?.phase === "active" &&
+		!context.run.deliveryReservations &&
 		(snapshot.queued ||
 			snapshot.checks.some(
 				(check) =>

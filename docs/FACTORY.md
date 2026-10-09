@@ -1485,7 +1485,11 @@ pending visibly, without substituting an operational issue comment. Taskbot reta
 its comment-based milestones.
 
 Synchronization receipts live on the run as `ticketReference` and `ticketSync`.
-Failures appear in run activity and retain pending work across restart. Access
+Milestones and PR links are saved before external delivery. Synchronization runs
+in the background and holds neither repository admission nor execution capacity.
+Newer lifecycle intent supersedes only an older pending status change; its
+documentation and links remain pending. Failures appear in run activity and
+retain pending work across restart. Access
 failures retry every 30 seconds while the worker runs; Taskbot status conflicts
 require reassessment and do not blindly retry. After restoring configuration or
 checking a conflict, call the protected `POST /api/runs/:id/ticket-sync` endpoint.
@@ -1511,6 +1515,44 @@ preserved. Source validation remains separate from mandatory signature verificat
 Taskbot comments and status mutations identify `bobs-factory` as author. Its
 attachment tool has no author field; the accompanying milestone comment records
 attribution using the supported provider contract.
+
+### Delivery admission and shared QA
+
+Factory and Takeover reserve repository/base targets for publication and
+integration corrections. Dirty worktrees, committed or inherited changes and
+saved publication receipts establish the affected targets. Unchanged selected
+repositories remain context. Before admission, the complete target set is
+reconciled atomically, including newly affected repositories in a grouped run.
+Missing Git state is treated conservatively. Older eligible runs retain priority;
+stopping releases ownership, and restart restores admission only for unfinished
+operations in frozen workflow checkpoints.
+
+Independent worktree reviews, QA and guide preparation use normal machine
+capacity. CI supervision polls without repository ownership. Merge reserves the
+affected targets for each fresh inspection and provider mutation, releasing them
+between provider polls. Every merge attempt still checks the approved revision,
+accepted scope, review evidence and provider rules. A queued CI fixer refreshes
+head/base, checks, comments and scope before starting; a resolved failure follows
+the existing no-change route, while dirty work, new instructions and failed
+review or QA gates retain corrective work and required approval.
+
+Custom agent, script and tool leaves can declare `"delivery":"exclusive"` for
+integration or publication operations, and `"resources":["qa:shared-cluster"]`
+for a shared environment. These fields belong to leaves, not workflow/fanout
+parents. Automatic mutation detection also covers the configured correction
+branches of frozen workflows.
+
+QA scope declares `environment: {"isolation":"worktree"}` only when its server,
+database and fixtures are independent. Shared QA declares, for example,
+`environment: {"isolation":"shared","resources":["qa:staging-database"]}`.
+Use the same identity across every run and repository using that resource.
+The capture role reserves these resources separately from repository integration.
+Legacy QA plans without an environment retain conservative exclusion per
+repository. A custom QA role with another step ID declares `resources` directly.
+
+Run activity coalesces unchanged admission waits and identifies the blocking run,
+operation and target. The dashboard distinguishes delivery admission and shared
+QA contention from provider CI, pending ticket synchronization and human waits.
 
 
 ### Specialist review and complete requirement coverage
