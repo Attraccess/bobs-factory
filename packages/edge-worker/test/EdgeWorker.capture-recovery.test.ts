@@ -475,6 +475,44 @@ async function guideFixture() {
 	return { ...f, guide, invalid };
 }
 
+it.each([
+	{ dirty: false, resume: false },
+	{ dirty: false, resume: true },
+	{ dirty: true, resume: false },
+	{ dirty: true, resume: true },
+])("requests only available context tools (dirty: $dirty, resume: $resume)", async ({
+	dirty,
+	resume,
+}) => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "implement",
+		name: "Implement",
+		type: "agent",
+		prompt: "Implement",
+	};
+	f.ctx.run.step = "pipeline/implement";
+	f.ctx.resumeAgent = resume
+		? { runner: "codex", sessionId: "existing-conversation" }
+		: undefined;
+	if (dirty)
+		writeFileSync(join(f.ctx.run.workspace, "other.txt"), "Uncommitted work");
+	f.runner.getMessages = () => [
+		{ type: "result", result: JSON.stringify({ summary: "Implemented" }) },
+	];
+	await f.worker.executeFactoryAgent(f.ctx);
+	expect(f.getInput().progress.currentRevision.dirty).toBe(dirty);
+	expect(f.getConfig().resumeSessionId).toBe(
+		resume ? "existing-conversation" : undefined,
+	);
+	expect(f.getConfig().allowedTools).toEqual([
+		"mcp__factory-context__list_context",
+		"mcp__factory-context__read_context",
+		...(!dirty ? ["mcp__factory-context__submit_result_artifact"] : []),
+	]);
+	expect(Boolean(f.getInput().resultSubmission)).toBe(!dirty);
+});
+
 it("validates recovered guide coverage and resumes the same conversation with exact issues", async () => {
 	const f = await guideFixture();
 	const output = await f.worker.executeFactoryAgent(f.ctx);
