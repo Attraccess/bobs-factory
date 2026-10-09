@@ -1064,10 +1064,14 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 	 */
 	async createAgentActivity(
 		input: AgentActivityCreateInput,
+		options?: { operational?: boolean },
 	): Promise<AgentActivityPayload> {
 		if (!this.activityDelivery)
 			return this.linearClient.createAgentActivity(input);
-		const receipt = await this.activityDelivery.post(input);
+		const receipt = await this.activityDelivery.post(
+			input,
+			options?.operational,
+		);
 		return {
 			success: receipt.success,
 			agentActivityId: receipt.id,

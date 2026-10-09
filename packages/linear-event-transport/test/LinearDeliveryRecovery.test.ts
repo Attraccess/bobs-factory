@@ -69,7 +69,13 @@ it.each([
 	}
 });
 
-it("returns a delivered final while unrelated transcript backlog is still draining", async () => {
+it.each([
+	{ type: "response", operational: false },
+	{ type: "thought", operational: true },
+])("returns a delivered $type milestone while unrelated transcript backlog is still draining", async ({
+	type,
+	operational,
+}) => {
 	const home = mkdtempSync(join(tmpdir(), "linear-own-receipt-"));
 	let releaseFirst!: () => void;
 	let releaseTail!: () => void;
@@ -109,23 +115,26 @@ it("returns a delivered final while unrelated transcript backlog is still draini
 			content: { type: "thought", body: "First" },
 		}),
 	];
-	let delivered = false;
-	work.push(
-		tracker
-			.createAgentActivity({
-				agentSessionId: "session",
-				content: { type: "response", body: "Final response" },
-			})
-			.then((receipt) => {
-				delivered = true;
-				return receipt;
-			}),
-	);
 	work.push(
 		tracker.createAgentActivity({
 			agentSessionId: "other-session",
 			content: { type: "thought", body: "Routine tail" },
 		}),
+	);
+	let delivered = false;
+	work.push(
+		tracker
+			.createAgentActivity(
+				{
+					agentSessionId: "session",
+					content: { type, body: "Final response" },
+				},
+				{ operational },
+			)
+			.then((receipt) => {
+				delivered = true;
+				return receipt;
+			}),
 	);
 	try {
 		releaseFirst();

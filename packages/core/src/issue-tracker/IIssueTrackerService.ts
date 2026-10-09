@@ -713,6 +713,7 @@ export interface IIssueTrackerService {
 	 */
 	createAgentActivity(
 		input: AgentActivityCreateInput,
+		options?: { operational?: boolean },
 	): Promise<AgentActivityPayload>;
 
 	// ========================================================================

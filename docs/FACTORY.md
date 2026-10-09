@@ -1420,6 +1420,7 @@ checking a conflict, call the protected `POST /api/runs/:id/ticket-sync` endpoin
 It retries tracking without replaying implementation, PR publication or merge.
 Linear treats a confirmed missing activity or comment as safe to resend with its
 original delivery ID. Other input and lookup errors retain the ambiguous receipt.
+Operational milestones receive priority over routine transcript entries.
 A delivered milestone returns as soon as its own durable receipt is saved;
 unrelated transcript backlog continues draining without holding the finished step.
 Inspect `ticketSync.error` and receipt limitations in its response. Comments use

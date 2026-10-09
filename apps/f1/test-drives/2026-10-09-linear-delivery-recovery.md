@@ -13,13 +13,16 @@ The regression suite first failed all three cases: SDK error wrapping in both
 forms, and completion while an unrelated transcript write remains pending. The
 fix recognizes confirmed absence of the queried entity while preserving other
 ambiguous errors, reuses the original delivery ID, and releases a caller only
-after its own receipt is durably saved. All 59 Linear transport tests passed.
+after its own receipt is durably saved. All 60 Linear transport tests passed. The additional operational-thought case
+places older routine backlog first and verifies the milestone receives priority.
 
 The scoped F1 drive seeds a real private delivery store with an ambiguous final
 response and an unrelated pending thought. A built EdgeWorker uses the standard
 F1 mock handlers and a one-step implementation workflow. The actual F1 CLI creates
 DEF-1 and starts session-1. Its result milestone reaches the production tracker
-adapter and outbox with controlled SDK responses.
+adapter, native operational publisher and outbox with controlled SDK responses.
+The native publisher emits a thought, with explicit operational delivery priority;
+the unrelated thought is older in the persisted queue.
 
 Assertions passed: the missing activity is retried with the same ID, exactly two
 mutation attempts occur (initial failed request plus successful retry), the run

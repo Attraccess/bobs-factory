@@ -15,6 +15,7 @@ type Delivery<Input> = {
 	ambiguous?: boolean;
 	error?: string;
 	activityId?: string;
+	operational?: boolean;
 };
 
 export class LinearDeliveryPendingError extends Error {
@@ -119,7 +120,10 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 		}
 	}
 
-	async post(input: Input): Promise<{ success: boolean; id?: string }> {
+	async post(
+		input: Input,
+		operational = false,
+	): Promise<{ success: boolean; id?: string }> {
 		const fingerprint = this.fingerprint(input);
 		let record = input.id
 			? this.records.find((entry) => entry.id === input.id)
@@ -151,6 +155,10 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 			};
 			this.records.push(record);
 			this.save(); // The identity exists before any mutation is sent.
+		}
+		if (operational && !record.operational) {
+			record.operational = true;
+			this.save(); // Priority is local metadata; provider content and identity stay fixed.
 		}
 		if (record.status !== "delivered") {
 			const waiters = this.deliveryWaiters.get(record.id) ?? new Set();
@@ -243,7 +251,11 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 			}
 			const record = pending
 				.filter((r) => r.nextAt <= Date.now())
-				.sort((a, b) => this.priority(b.input!) - this.priority(a.input!))[0];
+				.sort(
+					(a, b) =>
+						Math.max(b.operational ? 10 : 0, this.priority(b.input!)) -
+						Math.max(a.operational ? 10 : 0, this.priority(a.input!)),
+				)[0];
 			if (!record) break;
 			try {
 				if (record.ambiguous && (await this.reconcile(record.input!))) {
