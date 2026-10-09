@@ -67,7 +67,8 @@ export interface TicketSnapshot {
 	[key: string]: unknown;
 }
 export interface TicketAdapter {
-	read(): Promise<TicketSnapshot>;
+	/** Tracking needs all comment bodies and links, without fetching author profiles. */
+	read(mode?: "tracking"): Promise<TicketSnapshot>;
 	matchesStage?(stage: TicketStage, snapshot: TicketSnapshot): Promise<boolean>;
 	stage(
 		stage: TicketStage,
@@ -439,8 +440,41 @@ export function nativeAdapter(
 		return selected;
 	};
 	return {
-		async read() {
+		async read(mode) {
 			const issue = await tracker.fetchIssue(ref.id);
+			if (mode === "tracking") {
+				const comments: { body: string }[] = [];
+				let after: string | undefined;
+				const cursors = new Set<string>();
+				do {
+					const page = await tracker.fetchComments(issue.id, {
+						first: 100,
+						...(after ? { after } : {}),
+					});
+					comments.push(
+						...page.nodes.map((comment) => ({ body: comment.body })),
+					);
+					if (!page.pageInfo?.hasNextPage) break;
+					after = page.pageInfo.endCursor ?? undefined;
+					if (!after || cursors.has(after))
+						throw new Error("Ticket comment pagination did not advance");
+					cursors.add(after);
+				} while (after);
+				const [state, team, attachments] = await Promise.all([
+					issue.state,
+					issue.team,
+					tracker.fetchIssueAttachments(issue.id),
+				]);
+				return {
+					id: issue.id,
+					comments,
+					attachments,
+					team: team ? { id: team.id } : undefined,
+					state: state
+						? { id: state.id, name: state.name, type: state.type }
+						: undefined,
+				};
+			}
 			const snapshot = (await issueSnapshot(
 				issue,
 				await tracker.getIssueLabels(issue.id),
@@ -578,7 +612,8 @@ export class TicketTracking {
 						continue;
 					try {
 						const adapter = await this.adapter(run);
-						let snapshot = await adapter.read();
+						const read = () => adapter.read("tracking");
+						let snapshot = await read();
 						const statusOf = (snapshot: TicketSnapshot) =>
 							String(
 								snapshot.status ??
@@ -622,7 +657,7 @@ export class TicketTracking {
 							)
 						) {
 							await adapter.link(receipt.pr);
-							snapshot = await adapter.read();
+							snapshot = await read();
 						}
 						const marker = `<!-- factory:${run.id}:${createHash("sha256").update(receipt.key).digest("hex").slice(0, 20)} -->`;
 						if (!snapshot.comments.some((c) => c.body.includes(marker))) {
@@ -630,7 +665,7 @@ export class TicketTracking {
 								receipt.stage && (!merged || receipt.merged)
 									? await adapter.stage(receipt.stage, snapshot)
 									: undefined;
-							sync.lastStatus = statusOf(await adapter.read());
+							sync.lastStatus = statusOf(await read());
 							this.save(run);
 							receipt.deliveryId ??= randomUUID();
 							this.save(run);

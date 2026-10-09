@@ -1421,6 +1421,8 @@ It retries tracking without replaying implementation, PR publication or merge.
 Linear treats a confirmed missing activity or comment as safe to resend with its
 original delivery ID. Other input and lookup errors retain the ambiguous receipt.
 Operational milestones receive priority over routine transcript entries.
+Tracking reads all comment bodies and links plus current state/team; full agent
+context keeps comment authors and other ticket details.
 A delivered milestone returns as soon as its own durable receipt is saved;
 unrelated transcript backlog continues draining without holding the finished step.
 Inspect `ticketSync.error` and receipt limitations in its response. Comments use

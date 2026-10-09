@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Completed steps can advance while older Linear transcript updates drain, and interrupted tracker deliveries recover without duplicating updates. ([#68](https://github.com/jappyjan/bobs-factory/pull/68))
+- Completed steps can advance while older Linear transcript updates drain, tracking avoids unnecessary profile lookups, and interrupted runs resume with available context tools without duplicating tracker updates. ([#68](https://github.com/jappyjan/bobs-factory/pull/68))
 
 - Preserve infrastructure checkpoints and output-correction budgets when Codex cannot initialize a required MCP server, so retries retain completed work and native conversations. ([#64](https://github.com/jappyjan/bobs-factory/pull/64))
 

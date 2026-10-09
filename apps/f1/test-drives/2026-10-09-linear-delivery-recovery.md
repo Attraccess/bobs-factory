@@ -13,7 +13,7 @@ The regression suite first failed all three cases: SDK error wrapping in both
 forms, and completion while an unrelated transcript write remains pending. The
 fix recognizes confirmed absence of the queried entity while preserving other
 ambiguous errors, reuses the original delivery ID, and releases a caller only
-after its own receipt is durably saved. All 60 Linear transport tests and 30 ticket-tracking tests passed. The additional
+after its own receipt is durably saved. All 60 Linear transport tests and 63 ticket-tracking/capture-recovery tests passed. The additional
 operational-thought case
 places older routine backlog first and verifies the milestone receives priority.
 
@@ -21,14 +21,15 @@ The scoped F1 drive seeds a real private delivery store with an ambiguous final
 response and an unrelated pending thought. A built EdgeWorker uses the standard
 F1 mock handlers and a one-step implementation workflow. The actual F1 CLI creates
 DEF-1 and starts session-1. Its result milestone reaches the production tracker
-adapter, native operational publisher and outbox with controlled SDK responses.
+adapter, durable TicketTracking synchronization, native operational publisher and
+outbox with controlled SDK responses.
 The native publisher emits a thought, with explicit operational delivery priority;
 the unrelated thought is older in the persisted queue.
 
 Assertions passed: the missing activity is retried with the same ID, exactly two
 mutation attempts occur (initial failed request plus successful retry), the run
 completes with one implementation history receipt while unrelated backlog remains
-pending, and no model credits are used. The backlog is released and the fixture
+pending, no per-comment author profiles are fetched by tracking, and no model credits are used. The backlog is released and the fixture
 worker stopped after assertions.
 
 Commands:
@@ -37,7 +38,7 @@ Commands:
 pnpm --filter bobs-factory-linear-event-transport test:run
 pnpm build
 node node_modules/.cache/linear-recovery/fixture.mjs
-BOBS_FACTORY_PORT=3812 apps/f1/f1 create-issue --title 'Recover prioritized Linear milestone' --description '[workflow=delivery-recovery] Complete the mock implementation while older routine transcript work remains queued.'
+BOBS_FACTORY_PORT=3812 apps/f1/f1 create-issue --title 'Recover scoped Linear tracking' --description '[workflow=delivery-recovery] Complete the mock implementation while older routine transcript work remains queued.'
 BOBS_FACTORY_PORT=3812 apps/f1/f1 start-session --issue-id issue-1
 ```
 
@@ -46,3 +47,11 @@ local `factory-recovery` worktree. This validates tracker/EdgeWorker lifecycle a
 receipt persistence. It does not claim live provider execution or exhaustive
 Linear outage coverage. Lost-but-accepted writes, credential rotation, rate-limit
 cooldowns, durable comments and restart deduplication retain their existing tests.
+
+Live recovery also exposed repeated comment-author/profile lookups during each
+tracking read (ATT-764 has 43 comments), and an optional artifact upload tool
+required on dirty-worktree resumes despite having no clean revision binding.
+Tracking now reads every comment body/page and link plus current state/team,
+while initial agent context reads retain their full metadata. Red tests caught
+both unnecessary author fetches and the unavailable-tool request. Clean/dirty
+native conversation continuity and tracker pagination pass after the fixes.

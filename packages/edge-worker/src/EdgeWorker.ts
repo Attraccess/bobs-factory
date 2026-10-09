@@ -8152,7 +8152,6 @@ ${taskSection}`;
 				: (built.config.allowedTools ?? [])),
 			"mcp__factory-context__list_context",
 			"mcp__factory-context__read_context",
-			"mcp__factory-context__submit_result_artifact",
 		];
 		const originalMessage = built.config.onMessage;
 		let agentCheckpoint = context.resumeAgent;
@@ -8202,8 +8201,12 @@ ${taskSection}`;
 			!context.progress.currentRevision.dirty
 				? roleResultArtifactBinding(context)
 				: undefined;
-		if (artifactBinding)
+		if (artifactBinding) {
+			built.config.allowedTools.push(
+				"mcp__factory-context__submit_result_artifact",
+			);
 			await mkdir(artifactBinding.directory, { recursive: true });
+		}
 		const factoryContext = prepareFactoryContext(
 			{
 				...(context.input && typeof context.input === "object"

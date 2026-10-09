@@ -162,6 +162,30 @@ async function fixture() {
 }
 
 it.each([
+	false,
+	true,
+])("resumes with only bound context tools (dirty: %s)", async (dirty) => {
+	const f = await fixture();
+	f.ctx.resumeAgent = { runner: "codex", sessionId: "existing-conversation" };
+	if (dirty)
+		writeFileSync(join(f.ctx.run.workspace, "view.txt"), "Unsaved work");
+	await f.worker.executeFactoryAgent(f.ctx);
+	const requested = f
+		.getConfig()
+		.allowedTools.filter((tool: string) =>
+			tool.startsWith("mcp__factory-context__"),
+		);
+	expect(requested).toEqual([
+		"mcp__factory-context__list_context",
+		"mcp__factory-context__read_context",
+		...(!dirty ? ["mcp__factory-context__submit_result_artifact"] : []),
+	]);
+	expect(Boolean(f.getInput().resultSubmission)).toBe(!dirty);
+	expect(f.runner.start).toHaveBeenCalledOnce();
+	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+});
+
+it.each([
 	"code-fix",
 	"visual-fix",
 ])("retains structured assistance and runtime findings for %s with restricted recipe inputs", async (fixer) => {

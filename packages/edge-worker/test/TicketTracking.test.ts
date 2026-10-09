@@ -782,6 +782,50 @@ it.each([
 	);
 });
 
+it("reads every tracking comment page without fetching each author's profile", async () => {
+	const tracker = new CLIIssueTrackerService();
+	tracker.seedDefaultData();
+	const issue = await tracker.createIssue({
+		teamId: "team-default",
+		stateId: "state-todo",
+		title: "Tracking",
+	});
+	let authors = 0;
+	const comment = (body: string) => ({
+		body,
+		get user() {
+			authors++;
+			return Promise.resolve({ id: "author", name: "Author" });
+		},
+	});
+	vi.spyOn(tracker, "fetchComments").mockImplementation(
+		async (_id, options) => ({
+			nodes: [comment(options?.after ? "second" : "first")] as any,
+			pageInfo: { hasNextPage: !options?.after, endCursor: "page-two" },
+		}),
+	);
+	const adapter = nativeAdapter(
+		{
+			provider: "native",
+			platform: "cli",
+			workspaceId: "cli",
+			id: issue.id,
+			url: issue.url,
+		},
+		tracker,
+	);
+	const snapshot = await adapter.read("tracking");
+	expect(snapshot.comments.map((comment) => comment.body)).toEqual([
+		"first",
+		"second",
+	]);
+	expect(snapshot.team).toMatchObject({ id: "team-default" });
+	expect(snapshot.state).toMatchObject({ id: "state-todo" });
+	expect(authors).toBe(0);
+	await adapter.read();
+	expect(authors).toBe(2);
+});
+
 it("routes native Linear questions to one transcript event while linking PRs and moving status independently", async () => {
 	const tracker = new CLIIssueTrackerService();
 	tracker.seedDefaultData();
