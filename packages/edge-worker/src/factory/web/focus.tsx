@@ -38,7 +38,12 @@ import {
 	hasFeedback,
 	serializeFeedback,
 } from "./review-feedback";
-import { guideMatchesGate, reviewRevision, signature } from "./review-state";
+import {
+	guideMatchesGate,
+	reviewRevision,
+	signature,
+	ticketTrackingPending,
+} from "./review-state";
 import { Bob, Button, ConfirmStop, External, Markdown, useToast } from "./ui";
 export const labels: Record<string, string> = {
 	question: "💬 Question",
@@ -482,6 +487,7 @@ function ReviewDecisions({
 	const guide = run.outputs?.guide,
 		gate = run.reviewGate,
 		waiting = gate?.status === "pending",
+		trackingPending = ticketTrackingPending(run),
 		matching = !waiting || (run.status === "waiting" && guideMatchesGate(run)),
 		url = run.outputs?.["draft-pr"]?.url ?? gate?.url;
 	const reject = async () => {
@@ -620,6 +626,7 @@ function ReviewDecisions({
 			{(guide || !feedbackOpen) && (
 				<div className="actions">
 					{(!guide || decisionPage) &&
+						(waiting || !trackingPending) &&
 						!["running", "interrupted"].includes(run.status) && (
 							<Button
 								variant={guide ? "rainbow" : "primary"}
@@ -629,7 +636,12 @@ function ReviewDecisions({
 									busy || !matching || (!waiting && !finished(run.status))
 								}
 								onClick={() => {
-									if (!matching || action.isPending || !controller.lock())
+									if (
+										(!waiting && trackingPending) ||
+										!matching ||
+										action.isPending ||
+										!controller.lock()
+									)
 										return;
 									if (!waiting) {
 										onSettled();

@@ -6,6 +6,16 @@ export function signature(value: unknown) {
 	return (hash >>> 0).toString(36);
 }
 
+export function ticketTrackingPending(run: any): boolean {
+	return Boolean(
+		run.ticketSync?.error ||
+			run.ticketSync?.receipts?.some(
+				(receipt: { delivered?: boolean; superseded?: boolean }) =>
+					!receipt.delivered && !receipt.superseded,
+			),
+	);
+}
+
 export function guideRevision(run: any) {
 	return (
 		run.roleRevisions?.["pipeline/guide"] ??

@@ -4,7 +4,7 @@ import { useRun } from "./client";
 import { FullReview, RunMeta } from "./focus";
 import { ReviewContextRow } from "./review-context-row";
 import { useReviewInput } from "./review-input";
-import { writeTextStored } from "./review-state";
+import { ticketTrackingPending, writeTextStored } from "./review-state";
 import { Button } from "./ui";
 
 export function ReviewPage({
@@ -48,13 +48,7 @@ export function ReviewPage({
 	const gate = run.reviewGate,
 		guide = run.outputs?.guide,
 		complete = ["complete", "completed"].includes(run.status),
-		trackingPending = Boolean(
-			run.ticketSync?.error ||
-				run.ticketSync?.receipts?.some(
-					(receipt: { delivered?: boolean; superseded?: boolean }) =>
-						!receipt.delivered && !receipt.superseded,
-				),
-		);
+		trackingPending = ticketTrackingPending(run);
 	return (
 		<div className="review-document">
 			<nav className="review-links" aria-label="Review navigation">
