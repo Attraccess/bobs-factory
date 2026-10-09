@@ -1,20 +1,34 @@
 ---
 name: release
-description: Prepare or validate a Bob’s Factory binary release candidate when the user requests a release.
+description: Prepare, sign, validate or recover a Bob’s Factory binary release candidate when the user requests release work.
 ---
 
 # Binary release candidates
 
-Read `apps/cli/RELEASING.md` and `docs/distribution/README.md` before release work.
-Follow the canonical F1 applicability policy for the full payload. Build from an
-immutable reviewed SHA and committed exact version. Require native runtime smoke,
-prepared-agent/helper validation and preservation evidence for all four targets.
-Use mocked agents and controlled protocol checks for every release. Live provider
-tests are manual-only and require explicit approval for that specific test; they
-are never a release prerequisite or a reason to request a release waiver.
+Read `apps/cli/RELEASING.md`, `docs/distribution/README.md` and
+`docs/distribution/PUBLIC_RELEASES.md` before release work. The public release
+procedure is authoritative for candidate identity, key rotation, evidence,
+approval and interrupted-publication recovery.
 
-`binary-build.yml` builds and verifies only. It never publishes. Workspace npm
-packages are private; historical upstream scripts in `scripts/archive` are retired.
-Report concrete validation blockers before publication. A live release requires
-an explicit user request and a separately implemented publisher with verified
-artifact provenance, immutable version protection and recoverable replacement.
+1. Freeze the candidate once. Nightly uses eligible changed main and its allocated
+   version; stable promotes the latest complete signed published nightly's frozen
+   source. Keep candidate digest, runtime source and reviewed tooling revision.
+2. Build and validate the exact version on all four native targets. Stable rebuilds
+   need fresh byte-bound evidence. Import actual review, migration, source/license
+   and full-payload F1 assessments. Use simulated agents and controlled protocols;
+   live tests require explicit credit authorization and are never a release gate.
+3. Prepare without mutation or signing privileges. Report missing gates and keys
+   as blockers. Review the retained assets and publication-plan digests.
+4. Sign only in separately approved protected infrastructure. Stable publication
+   additionally requires approval of its exact frozen candidate and signed asset
+   digest. Automatic nightlies require separate rollout activation and the same
+   eligibility/evidence gates. Missing authentic pins are rollout blockers.
+5. Recover using the exact retained inventory and receipt. Reconcile matching
+   tags, drafts and assets; preserve conflicting immutable state for inspection.
+   If publication succeeded but Pages failed, retry only synchronization.
+
+Completion means the requested stage has passed its real checks, with concrete
+remaining blockers stated. Implementation validation leaves publication disabled
+and production installations untouched. Workspace npm packages remain private;
+upstream publishing scripts stay archived. Preserve native credentials, session
+IDs, checkpoints, worktrees, evidence and attribution.

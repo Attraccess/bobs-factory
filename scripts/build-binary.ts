@@ -11,8 +11,13 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
+import { validateCandidate } from "./lib/release-candidate.mjs";
+
 const { values } = parseArgs({
 	options: {
+		"source-root": { type: "string" },
+		candidate: { type: "string" },
+		"release-version": { type: "string" },
 		target: { type: "string", default: `${process.platform}-${process.arch}` },
 		output: { type: "string", default: "artifacts" },
 	},
@@ -23,19 +28,61 @@ if (
 )
 	throw new Error("Unsupported distribution target");
 if (Bun.version !== "1.4.2") throw new Error("Build with pinned Bun 1.4.2");
-const root = resolve(import.meta.dir, "..");
-const version = JSON.parse(
+const root = values["source-root"]
+	? resolve(values["source-root"])
+	: resolve(import.meta.dir, "..");
+const committedVersion = JSON.parse(
 	readFileSync(join(root, "apps/cli/package.json"), "utf8"),
 ).version;
 const commit = execFileSync("git", ["rev-parse", "HEAD"], {
 	cwd: root,
 	encoding: "utf8",
 }).trim();
+const candidate = values.candidate
+	? validateCandidate(
+			JSON.parse(readFileSync(resolve(values.candidate), "utf8")),
+		)
+	: undefined;
+const version = values["release-version"] ?? committedVersion;
+if (
+	values["release-version"] &&
+	(!candidate || candidate.candidate.version !== version)
+)
+	throw new Error("Version override requires frozen candidate");
+if (
+	candidate &&
+	(candidate.candidate.commit !== commit ||
+		candidate.candidate.committedVersion !== committedVersion ||
+		candidate.candidate.version !== version)
+)
+	throw new Error("Candidate source/version mismatch");
+const releaseIdentity = candidate
+	? {
+			candidateDigest: candidate.digest,
+			workflowSha: candidate.candidate.workflowSha,
+			committedVersion,
+		}
+	: {};
 const dirty =
 	execFileSync("git", ["status", "--porcelain"], {
 		cwd: root,
 		encoding: "utf8",
 	}).trim().length > 0;
+if (candidate && dirty)
+	throw new Error("Release build requires a clean checkout");
+if (candidate) {
+	const toolingRoot = resolve(import.meta.dir, "..");
+	const toolingCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+		cwd: toolingRoot,
+		encoding: "utf8",
+	}).trim();
+	const toolingDirty = execFileSync("git", ["status", "--porcelain"], {
+		cwd: toolingRoot,
+		encoding: "utf8",
+	}).trim();
+	if (toolingCommit !== candidate.candidate.workflowSha || toolingDirty)
+		throw new Error("Release build requires the clean frozen tooling checkout");
+}
 const files: Record<string, { sha256: string; data: string }> = {};
 const hash = (bytes: Buffer | string) =>
 	createHash("sha256").update(bytes).digest("hex");
@@ -134,6 +181,7 @@ const result = await Bun.build({
 		BOBS_FACTORY_VERSION: JSON.stringify(version),
 		BOBS_FACTORY_BUILD_IDENTITY: JSON.stringify({
 			version,
+			...releaseIdentity,
 			commit,
 			dirty,
 			target,
@@ -232,6 +280,7 @@ writeFileSync(
 			schemaVersion: 1,
 			product: "bobs-factory",
 			version,
+			...releaseIdentity,
 			commit,
 			dirty,
 			target,
@@ -272,6 +321,7 @@ writeFileSync(
 			schemaVersion: 1,
 			product: "bobs-factory",
 			version,
+			...releaseIdentity,
 			commit,
 			dirty,
 			target,
