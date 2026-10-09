@@ -57,6 +57,7 @@ it.each([
 		codexHome: join(root, "codex"),
 		workingDirectory: worktree,
 		allowedDirectories: [repository],
+		sandbox: "workspace-write",
 		...(egress && { sandboxSettings: { allowRead: [repository] } }),
 	}).build();
 	expect(config.approvalPolicy).toBe("never");
@@ -77,6 +78,7 @@ it("discovers Git metadata for sub-worktrees beneath a non-Git multi-repo contai
 		codexHome: join(root, "codex"),
 		workingDirectory: workspace,
 		additionalDirectories: [worktree],
+		sandbox: "workspace-write",
 	}).build();
 	expect(config.sandbox.kind).toBe("profile");
 	if (config.sandbox.kind !== "profile") throw new Error("Expected profile");
@@ -84,6 +86,29 @@ it("discovers Git metadata for sub-worktrees beneath a non-Git multi-repo contai
 	expect(
 		config.sandbox.filesystem[join(repository, ".git/worktrees/worktree")],
 	).toBe("write");
+});
+
+it.each([
+	false,
+	true,
+])("defaults to native full access in a Git worktree (egress=%s)", async (egress) => {
+	const { root, repository, worktree } = fixture();
+	const config = await new CodexConfigBuilder({
+		factoryHome: root,
+		codexHome: join(root, "codex"),
+		workingDirectory: worktree,
+		allowedDirectories: [repository],
+		...(egress && {
+			sandboxSettings: { allowRead: [repository], allowWrite: [worktree] },
+		}),
+	}).build();
+	expect(config.approvalPolicy).toBe("never");
+	expect(config.sandbox).toEqual({
+		kind: "workspace-mode",
+		mode: "danger-full-access",
+		writableRoots: [worktree, repository],
+		networkAccess: true,
+	});
 });
 
 it("preserves explicit read-only mode in a Git worktree", async () => {

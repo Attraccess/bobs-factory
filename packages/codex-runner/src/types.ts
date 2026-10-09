@@ -36,7 +36,7 @@ export interface CodexRunnerConfig extends AgentRunnerConfig {
 	 * If omitted, CodexRunner applies a safe default for known model constraints.
 	 */
 	modelReasoningEffort?: ModelReasoningEffort;
-	/** Sandbox mode for Codex shell/tool execution */
+	/** Sandbox mode for Codex shell/tool execution (defaults to danger-full-access). */
 	sandbox?: SandboxMode;
 	/** Approval policy for Codex tool/shell execution */
 	askForApproval?: ApprovalMode;
@@ -51,9 +51,9 @@ export interface CodexRunnerConfig extends AgentRunnerConfig {
 	/** JSON Schema for structured output (passed to turn/start as outputSchema) */
 	outputSchema?: unknown;
 	/**
-	 * Filesystem sandbox intent (allow/deny read, allow write). When present, the
-	 * session runs under a granular per-thread sandbox policy instead of the
-	 * coarse default mode. Paths must be absolute.
+	 * Filesystem sandbox intent (allow/deny read, allow write). With explicit
+	 * workspace-write mode, produces a granular per-thread sandbox policy.
+	 * Native read-only/full-access modes take precedence. Paths must be absolute.
 	 */
 	sandboxSettings?: CyrusSandboxFilesystem;
 }
