@@ -551,13 +551,33 @@ it("corrects fresh malformed JSON and missing PR files through the same boundary
 	});
 });
 
-it("preserves a correction through pre-turn infrastructure failure without spending its budget", async () => {
+const mcpHandshakeFailure =
+	"error creating thread: Fatal error: Failed to initialize session: required MCP servers failed to initialize: factory-context: timed out handshaking with MCP server after 44.999999833s";
+
+it.each([
+	{ failure: "Transport offline", source: "start" },
+	{ failure: `thread/start failed: ${mcpHandshakeFailure}`, source: "start" },
+	{ failure: `thread/start failed: ${mcpHandshakeFailure}`, source: "result" },
+	{ failure: `thread/resume failed: ${mcpHandshakeFailure}`, source: "start" },
+	{ failure: `thread/resume failed: ${mcpHandshakeFailure}`, source: "result" },
+])("preserves a correction through pre-turn $source failure ($failure) without spending its budget", async ({
+	failure,
+	source,
+}) => {
 	const f = await guideFixture();
-	f.runner.start.mockRejectedValueOnce(new Error("Transport offline"));
-	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
-		"Transport offline",
-	);
+	if (source === "start")
+		f.runner.start.mockRejectedValueOnce(new Error(failure));
+	else {
+		f.runner.start.mockResolvedValueOnce(undefined);
+		const getMessages = f.runner.getMessages;
+		f.runner.getMessages = () =>
+			f.runner.start.mock.calls.length === 1
+				? [{ type: "result", is_error: true, errors: [failure] }]
+				: getMessages();
+	}
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(failure);
 	const checkpoint = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
+	expect(checkpoint.infrastructureFailure.reason).toContain(failure);
 	expect(checkpoint.rejected).toMatchObject({
 		attempts: 0,
 		reserved: false,
@@ -572,6 +592,38 @@ it("preserves a correction through pre-turn infrastructure failure without spend
 		startup_timeout_sec: 45,
 	});
 	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
+});
+
+it("retains a fresh MCP startup failure without inventing a native session", async () => {
+	const f = await guideFixture();
+	delete f.ctx.resumeAgent;
+	f.runner.start.mockResolvedValueOnce(undefined);
+	const getMessages = f.runner.getMessages;
+	f.runner.getMessages = () =>
+		f.runner.start.mock.calls.length === 1
+			? [
+					{
+						type: "result",
+						is_error: true,
+						session_id: "pending",
+						errors: [`thread/start failed: ${mcpHandshakeFailure}`],
+					},
+				]
+			: getMessages();
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"required MCP servers failed to initialize",
+	);
+	expect(f.ctx.resumeAgent).toMatchObject({
+		runner: "codex",
+		infrastructureFailure: {
+			reason: expect.stringContaining(mcpHandshakeFailure),
+		},
+	});
+	expect(f.ctx.resumeAgent?.sessionId).toBeUndefined();
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		f.guide,
+	);
+	expect(f.getConfig().resumeSessionId).toBeUndefined();
 });
 
 it("refunds confirmed transport failures and still bounds repeated validation rejection", async () => {
