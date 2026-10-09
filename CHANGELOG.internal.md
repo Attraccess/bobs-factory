@@ -6,7 +6,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
-- Add verified Bun Cargo production notices and their source provenance; omit macOS file metadata from source rebuild archives so the reviewed inventory is portable.
+- Add verified Bun Cargo production notices and their source provenance; omit macOS file metadata from source rebuild archives so the reviewed inventory is portable ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).
 
 - Prepare the first beta with explicit prerelease metadata, streamed source/evidence intake and native installed-helper/protocol checks on all four targets. Keep authenticated-agent and licensing approval distinct from scripted validation ([#57](https://github.com/jappyjan/bobs-factory/pull/57)).
 

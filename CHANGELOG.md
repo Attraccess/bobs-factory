@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Include the pinned Bun production dependency notices and corresponding MPL source in beta release materials.
+- Include the pinned Bun production dependency notices and corresponding MPL source in beta release materials ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).
 
 - Prepare `1.0.0-beta` binary candidates, keep beta downloads distinct from stable releases, and verify installed native helpers before publication ([#57](https://github.com/jappyjan/bobs-factory/pull/57)).
 - Simplify binary installation to one public download command and guided first launch, including project/agent selection and GitHub setup without requiring the GitHub CLI. Preserve existing passkeys, state and native credentials. ([#55](https://github.com/jappyjan/bobs-factory/pull/55)).
