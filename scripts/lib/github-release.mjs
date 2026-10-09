@@ -226,18 +226,22 @@ export async function verifyPublishedRelease(client, release, keys) {
 		manifestSha256: sha256(bytes),
 	};
 }
-export async function discoverReleases(client, keys) {
+export async function discoverReleases(
+	client,
+	keys,
+	{ selectedOnly = false } = {},
+) {
 	validatePublicRepository(await client.api(""));
 	const releases = await client.pages("releases");
 	const verified = [];
 	const rejected = [];
-	for (const release of releases) {
+	async function verify(release) {
 		if (
 			release.draft ||
 			!release.tag_name?.startsWith("v") ||
 			!release.assets?.some((a) => a.name === "release.json")
 		)
-			continue;
+			return;
 		try {
 			verified.push(await verifyPublishedRelease(client, release, keys));
 		} catch (error) {
@@ -249,6 +253,22 @@ export async function discoverReleases(client, keys) {
 			rejected.push({ tag: release.tag_name, reason: error.message });
 		}
 	}
+	if (selectedOnly) {
+		// Fully verify the newest usable target in each channel, without spending
+		// provider quota on older releases once that target is established.
+		for (const channel of ["stable", "nightly"]) {
+			let remaining = [...releases];
+			while (remaining.length) {
+				const release = selectPublicRelease(remaining, channel);
+				if (!release) break;
+				await verify(release);
+				if (verified.some((v) => v.release.id === release.id)) break;
+				remaining = remaining.filter((r) => r.id !== release.id);
+			}
+		}
+	} else {
+		for (const release of releases) await verify(release);
+	}
 	const select = (channel) => {
 		const r = selectPublicRelease(
 			verified.map((v) => v.release),
@@ -257,6 +277,9 @@ export async function discoverReleases(client, keys) {
 		return verified.find((v) => v.release.id === r?.id) ?? null;
 	};
 	return {
+		// Provider publication history remains authoritative for ordering, even
+		// when this frozen tool's pinned keys cannot verify a newer release.
+		published: releases.filter((r) => !r.draft),
 		stable: select("stable"),
 		nightly: select("nightly"),
 		verified,

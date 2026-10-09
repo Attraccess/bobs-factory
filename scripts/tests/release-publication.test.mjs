@@ -4,10 +4,12 @@ import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { sha256File } from "../lib/binary-release.mjs";
+import { sha256, sha256File } from "../lib/binary-release.mjs";
 import { validatePreparedRelease } from "../lib/prepared-release.mjs";
 import { withPublicationLock } from "../lib/publication-lock.mjs";
+import { verifyManifestSignature } from "../lib/release-signature.mjs";
 import { preparedFixture } from "./prepared-fixture.mjs";
+import { keys } from "./release-fixtures.mjs";
 
 const transport = fileURLToPath(
 	new URL("./publication-transport.mjs", import.meta.url),
@@ -235,6 +237,60 @@ test("stable approval binds exact signed asset bytes and stable publication sets
 		f.cleanup();
 	}
 });
+test("a newer stable signed by an unknown key blocks older tooling before any publication mutation", () => {
+	const f = setup("stable"),
+		newer = preparedFixture("stable", { stableVersion: "2.0.0" });
+	try {
+		const bytes = readFileSync(join(newer.assets, "release.json")),
+			signature = readFileSync(join(newer.assets, "release.json.sig"));
+		// The published signature is valid, but its newly named key is absent
+		// from the older candidate's frozen trust store.
+		verifyManifestSignature(bytes, signature, "rotated", {
+			rotated: keys.fixture,
+		});
+		const assets = newer.records.map((record) => {
+			const content =
+				record.file === "release.json.key-id"
+					? Buffer.from("rotated\n")
+					: readFileSync(join(newer.assets, record.file));
+			return {
+				name: record.file,
+				state: "uploaded",
+				size: content.length,
+				digest: `sha256:${sha256(content)}`,
+				bytes: content.toString("base64"),
+				browser_download_url: `https://github.com/jappyjan/bobs-factory/releases/download/${newer.manifest.tag}/${record.file}`,
+			};
+		});
+		writeFileSync(
+			f.provider,
+			JSON.stringify({
+				...f.state(),
+				history: [
+					{
+						id: 100,
+						tag_name: newer.manifest.tag,
+						draft: false,
+						prerelease: false,
+						published_at: "2026-10-09T00:00:00Z",
+						assets,
+					},
+				],
+			}),
+		);
+		const result = f.run();
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /must be newer than/);
+		assert.deepEqual(
+			f.state().operations.filter((o) => o.method !== "GET"),
+			[],
+		);
+	} finally {
+		f.cleanup();
+		newer.cleanup();
+	}
+});
+
 test("stale nightly candidate does not create a tag or draft", () => {
 	const f = setup("nightly", { mainSha: "f".repeat(40) });
 	try {

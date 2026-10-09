@@ -7,7 +7,9 @@ import { jsonBytes, REPOSITORY } from "./lib/binary-release.mjs";
 import { discoverReleases, githubClient } from "./lib/github-release.mjs";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const state = await discoverReleases(githubClient());
+const state = await discoverReleases(githubClient(), undefined, {
+	selectedOnly: true,
+});
 const directory = join(root, "website/public/releases");
 const outputs = [];
 for (const [channel, name] of [

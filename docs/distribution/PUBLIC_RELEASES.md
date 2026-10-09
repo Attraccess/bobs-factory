@@ -90,6 +90,15 @@ Transport failure aborts the build without deploying new pointers. An empty
 channel produces an unavailable notice, never a fabricated download. Pagination
 fails explicitly above 10,000 entries rather than selecting from an incomplete list.
 
+Website synchronization uses the workflow's read-only GitHub token. It verifies
+candidates in channel order and stops after finding each usable target, avoiding
+API requests for older history. Publication ordering uses the complete published
+provider list, including releases that frozen tooling cannot verify after key
+rotation; an older stable candidate cannot move latest backwards.
+Unsigned `pending` website metadata can only stop installation with an
+unavailable-channel message. Every installable release still requires a pinned
+publisher signature before release assets are downloaded or executed.
+
 Nix takes reviewed immutable `releaseManifest`, `releaseSignature` and
 `releaseKeyId` inputs. It does not fetch mutable latest during evaluation and
 verifies with a pinned key before unpacking/building. Hash-pinned archives alone

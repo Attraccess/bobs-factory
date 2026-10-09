@@ -386,14 +386,10 @@ if (!values.publish) {
 		);
 	const recheck = async () => {
 		const state = await discoverReleases(client);
-		if (identity.channel === "stable")
-			validateLatestVersion(
-				identity.version,
-				state.stable?.manifest.channel === "stable"
-					? state.stable.release
-					: null,
-			);
-		else {
+		if (identity.channel === "stable") {
+			for (const release of state.published.filter((r) => !r.prerelease))
+				validateLatestVersion(identity.version, release);
+		} else {
 			const mainSha = (await api("git/ref/heads/main")).object.sha;
 			const last = state.nightly;
 			const relation =

@@ -62,6 +62,8 @@ jobs:
 
       - name: Synchronize public installer and release metadata
         working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           node scripts/sync-release-keys.mjs --check
           node scripts/sync-release-metadata.mjs

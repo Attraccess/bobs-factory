@@ -86,7 +86,15 @@ else
 fi
 echo "Finding Bob's Factory for $target..."
 download "$metadata" "$work/release.json"
-# Authenticate exact bytes before reading fields or running downloaded code.
+# Pending website metadata is an unsigned availability hint. It can only stop
+# installation; it cannot authorize downloads or execution of release assets.
+if [ "$(field "$work/release.json" status)" = pending ]; then
+  [ "$(number "$work/release.json" schemaVersion)" = 2 ] || fail 'Unsupported release metadata. Download a fresh installer.'
+  [ "$(field "$work/release.json" product)" = bobs-factory ] || fail 'Unexpected product in release metadata.'
+  [ "$(field "$work/release.json" repository)" = "$repository" ] || fail 'Unexpected release repository.'
+  fail "No verified $channel release is available. Please check the homepage for availability."
+fi
+# Authenticate exact bytes before accepting any installable release fields or code.
 verify_signature() {
   key_id=$(cat "$3")
   printf '%s' "$key_id" | LC_ALL=C grep -Eq '^[a-z0-9][a-z0-9-]{0,63}$' || fail 'Malformed publisher key identifier.'

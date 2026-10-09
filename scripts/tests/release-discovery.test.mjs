@@ -22,9 +22,11 @@ function provider(fixtures) {
 			browser_download_url: `https://github.com/jappyjan/bobs-factory/releases/download/${f.manifest.tag}/${r.file}`,
 		})),
 	}));
+	const requests = [];
 	let corruption = null,
 		failed = false;
-	const client = githubClient("", async (url) => {
+	const client = githubClient("synthetic-test-token", async (url, options) => {
+		requests.push({ url, options });
 		const u = new URL(url),
 			p = u.pathname;
 		if (p === "/repos/jappyjan/bobs-factory")
@@ -59,6 +61,7 @@ function provider(fixtures) {
 	});
 	return {
 		client,
+		requests,
 		releaseList,
 		corrupt: (tag, file, bytes) => {
 			corruption = { tag, file, bytes };
@@ -114,5 +117,68 @@ test("discovery separates signed stable/nightly, excludes incomplete candidates 
 		await assert.rejects(discoverReleases(p.client, keys), /download failed/);
 	} finally {
 		for (const f of [stable, nightly, beta]) f.cleanup();
+	}
+});
+
+test("channel-only discovery authenticates API calls and skips older verified history", async () => {
+	const stable = preparedFixture("stable"),
+		nightly = preparedFixture();
+	try {
+		const p = provider([stable, nightly]);
+		for (let i = 0; i < 20; i++) {
+			p.releaseList.push({
+				...p.releaseList[i % 2],
+				id: i + 3,
+				tag_name:
+					i % 2 ? `v1.0.0-nightly.20261008.${Math.floor(i / 2)}` : `v0.9.${i}`,
+			});
+		}
+		const state = await discoverReleases(p.client, keys, {
+			selectedOnly: true,
+		});
+		assert.equal(state.stable.manifest.version, stable.manifest.version);
+		assert.equal(state.nightly.manifest.version, nightly.manifest.version);
+		assert.equal(state.published.length, 22);
+		const apiRequests = p.requests.filter(
+			(r) => new URL(r.url).hostname === "api.github.com",
+		);
+		assert.equal(
+			apiRequests.length,
+			6,
+			"Only repository/list and assets/tag for each selected channel",
+		);
+		for (const request of apiRequests)
+			assert.equal(
+				request.options.headers.Authorization,
+				"Bearer synthetic-test-token",
+			);
+		// Rejection of the newest stable still tries a prior signed candidate.
+		const beta = preparedFixture("beta");
+		try {
+			const fallback = provider([stable, beta, nightly]);
+			fallback.corrupt(
+				stable.manifest.tag,
+				"release.json.key-id",
+				Buffer.from("unknown\n"),
+			);
+			const result = await discoverReleases(fallback.client, keys, {
+				selectedOnly: true,
+			});
+			assert.equal(result.stable.manifest.channel, "beta");
+			assert.match(
+				result.rejected[0].reason,
+				/Unknown or retired publisher key/,
+			);
+			fallback.fail();
+			await assert.rejects(
+				discoverReleases(fallback.client, keys, { selectedOnly: true }),
+				/download failed/,
+			);
+		} finally {
+			beta.cleanup();
+		}
+	} finally {
+		stable.cleanup();
+		nightly.cleanup();
 	}
 });

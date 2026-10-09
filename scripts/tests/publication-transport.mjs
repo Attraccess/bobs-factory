@@ -35,7 +35,10 @@ globalThis.fetch = async (url, options = {}) => {
 	};
 	if (u.hostname === "github.com") {
 		const name = u.pathname.split("/").at(-1);
-		const asset = s.assets.find((a) => a.name === name);
+		const tag = u.pathname.split("/").at(-2);
+		const assets =
+			s.history?.find((r) => r.tag_name === tag)?.assets ?? s.assets;
+		const asset = assets.find((a) => a.name === name);
 		if (!asset) return response({}, 404);
 		save();
 		return new Response(Buffer.from(asset.bytes, "base64"));
@@ -78,7 +81,16 @@ globalThis.fetch = async (url, options = {}) => {
 		return response(s.tag, 201);
 	}
 	if (p === "/releases" && method === "GET")
-		return response(s.release ? [{ ...s.release, assets: s.assets }] : []);
+		return response([
+			...(s.history ?? []),
+			...(s.release ? [{ ...s.release, assets: s.assets }] : []),
+		]);
+	const historicalAssets = /^\/releases\/(\d+)\/assets$/.exec(p);
+	const historical = s.history?.find(
+		(r) => r.id === Number(historicalAssets?.[1]),
+	);
+	if (historicalAssets && historical && method === "GET")
+		return response(historical.assets);
 	if (p === "/releases" && method === "POST") {
 		s.release = { ...body, id: 99 };
 		fault("draft-after");

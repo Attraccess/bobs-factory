@@ -559,15 +559,19 @@ test("pending public release gives clear availability guidance", () => {
 		writeFileSync(
 			join(f.downloads, "latest.json"),
 			jsonBytes({
-				schemaVersion: 1,
+				schemaVersion: 2,
 				product: "bobs-factory",
 				repository: REPOSITORY,
 				status: "pending",
 			}),
 		);
+		rmSync(join(f.downloads, "latest.json.sig"));
+		rmSync(join(f.downloads, "latest.json.key-id"));
 		const result = f.install();
 		assert.notEqual(result.status, 0);
-		assert.match(result.stderr, /signature|Download failed|publisher/i);
+		assert.match(result.stderr, /No verified stable release is available/);
+		assert.doesNotMatch(result.stderr, /Download failed|cp:/);
+		assert.throws(() => readlinkSync(join(f.prefix, "bin/bobs-factory")));
 	} finally {
 		f.cleanup();
 	}
@@ -771,6 +775,42 @@ test("signed manifests reject tampering, unknown keys and unsigned payloads befo
 		f.cleanup();
 	}
 });
+test("unsigned pending channels stop with availability guidance and preserve an existing installation", () => {
+	const f = fixture();
+	try {
+		assert.equal(f.install().status, 0);
+		const link = readlinkSync(join(f.prefix, "bin/bobs-factory"));
+		const profile = readFileSync(f.profile, "utf8");
+		for (const [channel, file] of [
+			["stable", "latest.json"],
+			["nightly", "nightly.json"],
+		]) {
+			writeFileSync(
+				join(f.downloads, file),
+				jsonBytes({
+					schemaVersion: 2,
+					product: "bobs-factory",
+					repository: REPOSITORY,
+					status: "pending",
+				}),
+			);
+			rmSync(join(f.downloads, `${file}.sig`));
+			rmSync(join(f.downloads, `${file}.key-id`));
+			const result = f.install("--channel", channel);
+			assert.notEqual(result.status, 0);
+			assert.match(
+				result.stderr,
+				new RegExp(`No verified ${channel} release is available`),
+			);
+			assert.doesNotMatch(result.stderr, /Download failed|cp:/);
+			assert.equal(readlinkSync(join(f.prefix, "bin/bobs-factory")), link);
+			assert.equal(readFileSync(f.profile, "utf8"), profile);
+		}
+	} finally {
+		f.cleanup();
+	}
+});
+
 test("nightly installation is opt-in and exact versions must match the selected channel", () => {
 	const f = fixture("1.0.0-nightly.20261009.10");
 	try {
