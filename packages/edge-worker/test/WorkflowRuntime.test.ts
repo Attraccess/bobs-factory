@@ -1947,6 +1947,48 @@ it("recovers a saved nested handoff through its existing fixer without replaying
 	expect(run.step).toBe("pipeline/after-ci-fix");
 });
 
+it("keeps an unresolved guide assistance wait in progress instead of announcing review readiness", async () => {
+	const track = vi.fn<NonNullable<RuntimeHooks["track"]>>(async () => {});
+	const { runtime } = create({
+		track,
+		tool: async () => ({
+			url: "https://github.com/test/repo/pull/1",
+			fix: false,
+			guideRecovery: { fingerprint: "unchanged-gap" },
+			blockers: [{ message: "Reconcile the accepted PR" }],
+			ciAssistance: ["Which PR is accepted?"],
+		}),
+	});
+	const run = start(
+		runtime,
+		workflow([
+			{
+				id: "handoff",
+				name: "Handoff",
+				type: "tool",
+				tool: "handoff",
+			},
+		]),
+	);
+	run.ticketReference = {
+		provider: "native",
+		platform: "cli",
+		workspaceId: "cli-workspace",
+		id: "ticket",
+		url: "https://example.test/ticket",
+	};
+	const execution = runtime.launch(run);
+	await vi.waitFor(() => expect(run.status).toBe("waiting"));
+	const milestone = track.mock.calls.find(([, receipt]) =>
+		receipt.key.startsWith("handoff:"),
+	)?.[1];
+	expect(milestone).toMatchObject({ stage: "in_progress" });
+	expect(milestone?.body).toContain("Reconcile the accepted PR");
+	expect(milestone?.body).not.toContain("Ready for human review");
+	runtime.stop(run.id);
+	await execution;
+});
+
 it.each([
 	"executing",
 	"result",

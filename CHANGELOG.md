@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Route unresolved review-guide requirements and delivery gaps back through the existing fixer, with a resumable assistance wait after unsuccessful correction; retain evidence and explicit human approval. ([#76](https://github.com/jappyjan/bobs-factory/pull/76), [F1 recovery validation](apps/f1/test-drives/2026-10-09-guide-gap-recovery.md))
 - Accept GitHub owner and repository capitalization differences when publishing, inspecting and merging pull requests, so retries can reuse a draft PR created before a delivery failure. ([#75](https://github.com/jappyjan/bobs-factory/pull/75))
 
 - Allow slow Codex thread startup and resume to finish within a bounded three-minute deadline, and preserve conversation checkpoints and correction budgets if setup still times out. ([#67](https://github.com/jappyjan/bobs-factory/pull/67))
