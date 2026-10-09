@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+import { architectureInstructions } from "./Architecture.js";
 import { feedbackPolicyInstructions } from "./FeedbackPolicy.js";
 import { guideMapInstructions } from "./GuideAuthoring.js";
 import { takeoverLaunchFields } from "./LaunchFields.js";
@@ -10,7 +12,11 @@ import {
 	specialistSteps,
 } from "./specialistSteps.js";
 import { videoPrompts } from "./videoPrompts.js";
-import { validateWorkflows, type WorkflowStep } from "./Workflow.js";
+import {
+	StepSchema,
+	validateWorkflows,
+	type WorkflowStep,
+} from "./Workflow.js";
 
 const agent = (id: string, name: string, prompt: string, extra = {}) => ({
 	id,
@@ -56,7 +62,7 @@ const definitions = [
 		icon: "🏭",
 		name: "Software factory",
 		description:
-			"Clarify → plan → implement → draft PR → requirements → specialist review → CI → QA and screenshot review → human guide.",
+			"Clarify → plan → architecture decision → implement → draft PR → requirements → specialist review → CI → QA and screenshot review → human guide.",
 		labels: ["workflow:factory", "factory"],
 		steps: [
 			agent(
@@ -253,6 +259,58 @@ function installSpecialists(steps: Record<string, any>[]) {
 	}
 }
 installSpecialists(pipeline.steps);
+const stockPlanReview = pipeline.steps.find((s) => s.id === "plan-review")!;
+if (!("prompt" in stockPlanReview))
+	throw new Error("Stock plan reviewer unavailable");
+const oldPlanReview = {
+	...structuredClone(stockPlanReview),
+	branches: back("approved", "plan"),
+};
+const oldPlan: Record<string, any> = structuredClone(
+	pipeline.steps.find((s) => s.id === "plan")!,
+);
+const implementationStep = pipeline.steps.find((s) => s.id === "implement")!;
+if (!("prompt" in implementationStep))
+	throw new Error("Stock implementer unavailable");
+implementationStep.prompt +=
+	" If subsequent answers or steering materially change the accepted architecture, preserve completed work and return status=blocked, architectureRevision=true, summary explaining the changed requirement, checks, and questions=[]. The runtime returns to architecture proposal/review and requires fresh acceptance when meaningful. Never implement a materially changed architecture using acceptance of an earlier version.";
+const architectureSteps = [
+	agent("architecture", "Discuss architecture", architectureInstructions, {
+		architectureContract: "architecture-v1",
+	}),
+	{
+		...oldPlanReview,
+		prompt:
+			'Review the architecture candidate and its complete implementation plan against ALL requirements, comments, answers, decisions and inherited Takeover work. Assess repository evidence, interfaces, alternatives, diagram and routine classification. Do not implement. Return {"approved":true,"feedback":[]} or {"approved":false,"feedback":["concrete required changes"]}.',
+		architectureContract: "architecture-review-v1",
+		architectureSource: "architecture",
+		inputs: undefined,
+		branches: back("approved", "architecture"),
+	},
+	tool(
+		"architecture-decision",
+		"Accept architecture proposal",
+		"architecture-decision",
+		{
+			arguments: {
+				proposal: "architecture",
+				review: "plan-review",
+				planOutput: "plan",
+				revise: "architecture",
+				approval: "meaningful",
+			},
+			branches: [
+				{ when: { path: "decision", equals: "revise" }, next: "architecture" },
+			],
+		},
+	),
+];
+pipeline.steps.splice(
+	pipeline.steps.findIndex((s) => s.id === "plan-review"),
+	1,
+	...architectureSteps,
+);
+
 export const defaultWorkflows = validateWorkflows([
 	definitions[0],
 	{
@@ -384,6 +442,33 @@ export function upgradeWorkflows(value: unknown): unknown {
 		upgradeHandoffCapacity(steps);
 		if (!["factory-pipeline", "factory"].includes(String(definition.id)))
 			continue;
+		// Upgrade only untouched stock planning paths; operator edits remain deliberate.
+		const savedPlan = steps.find((s) => s.id === "plan");
+		const savedReview = steps.find((s) => s.id === "plan-review");
+		if (
+			!steps.some(
+				(s) => s.architectureContract || s.tool === "architecture-decision",
+			) &&
+			savedPlan &&
+			savedReview &&
+			[oldPlan.prompt, previousPlanPrompt].some(
+				(prompt) =>
+					isDeepStrictEqual(
+						StepSchema.parse({ ...savedPlan, prompt: oldPlan.prompt }),
+						StepSchema.parse(oldPlan),
+					) && savedPlan.prompt === prompt,
+			) &&
+			isDeepStrictEqual(
+				StepSchema.parse(savedReview),
+				StepSchema.parse(oldPlanReview),
+			)
+		) {
+			steps.splice(
+				steps.indexOf(savedReview),
+				1,
+				...structuredClone(architectureSteps),
+			);
+		}
 		const stockQa = defaultWorkflows.find(
 			(w) => w.id === "factory-pipeline",
 		)!.steps;

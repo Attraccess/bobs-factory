@@ -25,6 +25,15 @@ import {
 	AgentSettingsSchema,
 	resolveAgentSettings,
 } from "./AgentSettings.js";
+import {
+	type ArchitectureDecision,
+	ArchitectureDecisionSchema,
+	type ArchitectureProposal,
+	ArchitectureReviewSchema,
+	ArchitectureSchema,
+	snapshotProposal,
+	verifyProposal,
+} from "./Architecture.js";
 import { ciFixRuntimeInstructions } from "./CISupervision.js";
 import {
 	acquireDelivery,
@@ -255,6 +264,14 @@ export interface FactoryRun {
 	launchRequest?: import("./LaunchFields.js").ResolvedLaunchRequest;
 	setupComplete?: boolean;
 	sessionSnapshot?: import("bobs-factory-core").SerializedCyrusAgentSession;
+	architectureProposals?: ArchitectureProposal[];
+	architectureDecisions?: ArchitectureDecision[];
+	architectureGate?: {
+		proposalId: string;
+		source: string;
+		stepKey: string;
+		planOutput: string;
+	};
 	reviewGate?: ReviewGate;
 	humanDecisions?: HumanDecision[];
 	roleRevisions?: Record<string, RoleRevision>;
@@ -973,6 +990,12 @@ export class WorkflowRuntime {
 							chatMessages: structuredClone(this.chatMessages(run.id)),
 							history: structuredClone(run.history),
 							humanDecisions: structuredClone(run.humanDecisions ?? []),
+							architectureProposals: structuredClone(
+								run.architectureProposals ?? [],
+							),
+							architectureDecisions: structuredClone(
+								run.architectureDecisions ?? [],
+							),
 						};
 			const execution = this.hooks.execution
 				? await this.hooks.execution(run, step.runner ?? run.runner)
@@ -1079,7 +1102,11 @@ export class WorkflowRuntime {
 						if (
 							step.groups?.some((group) =>
 								group.some(
-									(item) => item.askQuestions || item.tool === "human-review",
+									(item) =>
+										item.askQuestions ||
+										["human-review", "architecture-decision"].includes(
+											item.tool ?? "",
+										),
 								),
 							)
 						)
@@ -1262,7 +1289,9 @@ export class WorkflowRuntime {
 								step.tool === "merge-readiness" ||
 								step.tool === "handoff"
 									? "waiting-ci"
-									: step.tool === "human-review"
+									: ["human-review", "architecture-decision"].includes(
+												step.tool ?? "",
+											)
 										? "waiting-human"
 										: "executing",
 						};
@@ -1327,6 +1356,49 @@ export class WorkflowRuntime {
 					signal.throwIfAborted();
 					if (execution && output !== undefined)
 						output = JSON.parse(execution.redact(JSON.stringify(output)));
+					if (step.architectureContract === "architecture-v1") {
+						run.architectureProposals ??= [];
+						const proposals = run.architectureProposals;
+						const proposal = await snapshotProposal(
+							ArchitectureSchema.parse(output),
+							key,
+							proposals.length + 1,
+							context.evidenceDir,
+							signal,
+						);
+						for (const previous of proposals)
+							if (
+								previous.source === key &&
+								["proposed", "pending", "accepted", "routine"].includes(
+									previous.status,
+								)
+							)
+								previous.status = "superseded";
+						proposals.push(proposal);
+						output = {
+							...proposal.content,
+							proposalId: proposal.id,
+							version: proposal.version,
+							digest: proposal.digest,
+						};
+					}
+					if (step.architectureContract === "architecture-review-v1") {
+						const proposal = [...(run.architectureProposals ?? [])]
+							.reverse()
+							.find(
+								(p) =>
+									p.source ===
+									`${prefix}${step.architectureSource ?? "architecture"}`,
+							);
+						if (!proposal || proposal.status !== "proposed")
+							throw new Error("Candidate review has no current proposal");
+						verifyProposal(proposal);
+						output = {
+							...ArchitectureReviewSchema.parse(output),
+							proposalId: proposal.id,
+							proposalDigest: proposal.digest,
+						};
+					}
 					outputs[step.id] = output;
 					if (step.reviewContract && step.reviewContract !== "inventory-v1")
 						run.outputs[key] = output;
@@ -1673,6 +1745,156 @@ export class WorkflowRuntime {
 				continue;
 			}
 			if (
+				step.type === "agent" &&
+				readPath(output, "architectureRevision") === true
+			) {
+				const decisionStep = steps.find(
+					(s) => s.tool === "architecture-decision",
+				);
+				const target = String(
+					decisionStep?.arguments?.revise ?? "architecture",
+				);
+				if (
+					!decisionStep ||
+					!steps.some(
+						(s) =>
+							s.id === target && s.architectureContract === "architecture-v1",
+					)
+				)
+					throw new Error(
+						"Changed architecture requires a configured proposal route",
+					);
+				checkpoint.current = target;
+				checkpoint.active = undefined;
+				this.log(
+					run,
+					key,
+					"Requirements changed the architecture; reviewing a new proposal before further implementation.",
+				);
+				this.save(run);
+				continue;
+			}
+			if (step.tool === "architecture-decision") {
+				if (parallel)
+					throw new Error("Human checkpoints belong outside fanout branches");
+				const args = step.arguments ?? {};
+				const source = `${prefix}${String(args.proposal ?? "architecture")}`;
+				const proposal = [...(run.architectureProposals ?? [])]
+					.reverse()
+					.find((p) => p.source === source);
+				const reviewed = outputs[String(args.review ?? "plan-review")];
+				if (
+					!proposal ||
+					readPath(reviewed, "approved") !== true ||
+					readPath(reviewed, "proposalId") !== proposal.id ||
+					readPath(reviewed, "proposalDigest") !== proposal.digest
+				)
+					throw new Error(
+						"Architecture requires review of the exact current candidate before a decision",
+					);
+				verifyProposal(proposal);
+				const planOutput = String(args.planOutput ?? "plan");
+				if (proposal.status === "proposed") {
+					const policy = args.approval ?? "meaningful";
+					if (!["meaningful", "always", "never"].includes(String(policy)))
+						throw new Error("Unknown architecture approval policy");
+					if (
+						policy === "never" ||
+						(policy === "meaningful" &&
+							proposal.content.classification === "routine")
+					) {
+						if (proposal.content.unresolvedDecisions.length)
+							throw new Error(
+								"Cannot bypass unresolved architecture decisions",
+							);
+						proposal.status = "routine";
+						proposal.bypassReason =
+							policy === "never"
+								? "Operator configured approval=never"
+								: proposal.content.rationale;
+						outputs[planOutput] = structuredClone(proposal.content.candidate);
+						outputs[step.id] = {
+							decision: "routine",
+							proposalId: proposal.id,
+							digest: proposal.digest,
+							reason: proposal.bypassReason,
+						};
+						this.save(run);
+					} else {
+						proposal.status = "pending";
+						run.architectureGate = {
+							proposalId: proposal.id,
+							source,
+							stepKey: key,
+							planOutput,
+						};
+						this.save(run);
+					}
+				}
+				if (proposal.status === "pending") {
+					outputs[step.id] = {
+						proposal: structuredClone(proposal.content),
+						proposalId: proposal.id,
+						version: proposal.version,
+						digest: proposal.digest,
+					};
+					if (state.phase !== "answered")
+						await this.waitForAnswers(
+							run,
+							[
+								`Review architecture proposal version ${proposal.version}. Accept this exact candidate in the architecture panel, request changes, or ask for an explanation. Discussion does not authorize implementation.`,
+							],
+							signal,
+							state,
+							undefined,
+							context,
+						);
+					signal.throwIfAborted();
+				}
+				if (
+					proposal.status === "accepted" ||
+					proposal.status === "rejected" ||
+					proposal.status === "superseded"
+				) {
+					const decision = [...(run.architectureDecisions ?? [])]
+						.reverse()
+						.find(
+							(d) =>
+								d.proposalId === proposal.id &&
+								["accept", "revise", "discuss"].includes(d.decision),
+						);
+					if (!decision)
+						throw new Error("Architecture decision receipt unavailable");
+					output = outputs[step.id] = {
+						...decision,
+						decision: proposal.status === "accepted" ? "accept" : "revise",
+					};
+					if (proposal.status === "accepted")
+						outputs[planOutput] = structuredClone(proposal.content.candidate);
+					else {
+						const target = String(args.revise ?? "architecture");
+						if (
+							!steps.some(
+								(s) =>
+									s.id === target &&
+									s.architectureContract === "architecture-v1",
+							)
+						)
+							throw new Error(
+								"Architecture revision requires a configured proposal role",
+							);
+						checkpoint.current = target;
+						checkpoint.active = undefined;
+						this.save(run);
+						continue;
+					}
+				} else if (proposal.status === "routine") output = outputs[step.id];
+				else
+					throw new Error(
+						"Architecture proposal is not authorized for implementation",
+					);
+			}
+			if (
 				step.askQuestions ||
 				(["ci-fix", "code-fix", "visual-fix"].includes(step.id) &&
 					Array.isArray(readPath(output, "questions")))
@@ -1849,6 +2071,16 @@ export class WorkflowRuntime {
 					throw new Error(
 						"An explanation must preserve every pending decision",
 					);
+				if (context.step.tool === "architecture-decision") {
+					const proposal = run.architectureProposals?.find(
+						(p) => p.id === run.architectureGate?.proposalId,
+					);
+					proposal?.feedback.push({
+						kind: "explanation",
+						text: clarified.join("\n\n"),
+						at: new Date().toISOString(),
+					});
+				}
 				questions = clarified;
 				recommendations = explained.questionRecommendations as
 					| QuestionRecommendation[]
@@ -1945,6 +2177,93 @@ export class WorkflowRuntime {
 			this.pendingAnswers.delete(run.id);
 		}
 	}
+	decideArchitecture(id: string, value: unknown): void {
+		const decision = ArchitectureDecisionSchema.parse(value);
+		const run = this.get(id),
+			gate = run.architectureGate,
+			pending = this.pendingAnswers.get(id);
+		const proposal = run.architectureProposals?.find(
+			(p) => p.id === gate?.proposalId,
+		);
+		if (
+			run.status !== "waiting" ||
+			!pending ||
+			!proposal ||
+			proposal.status !== "pending"
+		)
+			throw new Error("Run is not waiting for an architecture decision");
+		if (
+			decision.proposalId !== proposal.id ||
+			decision.version !== proposal.version ||
+			decision.digest !== proposal.digest
+		)
+			throw new Error(
+				"Architecture proposal changed. Refresh and review again.",
+			);
+		verifyProposal(proposal);
+		if (decision.decision === "explain") {
+			proposal.feedback.push({
+				kind: "explain",
+				text: decision.feedback!,
+				at: new Date().toISOString(),
+			});
+			this.answer(id, decision.feedback!, "explanation");
+			return;
+		}
+		if (
+			decision.decision === "accept" &&
+			proposal.content.unresolvedDecisions.length
+		)
+			throw new Error(
+				"Request a revision resolving the remaining architecture decisions before acceptance",
+			);
+		run.architectureDecisions ??= [];
+		run.architectureDecisions.push({
+			...decision,
+			at: new Date().toISOString(),
+		});
+		if (decision.decision === "accept") {
+			proposal.status = "accepted";
+			run.outputs[gate!.planOutput] = structuredClone(
+				proposal.content.candidate,
+			);
+		} else {
+			proposal.status =
+				decision.decision === "revise" ? "rejected" : "superseded";
+			proposal.feedback.push({
+				kind: decision.decision,
+				text: decision.feedback!,
+				at: new Date().toISOString(),
+			});
+			// Discussion regenerates a candidate, never grants acceptance.
+			run.answers.push({
+				questions: [...run.questions],
+				answer: decision.feedback!,
+				at: new Date().toISOString(),
+			});
+		}
+		const answered = (frame?: GraphCheckpoint): void => {
+			if (frame?.active?.phase === "waiting" && !frame.active.children?.length)
+				frame.active.phase = "answered";
+			frame?.active?.children?.forEach(answered);
+		};
+		answered(run.checkpoint);
+		run.status = "running";
+		run.questions = [];
+		run.questionRecommendations = undefined;
+		run.questionBatchId = undefined;
+		delete run.architectureGate;
+		this.log(
+			run,
+			gate!.stepKey,
+			decision.decision === "accept"
+				? `Accepted architecture version ${proposal.version}`
+				: `Architecture feedback: ${decision.feedback}`,
+		);
+		// Persist the authorization and exact handoff before waking the graph.
+		this.save(run);
+		pending.resolve();
+	}
 	decide(id: string, decision: Omit<HumanDecision, "at">): void {
 		const run = this.get(id),
 			pending = this.pendingAnswers.get(id),
@@ -1988,6 +2307,24 @@ export class WorkflowRuntime {
 		)
 			throw new Error("Run is not waiting for an answer");
 		if (!answer.trim()) throw new Error("Enter an answer");
+		if (
+			run.architectureGate &&
+			kind !== "explanation" &&
+			!(kind === undefined && isExplanationRequest(answer, run.questions))
+		) {
+			const proposal = run.architectureProposals!.find(
+				(p) => p.id === run.architectureGate!.proposalId,
+			)!;
+			this.decideArchitecture(id, {
+				proposalId: proposal.id,
+				version: proposal.version,
+				digest: proposal.digest,
+				decision: "discuss",
+				feedback: answer,
+			});
+			return;
+		}
+
 		if (
 			kind === "explanation" ||
 			(kind === undefined && isExplanationRequest(answer, run.questions))
@@ -2130,7 +2467,8 @@ export class WorkflowRuntime {
 		if (this.shuttingDown) throw new Error("Factory is shutting down");
 		if (
 			this.controllers.has(id) ||
-			!["failed", "interrupted"].includes(run.status)
+			(!["failed", "interrupted"].includes(run.status) &&
+				!(run.status === "stopped" && run.architectureGate))
 		)
 			throw new Error("Only failed or interrupted runs can be retried");
 		releaseDelivery(run, "Explicit retry must re-enter delivery coordination");

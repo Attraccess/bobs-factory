@@ -1000,6 +1000,8 @@ export class FactoryTools {
 					await delay(context.signal);
 				}
 			}
+			case "architecture-decision":
+				return {}; // Runtime owns proposal identity and the passive wait.
 			case "human-review": {
 				const headSha = await command("git", ["rev-parse", "HEAD"]);
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");

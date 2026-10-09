@@ -1405,3 +1405,60 @@ An unchanged specialist fix that still leaves the same consequential findings op
 QA stories use stable inventory IDs from the configured aggregate, including renamed gate steps. Every active requirement needs a relevant executable story or explicit justified exclusion. Excluding executable QA does not waive the requirement. Failed or blocked required QA still prevents handoff regardless of earlier business coverage. A called workflow returns its review association to its caller; subsequent guides, called QA workflows, fanout branches and approval steps inherit it, including after restart. A branch that establishes its own review retains that association. The human guide uses the frozen active inventory order and runtime-attached coverage; expandable evidence shows accepted skips, specialist attribution, observations, disputes and executed QA receipts. Clean current-head/base checks, screenshots and fresh explicit human approval remain effective.
 
 Untouched legacy stock review segments upgrade conservatively and idempotently for future launches. Customized general reviewers, guide prompts, gate arguments, and consumers of legacy review output keep their legacy contracts. To opt in, copy the extraction/fanout/gate segment from the stock shared pipeline and retarget substantive correction loops through extraction. Preserve your role settings and QA/human approval gates. Active, waiting, failed and restored accepted runs are not rewritten.
+
+### Architecture discussion before implementation
+
+New stock Factory and Takeover runs share this path:
+
+```text
+Draft plan -> architecture proposal -> candidate review -> proposal decision -> implement
+                    ^                       |                    |
+                    +---- changes needed ---+--- feedback -------+
+```
+
+The architecture role inspects the selected repositories and proposes responsibilities,
+interfaces, alternatives, trade-offs and a complete candidate implementation plan.
+Meaningful choices include a structured diagram with a text explanation. The candidate
+review checks the complete proposal against requirements and inherited Takeover work.
+Routine, unsplit work using established patterns records a concrete bypass reason and
+continues without another human wait. Simple keeps its existing path.
+
+The run page and artifact inspector display the proposal. **Accept proposal** authorizes
+implementation of exactly that version, candidate plan and snapshotted assets.
+**Request changes** regenerates the proposal and sends it through candidate review again.
+Chat or question answers during this wait also request revision; typing “accept” there
+never substitutes for the explicit acceptance action. **Explain** rephrases the pending
+question using the proposal context and keeps the same proposal pending. It grants no
+authorization. Earlier versions and feedback remain visible. Stale or duplicate decision
+submissions fail; refresh the run before deciding again.
+
+Proposal decisions are independent of final PR approval. The final review still binds
+approval to the delivered revision and requires provider-confirmed merge. Takeover's
+candidate retains completed work, the existing PR URL and branch. The implementer keeps
+its scoped plan/assets input; accepted architecture and proposal identity are included
+in that self-contained plan for downstream requirements, QA and guides.
+
+Restart restores the same pending proposal and feedback. Acceptance and the exact plan
+handoff are saved before the graph continues, so recovery does not ask for acceptance
+again. Stopping prevents acceptance and advancement. A stopped proposal discussion can
+be resumed explicitly from the architecture panel. Pending human waits consume no
+machine-capacity slot. Existing question notifications retain their transition identity
+on restoration; architecture waits also use proposal identity for Web Push.
+
+Recipes exposes the shared architecture role's prompt and agent settings. Its frozen
+`architectureContract: "architecture-v1"` selects output validation even after cloning
+or renaming. Candidate review uses `architecture-review-v1` and `architectureSource` to
+identify its proposal role. The `architecture-decision` tool arguments configure
+`proposal`, `review`, `planOutput`, `revise` and `approval`. `approval: "meaningful"` is
+the stock policy; `always` also requires acceptance for routine work; `never` is an
+intentional operator customization that records a bypass and removes the human design
+gate. Edit these arguments in Workflow JSON. Unresolved architecture decisions cannot
+advance implementation. Visit limits fail closed instead of advancing an exhausted loop. If subsequent answers or
+steering materially change an accepted architecture, the implementer preserves completed
+work and returns `architectureRevision: true` with blocked status. The graph returns to
+a new proposal and candidate review; the earlier acceptance cannot authorize its implementation.
+
+Only untouched saved stock planning paths are upgraded. Customized legacy planning
+paths remain deliberate operator choices. Accepted active runs always retain their frozen
+workflow definitions during restart and retry. Independent child execution and delivery
+are separate planned work (#97–#99); this shared proposal surface does not schedule children.

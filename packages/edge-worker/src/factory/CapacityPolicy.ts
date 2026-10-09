@@ -2,6 +2,7 @@ import type { WorkflowStep } from "./Workflow.js";
 
 export const passiveTools = [
 	"human-review",
+	"architecture-decision",
 	"handoff",
 	"ci",
 	"merge-readiness",

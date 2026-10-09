@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Factory and Takeover architecture proposals with repository evidence, diagrams, discussion-driven revision and exact-version acceptance before implementation. Routine work records an approval bypass. ([Taskbot #90](https://taskbot.apps.janjaap.de/p/bobs-factory/t/90))
+
 ### Fixed
 
 - Draft PR delivery no longer fails on every retry when a repository's commit hooks run long or failing full-suite checks; Factory's own commit skips commit hooks while implementation checks, review and CI keep owning verification. Push hooks such as Git LFS still run. ([#59](https://github.com/jappyjan/bobs-factory/pull/59))

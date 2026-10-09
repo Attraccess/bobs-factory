@@ -9,6 +9,7 @@ import {
 	useState,
 } from "react";
 import { Link } from "react-router-dom";
+import { ArchitectureContent } from "./architecture";
 import { api, artifactsOf, friendly, screenshotUrl } from "./client";
 import { LazyImage, LazyVideo } from "./media";
 import { useRestorableState } from "./restoration";
@@ -21,6 +22,8 @@ export function artifactType(v: any) {
 		...Object.keys(v),
 		...(Array.isArray(v.keys) ? v.keys : []),
 	]);
+	if (keys.has("architectureContract") && keys.has("candidate"))
+		return "architecture";
 	if (keys.has("qaContract") && keys.has("results")) return "qa";
 	if (
 		Array.isArray(v.screenshots) ||
@@ -44,6 +47,7 @@ export function artifactType(v: any) {
 	return "structure";
 }
 const typeIcons: Record<string, string> = {
+	architecture: "🏗️",
 	qa: "🧪",
 	screenshots: "🖼️",
 	guide: "📖",
@@ -389,6 +393,8 @@ export function RenderArtifact({
 	onImage: (i: number) => void;
 }) {
 	switch (artifactType(v)) {
+		case "architecture":
+			return <ArchitectureContent content={v} />;
 		case "qa":
 			return (
 				<>

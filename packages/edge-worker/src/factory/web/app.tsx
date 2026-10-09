@@ -11,6 +11,7 @@ import {
 	useNavigate,
 	useParams,
 } from "react-router-dom";
+import { ArchitecturePanel } from "./architecture";
 import { ArtifactCard, Inspector } from "./artifacts";
 import { AccessBoundary } from "./auth";
 import {
@@ -903,6 +904,7 @@ function RunPage({
 					)}
 				</div>
 			</header>
+			<ArchitecturePanel key={run.id} run={run} />
 			<ExecutionDetails run={run} />
 			<RunOrigin run={run} />
 			{kind && !reason && (
