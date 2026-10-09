@@ -2,7 +2,7 @@
 
 Date: 2026-10-09
 
-Tested source: `fix/codex-resume-timeout` changes on top of
+Tested source: `89fcc64e` on `fix/codex-resume-timeout`, based on
 `1443a7c1caeb33f47fd4cd1fefbd4b0f749cc586` (PR #66).
 
 F1 applies to the changed runner startup and persisted recovery behavior.
@@ -76,6 +76,7 @@ Passed checks:
   3 files, 161 tests.
 - Codex runner and EdgeWorker builds/typechecks; Biome on changed TypeScript;
   `git diff --check`.
+- Required commit hooks: workspace build and typecheck passed.
 
 This validates scripted orchestration and native startup without model work.
 It does not validate live model behavior, physical passkey interaction or a
