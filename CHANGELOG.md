@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Draft PR delivery no longer fails on every retry when a repository's commit hooks run long or failing full-suite checks; Factory's own commit skips commit hooks while implementation checks, review and CI keep owning verification. Push hooks such as Git LFS still run. ([#59](https://github.com/jappyjan/bobs-factory/pull/59))
+
 ### Changed
 
 - Include the pinned Bun production dependency notices and corresponding MPL source in beta release materials ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).

@@ -139,7 +139,13 @@ it("publishes the reported GitLab SSH repository without ever invoking gh", asyn
 		baseSha: "base",
 	});
 	expect(calls.some((c) => c[0] === "gh")).toBe(false);
-	expect(calls).toContainEqual(["git", "commit", "-m", "chore: change"]);
+	expect(calls).toContainEqual([
+		"git",
+		"commit",
+		"--no-verify",
+		"-m",
+		"chore: change",
+	]);
 	expect(calls).toContainEqual(["git", "push", "-u", "origin", "HEAD"]);
 	expect(ctx.run.gitProvider).toEqual({
 		type: "gitlab",
