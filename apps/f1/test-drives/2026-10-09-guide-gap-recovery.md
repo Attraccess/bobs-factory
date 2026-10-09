@@ -83,3 +83,10 @@ real agent can reconcile the production PRs or resolve the tracker conflict. The
 live run and its repository were inspected read-only and were not resumed or
 modified. Stock correction branches still own subsequent review/CI/QA; this
 focused drive used a metadata-only custom workflow and did not repeat live QA.
+
+The same mocked drive passed again after merging latest main (`8fc64e7e`)
+into revision `8e996581`, including the refreshed full routing prompt fixture.
+Evidence: `/tmp/bobs-guide-gap-f1-nRQdsq`; log:
+`/tmp/bobs-guide-gap-f1-latest.log`. Both scenarios retained the same expected
+counts and human-review checkpoints. The full workspace test run passed with
+3,214 tests and two skips; normal build and type-check gates also passed.
