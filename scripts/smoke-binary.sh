@@ -1,6 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
-binary="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
+binary="$(cd "$(dirname "$1")" && pwd -P)/$(basename "$1")"
+# Installations expose a bin symlink; metadata stays beside the immutable executable.
+link_count=0
+while [[ -L "$binary" ]]; do
+  link_count=$((link_count + 1))
+  [[ "$link_count" -le 40 ]] || { echo 'Executable symlink chain is too deep'; exit 1; }
+  link_target="$(readlink "$binary")"
+  case "$link_target" in
+    /*) binary="$link_target" ;;
+    *) binary="$(dirname "$binary")/$link_target" ;;
+  esac
+  binary="$(cd "$(dirname "$binary")" && pwd -P)/$(basename "$binary")"
+done
 build_json="$(dirname "$binary")/build.json"
 [[ -f "$build_json" && ! -L "$build_json" ]] || { echo 'Native smoke requires the adjacent build.json'; exit 1; }
 # The build identity contains only flat string/boolean fields. Keep this check

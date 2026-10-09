@@ -14,14 +14,17 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
+	compareReleaseVersions,
 	fileRecord,
 	jsonBytes,
 	REPOSITORY,
+	selectPublicRelease,
 	sha256,
 	TARGETS,
 	validateArchive,
 	validateBuildProvenance,
 	validateEvidence,
+	validateIdentity,
 	validatePublicationSlot,
 	validatePublicRepository,
 	validateReleaseManifest,
@@ -52,8 +55,8 @@ function fixture(version = "0.2.74") {
 		BOBS_FACTORY_INSTALL_PROFILE: profile,
 		SHELL: "/bin/bash",
 	};
-	const install = () =>
-		spawnSync("sh", [join(root, "scripts/install.sh")], {
+	const install = (...args) =>
+		spawnSync("sh", [join(root, "scripts/install.sh"), ...args], {
 			env,
 			encoding: "utf8",
 		});
@@ -155,6 +158,7 @@ function fixture(version = "0.2.74") {
 			targets,
 		};
 		writeFileSync(join(downloads, "latest.json"), jsonBytes(metadata));
+		writeFileSync(join(downloads, "release.json"), jsonBytes(metadata));
 		return {
 			metadata,
 			name,
@@ -219,6 +223,164 @@ test("anonymous install configures PATH once, retains old version, and safely re
 			"repeat must not append PATH repeatedly",
 		);
 		assert.match(readlinkSync(join(f.prefix, "bin/bobs-factory")), /0\.2\.74/);
+	} finally {
+		f.cleanup();
+	}
+});
+test("first public beta installs anonymously by default or exact version", () => {
+	const f = fixture("1.0.0-beta");
+	try {
+		validateReleaseManifest({ ...f.current.metadata, channel: "prerelease" });
+		for (const args of [[], ["--version", "1.0.0-beta"]]) {
+			const result = f.install(...args);
+			assert.equal(result.status, 0, result.stderr);
+			assert.match(result.stdout, /This is a prerelease/);
+			assert.equal(
+				execFileSync(join(f.prefix, "bin/bobs-factory"), {
+					encoding: "utf8",
+				}).trim(),
+				"1.0.0-beta",
+			);
+		}
+		const result = f.install("--version", "1.0.0-beta.01");
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /Invalid version/);
+	} finally {
+		f.cleanup();
+	}
+});
+test("release selection exposes verified beta before stable and keeps stable thereafter", () => {
+	const release = (version, extra = {}) => ({
+		tag_name: `v${version}`,
+		prerelease: version.includes("-"),
+		draft: false,
+		assets: [{ name: "release.json" }],
+		...extra,
+	});
+	const beta = release("1.0.0-beta");
+	const beta2 = release("1.0.0-beta.2");
+	const beta10 = release("1.0.0-beta.10");
+	assert.equal(selectPublicRelease([beta10, beta, beta2]), beta10);
+	assert.equal(
+		selectPublicRelease([
+			beta,
+			release("1.0.0-rc", { draft: true }),
+			release("5.0.0", { assets: [] }),
+		]),
+		beta,
+	);
+	const stable = release("0.2.74");
+	assert.equal(selectPublicRelease([beta10, stable]), stable);
+	assert.equal(selectPublicRelease([]), null);
+	assert.throws(
+		() => selectPublicRelease([release("1.0.0-beta", { prerelease: false })]),
+		/prerelease flag/,
+	);
+	assert.equal(compareReleaseVersions("1.0.0-beta", "1.0.0"), -1);
+	validateIdentity("1.0.0-beta", commit, 123);
+	validatePublicationSlot(
+		{ version: "1.0.0-beta", commit, runId: 123 },
+		null,
+		null,
+		{ tag_name: "v0.2.74" },
+	);
+	assert.throws(
+		() =>
+			validatePublicationSlot(
+				{ version: "1.0.0-beta", commit, runId: 123 },
+				null,
+				null,
+				{ tag_name: "v1.0.0" },
+			),
+		/newer than/,
+	);
+	for (const version of ["01.0.0", "1.0.0-beta..1", "1.0.0-beta.01", "1.0.0-"])
+		assert.throws(
+			() => validateIdentity(version, commit, 123),
+			/Invalid exact release version/,
+		);
+});
+test("Pages synchronizes a verified beta manifest and preserves prior metadata on digest failure", () => {
+	const f = fixture("1.0.0-beta");
+	try {
+		const workspace = join(f.work, "pages");
+		mkdirSync(join(workspace, "scripts/lib"), { recursive: true });
+		for (const file of [
+			"sync-release-metadata.mjs",
+			"install.sh",
+			"lib/binary-release.mjs",
+		])
+			copyFileSync(
+				join(root, "scripts", file),
+				join(workspace, "scripts", file),
+			);
+		const metadata = f.current.metadata;
+		const bytes = jsonBytes(metadata);
+		const assetURL = `https://github.com/${REPOSITORY}/releases/download/${metadata.tag}/release.json`;
+		const records = [
+			metadata.installer,
+			metadata.verifier,
+			metadata.source,
+			...Object.values(metadata.targets).flatMap((entry) => [
+				{
+					file: entry.archive,
+					sha256: entry.archiveSha256,
+					size: entry.archiveSize,
+				},
+				{
+					file: entry.manifest,
+					sha256: entry.manifestSha256,
+					size: entry.manifestSize,
+				},
+			]),
+		];
+		const release = {
+			draft: false,
+			prerelease: true,
+			tag_name: metadata.tag,
+			assets: [
+				{
+					name: "release.json",
+					browser_download_url: assetURL,
+					size: bytes.length,
+					digest: `sha256:${sha256(bytes)}`,
+				},
+				...records.map((entry) => ({
+					name: entry.file,
+					size: entry.size,
+					digest: `sha256:${entry.sha256}`,
+				})),
+			],
+		};
+		const fixtureFile = join(workspace, "transport.json");
+		writeFileSync(
+			fixtureFile,
+			JSON.stringify({ release, content: bytes.toString("utf8") }),
+		);
+		const preload = join(workspace, "transport.mjs");
+		writeFileSync(
+			preload,
+			`import { readFileSync } from "node:fs"; const fixture = JSON.parse(readFileSync(${JSON.stringify(fixtureFile)}, "utf8")); globalThis.fetch = async (url) => { if (String(url) === ${JSON.stringify(`https://api.github.com/repos/${REPOSITORY}/releases?per_page=100&page=1`)}) return new Response(JSON.stringify([fixture.release])); if (String(url) === ${JSON.stringify(assetURL)}) return new Response(fixture.content); throw new Error("Unexpected network request: " + url); };`,
+		);
+		const args = [
+			"--import",
+			preload,
+			join(workspace, "scripts/sync-release-metadata.mjs"),
+		];
+		let result = spawnSync(process.execPath, args, { encoding: "utf8" });
+		assert.equal(result.status, 0, result.stderr);
+		const pointer = join(workspace, "website/public/releases/latest.json");
+		const previous = readFileSync(pointer, "utf8");
+		assert.equal(JSON.parse(previous).channel, "prerelease");
+		assert.equal(JSON.parse(previous).version, "1.0.0-beta");
+		writeFileSync(
+			fixtureFile,
+			JSON.stringify({ release, content: `${bytes.toString("utf8")} ` }),
+		);
+		result = spawnSync(process.execPath, args, { encoding: "utf8" });
+		assert.notEqual(result.status, 0);
+		assert.match(result.stderr, /checksum mismatch/);
+		assert.equal(readFileSync(pointer, "utf8"), previous);
 	} finally {
 		f.cleanup();
 	}

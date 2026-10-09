@@ -72,8 +72,12 @@ verify() {
   [ "$(wc -c < "$1" | tr -d ' ')" = "$3" ] || fail 'Downloaded file size does not match the release.'
   [ "$(sha256 "$1")" = "$expected_hash" ] || fail 'Downloaded file checksum does not match the release.'
 }
+valid_version() {
+  printf '%s' "$1" | LC_ALL=C grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*)?$' || return 1
+  case "$1" in *-*) ! printf '%s' "${1#*-}" | LC_ALL=C grep -Eq '(^|\.)0[0-9]+($|\.)';; *) return 0;; esac
+}
 if [ -n "$version" ]; then
-  printf '%s' "$version" | LC_ALL=C grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$' || fail 'Invalid version.'
+  valid_version "$version" || fail 'Invalid version.'
   metadata="https://github.com/$repository/releases/download/v$version/release.json"
 else
   metadata="$site/releases/latest.json"
@@ -86,7 +90,7 @@ download "$metadata" "$work/release.json"
 status=$(field "$work/release.json" status)
 [ "$status" = available ] || fail 'The first public release is being prepared. Please check the homepage for availability.'
 release_version=$(field "$work/release.json" version)
-printf '%s' "$release_version" | LC_ALL=C grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$' || fail 'Invalid release version.'
+valid_version "$release_version" || fail 'Invalid release version.'
 [ -z "$version" ] || [ "$version" = "$release_version" ] || fail 'Requested version does not match release metadata.'
 tag=$(field "$work/release.json" tag)
 [ "$tag" = "v$release_version" ] || fail 'Invalid immutable release tag.'
@@ -102,6 +106,7 @@ verifier=$(field "$work/verifier.json" file)
 [ "$verifier" = install-binary.sh ] || fail 'Unexpected verifier filename.'
 base="https://github.com/$repository/releases/download/$tag"
 echo "Downloading $release_version..."
+case "$release_version" in *-*) printf 'This is a prerelease of Bob\047s Factory.\n';; esac
 download "$base/$archive" "$work/$archive"
 download "$base/$manifest" "$work/$manifest"
 download "$base/$verifier" "$work/$verifier"

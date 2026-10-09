@@ -3,15 +3,17 @@
 import { execFileSync } from "node:child_process";
 import {
 	closeSync,
+	createWriteStream,
 	existsSync,
 	mkdirSync,
 	openSync,
 	readdirSync,
-	writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { parseArgs } from "node:util";
-import { REPOSITORY, requireValue, sha256 } from "./lib/binary-release.mjs";
+import { REPOSITORY, requireValue, sha256File } from "./lib/binary-release.mjs";
 
 const { values } = parseArgs({
 	options: {
@@ -63,6 +65,9 @@ const run = await runResponse.json();
 requireValue(
 	run.repository?.full_name === REPOSITORY &&
 		run.head_repository?.full_name === REPOSITORY &&
+		run.head_sha === values.sha &&
+		run.event === "workflow_dispatch" &&
+		run.path === ".github/workflows/release-evidence.yml" &&
 		run.status === "completed" &&
 		run.conclusion === "success",
 	"Evidence artifact must come from a successful canonical repository run",
@@ -79,14 +84,17 @@ requireValue(
 );
 const content = await fetch(location);
 requireValue(content.ok, "Evidence archive download failed");
-const bytes = Buffer.from(await content.arrayBuffer());
-requireValue(
-	sha256(bytes) === artifact.digest.slice(7),
-	"Evidence GitHub artifact digest mismatch",
-);
 mkdirSync(output, { recursive: true });
 const archive = join(output, "evidence.zip");
-writeFileSync(archive, bytes);
+requireValue(content.body, "Evidence archive response body is missing");
+await pipeline(
+	Readable.fromWeb(content.body),
+	createWriteStream(archive, { flags: "wx" }),
+);
+requireValue(
+	sha256File(archive) === artifact.digest.slice(7),
+	"Evidence GitHub artifact digest mismatch",
+);
 const entries = execFileSync("unzip", ["-Z1", archive], { encoding: "utf8" })
 	.trim()
 	.split("\n");

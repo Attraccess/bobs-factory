@@ -10,5 +10,6 @@ export const release: {
 	status: string;
 	message?: string;
 	version?: string;
+	channel?: "stable" | "prerelease";
 } = metadata;
 export const releaseAvailable = release.status === "available";

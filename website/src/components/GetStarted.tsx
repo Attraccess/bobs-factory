@@ -114,7 +114,8 @@ export function GetStarted() {
 					)}
 					{releaseAvailable && (
 						<p className="mt-5 text-sm text-ink-2">
-							Version {release.version} · public download · no GitHub sign-in
+							{release.channel === "prerelease" ? "Preview" : "Version"}{" "}
+							{release.version} · public download · no GitHub sign-in
 						</p>
 					)}
 					<Reveal delay={0.1} className="mt-8 flex flex-wrap gap-3">

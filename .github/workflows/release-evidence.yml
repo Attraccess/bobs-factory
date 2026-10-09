@@ -1,0 +1,55 @@
+name: Validate and upload Bob's Factory release evidence
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Full reviewed candidate SHA; dispatch from that exact candidate ref
+        required: true
+        type: string
+      version:
+        description: Exact version committed at candidate, including prerelease suffix
+        required: true
+        type: string
+      binary_run_id:
+        description: Successful four-native-target binary-build run at candidate
+        required: true
+        type: string
+      evidence_url:
+        description: HTTPS archive containing reviewed release-evidence receipts and source material; no secrets
+        required: true
+        type: string
+      evidence_sha256:
+        description: Independently reviewed SHA-256 of supplied release-evidence.tar.gz
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+jobs:
+  evidence:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - name: Validate exact workflow source and import reviewed evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          BINARY_RUN_ID: ${{ inputs.binary_run_id }}
+          EVIDENCE_URL: ${{ inputs.evidence_url }}
+          EVIDENCE_SHA256: ${{ inputs.evidence_sha256 }}
+        run: |
+          test "$GITHUB_SHA" = "$CANDIDATE_SHA"
+          node scripts/prepare-release-evidence.mjs --sha "$CANDIDATE_SHA" --version "$RELEASE_VERSION" --run-id "$BINARY_RUN_ID" --url "$EVIDENCE_URL" --sha256 "$EVIDENCE_SHA256" --output "$RUNNER_TEMP/release-evidence"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: bobs-factory-release-evidence-${{ inputs.candidate_sha }}
+          path: ${{ runner.temp }}/release-evidence/
+          if-no-files-found: error

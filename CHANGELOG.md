@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Prepare `1.0.0-beta` binary candidates, keep beta downloads distinct from stable releases, and verify installed native helpers before publication ([#57](https://github.com/jappyjan/bobs-factory/pull/57)).
 - Simplify binary installation to one public download command and guided first launch, including project/agent selection and GitHub setup without requiring the GitHub CLI. Preserve existing passkeys, state and native credentials. ([#55](https://github.com/jappyjan/bobs-factory/pull/55)).
 - Coordinate overlapping repository/base-branch finalization while keeping implementation parallel, and supervise bounded CI infrastructure retries without agent polling or empty source commits. Native Linear operational updates use the agent transcript; durable developer documentation remains issue comments. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))
 - Show complete binary installation on the homepage for all four macOS/Linux targets, from verified downloads and PATH setup to dashboard passkey enrollment, with all commands immediately visible ([#54](https://github.com/jappyjan/bobs-factory/pull/54)).
