@@ -77,7 +77,9 @@ execFileSync(
 for (const record of materials.records)
 	copyFileSync(join(materialsDirectory, record.file), join(stage, record.file));
 const archive = join(output, "source-rebuild.tar.gz");
-execFileSync("tar", ["-czf", archive, "-C", output, "source-rebuild"]);
+execFileSync("tar", ["-czf", archive, "-C", output, "source-rebuild"], {
+	env: { ...process.env, COPYFILE_DISABLE: "1" },
+});
 writeFileSync(
 	join(output, "source-record.json"),
 	jsonBytes(fileRecord(archive, "source-rebuild.tar.gz")),
