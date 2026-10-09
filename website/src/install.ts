@@ -11,5 +11,12 @@ export const release: {
 	message?: string;
 	version?: string;
 	channel?: "stable" | "prerelease";
-} = metadata;
+} = {
+	...metadata,
+	channel:
+		"channel" in metadata &&
+		(metadata.channel === "stable" || metadata.channel === "prerelease")
+			? metadata.channel
+			: undefined,
+};
 export const releaseAvailable = release.status === "available";

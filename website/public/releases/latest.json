@@ -2,6 +2,59 @@
 	"schemaVersion": 1,
 	"product": "bobs-factory",
 	"repository": "jappyjan/bobs-factory",
-	"status": "pending",
-	"message": "The first public binary release is being prepared."
+	"status": "available",
+	"channel": "prerelease",
+	"version": "1.0.0-beta",
+	"tag": "v1.0.0-beta",
+	"commit": "3e117128f77ecf256b1f7866f65906b33c83e9fb",
+	"buildRunId": 37906510201,
+	"installer": {
+		"file": "install.sh",
+		"sha256": "091148e535f51a0b9a0bea650b14f7d57098f66555383eadd14805fd44b7cbc2",
+		"size": 8133
+	},
+	"verifier": {
+		"file": "install-binary.sh",
+		"sha256": "2e219fcbe882b4837c0f8a1103fa5d58d276b3ace200948cead22e57ac1600a0",
+		"size": 6408
+	},
+	"source": {
+		"file": "source-rebuild.tar.gz",
+		"sha256": "b2efbad3e07ce5645ab912b4eddc53b3d0a9103c7a4cfe216436019271926a07",
+		"size": 2103475604
+	},
+	"targets": {
+		"darwin-arm64": {
+			"archive": "bobs-factory-1.0.0-beta-darwin-arm64.tar.gz",
+			"archiveSha256": "556c08674742bc4053638b7ea4dc6025b402bfa37f67d8d767d402417f672632",
+			"archiveSize": 32343398,
+			"manifest": "bobs-factory-1.0.0-beta-darwin-arm64.manifest.json",
+			"manifestSha256": "6dab9fcd455dca83f26d0a4de5590a2c60fe392afbdf1fab8e848debb9b89738",
+			"manifestSize": 340
+		},
+		"darwin-x64": {
+			"archive": "bobs-factory-1.0.0-beta-darwin-x64.tar.gz",
+			"archiveSha256": "ed68a5ed3adb579ee82cb1b7b2637131765e6b4d73c95e89ff99ee925aa84b90",
+			"archiveSize": 34768437,
+			"manifest": "bobs-factory-1.0.0-beta-darwin-x64.manifest.json",
+			"manifestSha256": "d9f07d6ef23fe2e7dd362ad94d8bfc02c465785add1f1812e9f14c8e2c6d8111",
+			"manifestSize": 336
+		},
+		"linux-x64": {
+			"archive": "bobs-factory-1.0.0-beta-linux-x64.tar.gz",
+			"archiveSha256": "bb4d6855fb454e93d2e1ccf9941776166d0f9427519d672c2e0f811c3f32b890",
+			"archiveSize": 42997757,
+			"manifest": "bobs-factory-1.0.0-beta-linux-x64.manifest.json",
+			"manifestSha256": "d1babb8ab451e9112ef772808bf92b31ec66cca2409462fcbfd4015f2f19965c",
+			"manifestSize": 334
+		},
+		"linux-arm64": {
+			"archive": "bobs-factory-1.0.0-beta-linux-arm64.tar.gz",
+			"archiveSha256": "bf6c3ddedc9098ecf09a4e24c99bd3f4525807562ec804f58330ff63c186a43b",
+			"archiveSize": 42976017,
+			"manifest": "bobs-factory-1.0.0-beta-linux-arm64.manifest.json",
+			"manifestSha256": "e37ac33878fd03a95b60ea3128eef1d72e1e289c5e2cb60a7031a9c6a8bf4a60",
+			"manifestSize": 338
+		}
+	}
 }
