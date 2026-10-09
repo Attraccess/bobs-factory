@@ -33,6 +33,7 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 	private activeOwners = new Set<object>();
 	private records: Delivery<Input>[];
 	private flushing?: Promise<void>;
+	private deliveryWaiters = new Map<string, Set<() => void>>();
 	private timer?: ReturnType<typeof setTimeout>;
 	private readonly file: string;
 
@@ -151,7 +152,23 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 			this.records.push(record);
 			this.save(); // The identity exists before any mutation is sent.
 		}
-		await this.flush();
+		if (record.status !== "delivered") {
+			const waiters = this.deliveryWaiters.get(record.id) ?? new Set();
+			this.deliveryWaiters.set(record.id, waiters);
+			let delivered!: () => void;
+			const ownReceipt = new Promise<void>((resolve) => {
+				delivered = resolve;
+			});
+			waiters.add(delivered);
+			try {
+				// A final response must not wait for unrelated transcript backlog.
+				// A completed drain still reports this record's pending/error state.
+				await Promise.race([this.flush(), ownReceipt]);
+			} finally {
+				waiters.delete(delivered);
+				if (!waiters.size) this.deliveryWaiters.delete(record.id);
+			}
+		}
 		if (record.status !== "delivered")
 			throw new LinearDeliveryPendingError(
 				record.id,
@@ -235,6 +252,7 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 					delete record.input;
 					delete record.error;
 					this.save();
+					this.notifyDelivered(record.id);
 					continue;
 				}
 				record.attempts++;
@@ -248,6 +266,7 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 				delete record.input;
 				delete record.error;
 				this.save();
+				this.notifyDelivered(record.id);
 			} catch (error) {
 				if (isLinearRateLimit(error)) record.ambiguous = false; // Provider rejected the request before executing it.
 				record.error =
@@ -263,6 +282,11 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 				if (isLinearRateLimit(error)) break;
 			}
 		}
+	}
+
+	private notifyDelivered(id: string): void {
+		for (const resolve of this.deliveryWaiters.get(id) ?? []) resolve();
+		this.deliveryWaiters.delete(id);
 	}
 
 	private schedule(): void {

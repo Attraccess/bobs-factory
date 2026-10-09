@@ -1418,6 +1418,10 @@ failures retry every 30 seconds while the worker runs; Taskbot status conflicts
 require reassessment and do not blindly retry. After restoring configuration or
 checking a conflict, call the protected `POST /api/runs/:id/ticket-sync` endpoint.
 It retries tracking without replaying implementation, PR publication or merge.
+Linear treats a confirmed missing activity or comment as safe to resend with its
+original delivery ID. Other input and lookup errors retain the ambiguous receipt.
+A delivered milestone returns as soon as its own durable receipt is saved;
+unrelated transcript backlog continues draining without holding the finished step.
 Inspect `ticketSync.error` and receipt limitations in its response. Comments use
 stable run/milestone markers; attachments deduplicate by PR URL. Ambiguous writes
 are reread before retrying; providers without idempotency cannot guarantee

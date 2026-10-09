@@ -221,21 +221,7 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 						}
 						return true;
 					} catch (error) {
-						const raw = error as {
-							status?: number;
-							raw?: {
-								response?: { errors?: { extensions?: { code?: string } }[] };
-							};
-						};
-						if (
-							raw.status === 404 ||
-							raw.raw?.response?.errors?.some((e) =>
-								["ENTITY_NOT_FOUND", "NOT_FOUND"].includes(
-									e.extensions?.code ?? "",
-								),
-							)
-						)
-							return false;
+						if (confirmedMissingEntity(error, "AgentActivity")) return false;
 						throw error; // Inconclusive lookup must never trigger another mutation.
 					}
 				},
@@ -277,7 +263,7 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 							);
 						return true;
 					} catch (error) {
-						if (confirmedMissingEntity(error)) return false;
+						if (confirmedMissingEntity(error, "Comment")) return false;
 						throw error;
 					}
 				},
@@ -1231,19 +1217,32 @@ function headersRecord(
 	return { ...headers };
 }
 
-function confirmedMissingEntity(error: unknown): boolean {
-	const raw = error as {
-		status?: number;
-		raw?: { response?: { errors?: { extensions?: { code?: string } }[] } };
+function confirmedMissingEntity(error: unknown, entity: string): boolean {
+	type Response = {
+		errors?: { message?: string; extensions?: { code?: string } }[];
 	};
-	return (
-		raw.status === 404 ||
-		Boolean(
-			raw.raw?.response?.errors?.some((e) =>
-				["ENTITY_NOT_FOUND", "NOT_FOUND"].includes(e.extensions?.code ?? ""),
-			),
+	type WrappedError = {
+		status?: number;
+		response?: Response;
+		raw?: WrappedError;
+	};
+	const seen = new Set<unknown>();
+	for (let raw = error as WrappedError; raw && !seen.has(raw); raw = raw.raw!) {
+		seen.add(raw);
+		if (
+			raw.status === 404 ||
+			raw.response?.errors?.some(
+				(e) =>
+					["ENTITY_NOT_FOUND", "NOT_FOUND"].includes(
+						e.extensions?.code ?? "",
+					) ||
+					(e.extensions?.code === "INPUT_ERROR" &&
+						e.message === `Entity not found: ${entity}`),
+			)
 		)
-	);
+			return true;
+	}
+	return false;
 }
 
 /** Repeated durable documentation retains one identity; markers distinguish separate workflow events. */
