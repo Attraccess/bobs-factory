@@ -577,6 +577,82 @@ it.each([
 });
 
 it.each([
+	"needs-attention",
+	"blocked",
+	"ready",
+])("routes a guide gap back to correction even when its decision is %s", async (status) => {
+	const input = context();
+	input.run.step = "pipeline/handoff";
+	input.run.outputs.ci = { headSha: "head" };
+	input.run.outputs.guide = {
+		decision: { status, summary: "Delivery needs reconciliation" },
+		requirements: [
+			{
+				criterion: "Continue the accepted PR",
+				status: status === "blocked" ? "unverified" : "gap",
+				evidence: ["A replacement PR was created without reconciliation"],
+			},
+		],
+	};
+	input.step.branches = [
+		{ when: { path: "fix", equals: true }, next: "ci-fix" },
+	];
+	const publish = vi.fn();
+	const tools = new FactoryTools({
+		postComment: publish,
+		command: async (_ctx, exe, args) =>
+			exe === "git"
+				? args[0] === "status"
+					? ""
+					: "head"
+				: JSON.stringify(githubApiReceipt(args)),
+	});
+	const result = await tools.tool(input);
+	expect(result).toMatchObject({
+		fix: true,
+		approved: false,
+		reviewReady: false,
+		blockers: expect.arrayContaining([
+			expect.objectContaining({
+				kind: "guide",
+				action: "fix",
+				message: expect.stringContaining("Continue the accepted PR"),
+			}),
+		]),
+	});
+	expect(input.run.outputs.ci).toEqual(result);
+	expect(publish).not.toHaveBeenCalled();
+	input.run.history.push(
+		{
+			step: "pipeline/handoff",
+			at: new Date().toISOString(),
+			output:
+				status === "blocked"
+					? {
+							scopeVersion: 1,
+							deliveries: [
+								{ repositoryId: "repo", name: "Repo", output: result },
+							],
+						}
+					: result,
+		},
+		{ step: "pipeline/ci-fix", at: new Date().toISOString(), output: {} },
+	);
+	await expect(tools.tool(input)).resolves.toMatchObject({
+		fix: false,
+		ciAssistance: [expect.stringContaining("Continue the accepted PR")],
+	});
+	input.run.answers.push({
+		answer: "Access restored; reconcile the existing PR",
+		at: new Date().toISOString(),
+		questions: ["Restore access"],
+	});
+	await expect(tools.tool(input)).resolves.toMatchObject({ fix: true });
+	input.step.branches = [];
+	await expect(tools.tool(input)).rejects.toThrow("handoff blocked");
+});
+
+it.each([
 	"unknown",
 	"pending-check",
 ])("waits for temporary handoff readiness (%s) without publishing early", async (state) => {
