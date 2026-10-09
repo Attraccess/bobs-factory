@@ -75,6 +75,11 @@ Delayed Done synchronization rechecks external state without replaying mutations
 Read failures and drift block closure. Requested changes preserve applied work and
 return through reviewed planning and reconciliation. Contract changes advance their
 version, preserve previous contracts/receipts and invalidate affected acceptance.
+Conflicted retries retain the reviewed baseline; observed intervening state never
+authorizes an overwrite. Successful relationship operations reconcile both ticket
+endpoints within the tracker scope. Mixed feedback before merge renews the plan
+and external contract before repository corrections resume. After grouped merges,
+external reacceptance runs once and binds all retained repository revisions.
 
 Existing saved definitions remain readable and frozen. Authenticated external
 recovery creates a separate `recoveryWorkflow` overlay and `deliveryRecovery` audit

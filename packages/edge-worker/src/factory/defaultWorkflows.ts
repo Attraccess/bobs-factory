@@ -276,9 +276,28 @@ for (const step of pipeline.steps) {
 			],
 		});
 }
+// Mixed feedback renews the external contract before repository work resumes.
+const initialHumanReview = pipeline.steps.find((s) => s.id === "human-review")!;
+for (const branch of (initialHumanReview as Record<string, any>).branches)
+	if (branch.when.path === "decision" && branch.when.equals === "reject")
+		branch.next = "delivery-feedback-route";
 const planReview = pipeline.steps.find((s) => s.id === "plan-review")!;
 Object.assign(planReview, { next: "delivery-route" });
 (pipeline.steps as Record<string, any>[]).push(
+	tool(
+		"delivery-feedback-route",
+		"Route requested delivery corrections",
+		"delivery-mode",
+		{
+			branches: [
+				{
+					when: { path: "mode", equals: "mixed" },
+					next: "external-correction",
+				},
+			],
+			next: "human-fix",
+		},
+	),
 	tool(
 		"delivery-route",
 		"Validate accepted delivery contract",
@@ -342,7 +361,7 @@ Object.assign(planReview, { next: "delivery-route" });
 	agent(
 		"external-correction",
 		"Plan requested ticket corrections",
-		"Read humanDecisions, the accepted delivery contract, operation receipts and verified state. Applied changes remain; rejection does not roll them back. Preserve feedback and before/after history. Do not mutate tickets or repository files, commit or push. Confirmed repository merges remain retained; corrections on this path concern external deliverables. Repository changes requested after merge need a separate follow-up, never replay publication or merge. Summarize the requested corrections for a revised plan and independent plan review.",
+		"Read humanDecisions, the accepted delivery contract, operation receipts and verified state. Applied changes remain; rejection does not roll them back. Preserve feedback and before/after history. Do not mutate tickets or repository files, commit or push. Before repository merge, summarize both ticket and repository feedback for the revised plan; preserve existing repository work and let implementation apply the reviewed corrections. After repository merge, corrections on this path concern external deliverables only. Confirmed repository merges remain retained. Repository changes requested after merge need a separate follow-up, never replay publication or merge. Summarize the requested corrections for a revised plan and independent plan review.",
 		{ next: "plan" },
 	),
 	tool("external-final", "Check accepted external state", "external-final", {

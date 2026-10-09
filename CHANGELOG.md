@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Standard Factory can deliver authorized Linear and Taskbot ticket changes through independent verification, human acceptance and a final state check. Repository and mixed work retain merge safeguards; failed external publication supports audited operator recovery ([Taskbot #95](https://taskbot.apps.janjaap.de/p/bobs-factory/t/95)).
+- Standard Factory can deliver authorized Linear and Taskbot ticket changes through independent verification, human acceptance and a final state check. Retries preserve intervening edits and shared relationships; mixed feedback renews contracts and retains confirmed repository merges. Failed external publication supports audited recovery ([Taskbot #95](https://taskbot.apps.janjaap.de/p/bobs-factory/t/95), [#80](https://github.com/JappyJan/bobs-factory/pull/80)).
 
 - Updated source, installation and homepage links for the move to `jappyjan/bobs-factory` ([#53](https://github.com/jappyjan/bobs-factory/pull/53)).
 - Make guided review more compact, require system maps for new technical and mixed guides, identify individual file areas, and collect feedback and review actions on Decide. Keep neighboring map labels and reverse connections distinct, align split-diff columns across long lines, and keep unopened flow-stage numbers readable. Keep chapter checks compact, use a plain reviewed checkbox row, and announce singular feedback counts correctly ([Taskbot #92](https://taskbot.apps.janjaap.de/p/bobs-factory/t/92), [#44](https://github.com/Attraccess/bobs-factory/pull/44)).

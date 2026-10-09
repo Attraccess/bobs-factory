@@ -221,6 +221,17 @@ export function sameRelation(a: TicketRelation, b: TicketRelation): boolean {
 			(a.type === "related" && a.from === b.to && a.to === b.from))
 	);
 }
+function sameTicketScope(a: TicketTarget, b: TicketTarget): boolean {
+	if (a.provider === "linear" && b.provider === "linear")
+		return a.instance === b.instance && a.workspaceId === b.workspaceId;
+	if (a.provider === "taskbot" && b.provider === "taskbot")
+		return (
+			a.instance === b.instance &&
+			a.server === b.server &&
+			a.project === b.project
+		);
+	return false;
+}
 function normalized(
 	state: TicketState,
 	target: DeliveryContract["targets"][number],
@@ -375,35 +386,40 @@ export class TicketDelivery {
 						`Applied ticket change drifted: ${op.id}; do not overwrite intervening work`,
 					);
 				const baseline =
-					receipt?.before ??
+					(receipt?.status !== "conflicted" ? receipt?.before : undefined) ??
 					normalized(
 						{ resource: target.resource, ...target.baseline, complete: true },
 						target,
 					);
-				if (!receipt)
-					for (const prior of target.operations.slice(
-						0,
-						target.operations.indexOf(op),
-					)) {
-						if (
-							!delivery.receipts.some(
-								(r) => r.id === prior.id && r.status === "applied",
-							)
-						)
+				if (!receipt || receipt.status === "conflicted")
+					for (const applied of delivery.receipts) {
+						if (applied.status !== "applied" || applied.id === op.id) continue;
+						const source = delivery.contract.targets.find((t) =>
+							t.operations.some((o) => o.id === applied.id),
+						);
+						// Relationship writes affect both endpoints within the same tracker scope.
+						if (!source || !sameTicketScope(source.resource, target.resource))
 							continue;
-						if (prior.kind === "content")
-							Object.assign(baseline.fields, prior.fields);
-						else if (
-							prior.kind === "add" &&
-							!baseline.relationships.some((r) =>
-								sameRelation(r, prior.relationship),
+						const prior = applied.intent;
+						if (prior.kind === "content") {
+							if (source.resource.id === target.resource.id)
+								Object.assign(baseline.fields, prior.fields);
+						} else if (
+							prior.relationship.from === target.resource.id ||
+							prior.relationship.to === target.resource.id
+						) {
+							if (
+								prior.kind === "add" &&
+								!baseline.relationships.some((r) =>
+									sameRelation(r, prior.relationship),
+								)
 							)
-						)
-							baseline.relationships.push(prior.relationship);
-						else if (prior.kind === "remove")
-							baseline.relationships = baseline.relationships.filter(
-								(r) => !sameRelation(r, prior.relationship),
-							);
+								baseline.relationships.push(prior.relationship);
+							else if (prior.kind === "remove")
+								baseline.relationships = baseline.relationships.filter(
+									(r) => !sameRelation(r, prior.relationship),
+								);
+						}
 					}
 				baseline.relationships = normalized(baseline, target).relationships;
 				// Compare affected fields and ALL relationships so unrelated concurrent edits are preserved.

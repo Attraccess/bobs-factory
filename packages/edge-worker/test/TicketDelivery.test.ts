@@ -17,6 +17,10 @@ import {
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { FactoryTools } from "../src/factory/FactoryTools.js";
 import {
+	aggregateDeliveries,
+	deliveryRevisions,
+} from "../src/factory/RepositoryScope.js";
+import {
 	linearDeliveryAdapter,
 	taskbotDeliveryAdapter,
 } from "../src/factory/TicketDeliveryAdapters.js";
@@ -207,6 +211,38 @@ it("blocks intervening edits without overwriting them", async () => {
 	);
 	expect(f.content).not.toHaveBeenCalled();
 	expect(f.run.delivery!.receipts[0]!.status).toBe("conflicted");
+	const restored = new WorkflowRuntime(f.home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => ({}),
+	}).get(f.run.id);
+	await expect(f.service.apply(restored)).rejects.toThrow(
+		"Relevant state changed",
+	);
+	await expect(f.service.apply(restored)).rejects.toThrow(
+		"Relevant state changed",
+	);
+	expect(f.state().fields.description).toBe("human edit");
+	expect(f.content).not.toHaveBeenCalled();
+	// A reviewed new intent may deliberately use the intervening edit as its baseline.
+	freezeDelivery(restored, {
+		...f.contract,
+		version: 2,
+		targets: f.contract.targets.map((t) => ({
+			...t,
+			baseline: { ...t.baseline, fields: { description: "human edit" } },
+			operations: [
+				{
+					id: "reviewed-description",
+					kind: "content",
+					fields: { description: "after" },
+				},
+				t.operations[1]!,
+			],
+		})),
+	});
+	await f.service.apply(restored);
+	expect(f.content).toHaveBeenCalledTimes(1);
 });
 it("executor claims cannot replace independent reads and preserved relationship criteria", async () => {
 	const f = setup();
@@ -830,6 +866,281 @@ it("corrects mixed external feedback after merge without repeating repository im
 		merged: true,
 		headSha: "confirmed-head",
 	});
+	expect(f.relationship).toHaveBeenCalledTimes(1);
+	await runtime.shutdown();
+});
+
+it("reconciles authorized relationship changes across both target endpoints", async () => {
+	const f = setup();
+	const contract: DeliveryContract = {
+		...f.contract,
+		version: 2,
+		targets: ["1", "2"].map((id, i) => ({
+			...f.contract.targets[0]!,
+			key: `ticket-${id}`,
+			resource: {
+				...f.contract.targets[0]!.resource,
+				id,
+				url: `https://tasks.example.com/p/project/t/${id}`,
+			},
+			baseline: { fields: { description: "before" }, relationships: [] },
+			operations: [
+				{
+					id: `link-${id}`,
+					kind: "add",
+					relationship: { type: "blocks", from: id, to: String(i + 2) },
+				},
+			],
+			criteria: [
+				{
+					id: `criterion-${id}`,
+					requirementRef: "requirements/0",
+					description: "Blocker added",
+					fields: {},
+					relationships: [{ type: "blocks", from: id, to: String(i + 2) }],
+					absentRelationships: [],
+				},
+			],
+			preservedRelationships: [],
+		})),
+	};
+	freezeDelivery(f.run, contract);
+	const relations: TicketState["relationships"] = [];
+	const writes = vi.fn(
+		async (
+			kind: "add" | "remove",
+			relation: TicketState["relationships"][number],
+		) => {
+			if (kind !== "add") throw new Error("Unexpected removal");
+			relations.push(relation);
+		},
+	);
+	const service = new TicketDelivery(
+		async (_run, resource) => ({
+			capabilities: ["read", "content", "relationships"],
+			read: async () => ({
+				resource,
+				complete: true,
+				fields: { description: "before" },
+				relationships: relations.filter(
+					(r) => r.from === resource.id || r.to === resource.id,
+				),
+			}),
+			content: async () => {
+				throw new Error("No content writes");
+			},
+			relationship: writes,
+		}),
+		(r) => f.runtime.save(r),
+	);
+	await service.apply(f.run);
+	await service.verify(f.run);
+	await service.apply(f.run);
+	expect(writes).toHaveBeenCalledTimes(2);
+	expect(relations).toEqual([
+		{ type: "blocks", from: "1", to: "2" },
+		{ type: "blocks", from: "2", to: "3" },
+	]);
+});
+
+it("routes rejected mixed review through a reviewed ticket contract before repository corrections", async () => {
+	const f = setup();
+	freezeDelivery(f.run, { ...f.contract, version: 2, mode: "mixed" });
+	await f.service.apply(f.run);
+	await f.service.verify(f.run);
+	f.run.outputs.clarify = { deliveryMode: "mixed" };
+	f.run.outputs["draft-pr"] = {
+		url: "https://github.com/example/repo/pull/1",
+		headSha: "current-head",
+	};
+	f.run.recoveryWorkflow = structuredClone(
+		defaultWorkflows.find((w) => w.id === "factory-pipeline")!,
+	);
+	f.run.checkpoint = { current: "human-review", visits: {} };
+	const revised: DeliveryContract = {
+		...f.run.delivery!.contract,
+		version: 3,
+		targets: f.contract.targets.map((t) => ({
+			...t,
+			baseline: {
+				fields: structuredClone(f.state().fields),
+				relationships: structuredClone(f.state().relationships),
+			},
+			preservedRelationships: structuredClone(f.state().relationships),
+			operations: [
+				{
+					id: "feedback-description",
+					kind: "content",
+					fields: { description: "corrected" },
+				},
+				t.operations[1]!,
+			],
+			criteria: t.criteria.map((c) => ({
+				...c,
+				fields: { description: "corrected" },
+			})),
+		})),
+	};
+	f.runtime.save(f.run);
+	const visited: string[] = [];
+	const tools = new FactoryTools({
+		postComment: async () => {},
+		ticketDelivery: f.service,
+		command: async () => {
+			throw new Error("No publication during contract correction");
+		},
+	});
+	const runtime = new WorkflowRuntime(f.home, {
+		agent: async (ctx) => {
+			visited.push(ctx.step.id);
+			switch (ctx.step.id) {
+				case "external-correction":
+					expect(ctx.run.humanDecisions?.at(-1)?.feedback).toBe(
+						"Correct ticket description and preserve repository work",
+					);
+					return { summary: "Preserve work and correct ticket" };
+				case "plan":
+					return {
+						plan: "Ticket and repository corrections on existing PR",
+						assets: [],
+						deliveryContract: revised,
+					};
+				case "plan-review":
+					return {
+						approved: true,
+						deliveryContractDigest: digest(revised),
+						feedback: [],
+					};
+				case "implement":
+					return {
+						status: "blocked",
+						questions: [
+							"Fixture pauses at the repository implementation boundary",
+						],
+						checks: [],
+						summary: "Revised ticket state verified",
+					};
+				default:
+					throw new Error(`Unexpected agent ${ctx.step.id}`);
+			}
+		},
+		script: async () => {
+			throw new Error("No scripts");
+		},
+		tool: (ctx) =>
+			ctx.step.id === "human-review"
+				? Promise.resolve({
+						...(ctx.run.outputs["draft-pr"] as object),
+						mode: "mixed",
+						externalDigest: ctx.run.delivery!.verification!.digest,
+					})
+				: tools.tool(ctx),
+	});
+	const run = runtime.get(f.run.id);
+	const executing = runtime.launch(run);
+	await vi.waitFor(() => expect(run.reviewGate?.status).toBe("pending"));
+	runtime.decide(run.id, {
+		reviewId: run.reviewGate!.id,
+		headSha: "current-head",
+		externalDigest: run.reviewGate!.externalDigest,
+		decision: "reject",
+		feedback: "Correct ticket description and preserve repository work",
+	});
+	await vi.waitFor(() => {
+		if (run.status === "failed") throw new Error(run.error);
+		expect(run.questions).toEqual([
+			"Fixture pauses at the repository implementation boundary",
+		]);
+	});
+	expect(visited).toEqual([
+		"external-correction",
+		"plan",
+		"plan-review",
+		"implement",
+	]);
+	expect(run.delivery!.contract.version).toBe(3);
+	expect(run.delivery!.verification!.criteria.every((c) => c.passed)).toBe(
+		true,
+	);
+	expect(f.state().fields.description).toBe("corrected");
+	expect(f.relationship).toHaveBeenCalledTimes(1);
+	expect(run.outputs["draft-pr"]).toEqual(f.run.outputs["draft-pr"]);
+	await runtime.shutdown();
+	await executing;
+});
+
+it("renews mixed acceptance once for the full grouped scope after confirmed merges", async () => {
+	const f = setup();
+	freezeDelivery(f.run, { ...f.contract, version: 2, mode: "mixed" });
+	await f.service.apply(f.run);
+	await f.service.verify(f.run);
+	f.run.repositories = ["app", "api"].map((id) => ({
+		id,
+		name: id,
+		workspace: f.home,
+		repositoryPath: f.home,
+		baseBranch: "main",
+		githubUrl: `https://github.com/example/${id}`,
+	}));
+	const deliveries = f.run.repositories.map((r) => ({
+		repositoryId: r.id,
+		name: r.name,
+		output: {
+			url: `https://github.com/example/${r.id}/pull/1`,
+			headSha: `${r.id}-head`,
+			merged: true,
+		},
+	}));
+	f.run.outputs["draft-pr"] = aggregateDeliveries(deliveries);
+	f.run.outputs.merge = aggregateDeliveries(deliveries);
+	accept(f.run);
+	f.run.humanDecisions![0]!.mode = "mixed";
+	f.run.humanDecisions![0]!.repositories = deliveryRevisions(
+		f.run.outputs["draft-pr"],
+	);
+	await f.service.finalCheck(f.run);
+	f.state().relationships.push({ type: "related", from: "1", to: "4" });
+	expect(await f.service.finalCheck(f.run)).toBe(false);
+	f.run.status = "completed";
+	f.run.ticketSync = { receipts: [], error: "External state changed" };
+	f.runtime.save(f.run);
+	const tools = new FactoryTools({
+		postComment: async () => {},
+		ticketDelivery: f.service,
+		command: async () => {
+			throw new Error("Confirmed grouped merges must be retained");
+		},
+	});
+	const runtime = new WorkflowRuntime(f.home, {
+		agent: async () => {
+			throw new Error("No implementation replay");
+		},
+		script: async () => ({}),
+		tool: (ctx) => tools.tool(ctx),
+	});
+	const run = runtime.reverifyExternal(f.run.id, "authenticated-operator");
+	await vi.waitFor(() => {
+		if (run.status === "failed") throw new Error(run.error);
+		expect(run.reviewGate?.status).toBe("pending");
+	});
+	expect(run.reviewGate).toMatchObject({
+		mode: "mixed",
+		externalDigest: run.delivery!.verification!.digest,
+		repositories: deliveryRevisions(run.outputs["draft-pr"]),
+	});
+	expect(run.reviewGate!.externalDigest).not.toBe(
+		f.run.humanDecisions![0]!.externalDigest,
+	);
+	runtime.decide(run.id, {
+		reviewId: run.reviewGate!.id,
+		headSha: run.reviewGate!.headSha,
+		repositories: run.reviewGate!.repositories,
+		externalDigest: run.reviewGate!.externalDigest,
+		decision: "approve",
+	});
+	await vi.waitFor(() => expect(run.status).toBe("completed"));
+	expect(externalCompletionProven(run)).toBe(true);
+	expect(f.content).toHaveBeenCalledTimes(1);
 	expect(f.relationship).toHaveBeenCalledTimes(1);
 	await runtime.shutdown();
 });

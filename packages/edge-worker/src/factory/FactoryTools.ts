@@ -517,7 +517,8 @@ export class FactoryTools {
 	async tool(context: ExecutionContext): Promise<unknown> {
 		if (
 			runRepositories(context.run).length > 1 &&
-			context.run.delivery?.contract.mode !== "external"
+			context.run.delivery?.contract.mode !== "external" &&
+			context.step.id !== "external-human-review"
 		) {
 			if (context.step.tool === "handoff" && context.step.qaContract) {
 				const gate = await this.qaGate(context, (exe, args) =>

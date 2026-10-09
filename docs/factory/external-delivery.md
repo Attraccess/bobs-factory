@@ -26,7 +26,9 @@ PR links. Delivery operations cannot mutate those fields. Intent and before-stat
 are saved before each dispatch. Retry reads actual state, recognizes achieved
 outcomes, preserves successful receipts and applies only remaining operations.
 Conflicts, denied writes and uncertain outcomes retain progress; there is no automatic
-rollback. Complete relationship reads include both directions and follow pagination.
+rollback. Retrying a conflict does not approve overwriting the observed edit; a
+reviewed contract correction is required. Successful relationship writes reconcile
+both ticket endpoints before subsequent operations. Complete relationship reads include both directions and follow pagination.
 
 The independent verifier reads all resources twice, checks every criterion and
 preserved relationship, and rejects changes observed during collection. External
@@ -40,7 +42,11 @@ drift requires renewed verification and acceptance. Lifecycle updates are exclud
 External delivery skips publication, code-diff review, CI, Git-baseline QA and merge.
 Repository delivery keeps the existing pipeline. Mixed guides include external
 evidence and approval binds both the external digest and all repository revisions.
-Already-confirmed merges remain retained if external completion later blocks.
+Mixed requests for changes before merge return through planning and plan review
+to renew the ticket contract, then resume corrections on the existing repository
+work and PR. Already-confirmed merges remain retained if external completion later
+blocks. Renewed external acceptance after multiple repository merges binds the
+complete repository scope and fresh ticket digest in one human decision.
 
 ## Recover already-applied work failed at publication
 
