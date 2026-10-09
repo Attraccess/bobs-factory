@@ -674,3 +674,66 @@ it("recognizes two native worktrees of the same repository without configured fo
 	release();
 	await Promise.all([a, b]);
 });
+
+it("keeps a queued overlapping delivery out of execution capacity", async () => {
+	const { SessionSemaphore } = await import("../src/RunnerConcurrency.js");
+	const capacity = new SessionSemaphore(1);
+	let finishCI!: () => void;
+	const waitingCI = new Promise<void>((resolve) => {
+		finishCI = resolve;
+	});
+	const runtime = new WorkflowRuntime(home(), {
+		capacity,
+		agent: async (context) => {
+			const lease = await capacity.acquireLease(
+				context.signal,
+				context.capacity,
+			);
+			try {
+				return {};
+			} finally {
+				await lease.release();
+			}
+		},
+		script: async () => ({}),
+		tool: async ({ run, step }) => {
+			if (step.id === "ci" && run.input === "first") await waitingCI;
+			return {};
+		},
+	});
+	const definition = validateWorkflows([
+		...defaultWorkflows,
+		{
+			...delivery,
+			steps: [
+				...delivery.steps.slice(0, 2),
+				{ id: "ci", name: "CI", type: "tool", tool: "ci", next: "capture" },
+				...delivery.steps.slice(2),
+			],
+		},
+	]).at(-1)!;
+	const first = createRun(runtime, "first");
+	first.workflow = definition;
+	const second = createRun(runtime, "second");
+	second.workflow = definition;
+	const a = runtime.launch(first);
+	await vi.waitFor(() =>
+		expect({
+			status: first.status,
+			error: first.error,
+			phase: first.capacityLeaves?.ci?.phase,
+		}).toMatchObject({ status: "running", phase: "waiting-ci" }),
+	);
+	const b = runtime.launch(second);
+	await vi.waitFor(() =>
+		expect(second.deliveryCoordination?.phase).toBe("queued"),
+	);
+	expect(capacity.active).toBe(0);
+	expect(capacity.waiting).toBe(0);
+	const spare = await capacity.acquireLease();
+	await spare.release();
+	finishCI();
+	await Promise.all([a, b]);
+	expect([first.status, second.status]).toEqual(["completed", "completed"]);
+	expect(capacity.active).toBe(0);
+});

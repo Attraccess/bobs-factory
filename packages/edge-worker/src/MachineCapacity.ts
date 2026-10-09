@@ -16,6 +16,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import {
 	type CapacityOwner,
+	type CapacityWorkflow,
+	CapacityWorkflowSchema,
 	executionScope,
 	CapacityOwnerSchema as Owner,
 	type CapacityRequest as PersistedCapacityRequest,
@@ -23,6 +25,8 @@ import {
 	CapacityStateSchema as State,
 } from "bobs-factory-core";
 import { z } from "zod";
+
+import { orderWorkflowPositions } from "./CapacityOrdering.js";
 
 export const DEFAULT_MACHINE_CAPACITY = 4;
 export type CapacityRequest = PersistedCapacityRequest;
@@ -40,6 +44,7 @@ export interface CapacitySnapshot {
 }
 export interface CapacityOptions {
 	identity?: string;
+	workflowRun?: CapacityWorkflow;
 	recoverable?: boolean;
 	background?: boolean;
 	remote?: boolean;
@@ -283,7 +288,10 @@ export class MachineCapacity implements ExecutionCapacity {
 				if (request.recoverable) request.phase = "queued";
 				else state.requests = state.requests.filter((item) => item !== request);
 			}
+			for (const request of state.requests)
+				request.admissionPosition ??= request.sequence;
 			const result = await update(state);
+			State.parse(state);
 			while (
 				state.requests.filter((r) => r.phase !== "queued").length < state.limit
 			) {
@@ -291,7 +299,7 @@ export class MachineCapacity implements ExecutionCapacity {
 				for (const r of state.requests)
 					if (r.phase === "queued" && !r.parked && (await isLiving(r.owner)))
 						eligible.push(r);
-				eligible.sort((a, b) => a.sequence - b.sequence);
+				orderWorkflowPositions(eligible);
 				const background = eligible.find((r) => r.background);
 				const next =
 					background && state.bypass >= 8
@@ -399,23 +407,46 @@ export class MachineCapacity implements ExecutionCapacity {
 		signal?: AbortSignal,
 		options: CapacityOptions = {},
 	): Promise<CapacityLease> {
+		const workflow =
+			options.workflowRun === undefined
+				? undefined
+				: CapacityWorkflowSchema.parse(options.workflowRun);
 		await this.initialized;
 		signal?.throwIfAborted();
 		if (this.closing) throw new Error("Capacity worker shutting down");
 		let request!: CapacityRequest;
 		await this.transaction(async (state) => {
 			signal?.throwIfAborted();
-			const existing =
-				options.identity &&
-				state.requests.find((r) => r.identity === options.identity);
+			const existing = options.identity
+				? state.requests.find((r) => r.identity === options.identity)
+				: undefined;
 			if (
 				existing &&
 				(existing.phase !== "queued" ||
 					(!existing.parked && (await living(existing.owner))))
 			)
 				throw new Error(`Duplicate capacity execution: ${options.identity}`);
+			if (
+				workflow &&
+				state.requests.some(
+					(r) =>
+						r.workflowRun?.identity === workflow.identity &&
+						Date.parse(r.workflowRun.createdAt) !==
+							Date.parse(workflow.createdAt),
+				)
+			)
+				throw new Error("Conflicting capacity workflow age");
+			if (
+				existing?.workflowRun &&
+				workflow &&
+				(existing.workflowRun.identity !== workflow.identity ||
+					Date.parse(existing.workflowRun.createdAt) !==
+						Date.parse(workflow.createdAt))
+			)
+				throw new Error("Conflicting capacity workflow metadata");
 			if (existing) {
 				request = existing;
+				request.workflowRun ??= workflow;
 				request.owner = this.owner;
 				request.token = randomUUID();
 				request.parked = false;
@@ -425,6 +456,8 @@ export class MachineCapacity implements ExecutionCapacity {
 					token: randomUUID(),
 					owner: this.owner,
 					sequence: ++state.sequence,
+					admissionPosition: state.sequence,
+					workflowRun: workflow,
 					queuedAt: new Date().toISOString(),
 					phase: "queued",
 					parked: false,

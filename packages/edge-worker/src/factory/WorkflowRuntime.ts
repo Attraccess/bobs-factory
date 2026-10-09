@@ -857,6 +857,10 @@ export class WorkflowRuntime {
 	capacityOptions(run: FactoryRun, key: string, visit = 1): CapacityOptions {
 		return {
 			identity: `${this.directory}:run:${run.id}:${key}:${visit}`,
+			workflowRun: {
+				identity: `${this.directory}:run:${run.id}`,
+				createdAt: run.createdAt,
+			},
 			recoverable: true,
 			preserveOnShutdown: () => run.status !== "stopped",
 			onChange: (request) => {

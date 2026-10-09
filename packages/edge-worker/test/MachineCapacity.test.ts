@@ -282,3 +282,187 @@ it("recovers a crash during stale-lock reclamation under concurrent startup", as
 	await (await second).release();
 	expect((await a.snapshot()).requests).toEqual([]);
 });
+
+it.each([
+	false,
+	true,
+])("exchanges durable workflow positions without moving interactive work (batch=%s)", async (batch) => {
+	const service = new MachineCapacity(1, root());
+	const blocker = await service.acquireLease();
+	const order: string[] = [];
+	const enqueue = (id: string, createdAt?: string) =>
+		service
+			.acquireLease(undefined, {
+				identity: id,
+				workflowRun: createdAt ? { identity: id, createdAt } : undefined,
+			})
+			.then((lease) => {
+				order.push(id);
+				return lease;
+			});
+	const newer = enqueue("new", "2026-10-09T00:00:00Z");
+	await vi.waitFor(async () =>
+		expect((await service.snapshot()).queued).toBe(1),
+	);
+	const interactive = enqueue("interactive");
+	await vi.waitFor(async () =>
+		expect((await service.snapshot()).queued).toBe(2),
+	);
+	const older = enqueue("old", "2026-10-08T00:00:00Z");
+	await vi.waitFor(async () =>
+		expect((await service.snapshot()).queued).toBe(3),
+	);
+	const original = (await service.snapshot()).requests.find(
+		(r) => r.identity === "new",
+	)!;
+	if (batch) await service.setLimit(4);
+	else await blocker.release();
+	const oldLease = await older;
+	const moved = (await service.snapshot()).requests.find(
+		(r) => r.identity === "new",
+	)!;
+	expect(moved.sequence).toBe(original.sequence);
+	expect(moved.queuedAt).toBe(original.queuedAt);
+	expect(moved.admissionPosition).toBe(4);
+	if (!batch) await oldLease.release();
+	const interactiveLease = await interactive;
+	if (!batch) await interactiveLease.release();
+	const newLease = await newer;
+	// Batch promise polling may observe admission in another order; saved positions prove admission order.
+	if (!batch) expect(order).toEqual(["old", "interactive", "new"]);
+	else
+		expect(
+			(await service.snapshot()).requests
+				.sort((a, b) => a.admissionPosition! - b.admissionPosition!)
+				.map((r) => r.identity)
+				.slice(1),
+		).toEqual(["old", "interactive", "new"]);
+	await Promise.all([
+		blocker.release(),
+		oldLease.release(),
+		interactiveLease.release(),
+		newLease.release(),
+	]);
+	expect((await service.snapshot()).requests).toEqual([]);
+});
+
+it("preserves exchanged positions across shutdown and authoritative rejoin", async () => {
+	const directory = root();
+	const first = new MachineCapacity(1, directory);
+	const blocker = await first.acquireLease();
+	const newerOptions = {
+		identity: "new",
+		recoverable: true,
+		workflowRun: { identity: "new-run", createdAt: "2026-10-09T00:00:00Z" },
+	};
+	const pendingNew = first.acquireLease(undefined, newerOptions);
+	const rejectionNew = expect(pendingNew).rejects.toThrow(/shutting down/);
+	await vi.waitFor(async () => expect((await first.snapshot()).queued).toBe(1));
+	const pendingInteractive = first.acquireLease(undefined, {
+		identity: "interactive",
+		recoverable: true,
+	});
+	const rejectionInteractive =
+		expect(pendingInteractive).rejects.toThrow(/shutting down/);
+	await vi.waitFor(async () => expect((await first.snapshot()).queued).toBe(2));
+	const pendingOld = first.acquireLease(undefined, {
+		workflowRun: { identity: "old-run", createdAt: "2026-10-08T00:00:00Z" },
+	});
+	await vi.waitFor(async () => expect((await first.snapshot()).queued).toBe(3));
+	await blocker.release();
+	const old = await pendingOld;
+	const before = (await first.snapshot()).requests.find(
+		(r) => r.identity === "new",
+	)!;
+	expect(before.admissionPosition).toBe(4);
+	await first.shutdown();
+	await Promise.all([rejectionNew, rejectionInteractive]);
+	await old.release();
+	const resumed = new MachineCapacity(undefined, directory);
+	const hold = await resumed.acquireLease();
+	const newPending = resumed.acquireLease(undefined, newerOptions);
+	await vi.waitFor(async () =>
+		expect(
+			(await resumed.snapshot()).requests.find((r) => r.identity === "new")
+				?.parked,
+		).toBe(false),
+	);
+	const interactivePending = resumed.acquireLease(undefined, {
+		identity: "interactive",
+		recoverable: true,
+	});
+	await vi.waitFor(async () =>
+		expect(
+			(await resumed.snapshot()).requests.find(
+				(r) => r.identity === "interactive",
+			)?.parked,
+		).toBe(false),
+	);
+	const after = (await resumed.snapshot()).requests.find(
+		(r) => r.identity === "new",
+	)!;
+	expect(after).toMatchObject({
+		sequence: before.sequence,
+		queuedAt: before.queuedAt,
+		admissionPosition: 4,
+		workflowRun: before.workflowRun,
+	});
+	await hold.release();
+	const interactive = await interactivePending;
+	expect(
+		(await resumed.snapshot()).requests.find((r) => r.identity === "new")
+			?.phase,
+	).toBe("queued");
+	await interactive.release();
+	await (await newPending).release();
+});
+
+it("rejects invalid workflow timestamps and conflicting run metadata", async () => {
+	const service = new MachineCapacity(1, root());
+	await expect(
+		service.acquireLease(undefined, {
+			workflowRun: { identity: "run", createdAt: "invalid" },
+		}),
+	).rejects.toThrow();
+	const lease = await service.acquireLease(undefined, {
+		workflowRun: { identity: "run", createdAt: "2026-10-09T00:00:00Z" },
+	});
+	await expect(
+		service.acquireLease(undefined, {
+			workflowRun: { identity: "run", createdAt: "2026-10-08T00:00:00Z" },
+		}),
+	).rejects.toThrow(/Conflicting/);
+	await lease.release();
+});
+
+it("shares workflow position exchanges between processes", async () => {
+	const directory = root(),
+		ledger = join(directory, "priority.jsonl");
+	const service = new MachineCapacity(1, directory);
+	const blocker = await service.acquireLease();
+	const newer = worker(directory, "new-run", ledger, "workflow-new");
+	await vi.waitFor(
+		async () => expect((await service.snapshot()).queued).toBe(1),
+		{ timeout: 10000 },
+	);
+	const interactive = worker(directory, "interactive", ledger, "queued");
+	await vi.waitFor(
+		async () => expect((await service.snapshot()).queued).toBe(2),
+		{ timeout: 10000 },
+	);
+	const older = worker(directory, "old-run", ledger, "workflow-old");
+	await vi.waitFor(
+		async () => expect((await service.snapshot()).queued).toBe(3),
+		{ timeout: 10000 },
+	);
+	await blocker.release();
+	await Promise.all([newer.done, interactive.done, older.done]);
+	const starts = readFileSync(ledger, "utf8")
+		.trim()
+		.split("\n")
+		.map((line) => JSON.parse(line))
+		.filter((event) => event.phase === "start")
+		.map((event) => event.kind);
+	expect(starts).toEqual(["workflow-old", "queued", "workflow-new"]);
+	expect((await service.snapshot()).requests).toEqual([]);
+});

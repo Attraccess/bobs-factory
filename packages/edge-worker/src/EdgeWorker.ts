@@ -4214,9 +4214,23 @@ ${taskSection}`;
 			);
 			teardownService = this.gitService.withEnvironment(resolved.environment);
 		}
-		await teardownService.deleteWorktree(message.workItemIdentifier, {
-			repositories: teardownRepositories,
-		});
+		const owningRun = sessions
+			.map((session) => this.factoryRuntime?.runs.get(session.id))
+			.filter((run): run is FactoryRun => !!run)
+			.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))[0];
+		await setupExecutionScope.run(
+			{
+				signal: new AbortController().signal,
+				service: this.runnerSlots,
+				capacity: owningRun
+					? this.factoryRuntime!.capacityOptions(owningRun, "teardown")
+					: undefined,
+			},
+			() =>
+				teardownService.deleteWorktree(message.workItemIdentifier, {
+					repositories: teardownRepositories,
+				}),
+		);
 
 		this.logger.info(
 			`Completed cleanup for ${message.workItemIdentifier}: stopped ${sessions.length} session(s)`,

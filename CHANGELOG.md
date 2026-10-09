@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Prioritize eligible jobs from older workflow runs within instance capacity, preserving interactive positions, background turns and restart ordering ([Taskbot #89](https://taskbot.apps.janjaap.de/p/bobs-factory/t/89)).
 - Include the pinned Bun production dependency notices and corresponding MPL source in beta release materials ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).
 
 - Prepare `1.0.0-beta` binary candidates, keep beta downloads distinct from stable releases, and verify installed native helpers before publication ([#57](https://github.com/jappyjan/bobs-factory/pull/57)).
