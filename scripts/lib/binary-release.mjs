@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 import {
 	closeSync,
 	mkdtempSync,
+	openSync,
 	readFileSync,
+	readSync,
 	realpathSync,
 	rmSync,
 	statSync,
@@ -20,6 +22,21 @@ export const TARGETS = [
 ];
 export const sha256 = (bytes) =>
 	createHash("sha256").update(bytes).digest("hex");
+export function sha256File(path) {
+	const fd = openSync(path, "r");
+	try {
+		const hash = createHash("sha256");
+		const buffer = Buffer.alloc(1024 * 1024);
+		for (;;) {
+			const size = readSync(fd, buffer, 0, buffer.length, null);
+			if (size === 0) break;
+			hash.update(buffer.subarray(0, size));
+		}
+		return hash.digest("hex");
+	} finally {
+		closeSync(fd);
+	}
+}
 export const jsonBytes = (value) =>
 	Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
 export function requireValue(condition, message) {
@@ -35,7 +52,7 @@ export function validatePublicRepository(repository) {
 }
 export function validateIdentity(version, commit, runId) {
 	requireValue(
-		/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version),
+		parseReleaseVersion(version) !== null,
 		"Invalid exact release version",
 	);
 	requireValue(
@@ -47,17 +64,80 @@ export function validateIdentity(version, commit, runId) {
 		"Invalid binary build run ID",
 	);
 }
+export function parseReleaseVersion(version) {
+	if (typeof version !== "string") return null;
+	const match =
+		/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*))?$/.exec(
+			version,
+		);
+	if (!match) return null;
+	const prerelease = match[4]?.split(".") ?? [];
+	if (
+		prerelease.some(
+			(part) => /^\d+$/.test(part) && part.length > 1 && part.startsWith("0"),
+		)
+	)
+		return null;
+	return { core: match.slice(1, 4).map(BigInt), prerelease };
+}
+export function compareReleaseVersions(left, right) {
+	const a = parseReleaseVersion(left);
+	const b = parseReleaseVersion(right);
+	requireValue(a && b, "Cannot compare invalid release versions");
+	for (let i = 0; i < 3; i++) {
+		if (a.core[i] !== b.core[i]) return a.core[i] > b.core[i] ? 1 : -1;
+	}
+	if (!a.prerelease.length || !b.prerelease.length) {
+		return a.prerelease.length === b.prerelease.length
+			? 0
+			: a.prerelease.length
+				? -1
+				: 1;
+	}
+	for (let i = 0; i < Math.max(a.prerelease.length, b.prerelease.length); i++) {
+		const x = a.prerelease[i];
+		const y = b.prerelease[i];
+		if (x === undefined || y === undefined) return x === undefined ? -1 : 1;
+		if (x === y) continue;
+		const numericX = /^\d+$/.test(x);
+		const numericY = /^\d+$/.test(y);
+		if (numericX && numericY) return BigInt(x) > BigInt(y) ? 1 : -1;
+		if (numericX !== numericY) return numericX ? -1 : 1;
+		return x > y ? 1 : -1;
+	}
+	return 0;
+}
+export function selectPublicRelease(releases) {
+	requireValue(Array.isArray(releases), "Invalid public release list");
+	const candidates = releases.filter(
+		(release) =>
+			!release.draft &&
+			release.assets?.some((asset) => asset.name === "release.json") &&
+			parseReleaseVersion(release.tag_name?.slice(1)) &&
+			release.tag_name.startsWith("v"),
+	);
+	for (const release of candidates) {
+		requireValue(
+			release.prerelease === release.tag_name.includes("-"),
+			"Release prerelease flag does not match version",
+		);
+	}
+	// Stable installations stay on stable. Before 1.0, the reviewed beta is usable.
+	const stable = candidates.filter((release) => !release.prerelease);
+	return (
+		(stable.length ? stable : candidates).sort((a, b) =>
+			compareReleaseVersions(b.tag_name.slice(1), a.tag_name.slice(1)),
+		)[0] ?? null
+	);
+}
 export function validateLatestVersion(version, latest) {
 	if (!latest) return;
 	requireValue(
 		/^v\d+\.\d+\.\d+$/.test(latest.tag_name),
 		"Latest stable release has an unsupported version tag",
 	);
-	const previous = latest.tag_name.slice(1).split(".").map(BigInt);
-	const next = version.split("-")[0].split(".").map(BigInt);
-	const changed = next.findIndex((value, index) => value !== previous[index]);
 	requireValue(
-		changed >= 0 && next[changed] > previous[changed],
+		compareReleaseVersions(version, latest.tag_name.slice(1)) > 0,
 		"New release version must be newer than the current stable release",
 	);
 }
@@ -101,6 +181,11 @@ export function validateReleaseManifest(value) {
 	if (value.status === "pending") return value;
 	validateIdentity(value.version, value.commit, value.buildRunId);
 	requireValue(
+		value.channel === undefined ||
+			value.channel === (value.version.includes("-") ? "prerelease" : "stable"),
+		"Release channel must match exact version",
+	);
+	requireValue(
 		value.tag === `v${value.version}`,
 		"Release tag must match exact version",
 	);
@@ -136,8 +221,7 @@ export function validateReleaseManifest(value) {
 	return value;
 }
 export function fileRecord(path, file) {
-	const bytes = readFileSync(path);
-	return { file, sha256: sha256(bytes), size: bytes.length };
+	return { file, sha256: sha256File(path), size: statSync(path).size };
 }
 export function validateBuildProvenance(run, jobs, artifacts, identity) {
 	const { version, commit, runId } = identity;
@@ -225,6 +309,8 @@ export function validateArtifactZip(
 		`${name}.tar.gz`,
 		`${name}.manifest.json`,
 		"runtime-smoke.txt",
+		"native-helpers.json",
+		"prepared-agent-boundaries.json",
 	];
 	for (const file of needed) {
 		requireValue(
@@ -413,7 +499,7 @@ export function validateEvidence(evidence, directory, identity) {
 	);
 	requireValue(
 		statSync(sourcePath).size === evidence.source.size &&
-			sha256(readFileSync(sourcePath)) === evidence.source.sha256,
+			sha256File(sourcePath) === evidence.source.sha256,
 		"Source/rebuild archive integrity failure",
 	);
 	const listing = execFileSync("tar", ["-tzf", sourcePath], {
@@ -460,4 +546,124 @@ export function validateEvidence(evidence, directory, identity) {
 		"Source/rebuild archive commit mismatch",
 	);
 	return evidence;
+}
+
+function validateNativeReceiptIdentity(
+	receipt,
+	identity,
+	target,
+	build,
+	validation,
+) {
+	requireValue(
+		receipt?.schemaVersion === 1 &&
+			receipt.product === "bobs-factory" &&
+			receipt.validation === validation &&
+			receipt.status === "passed" &&
+			receipt.version === identity.version &&
+			receipt.commit === identity.commit &&
+			receipt.target === target &&
+			receipt.dirty === false &&
+			build.version === identity.version &&
+			build.commit === identity.commit &&
+			build.target === target &&
+			build.dirty === false &&
+			receipt.executableSha256 === build.executable?.sha256 &&
+			receipt.resourceDigest === build.resourceDigest &&
+			/^[a-f0-9]{64}$/.test(receipt.executableSha256) &&
+			/^[a-f0-9]{64}$/.test(receipt.resourceDigest),
+		`Native ${validation} receipt does not match the clean candidate binary: ${target}`,
+	);
+}
+
+export function validateNativeHelpers(receipt, identity, target, build) {
+	validateNativeReceiptIdentity(
+		receipt,
+		identity,
+		target,
+		build,
+		"native-helpers",
+	);
+	const [os, arch] = target.split("-");
+	requireValue(
+		receipt.platform?.os === os &&
+			receipt.platform.arch === arch &&
+			["release", "systemVersion", "cpuModel"].every(
+				(field) =>
+					typeof receipt.platform[field] === "string" &&
+					receipt.platform[field].trim().length > 0,
+			) &&
+			(os === "linux"
+				? /^glibc \d+\.\d+$/.test(receipt.platform.libc)
+				: receipt.platform.libc === "not-applicable"),
+		`Missing observed native OS/libc/CPU evidence: ${target}`,
+	);
+	requireValue(
+		receipt.scope?.transport === "controlled-local-https" &&
+			receipt.scope.credentials === "synthetic-scoped" &&
+			receipt.scope.agentInference === "none" &&
+			Number.isSafeInteger(receipt.requestCount) &&
+			receipt.requestCount >= 4,
+		`Native helper validation scope is missing or ambiguous: ${target}`,
+	);
+	for (const check of [
+		"gitCredentialScoped",
+		"gitCredentialForeignRejected",
+		"restApiScoped",
+		"graphqlApiScoped",
+		"apiForeignRejected",
+		"missingCredentialNoFallback",
+		"http201CiRetry",
+		"helperWithoutPath",
+		"cursorPermission",
+	])
+		requireValue(
+			receipt.checks?.[check] === "passed",
+			`Native helper check missing: ${target}/${check}`,
+		);
+	return receipt;
+}
+
+export function validatePreparedAgentBoundaries(
+	receipt,
+	identity,
+	target,
+	build,
+) {
+	validateNativeReceiptIdentity(
+		receipt,
+		identity,
+		target,
+		build,
+		"prepared-agent-boundaries",
+	);
+	requireValue(
+		receipt.scope?.agents === "synthetic-sdk-and-mocked-adapters" &&
+			receipt.scope.authenticatedProviders === false &&
+			receipt.scope.agentInference === "none" &&
+			receipt.compiledCursorIpcCreateResume === "passed" &&
+			receipt.adapterCheckout?.commit === identity.commit &&
+			receipt.adapterCheckout.dirty === false,
+		`Prepared agent boundary scope is missing or mislabeled: ${target}`,
+	);
+	for (const runner of ["claude", "codex", "gemini", "opencode", "cursor"]) {
+		const adapter = receipt.adapters?.[runner];
+		requireValue(
+			adapter?.status === "passed" &&
+				Number.isSafeInteger(adapter.passed) &&
+				adapter.passed > 0 &&
+				Number.isSafeInteger(adapter.skipped) &&
+				adapter.skipped >= 0 &&
+				Array.isArray(adapter.files) &&
+				adapter.files.length > 0 &&
+				adapter.files.every(
+					(file) =>
+						typeof file === "string" && /^[A-Za-z0-9.-]+\.test\.ts$/.test(file),
+				) &&
+				/^[a-f0-9]{64}$/.test(adapter.reportSha256),
+			`Prepared adapter boundary evidence missing: ${target}/${runner}`,
+		);
+	}
+	// This proves protocol boundaries; it never grants the authenticated-agent gate.
+	return receipt;
 }

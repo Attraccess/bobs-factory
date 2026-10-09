@@ -45,6 +45,16 @@ target contract, and the download origin is always the canonical repository's
 immutable release URL. Hashes verify bytes; trust in publication remains rooted
 in that repository and the HTTPS Pages endpoint.
 
+New manifests include `channel: "stable"` or `"prerelease"`, matching their exact
+version. Pages chooses the highest verified stable binary release. Before a
+stable binary release exists, it chooses the highest verified prerelease, such
+as `1.0.0-beta`, and the homepage and installer label it accordingly. Drafts and
+releases without the shared manifest are never install candidates. GitHub's
+[`releases/latest` endpoint](https://docs.github.com/en/rest/releases/releases#get-the-latest-release)
+excludes prereleases, so Pages reads the public release list instead. Beta
+publication leaves GitHub's stable latest designation unchanged. An explicit
+`--version 1.0.0-beta` always pins that immutable version.
+
 The publisher emits canonical JSON with two-space indentation and one property
 per line. Preserve that formatting: the portable installer parses this narrowly
 defined format without a JSON runtime. The JavaScript metadata validator checks
@@ -60,10 +70,17 @@ This implementation does not turn the older preview into a published release.
 1. Commit the exact CLI version and review the full candidate SHA. Dispatch
    `binary-build.yml` from a ref whose head is that SHA, selecting the same full
    SHA and version. All four native jobs must succeed.
-2. Gather real release validation and source/rebuild material. Upload it as
-   `bobs-factory-release-evidence-SHA` from a successful workflow at the same
-   candidate SHA. Keep `release-evidence.json` and `source-rebuild.tar.gz` at
-   the artifact root. Evidence must not contain secrets.
+2. Gather real release validation and source/rebuild material. Package
+   `release-evidence.json`, `source-rebuild.tar.gz` and the referenced receipt
+   files under `release-evidence/` in a tar.gz archive. Dispatch
+   `release-evidence.yml` from the exact candidate ref with its SHA, exact
+   version, successful binary build run ID, HTTPS archive URL and independently
+   checked archive SHA-256. It checks the candidate, four-target build provenance,
+   archive safety and every existing evidence gate, then uploads
+   `bobs-factory-release-evidence-SHA`. It never generates passed statuses or
+   human waivers. Keep material free of secrets; no repository token is sent to
+   supplied storage. The evidence downloader requires this specific successful
+   candidate workflow, its artifact digest and exact source SHA.
 3. Dispatch `binary-release.yml` with the candidate, version, build run ID and
    evidence artifact ID, leaving `publish` false. Inspect the uploaded public
    assets and `publication-plan.json`.
@@ -117,7 +134,11 @@ manually. No automatic update daemon is added.
 - `targets[TARGET].nativeHelpers`: `passed` for every target.
 
 Native startup/dashboard/protected API/MCP/shutdown/restart receipts are retrieved
-directly from each successful native binary build artifact. Missing validation,
+directly from each successful native binary build artifact, alongside
+`native-helpers.json` and `prepared-agent-boundaries.json`. Native helper identity
+and executable hash must match the verified archive. Scripted adapter boundary
+checks and synthetic GitHub credentials are useful evidence, but they do not
+claim authenticated coding-agent execution or supply a release waiver. Missing validation,
 ambiguous artifacts, dirty builds, checksum mismatches or different source SHAs
 block staging and publication.
 
@@ -129,6 +150,31 @@ instructions, `pnpm-lock.yaml`, and the pinned runtime source
 material identified by the licensing review; these files are a minimum inventory,
 not a substitute for that review. Evidence and receipt hashes accompany the public
 release so the exact approval and validation remain inspectable.
+
+To assemble reviewed material, use `scripts/build-release-source.mjs --sha
+FULL_SHA --materials DIRECTORY --output EMPTY_DIRECTORY`. The input directory
+contains precise reviewed rebuild/relink instructions in `README.md`, regular
+source files/archives, and `source-materials.json` with `schemaVersion: 1`, exact
+`commit`, `bunVersion: "1.4.2"` and `records`. Each record names its `kind`, flat
+`file`, HTTPS `source`, exact `revision`, byte `size` and `sha256`. Include a
+`bun` record named `bun-source.tar.gz`, the exact patched `webkit` source and
+any corresponding dependency/library source required by the licensing review.
+The tool adds `factory-source.tar.gz`
+from the exact committed Git tree, its lockfile, commit and material inventory,
+then emits `source-rebuild.tar.gz` and its `source-record.json`. These integrity
+checks do not establish license completeness; that remains a separate reviewed
+`licensingAndSource` receipt.
+
+Bun's [pinned license/relink instructions](https://github.com/oven-sh/bun/blob/bun-v1.4.2/LICENSE.md)
+identify statically linked JavaScriptCore/WebKit and TinyCC LGPL requirements.
+The [pinned build source](https://github.com/oven-sh/bun/blob/bun-v1.4.2/scripts/build/deps/webkit.ts)
+selects WebKit commit `2e2aa2290fac856d6f451ceacb58f7f5b44dd057`.
+The Bun source archive alone is insufficient: include the patched library source
+and the object/source/rebuild material required to permit relinking. Review
+other bundled libraries against the exact runtime, and include dependency
+notices identified by the binary's `THIRD_PARTY_NOTICES.txt`. Retain factory
+Apache-2.0 attribution. The operator's proprietary Cursor installation remains
+outside distributed archives.
 
 Current release blockers described in [RELEASING.md](../../apps/cli/RELEASING.md)
 remain blockers until the corresponding real evidence is supplied. No missing

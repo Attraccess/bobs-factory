@@ -66,6 +66,10 @@ jobs:
         run: |
           ./scripts/install-binary.sh "artifacts/bobs-factory-$VERSION-$TARGET.tar.gz" "artifacts/bobs-factory-$VERSION-$TARGET.manifest.json" "$RUNNER_TEMP/factory-prefix"
           ./scripts/smoke-binary.sh "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" | tee artifacts/runtime-smoke.txt
+      - name: Native scoped helpers with controlled HTTPS
+        run: node scripts/smoke-native-helpers.mjs --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output artifacts
+      - name: Prepared agent protocol boundaries without live inference
+        run: node scripts/smoke-prepared-agent-boundaries.mjs --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output artifacts
       - uses: actions/upload-artifact@v6
         with:
           name: bobs-factory-${{ matrix.target }}-${{ inputs.candidate_sha }}

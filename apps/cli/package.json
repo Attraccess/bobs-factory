@@ -1,6 +1,6 @@
 {
 	"name": "bobs-factory",
-	"version": "0.2.74",
+	"version": "1.0.0-beta",
 	"description": "AI-powered Linear issue automation using Claude",
 	"main": "dist/src/app.js",
 	"types": "dist/src/app.d.ts",

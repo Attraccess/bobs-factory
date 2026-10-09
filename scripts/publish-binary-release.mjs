@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import {
 	copyFileSync,
+	createReadStream,
 	existsSync,
 	mkdirSync,
 	openSync,
@@ -26,6 +27,8 @@ import {
 	validateEvidence,
 	validateIdentity,
 	validateLatestVersion,
+	validateNativeHelpers,
+	validatePreparedAgentBoundaries,
 	validatePublicationSlot,
 	validatePublicRepository,
 	validateReleaseManifest,
@@ -191,6 +194,27 @@ for (const target of TARGETS) {
 		identity,
 		target,
 	);
+	const build = JSON.parse(
+		execFileSync(
+			"tar",
+			["-xOzf", join(extracted, `${name}.tar.gz`), `${name}/build.json`],
+			{ encoding: "utf8" },
+		),
+	);
+	validateNativeHelpers(
+		JSON.parse(readFileSync(join(extracted, "native-helpers.json"), "utf8")),
+		identity,
+		target,
+		build,
+	);
+	validatePreparedAgentBoundaries(
+		JSON.parse(
+			readFileSync(join(extracted, "prepared-agent-boundaries.json"), "utf8"),
+		),
+		identity,
+		target,
+		build,
+	);
 	const smoke = readFileSync(join(extracted, "runtime-smoke.txt"), "utf8");
 	requireValue(
 		smoke.includes(
@@ -209,6 +233,11 @@ for (const target of TARGETS) {
 		join(extracted, "runtime-smoke.txt"),
 		join(assets, `runtime-smoke-${target}.txt`),
 	);
+	for (const receipt of ["native-helpers", "prepared-agent-boundaries"])
+		copyFileSync(
+			join(extracted, `${receipt}.json`),
+			join(assets, `${receipt}-${target}.json`),
+		);
 	const sidecar = fileRecord(
 		join(assets, `${name}.manifest.json`),
 		`${name}.manifest.json`,
@@ -259,6 +288,7 @@ const release = validateReleaseManifest({
 	product: "bobs-factory",
 	repository: REPOSITORY,
 	status: "available",
+	channel: identity.version.includes("-") ? "prerelease" : "stable",
 	version: identity.version,
 	tag: `v${identity.version}`,
 	commit: identity.commit,
@@ -315,7 +345,7 @@ if (!values.publish) {
 			},
 		});
 		for (const file of readdirSync(assets).sort()) {
-			const bytes = readFileSync(join(assets, file));
+			const record = fileRecord(join(assets, file), file);
 			const response = await fetch(
 				`https://uploads.github.com/repos/${REPOSITORY}/releases/${draft.id}/assets?name=${encodeURIComponent(file)}`,
 				{
@@ -323,17 +353,18 @@ if (!values.publish) {
 					headers: {
 						...headers,
 						"Content-Type": "application/octet-stream",
-						"Content-Length": String(bytes.length),
+						"Content-Length": String(record.size),
 					},
-					body: bytes,
+					body: createReadStream(join(assets, file)),
+					duplex: "half",
 				},
 			);
 			requireValue(response.ok, `Upload failed: ${file} (${response.status})`);
 			const uploaded = await response.json();
 			requireValue(
-				uploaded.size === bytes.length &&
+				uploaded.size === record.size &&
 					uploaded.state === "uploaded" &&
-					uploaded.digest === `sha256:${sha256(bytes)}`,
+					uploaded.digest === `sha256:${record.sha256}`,
 				`Uploaded asset integrity failure: ${file}`,
 			);
 		}
