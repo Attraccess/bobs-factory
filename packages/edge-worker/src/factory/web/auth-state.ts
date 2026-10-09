@@ -62,14 +62,14 @@ export function useAccess() {
 }
 let request = 0;
 let connectionLost = () => {};
-// A failed check proves only that Factory is unreachable, not that the session ended.
+// Connection loss hides private data without revoking the server session.
 export function onConnectionLost(handler: () => void) {
 	connectionLost = handler;
 }
 export async function checkAccess() {
 	const id = ++request,
 		epoch = generation;
-	// Re-checks keep an authenticated UI mounted; only a definitive answer unloads it.
+	// Keep verified credential management mounted while a re-check is pending.
 	if (state.status !== "authenticated")
 		publish({ ...state, status: "checking" });
 	try {
@@ -99,11 +99,10 @@ export async function checkAccess() {
 		}
 	} catch {
 		if (id !== request || epoch !== generation) return;
-		if (state.status === "authenticated") connectionLost();
-		else
-			accessRequired(
-				"Connect to Factory to sign in. Offline access is unavailable.",
-			);
+		connectionLost();
+		accessRequired(
+			"Connect to Factory to sign in. Offline access is unavailable.",
+		);
 	}
 }
 const channel =

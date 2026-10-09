@@ -156,7 +156,10 @@ origin/RP binding and a single-use browser-bound challenge valid for five minute
 Sign out warns that unsent edits and review comments will be discarded across
 tabs. Expiry/revocation also clears sensitive views and
 stops retries, streams and late responses. Reopening, restored navigation and
-reconnection recheck the session. Offline access shows an inert sign-in screen.
+reconnection recheck the session. Connection loss clears private views and unsent
+edits, while active runs continue on the server. Offline access shows an inert
+sign-in screen. Reconnecting verifies the existing session before restoring
+private views.
 The service worker caches only the static shell, never auth/API/media responses.
 Theme and settled-view preferences are retained.
 

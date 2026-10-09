@@ -9,7 +9,6 @@ import {
 	accessGeneration,
 	accessRequired,
 	accessSignal,
-	accessState,
 	checkAccess,
 	onAccessLost,
 	useAccess,
@@ -83,7 +82,8 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 	const [label, setLabel] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string>();
-	const updateRequired = pwa.status === "mismatch" || pwa.updating;
+	const updateRequired =
+		pwa.status === "mismatch" || pwa.status === "offline" || pwa.updating;
 	useEffect(() => {
 		if (location.hostname === "127.0.0.1") {
 			const canonical = new URL(location.href);
@@ -101,10 +101,9 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 		window.addEventListener("pageshow", page);
 		document.addEventListener("visibilitychange", visible);
 		window.addEventListener("online", page);
-		// A signed-in UI stays mounted while offline; the header shows reconnection.
+		// Discard private views immediately, even before a request fails.
 		const offline = () => {
-			if (accessState().status !== "authenticated")
-				accessRequired("Factory is offline. Reconnect to sign in.");
+			accessRequired("Factory is offline. Reconnect to sign in.");
 		};
 		window.addEventListener("offline", offline);
 		return () => {
