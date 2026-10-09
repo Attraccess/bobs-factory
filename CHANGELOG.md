@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Switching tabs or brief connection drops no longer reload the dashboard or discard unsent edits. Factory reconnects in the background while Bob looks around for it, the header shows "Reconnecting…" only for longer outages, and repeated failures open a dialog with retry over the still-loaded page. The dashboard only signs you out when Factory confirms the session ended. ([Taskbot #113](https://taskbot.apps.janjaap.de/p/bobs-factory/t/113))
+- Switching tabs or brief connection drops no longer reload the dashboard or discard unsent edits. Factory reconnects in the background while Bob looks around for it, the header shows "Reconnecting…" only for longer outages, and repeated failures open a dialog with retry over the still-loaded page. The dashboard only signs you out when Factory confirms the session ended. ([Taskbot #113](https://taskbot.apps.janjaap.de/p/bobs-factory/t/113), [#62](https://github.com/jappyjan/bobs-factory/pull/62))
 - Draft PR delivery no longer fails on every retry when a repository's commit hooks run long or failing full-suite checks; Factory's own commit skips commit hooks while implementation checks, review and CI keep owning verification. Push hooks such as Git LFS still run. ([#59](https://github.com/jappyjan/bobs-factory/pull/59), [F1 delivery validation](apps/f1/test-drives/2026-10-09-delivery-commit-hooks.md))
 
 ### Changed
