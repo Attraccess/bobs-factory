@@ -555,9 +555,10 @@ function Today({
 							?.click();
 					break;
 				case "e":
-					if (current && finished(current.status))
-						void settle.change(current, "settle");
-					else if (current?.reviewGate?.status === "pending")
+					if (current && finished(current.status)) {
+						if (!ticketTrackingPending(current))
+							void settle.change(current, "settle");
+					} else if (current?.reviewGate?.status === "pending")
 						document
 							.querySelector<HTMLButtonElement>(".focus-card .rainbow")
 							?.click();

@@ -612,6 +612,7 @@ export class FactoryServer {
 					workflow,
 					triggerOrigin,
 					error,
+					ticketSync,
 					reviewGate,
 					outputs,
 					history,
@@ -628,6 +629,13 @@ export class FactoryServer {
 					workflow: workflow.id,
 					triggerOrigin,
 					error,
+					ticketSync: ticketSync && {
+						error: ticketSync.error,
+						receipts: ticketSync.receipts.map(({ delivered, superseded }) => ({
+							delivered,
+							superseded,
+						})),
+					},
 					reviewGate,
 					hasGuide: Boolean(outputs.guide),
 					history: history.map(({ step, at, call }) => ({ step, at, call })),
