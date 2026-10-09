@@ -68,7 +68,7 @@ for attempt in 1 2; do
   grep -q '"onboarding"' "$smoke_root/state.json"
   grep -q '"required":true' "$smoke_root/state.json"
   echo "Startup $attempt: guided setup without an agent; unauthenticated API 401; authenticated API 200"
-  curl -fsS "http://127.0.0.1:$port/version" > "$smoke_root/version.json"
+  curl -fsS "http://127.0.0.1:$((port + 1))/version" > "$smoke_root/version.json"
   curl -fsS -H "Cookie: factory-local-session=$session_token" "http://127.0.0.1:$port/api/version" > "$smoke_root/api-version.json"
   check_runtime_identity "$smoke_root/version.json" "$smoke_root/version-identity.json"
   check_runtime_identity "$smoke_root/api-version.json" "$smoke_root/api-version-identity.json"
