@@ -1,7 +1,8 @@
 # GitHub repository capitalization and publication retry
 
 **Date:** 2026-10-09
-**Candidate:** `57c9ed18` plus the GitHub identity comparison working diff.
+**PR:** [#75](https://github.com/jappyjan/bobs-factory/pull/75)
+**Candidate:** GitHub identity comparison change based on `7a08db4f`.
 **Goal:** Accept GitHub's canonical owner/repository capitalization while keeping
 repository, provider, PR-number and approved-head checks intact.
 
@@ -57,6 +58,9 @@ Unit scenarios cover public GitHub and Enterprise capitalization, direct merge
 and merge queues, and rejection of different PR numbers, repositories, hosts,
 queries and credential-bearing URLs. GitLab path comparisons remain strict.
 Driver and final log are local ignored artifacts under `node_modules/.cache/`.
+The drive initially passed on `57c9ed18` plus the working diff and was repeated
+after integrating current main (`7a08db4f`). Workspace commit hooks also validate
+the complete build and type checks.
 
 ## Limits
 
