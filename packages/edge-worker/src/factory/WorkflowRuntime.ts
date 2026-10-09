@@ -7,7 +7,7 @@ import {
 	renameSync,
 	writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type {
 	RunTitleJob,
@@ -61,7 +61,7 @@ import {
 	type QuestionRecommendation,
 	questionNotification,
 } from "./Questions.js";
-import { deliveryRevisions } from "./RepositoryScope.js";
+import { deliveryRevisions, runRepositories } from "./RepositoryScope.js";
 import { reviewRecoveryQuestions } from "./ReviewRecovery.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
@@ -1365,6 +1365,18 @@ export class WorkflowRuntime {
 							proposals.length + 1,
 							context.evidenceDir,
 							signal,
+							[
+								context.evidenceDir,
+								...runRepositories(run).flatMap((repo) => [
+									repo.workspace,
+									repo.repositoryPath,
+								]),
+								join(
+									dirname(this.directory),
+									basename(run.workspace),
+									"attachments",
+								),
+							],
 						);
 						for (const previous of proposals)
 							if (

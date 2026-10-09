@@ -1,4 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -277,6 +284,7 @@ describe("architecture authorization boundary", () => {
 		writeFileSync(path, "original");
 		const value = proposal();
 		value.candidate.assets = [{ path, purpose: "spec" }];
+		value.candidate.plan = `Implement the specification at ${path}`;
 		const p = await snapshotProposal(
 			value,
 			"design",
@@ -286,11 +294,61 @@ describe("architecture authorization boundary", () => {
 		);
 		writeFileSync(path, "changed original");
 		verifyProposal(p);
+		expect(
+			p.content.candidate.plan.split("## Accepted asset snapshots")[0],
+		).toContain(
+			`Implement the specification at ${p.content.candidate.assets[0]!.path}`,
+		);
 		expect(readFileSync(p.content.candidate.assets[0]!.path, "utf8")).toBe(
 			"original",
 		);
 		writeFileSync(p.content.candidate.assets[0]!.path, "changed snapshot");
 		expect(() => verifyProposal(p)).toThrow("asset changed");
+	});
+	it("rejects outside files, sibling-prefix paths, traversal and symlink escapes", async () => {
+		const home = mkdtempSync(join(tmpdir(), "architecture-scope-"));
+		homes.push(home);
+		const allowed = join(home, "allowed");
+		const sibling = join(home, "allowed-other");
+		mkdirSync(allowed);
+		mkdirSync(sibling);
+		const secret = join(sibling, "secret.txt");
+		writeFileSync(secret, "restricted");
+		symlinkSync(sibling, join(allowed, "escape"));
+		for (const path of [
+			secret,
+			`${allowed}/../allowed-other/secret.txt`,
+			join(allowed, "escape", "secret.txt"),
+		]) {
+			const value = proposal();
+			value.candidate.assets = [{ path, purpose: "spec" }];
+			await expect(
+				snapshotProposal(
+					value,
+					"design",
+					1,
+					allowed,
+					new AbortController().signal,
+				),
+			).rejects.toThrow("outside authorized directories");
+		}
+		const spec = join(allowed, "spec.txt");
+		writeFileSync(spec, "authorized");
+		symlinkSync(spec, join(allowed, "linked.txt"));
+		const value = proposal();
+		value.candidate.assets = [
+			{ path: join(allowed, "linked.txt"), purpose: "spec" },
+		];
+		const frozen = await snapshotProposal(
+			value,
+			"design",
+			1,
+			allowed,
+			new AbortController().signal,
+		);
+		expect(readFileSync(frozen.content.candidate.assets[0]!.path, "utf8")).toBe(
+			"authorized",
+		);
 	});
 	it("uses the shared stock path and preserves operator-customized planning", () => {
 		const pipeline = defaultWorkflows.find((w) => w.id === "factory-pipeline")!;
@@ -306,6 +364,22 @@ describe("architecture authorization boundary", () => {
 				.find((w) => w.id === "factory-pipeline")!
 				.steps.find((s) => s.id === "architecture")!.prompt,
 		).toBe("Custom design");
+	});
+	it("stops the workflow when the proposal tries to snapshot a restricted file", async () => {
+		const outside = mkdtempSync(join(tmpdir(), "architecture-restricted-"));
+		homes.push(outside);
+		const path = join(outside, "secret.txt");
+		writeFileSync(path, "restricted");
+		const value = proposal();
+		value.candidate.assets = [{ path, purpose: "spec" }];
+		const { runtime, run, running, implemented } = setup("meaningful", {
+			agent: async () => value,
+		});
+		await running;
+		expect(run.status).toBe("failed");
+		expect(run.architectureProposals).toEqual([]);
+		expect(implemented).toEqual([]);
+		await runtime.shutdown();
 	});
 });
 

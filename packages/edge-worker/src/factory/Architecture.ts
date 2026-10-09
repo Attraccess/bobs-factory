@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, isAbsolute, join } from "node:path";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	realpathSync,
+	writeFileSync,
+} from "node:fs";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import { SystemSchema } from "./VisualContracts.js";
 
@@ -143,11 +149,20 @@ export async function snapshotProposal(
 	version: number,
 	directory: string,
 	signal: AbortSignal,
+	allowedDirectories: readonly string[] = [directory],
 ): Promise<ArchitectureProposal> {
 	const content = ArchitectureSchema.parse(value);
 	const id = randomUUID();
 	const assetDigests: ArchitectureProposal["assetDigests"] = [];
+	const snapshots = new Map<string, string>();
+	const contains = (root: string, path: string) => {
+		const child = relative(root, path);
+		return (
+			child !== ".." && !child.startsWith(`..${sep}`) && !isAbsolute(child)
+		);
+	};
 	for (const [index, asset] of content.candidate.assets.entries()) {
+		const original = asset.path;
 		let bytes: Buffer;
 		if (/^https?:\/\//.test(asset.path)) {
 			const response = await fetch(asset.path, { signal });
@@ -170,7 +185,17 @@ export async function snapshotProposal(
 				throw new Error(
 					"Architecture asset paths must be absolute or HTTP URLs",
 				);
-			bytes = readFileSync(asset.path);
+			const resolved = realpathSync(asset.path);
+			if (
+				!allowedDirectories.some(
+					(root) =>
+						existsSync(root) &&
+						contains(resolve(root), resolve(asset.path)) &&
+						contains(realpathSync(root), resolved),
+				)
+			)
+				throw new Error("Architecture asset is outside authorized directories");
+			bytes = readFileSync(resolved);
 		}
 		const folder = join(directory, "architecture", id);
 		mkdirSync(folder, { recursive: true });
@@ -180,12 +205,29 @@ export async function snapshotProposal(
 		);
 		writeFileSync(path, bytes, { flag: "wx" });
 		asset.path = path;
+		snapshots.set(original, path);
 		assetDigests.push({
 			path,
 			digest: createHash("sha256").update(bytes).digest("hex"),
 		});
 	}
 	content.candidate.plan += `\n\n## Architecture proposal ${id} (version ${version})\n\n${content.recommendation}\n\nClassification: ${content.classification}\n\nRationale: ${content.rationale}\n\nResponsibilities and interfaces:\n${content.interfaces.map((x) => `- ${x}`).join("\n")}\n\nRepository evidence:\n${content.evidence.map((x) => `- ${x.repository}: ${x.paths.join(", ")}. ${x.observation}`).join("\n")}\n\nAlternatives and trade-offs:\n${content.alternatives.map((x) => `- ${x.option}: ${x.tradeoffs}`).join("\n")}\n\nRisks:\n${content.risks.map((x) => `- ${x}`).join("\n")}\n\nUnresolved decisions:\n${content.unresolvedDecisions.map((x) => `- ${x}`).join("\n") || "None"}\n\n${content.visual ? `Diagram explanation: ${content.visual.explanation}\n\nDiagram data: ${JSON.stringify(content.visual.system)}` : ""}`;
+	if (snapshots.size) {
+		const references = [...snapshots.keys()].sort(
+			(a, b) => b.length - a.length,
+		);
+		const pattern = new RegExp(
+			references
+				.map((path) => path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+				.join("|"),
+			"g",
+		);
+		content.candidate.plan = content.candidate.plan.replace(
+			pattern,
+			(path) => snapshots.get(path)!,
+		);
+		content.candidate.plan += `\n\n## Accepted asset snapshots\nUse only the frozen snapshot paths in candidate.assets for implementation. Original paths and URLs below identify sources; do not read or fetch them, including references expressed in another form.\n${JSON.stringify([...snapshots].map(([original, snapshot]) => ({ original, snapshot })))}`;
+	}
 	const proposal: ArchitectureProposal = {
 		id,
 		version,

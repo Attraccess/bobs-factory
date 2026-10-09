@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Factory and Takeover architecture proposals with repository evidence, diagrams, discussion-driven revision and exact-version acceptance before implementation. Routine work records an approval bypass. ([Taskbot #90](https://taskbot.apps.janjaap.de/p/bobs-factory/t/90))
+- Factory and Takeover architecture proposals with repository evidence, diagrams, discussion-driven revision and exact-version acceptance before implementation. Routine work records an approval bypass. Assets stay within authorized directories and accepted plans reference frozen snapshots. ([Taskbot #90](https://taskbot.apps.janjaap.de/p/bobs-factory/t/90), [#74](https://github.com/jappyjan/bobs-factory/pull/74))
 
 ### Fixed
 

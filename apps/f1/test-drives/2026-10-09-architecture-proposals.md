@@ -97,3 +97,36 @@ submissions. The owned browser and servers were closed after validation.
 - Simulated agents establish orchestration and input boundaries, not the quality
   of architecture recommendations. Real-agent validation was not authorized.
 - This role did not publish a PR, merge changes or mutate the originating ticket.
+
+## Asset review fixes
+
+Validated the fix working tree based on `464c3a0bf9ef339213c377289d0c46df72abc641`.
+Local snapshot sources are restricted to the selected repository workspaces and source
+directories, run evidence and attachments. Both lexical paths and resolved symlink
+targets must be inside an authorized directory. Asset references in the complete
+implementation plan now point to snapshots; a source-to-snapshot map explicitly
+requires implementation to use frozen inputs.
+
+The three affected architecture, pipeline and runtime test files passed (179 tests),
+then the architecture file passed again with the added workflow-failure check
+(15 tests). Tests reject outside files, sibling-prefix paths, traversal and escaping
+symlinks, accept an internal symlink, and stop a restricted proposal before approval.
+They also confirm that changing the original file leaves the frozen specification
+and its plan reference intact, while changing snapshot bytes fails verification.
+EdgeWorker typecheck, changed-source Biome and `git diff --check` passed.
+
+The four simulated-agent F1 scenarios passed again with a real repository file
+asset in each architecture proposal. They exercise Factory and Takeover revision,
+rejection, exact-version acceptance, restart and routine bypass, and assert that
+implementation receives the frozen file and its snapshot reference. An original
+file is changed during the initial pending proposal. The driver uses only simulated
+agents and excludes remote delivery. No dashboard behavior changed in this fix;
+the earlier inspected screenshots remain historical evidence.
+
+```sh
+F1_AGENT_MODE=mock bun /Users/jappy/.bobs-factory/factory/evidence/manual-ca2bb7eb-c67e-4b8b-ac2f-1e62bf6cad37/architecture-assets-f1-drive.ts
+```
+
+The driver, log and receipts are retained beside the original evidence as
+`architecture-assets-f1-drive.ts`, `architecture-assets-f1-drive.log` and
+`architecture-assets-f1-results.json`. No real-agent validation was run.

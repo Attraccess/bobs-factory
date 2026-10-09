@@ -1425,6 +1425,11 @@ continues without another human wait. Simple keeps its existing path.
 
 The run page and artifact inspector display the proposal. **Accept proposal** authorizes
 implementation of exactly that version, candidate plan and snapshotted assets.
+Local assets must be inside the selected repository workspaces or source directories,
+the run's evidence directory, or its attachments directory. Resolved symlink targets
+must stay inside the same authorized directory. The runtime rewrites asset references
+in the accepted plan to frozen snapshot paths and includes a source-to-snapshot map;
+implementation must use the snapshots rather than rereading local originals or URLs.
 **Request changes** regenerates the proposal and sends it through candidate review again.
 Chat or question answers during this wait also request revision; typing “accept” there
 never substitutes for the explicit acceptance action. **Explain** rephrases the pending
