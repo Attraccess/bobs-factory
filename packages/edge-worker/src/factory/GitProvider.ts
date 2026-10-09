@@ -7,8 +7,7 @@ import {
 	resolvePath,
 } from "bobs-factory-core";
 import { z } from "zod";
-import { inspectGithubReadiness } from "./GithubReadiness.js";
-import { inspectGithubPullRequest } from "./GithubTakeover.js";
+import { githubProvider } from "./GithubProvider.js";
 import { gitlabProvider } from "./GitlabProvider.js";
 import {
 	PullRequestSchema,
@@ -191,84 +190,7 @@ export function gitProvider(
 	};
 	let provider: GitProvider;
 	if (snapshot.type === "github") {
-		const gh = (args: string[]) =>
-			command(
-				"gh",
-				args[0] === "api" && repository.host !== "github.com"
-					? [...args, "--hostname", repository.host]
-					: args,
-			);
-		provider = {
-			retryCheck: async (url, retry) => {
-				if (retry.kind !== "github-run" || !/^\d+$/.test(retry.id))
-					throw new Error("Invalid GitHub retry receipt");
-				const pr = JSON.parse(
-					await gh(["pr", "view", url, "--json", "headRefOid,state"]),
-				);
-				if (pr.headRefOid !== retry.headSha || pr.state !== "OPEN")
-					throw new Error("CI retry revision changed");
-				const path = `repos/${repository.project}/actions/runs/${retry.id}`;
-				const receipt = JSON.parse(await gh(["api", path]));
-				if (
-					receipt.head_sha !== retry.headSha ||
-					receipt.run_attempt !== retry.attempt ||
-					receipt.status !== "completed"
-				)
-					return;
-				await gh(["api", `${path}/rerun-failed-jobs`, "--method", "POST"]);
-			},
-			list: async (branch) =>
-				JSON.parse(
-					await gh([
-						"pr",
-						"list",
-						"--head",
-						branch,
-						"--state",
-						"open",
-						"--json",
-						"url,isDraft",
-						"--repo",
-						repository.url,
-					]),
-				),
-			create: (input) =>
-				gh([
-					"pr",
-					"create",
-					"--draft",
-					"--base",
-					input.baseBranch,
-					"--head",
-					input.branch,
-					"--title",
-					input.title,
-					"--body",
-					input.body,
-					"--repo",
-					repository.url,
-				]),
-			view: async (url, fields = "headRefOid,isDraft,state") =>
-				JSON.parse(await gh(["pr", "view", url, "--json", fields])),
-			inspect: (url) => inspectGithubPullRequest(command, url),
-			readiness: (url) => inspectGithubReadiness(command, url, checkReceipts),
-			draft: async (url, draft) => {
-				await gh(["pr", "ready", url, ...(draft ? ["--undo"] : [])]);
-			},
-			description: async (url, body) => {
-				await gh(["pr", "edit", url, "--body", body]);
-			},
-			merge: async (url, sha, method) => {
-				await gh([
-					"pr",
-					"merge",
-					url,
-					`--${method}`,
-					"--match-head-commit",
-					sha,
-				]);
-			},
-		};
+		provider = githubProvider(command, repository.url, checkReceipts);
 	} else if (snapshot.type === "gitlab")
 		provider = gitlabProvider(command, repository);
 	else if (snapshot.type === "custom") {

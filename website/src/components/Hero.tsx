@@ -1,8 +1,8 @@
 import { motion, useScroll, useSpring, useTransform } from "motion/react";
 import { useRef, useState } from "react";
+import { INSTALL_COMMAND, releaseAvailable } from "../install";
 import { Bob, type Mood } from "./Bob";
 import { CopyCommand } from "./CopyCommand";
-import { LAUNCH_COMMAND } from "./GetStarted";
 import { BrowserFrame, ease, Video } from "./ui";
 
 const chips = [
@@ -128,7 +128,11 @@ export function Hero() {
 							→
 						</span>
 					</a>
-					<CopyCommand command={LAUNCH_COMMAND} label="Copy launch command" />
+					<CopyCommand
+						command={INSTALL_COMMAND}
+						label="Copy install command"
+						disabled={!releaseAvailable}
+					/>
 				</motion.div>
 			</div>
 

@@ -1,62 +1,46 @@
-import { z } from "zod";
+import { GithubApi } from "./GithubApi.js";
+import { githubPullRequest } from "./GithubProvider.js";
 import {
-	PullRequestSchema,
 	type TakeoverPullRequest,
+	TakeoverPullRequestSchema,
 } from "./GitProviderContracts.js";
-import { pullRequestReference } from "./GitProviderReference.js";
-import type { ProviderCommand as TakeoverCommand } from "./MergeReadiness.js";
-/** Capture all discussion pages; only same-repository open PRs are supported in the MVP. */
+import {
+	pullRequestReference,
+	repositoryReference,
+} from "./GitProviderReference.js";
+import type { ProviderCommand } from "./MergeReadiness.js";
+
+/** Capture all discussion pages; only selected same-repository open PRs are supported. */
 export async function inspectGithubPullRequest(
-	command: TakeoverCommand,
+	command: ProviderCommand,
 	source: string,
+	selectedRepository?: string,
 ): Promise<TakeoverPullRequest> {
-	const match = pullRequestReference(source);
-	if (match?.type !== "github")
+	const reference = pullRequestReference(source);
+	if (reference?.type !== "github")
 		throw new Error(
 			"Enter a GitHub PR URL (https://github.com/owner/repo/pull/123)",
 		);
-	const slug = match.project;
-	const originalCommand = command;
-	command = (exe, args) =>
-		originalCommand(
-			exe,
-			match.host === "github.com" || args[0] !== "api"
-				? args
-				: [...args, "--hostname", match.host],
-		);
-	const repo = JSON.parse(
-		await command("gh", ["repo", "view", "--json", "nameWithOwner"]),
+	const selected = repositoryReference(
+		selectedRepository ??
+			(await command("git", ["remote", "get-url", "origin"])),
 	);
-	if (repo.nameWithOwner.toLowerCase() !== slug.toLowerCase())
+	if (selected.url.toLowerCase() !== reference.url.toLowerCase())
 		throw new Error("PR must belong to the selected repository");
-	const pr = PullRequestSchema.extend({
-		state: z.literal("OPEN"),
-		isCrossRepository: z.literal(false),
-	}).parse(
-		JSON.parse(
-			await command("gh", [
-				"pr",
-				"view",
-				source,
-				"--json",
-				"url,number,title,body,headRefName,headRefOid,baseRefName,state,isDraft,isCrossRepository",
-			]),
-		),
+	const api = new GithubApi(command, selected.url);
+	const pr = githubPullRequest(
+		await api.request("GET", `${api.pullRequestsPath}/${reference.number}`),
 	);
-	const pages = async (endpoint: string): Promise<unknown[]> =>
-		JSON.parse(
-			await command("gh", [
-				"api",
-				"--paginate",
-				"--slurp",
-				`repos/${slug}/${endpoint}`,
-			]),
-		).flat();
-	// Keep endpoints sequential: logs and receipts follow the same order on every run.
-	return {
+	return TakeoverPullRequestSchema.parse({
 		...pr,
-		comments: await pages(`issues/${pr.number}/comments`),
-		reviews: await pages(`pulls/${pr.number}/reviews`),
-		reviewComments: await pages(`pulls/${pr.number}/comments`),
-	};
+		comments: await api.pages(
+			`repos/${reference.project}/issues/${pr.number}/comments`,
+		),
+		reviews: await api.pages(
+			`repos/${reference.project}/pulls/${pr.number}/reviews`,
+		),
+		reviewComments: await api.pages(
+			`repos/${reference.project}/pulls/${pr.number}/comments`,
+		),
+	});
 }

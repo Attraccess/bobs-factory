@@ -1229,6 +1229,7 @@ export class ChatSessionHandler<TEvent> {
 			linearWorkspaceId,
 			repository,
 			repositoryPaths,
+			repositories: provider.getRepositories?.(),
 			platformMcpConfigOverrides: this.deps.getPlatformMcpConfigOverrides?.(),
 			strictMcpConfig: this.deps.getStrictMcpConfig?.(),
 			additionalWritableDirectories:

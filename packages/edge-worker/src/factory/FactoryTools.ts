@@ -12,6 +12,11 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { spawnExecution as spawn } from "bobs-factory-core";
 import { z } from "zod";
 import { feedbackInstructionFingerprint } from "./FeedbackPolicy.js";
+import {
+	executeGithubApi,
+	GITHUB_API_COMMAND,
+	githubGitEnvironment,
+} from "./GithubApi.js";
 import { type GitProvider, resolveGitProvider } from "./GitProvider.js";
 import { groupedTool, scopeCommand } from "./GroupedTools.js";
 import { dependencyCovers, dependencyHashes } from "./Incremental.js";
@@ -130,6 +135,24 @@ export function executeCommand(
 	timeoutMs = 20 * 60 * 1000,
 ): Promise<string> {
 	context.signal.throwIfAborted();
+	if (command === GITHUB_API_COMMAND) return executeGithubApi(context, args);
+	if (
+		command === "git" &&
+		["fetch", "push", "ls-remote", "clone"].includes(args[0] ?? "")
+	)
+		return githubGitEnvironment(context).then((environment) =>
+			executeProcessCommand(context, command, args, timeoutMs, environment),
+		);
+	return executeProcessCommand(context, command, args, timeoutMs);
+}
+
+function executeProcessCommand(
+	context: ExecutionContext,
+	command: string,
+	args: string[],
+	timeoutMs: number,
+	gitEnvironment?: NodeJS.ProcessEnv,
+): Promise<string> {
 	const input = JSON.stringify(context.input) ?? "null";
 	const directory = mkdtempSync(join(tmpdir(), "cyrus-factory-command-"));
 	const inputPath = join(directory, "input.json");
@@ -145,6 +168,7 @@ export function executeCommand(
 			detached: process.platform !== "win32",
 			env: {
 				...(context.execution?.environment ?? process.env),
+				...gitEnvironment,
 				// Large contexts cannot fit in the OS process argument/environment limit.
 				FACTORY_INPUT: Buffer.byteLength(input) <= 16000 ? input : undefined,
 				FACTORY_INPUT_FILE: inputPath,

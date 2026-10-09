@@ -4694,3 +4694,77 @@ kbd {
 		transition: none;
 	}
 }
+
+.onboarding-page {
+	min-height: 100dvh;
+	display: grid;
+	place-items: center;
+	padding: 28px 16px;
+}
+.onboarding-card {
+	width: min(100%, 680px);
+	background: var(--surface);
+	border: 1px solid var(--line);
+	border-radius: 24px;
+	padding: clamp(20px, 5vw, 42px);
+	box-shadow: var(--pop);
+}
+.onboarding-card header {
+	display: flex;
+	align-items: center;
+	gap: 18px;
+}
+.onboarding-card h1 {
+	font-size: clamp(25px, 5vw, 34px);
+	margin: 0;
+}
+.onboarding-progress {
+	list-style: none;
+	display: flex;
+	gap: 12px;
+	padding: 0;
+	margin: 26px 0;
+	font-size: 13px;
+	color: var(--muted);
+	flex-wrap: wrap;
+}
+.onboarding-progress li[aria-current] {
+	color: var(--text);
+	font-weight: 700;
+}
+.onboarding-card form,
+.onboarding-card label {
+	display: grid;
+	gap: 12px;
+}
+.onboarding-card form {
+	gap: 18px;
+}
+.onboarding-card input,
+.onboarding-card select {
+	width: 100%;
+	min-width: 0;
+	border: 1px solid var(--line);
+	border-radius: 10px;
+	background: var(--field);
+	color: var(--text);
+	padding: 12px;
+	font: inherit;
+}
+.onboarding-card p {
+	overflow-wrap: anywhere;
+}
+.onboarding-note {
+	padding: 16px 18px;
+	background: var(--quiet);
+	border-radius: 14px;
+}
+.onboarding-note p {
+	margin-bottom: 0;
+}
+.onboarding-actions {
+	display: flex;
+	gap: 12px;
+	margin-top: 24px;
+	flex-wrap: wrap;
+}

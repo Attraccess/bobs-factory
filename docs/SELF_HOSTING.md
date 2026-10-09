@@ -1,7 +1,9 @@
 # Independent self-hosting
 
-Install a verified binary and prepare/authenticate Git, delivery CLI and selected
-coding agents. Local startup uses `bobs-factory --repo PATH --agent codex`.
+Use the [one-command installer](../README.md#install-and-start), then launch
+`bobs-factory` for guided project, agent and GitHub setup. Prepare Git and the
+selected coding agent; the GitHub CLI is optional. Explicit local startup uses
+`bobs-factory --repo PATH --agent codex`.
 Configured startup uses `bobs-factory --home ~/.bobs-factory start` and
 `<home>/config.json`. See [configuration](CONFIG_FILE.md).
 
@@ -22,7 +24,8 @@ the exact browser origin with `--origin https://YOUR_HOST` for local startup, or
 must preserve that authority and browser Origin; unconfigured origins are denied.
 Keep webhook ingress separate, with its provider signature checks.
 
-On first startup, read the private ten-minute setup code from
+Foreground first launch prints the ten-minute passkey setup code in its own
+terminal and opens the browser. For a service, read the private code from
 `<home>/factory/auth/enroll.json` on the service machine, then enter it in the
 setup screen and create a passkey. Additional enrollment requires a recent passkey sign-in and a new code from
 `bobs-factory --home /absolute/service/home factory-auth`. Use the running service's

@@ -10,6 +10,8 @@ import type { RepositoryConfig } from "bobs-factory-core";
 export interface ChatRepositoryProvider {
 	/** Current repository paths available for chat sessions */
 	getRepositoryPaths(): string[];
+	/** Live bindings for managed repository authentication. */
+	getRepositories?(): RepositoryConfig[];
 	/** Default repository for MCP config sourcing (V1: first available) */
 	getDefaultRepository(): RepositoryConfig | undefined;
 	/** Default Linear workspace ID for MCP config (V1: first configured) */
@@ -33,6 +35,10 @@ export class LiveChatRepositoryProvider implements ChatRepositoryProvider {
 		return Array.from(this.repositories.values()).map(
 			(repo) => repo.repositoryPath,
 		);
+	}
+
+	getRepositories(): RepositoryConfig[] {
+		return Array.from(this.repositories.values());
 	}
 
 	getDefaultRepository(): RepositoryConfig | undefined {

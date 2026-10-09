@@ -5,8 +5,10 @@ description: Start a prepared Bob’s Factory installation in the foreground or 
 
 # Launch
 
-Run `bobs-factory --repo REPOSITORY --agent AGENT` for a local repository,
-or `bobs-factory --home STATE_HOME start` for configured integrations. Confirm
+Run `bobs-factory` for guided local startup; it prints first-passkey authorization
+and opens the browser to choose a project and available agent. Use `--no-open`
+for headless operation. An explicit launch uses `--repo REPOSITORY --agent AGENT`;
+configured integrations use `bobs-factory --home STATE_HOME start`. Confirm
 the selected executable, service account, home and env-file before starting.
 Verify a single worker/coordinator, dashboard health and the intended repository.
 

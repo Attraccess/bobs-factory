@@ -4,9 +4,11 @@ import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { FactoryTools } from "../src/factory/FactoryTools.js";
+import { GITHUB_API_COMMAND } from "../src/factory/GithubApi.js";
 import { gitProvider } from "../src/factory/GitProvider.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
+import { githubApiReceipt, githubRequest } from "./fixtures/github-api.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
 
 const url = "https://github.com/test/repo/pull/1";
@@ -21,10 +23,15 @@ it.each([
 			expect(args).toEqual(["show", "head:.github/workflows/title.yml"]);
 			return "name: Title\njobs:\n  title:\n    steps:\n      - name: Title\n        run: gh pr view --json title\n";
 		}
-		if (args[0] === "pr")
-			return JSON.stringify({ headRefOid: "head", state: "OPEN" });
-		expect(args.slice(-2)).toEqual(["--hostname", "github.enterprise.test"]);
-		if (args[1] === "graphql")
+		const request = githubRequest(args);
+		expect(exe).toBe(GITHUB_API_COMMAND);
+		expect(request).toMatchObject({
+			host: "github.enterprise.test",
+			project: "test/repo",
+		});
+		if (/\/pulls\/\d+$/.test(request.path))
+			return JSON.stringify(githubApiReceipt(args, { url: enterpriseUrl }));
+		if (request.path === "graphql")
 			return JSON.stringify(
 				providerReceipt({
 					url: enterpriseUrl,
@@ -45,7 +52,7 @@ it.each([
 					},
 				}),
 			);
-		if (args[1] === "repos/test/repo/check-runs/501")
+		if (request.path === "repos/test/repo/check-runs/501")
 			return JSON.stringify({
 				id: 501,
 				head_sha: "head",
@@ -53,7 +60,7 @@ it.each([
 					summary: "Pull request title must follow the required format",
 				},
 			});
-		if (args[1] === "repos/test/repo/actions/runs/42")
+		if (request.path === "repos/test/repo/actions/runs/42")
 			return JSON.stringify({
 				id: 42,
 				head_sha: "head",
@@ -61,8 +68,8 @@ it.each([
 				status: "completed",
 				path: ".github/workflows/title.yml",
 			});
-		if (args[1]?.endsWith("rerun-failed-jobs")) return "";
-		return "[]";
+		if (request.path?.endsWith("rerun-failed-jobs")) return "{}";
+		return JSON.stringify(githubApiReceipt(args));
 	});
 	const provider = gitProvider(command, {
 		type: "github",
@@ -80,7 +87,8 @@ it.each([
 		});
 		expect(
 			command.mock.calls.filter(
-				([exe, args]) => exe === "gh" && args.includes("POST"),
+				([exe, args]) =>
+					exe === GITHUB_API_COMMAND && githubRequest(args).method === "POST",
 			),
 		).toHaveLength(1);
 	}
@@ -89,6 +97,56 @@ afterEach(() => {
 	vi.useRealTimers();
 	for (const home of homes.splice(0))
 		rmSync(home, { recursive: true, force: true });
+});
+
+it.each([
+	{ name: "PR head", pr: { headRefOid: "changed" }, run: {}, rejected: true },
+	{ name: "PR state", pr: { state: "CLOSED" }, run: {}, rejected: true },
+	{ name: "run head", pr: {}, run: { head_sha: "changed" }, rejected: false },
+	{ name: "run attempt", pr: {}, run: { run_attempt: 2 }, rejected: false },
+	{
+		name: "run status",
+		pr: {},
+		run: { status: "in_progress" },
+		rejected: false,
+	},
+])("does not retry an outdated GitHub receipt when the $name changes", async ({
+	pr,
+	run,
+	rejected,
+}) => {
+	const command = vi.fn(async (exe: string, args: string[]) => {
+		expect(exe).toBe(GITHUB_API_COMMAND);
+		const request = githubRequest(args);
+		if (request.path === "repos/test/repo/pulls/1")
+			return JSON.stringify(githubApiReceipt(args, pr));
+		if (request.path === "repos/test/repo/actions/runs/42")
+			return JSON.stringify({
+				id: 42,
+				head_sha: "head",
+				run_attempt: 1,
+				status: "completed",
+				...run,
+			});
+		throw new Error(`Unexpected GitHub request: ${request.path}`);
+	});
+	const retry = gitProvider(command, {
+		type: "github",
+		repositoryUrl: "https://github.com/test/repo",
+	}).retryCheck!(url, {
+		kind: "github-run",
+		id: "42",
+		attempt: 1,
+		headSha: "head",
+	});
+	if (rejected)
+		await expect(retry).rejects.toThrow("CI retry revision changed");
+	else await retry;
+	expect(
+		command.mock.calls.some(
+			([, args]) => githubRequest(args).method === "POST",
+		),
+	).toBe(false);
 });
 
 it("waits for a provider-confirmed running retry and refreshes failed-check evidence when the attempt completes", async () => {
@@ -102,9 +160,10 @@ it("waits for a provider-confirmed running retry and refreshes failed-check evid
 	const agent = vi.fn(async () => ({}));
 	const command = vi.fn(async (_context, exe: string, args: string[]) => {
 		if (exe === "git") return args[0] === "rev-parse" ? "head" : "";
-		if (args[0] === "pr")
-			return JSON.stringify({ headRefOid: "head", state: "OPEN" });
-		if (args[1] === "graphql")
+		const request = githubRequest(args);
+		if (/\/pulls\/\d+$/.test(request.path))
+			return JSON.stringify(githubApiReceipt(args));
+		if (request.path === "graphql")
 			return JSON.stringify(
 				providerReceipt({
 					statusCheckRollup: {
@@ -124,7 +183,7 @@ it("waits for a provider-confirmed running retry and refreshes failed-check evid
 					},
 				}),
 			);
-		if (args[1] === "repos/test/repo/check-runs/501") {
+		if (request.path === "repos/test/repo/check-runs/501") {
 			detailReads++;
 			return JSON.stringify({
 				id: 501,
@@ -132,20 +191,20 @@ it("waits for a provider-confirmed running retry and refreshes failed-check evid
 				output: { summary: evidence },
 			});
 		}
-		if (args[1] === "repos/test/repo/actions/runs/42")
+		if (request.path === "repos/test/repo/actions/runs/42")
 			return JSON.stringify({
 				id: 42,
 				head_sha: "head",
 				run_attempt: attempt,
 				status,
 			});
-		if (args[1] === "repos/test/repo/actions/runs/42/rerun-failed-jobs") {
+		if (request.path === "repos/test/repo/actions/runs/42/rerun-failed-jobs") {
 			retries++;
 			attempt++;
 			status = "in_progress";
-			return "";
+			return "{}";
 		}
-		return "[]";
+		return JSON.stringify(githubApiReceipt(args));
 	});
 	const directory = mkdtempSync(join(tmpdir(), "ci-running-attempt-"));
 	homes.push(directory);
@@ -235,9 +294,10 @@ function failingCI(
 	const agent = vi.fn(async () => ({}));
 	const command = vi.fn(async (_context, exe: string, args: string[]) => {
 		if (exe === "git") return args[0] === "rev-parse" ? "head" : "";
-		if (args[0] === "pr")
-			return JSON.stringify({ headRefOid: "head", state: "OPEN" });
-		if (args[1] === "graphql")
+		const request = githubRequest(args);
+		if (/\/pulls\/\d+$/.test(request.path))
+			return JSON.stringify(githubApiReceipt(args));
+		if (request.path === "graphql")
 			return JSON.stringify(
 				providerReceipt({
 					...(options.conflict
@@ -262,7 +322,7 @@ function failingCI(
 					},
 				}),
 			);
-		if (args[1] === "repos/test/repo/check-runs/501")
+		if (request.path === "repos/test/repo/check-runs/501")
 			return JSON.stringify({
 				id: 501,
 				head_sha: "head",
@@ -272,21 +332,21 @@ function failingCI(
 						: "Assertion failed: checkout must reject unauthorized users",
 				},
 			});
-		if (args[1] === "repos/test/repo/actions/runs/42")
+		if (request.path === "repos/test/repo/actions/runs/42")
 			return JSON.stringify({
 				id: 42,
 				head_sha: "head",
 				run_attempt: attempt,
 				status: "completed",
 			});
-		if (args[1] === "repos/test/repo/actions/runs/42/rerun-failed-jobs") {
+		if (request.path === "repos/test/repo/actions/runs/42/rerun-failed-jobs") {
 			retries++;
 			if (options.ambiguousRetry)
 				throw new Error("connection reset after request");
 			attempt++;
-			return "";
+			return "{}";
 		}
-		return "[]";
+		return JSON.stringify(githubApiReceipt(args));
 	});
 	const tools = new FactoryTools({ postComment: vi.fn(), command });
 	const directory = mkdtempSync(join(tmpdir(), "ci-supervision-"));
@@ -390,7 +450,8 @@ it.each([
 });
 it("retains concrete GitHub runner allocation failure and current attempt receipts for runtime retries", async () => {
 	const command = vi.fn(async (_exe: string, args: string[]) => {
-		if (args[1] === "graphql")
+		const request = githubRequest(args);
+		if (request.path === "graphql")
 			return JSON.stringify(
 				providerReceipt({
 					statusCheckRollup: {
@@ -410,7 +471,7 @@ it("retains concrete GitHub runner allocation failure and current attempt receip
 					},
 				}),
 			);
-		if (args[1] === "repos/test/repo/check-runs/501")
+		if (request.path === "repos/test/repo/check-runs/501")
 			return JSON.stringify({
 				id: 501,
 				head_sha: "head",
@@ -419,7 +480,7 @@ it("retains concrete GitHub runner allocation failure and current attempt receip
 					summary: "No hosted runner could be allocated",
 				},
 			});
-		if (args[1] === "repos/test/repo/actions/runs/42")
+		if (request.path === "repos/test/repo/actions/runs/42")
 			return JSON.stringify({
 				id: 42,
 				head_sha: "head",
@@ -427,7 +488,7 @@ it("retains concrete GitHub runner allocation failure and current attempt receip
 				status: "completed",
 				conclusion: "startup_failure",
 			});
-		return "[]";
+		return JSON.stringify(githubApiReceipt(args));
 	});
 	const receipt = await gitProvider(command, {
 		type: "github",
@@ -447,9 +508,10 @@ it("retries a provider-proven runner failure in runtime without launching an age
 	let retries = 0;
 	const command = vi.fn(async (_context, exe: string, args: string[]) => {
 		if (exe === "git") return args[0] === "rev-parse" ? "head" : "";
-		if (args[0] === "pr")
-			return JSON.stringify({ headRefOid: "head", state: "OPEN" });
-		if (args[1] === "graphql")
+		const request = githubRequest(args);
+		if (/\/pulls\/\d+$/.test(request.path))
+			return JSON.stringify(githubApiReceipt(args));
+		if (request.path === "graphql")
 			return JSON.stringify(
 				providerReceipt(
 					retries
@@ -473,24 +535,24 @@ it("retries a provider-proven runner failure in runtime without launching an age
 							},
 				),
 			);
-		if (args[1] === "repos/test/repo/check-runs/501")
+		if (request.path === "repos/test/repo/check-runs/501")
 			return JSON.stringify({
 				id: 501,
 				head_sha: "head",
 				output: { summary: "Runner allocation failed" },
 			});
-		if (args[1] === "repos/test/repo/actions/runs/42")
+		if (request.path === "repos/test/repo/actions/runs/42")
 			return JSON.stringify({
 				id: 42,
 				head_sha: "head",
 				run_attempt: 1,
 				status: "completed",
 			});
-		if (args[1] === "repos/test/repo/actions/runs/42/rerun-failed-jobs") {
+		if (request.path === "repos/test/repo/actions/runs/42/rerun-failed-jobs") {
 			retries++;
-			return "";
+			return "{}";
 		}
-		return "[]";
+		return JSON.stringify(githubApiReceipt(args));
 	});
 	const tools = new FactoryTools({ postComment: vi.fn(), command });
 	const agent = vi.fn(async () => ({}));
@@ -621,9 +683,10 @@ it("rechecks corrected PR metadata at the same SHA when its workflow reads the l
 				: args[0] === "show"
 					? "run: gh pr view $PR --json title --jq .title\n"
 					: "";
-		if (args[0] === "pr")
-			return JSON.stringify({ headRefOid: "head", state: "OPEN" });
-		if (args[1] === "graphql")
+		const request = githubRequest(args);
+		if (/\/pulls\/\d+$/.test(request.path))
+			return JSON.stringify(githubApiReceipt(args));
+		if (request.path === "graphql")
 			return JSON.stringify(
 				providerReceipt(
 					retries
@@ -648,7 +711,7 @@ it("rechecks corrected PR metadata at the same SHA when its workflow reads the l
 							},
 				),
 			);
-		if (args[1] === "repos/test/repo/check-runs/501")
+		if (request.path === "repos/test/repo/check-runs/501")
 			return JSON.stringify({
 				id: 501,
 				head_sha: "head",
@@ -656,7 +719,7 @@ it("rechecks corrected PR metadata at the same SHA when its workflow reads the l
 					summary: "Pull request title does not match the required format",
 				},
 			});
-		if (args[1] === "repos/test/repo/actions/runs/42")
+		if (request.path === "repos/test/repo/actions/runs/42")
 			return JSON.stringify({
 				id: 42,
 				head_sha: "head",
@@ -664,11 +727,11 @@ it("rechecks corrected PR metadata at the same SHA when its workflow reads the l
 				status: "completed",
 				path: ".github/workflows/title.yml",
 			});
-		if (args[1] === "repos/test/repo/actions/runs/42/rerun-failed-jobs") {
+		if (request.path === "repos/test/repo/actions/runs/42/rerun-failed-jobs") {
 			retries++;
-			return "";
+			return "{}";
 		}
-		return "[]";
+		return JSON.stringify(githubApiReceipt(args));
 	});
 	const tools = new FactoryTools({ postComment: vi.fn(), command });
 	const agent = vi.fn(async () => {

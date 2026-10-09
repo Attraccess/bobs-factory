@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { executeCommand } from "../../src/factory/FactoryTools.js";
 import type { RunRepository } from "../../src/factory/RepositoryScope.js";
 import type { ExecutionContext } from "../../src/factory/WorkflowRuntime.js";
-import { providerReceipt } from "./merge-readiness.js";
+import { githubApiReceipt, githubRequest } from "./github-api.js";
 
 export function deliveryFixture(directory: string) {
 	const repositories: RunRepository[] = [];
@@ -78,13 +78,22 @@ export function deliveryFixture(directory: string) {
 				);
 			return output;
 		}
-		if (executable !== "gh")
+		if (executable !== "bobs-factory:github-api")
 			throw new Error(`Unexpected command ${executable}`);
-		if (args[0] === "pr" && args[1] === "list")
+		const api = githubRequest(args);
+		const pulls = `repos/fixture/${repository.id}/pulls`;
+		if (api.method === "GET" && api.path.startsWith(`${pulls}?`))
 			return JSON.stringify(
-				requests.has(repository.id) ? [requests.get(repository.id)] : [],
+				requests.has(repository.id)
+					? [
+							{
+								html_url: requests.get(repository.id)!.url,
+								draft: requests.get(repository.id)!.isDraft,
+							},
+						]
+					: [],
 			);
-		if (args[0] === "pr" && args[1] === "create") {
+		if (api.method === "POST" && api.path === pulls) {
 			if (failPublication === repository.id)
 				throw new Error("Injected publication outage");
 			const request = {
@@ -96,46 +105,47 @@ export function deliveryFixture(directory: string) {
 			};
 			requests.set(repository.id, request);
 			publications.push(repository.id);
-			return request.url;
+			const pr = githubApiReceipt(
+				[JSON.stringify({ ...api, method: "GET", path: `${pulls}/1` })],
+				{ url: request.url, headRefOid: request.headSha },
+			);
+			pr.head.ref = request.branchName;
+			pr.base.ref = repository.baseBranch;
+			return JSON.stringify(pr);
 		}
 		const request = requests.get(repository.id);
 		if (!request) throw new Error(`Missing fixture PR ${repository.id}`);
-		if (args[0] === "pr" && args[1] === "view")
-			return JSON.stringify({
-				...request,
-				headRefOid: request.headSha,
-				headRefName: request.branchName,
-				baseRefName: repository.baseBranch,
-			});
-		if (args.includes("graphql"))
-			return JSON.stringify(
-				providerReceipt({
-					url: request.url,
-					headRefOid: request.headSha,
-					baseRefOid: git(
-						repository,
-						"rev-parse",
-						`origin/${repository.baseBranch}`,
-					),
-					state: request.state,
-					isDraft: request.isDraft,
-					mergeStateStatus: "CLEAN",
-					reviewDecision: "APPROVED",
-				}),
-			);
-		if (args[0] === "api") return "[[]]";
-		if (args[1] === "ready") {
-			request.isDraft = args.includes("--undo");
-			return "";
+		if (api.path === "graphql") {
+			const query = (api.body as { query: string }).query;
+			if (query.includes("markPullRequestReadyForReview"))
+				request.isDraft = false;
+			if (query.includes("convertPullRequestToDraft")) request.isDraft = true;
 		}
-		if (args[1] === "edit") return "";
-		if (args[1] === "merge") {
+		if (api.method === "PUT" && api.path.endsWith("/merge")) {
 			if (failMerge === repository.id) throw new Error("Injected merge outage");
+			if ((api.body as { sha: string }).sha !== request.headSha)
+				throw new Error("Unapproved revision");
 			request.state = "MERGED";
 			merges.push(repository.id);
-			return "";
 		}
-		throw new Error(`Unexpected fixture command ${args.join(" ")}`);
+		const receipt = githubApiReceipt(args, {
+			url: request.url,
+			headRefOid: request.headSha,
+			baseRefOid: git(
+				repository,
+				"rev-parse",
+				`origin/${repository.baseBranch}`,
+			),
+			state: request.state,
+			isDraft: request.isDraft,
+			mergeStateStatus: "CLEAN",
+			reviewDecision: "APPROVED",
+		});
+		if (api.method === "GET" && api.path === `${pulls}/1`) {
+			receipt.head.ref = request.branchName;
+			receipt.base.ref = repository.baseBranch;
+		}
+		return JSON.stringify(receipt);
 	};
 	return {
 		repositories,

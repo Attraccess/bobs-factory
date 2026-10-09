@@ -1,3 +1,4 @@
+import { GithubApi } from "./GithubApi.js";
 import { pullRequestReference } from "./GitProviderReference.js";
 import type {
 	MergeBlocker,
@@ -16,52 +17,112 @@ export async function inspectGithubReadiness(
 	if (reference?.type !== "github") throw new Error("Enter a GitHub PR URL");
 	const [owner, name] = reference.project.split("/");
 	const number = reference.number;
-	const originalCommand = command;
-	command = (exe, args, timeout) =>
-		originalCommand(
-			exe,
-			exe !== "gh" || reference.host === "github.com"
-				? args
-				: [...args, "--hostname", reference.host],
-			timeout,
-		);
-	const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed pullRequest(number:$number){url title headRefOid baseRefOid state isDraft mergeable mergeStateStatus reviewDecision mergeQueueEntry{id} autoMergeRequest{enabledAt} statusCheckRollup{contexts(first:100){pageInfo{hasNextPage} nodes{__typename ... on CheckRun{databaseId name status conclusion detailsUrl} ... on StatusContext{context state targetUrl}}}} reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated comments(first:100){nodes{id body url author{login}} pageInfo{hasNextPage}}}} comments(last:100){nodes{id body url createdAt author{login}} pageInfo{hasPreviousPage}} reviews(last:100){nodes{id state body submittedAt author{login}} pageInfo{hasPreviousPage}}}}}`;
+	const api = new GithubApi(command, reference.url);
+	const query = `query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){squashMergeAllowed mergeCommitAllowed rebaseMergeAllowed pullRequest(number:$number){url title headRefOid baseRefOid state isDraft mergeable mergeStateStatus reviewDecision isMergeQueueEnabled isInMergeQueue mergeQueueEntry{id} autoMergeRequest{enabledAt} statusCheckRollup{contexts(first:100){pageInfo{hasNextPage endCursor} nodes{__typename ... on CheckRun{databaseId name status conclusion detailsUrl} ... on StatusContext{context state targetUrl}}}} reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{id isResolved isOutdated comments(first:100){nodes{id body url author{login}} pageInfo{hasNextPage endCursor}}}}}}}`;
+	const variables = { owner, name, number };
+
 	let cursor: string | undefined;
 	let method: MergeReadiness["mergeMethod"] = "squash";
-	let pr: any,
-		threads: any[] = [];
+	let pr: any;
+	const threads: any[] = [];
+	let methodsAvailable = true;
+	const seen = new Set<string>();
 	do {
-		const args = [
-			"api",
-			"graphql",
-			"-f",
-			`query=${query}`,
-			"-f",
-			`owner=${owner}`,
-			"-f",
-			`name=${name}`,
-			"-F",
-			`number=${number}`,
-		];
-		if (cursor) args.push("-f", `cursor=${cursor}`);
-		const payload = JSON.parse(await command("gh", args));
-		if (payload.errors?.length)
-			throw new Error(
-				payload.errors.map((item: any) => item.message).join("; "),
-			);
+		const payload = await api.graphql(query, {
+			...variables,
+			...(cursor ? { cursor } : {}),
+		});
 		const repository = payload.data?.repository;
+		methodsAvailable = Boolean(
+			repository?.squashMergeAllowed ||
+				repository?.mergeCommitAllowed ||
+				repository?.rebaseMergeAllowed,
+		);
 		method = repository?.squashMergeAllowed
 			? "squash"
 			: repository?.mergeCommitAllowed
 				? "merge"
 				: "rebase";
-		pr = repository?.pullRequest;
-		if (!pr) throw new Error("Pull request unavailable");
-		threads.push(...pr.reviewThreads.nodes);
-		cursor = pr.reviewThreads.pageInfo.hasNextPage
-			? pr.reviewThreads.pageInfo.endCursor
+		const next = repository?.pullRequest;
+		if (!next) throw new Error("Pull request unavailable");
+		if (
+			pr &&
+			(pr.headRefOid !== next.headRefOid || pr.baseRefOid !== next.baseRefOid)
+		)
+			throw new Error(
+				"PR changed during provider inspection; inspect the new revision again",
+			);
+		pr ??= next;
+		threads.push(...next.reviewThreads.nodes);
+		cursor = next.reviewThreads.pageInfo.hasNextPage
+			? next.reviewThreads.pageInfo.endCursor
 			: undefined;
+		if (
+			next.reviewThreads.pageInfo.hasNextPage &&
+			(!cursor || seen.has(cursor))
+		)
+			throw new Error("GitHub review-thread pagination is incomplete");
+		if (cursor) seen.add(cursor);
 	} while (cursor);
+	for (const thread of threads) {
+		let page = thread.comments.pageInfo;
+		const seenComments = new Set<string>();
+		while (page.hasNextPage) {
+			const after = page.endCursor;
+			if (!after || seenComments.has(after))
+				throw new Error("GitHub review-comment pagination is incomplete");
+			seenComments.add(after);
+			const payload = await api.graphql(
+				`query($id:ID!,$cursor:String!){node(id:$id){... on PullRequestReviewThread{comments(first:100,after:$cursor){nodes{id body url author{login}} pageInfo{hasNextPage endCursor}}}}}`,
+				{ id: thread.id, cursor: after },
+			);
+			const comments = payload.data?.node?.comments;
+			if (!comments) throw new Error("Review thread discussion unavailable");
+			thread.comments.nodes.push(...comments.nodes);
+			page = comments.pageInfo;
+		}
+		thread.comments.pageInfo = page;
+	}
+	const contexts = pr.statusCheckRollup?.contexts;
+	let checkPage = contexts?.pageInfo;
+	const seenChecks = new Set<string>();
+	while (checkPage?.hasNextPage) {
+		const after = checkPage.endCursor;
+		if (!after || seenChecks.has(after))
+			throw new Error("GitHub check pagination is incomplete");
+		seenChecks.add(after);
+		const payload = await api.graphql(
+			`query($owner:String!,$name:String!,$number:Int!,$cursor:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){headRefOid baseRefOid statusCheckRollup{contexts(first:100,after:$cursor){nodes{__typename ... on CheckRun{databaseId name status conclusion detailsUrl} ... on StatusContext{context state targetUrl}} pageInfo{hasNextPage endCursor}}}}}}`,
+			{ ...variables, cursor: after },
+		);
+		const next = payload.data?.repository?.pullRequest;
+		if (
+			!next ||
+			next.headRefOid !== pr.headRefOid ||
+			next.baseRefOid !== pr.baseRefOid
+		)
+			throw new Error(
+				"PR changed during provider inspection; inspect the new revision again",
+			);
+		const nextContexts = next.statusCheckRollup?.contexts;
+		if (!nextContexts) throw new Error("GitHub check evidence unavailable");
+		contexts.nodes.push(...nextContexts.nodes);
+		checkPage = nextContexts.pageInfo;
+	}
+	if (contexts) contexts.pageInfo = checkPage;
+	const comments = await api.pages(
+		`repos/${owner}/${name}/issues/${number}/comments`,
+	);
+	const reviews = (
+		await api.pages<any>(`repos/${owner}/${name}/pulls/${number}/reviews`)
+	).map((review) => ({
+		...review,
+		id: String(review.node_id ?? review.id),
+		state: review.state,
+		body: review.body ?? "",
+		submittedAt: review.submitted_at,
+		author: { login: review.user?.login },
+	}));
 	const blockers: MergeBlocker[] = [];
 	const add = (kind: string, message: string, action: MergeBlocker["action"]) =>
 		blockers.push({ kind, message, action });
@@ -96,6 +157,8 @@ export async function inspectGithubReadiness(
 			};
 		},
 	);
+	if (!methodsAvailable)
+		add("rules", "No merge method is enabled for this repository", "human");
 	// Classify only provider evidence, never a check name or a fixer's guess.
 	const runs = new Map<string, any>();
 	for (const [index, source] of (
@@ -119,12 +182,7 @@ export async function inspectGithubReadiness(
 		if (id && !runs.has(id))
 			runs.set(
 				id,
-				JSON.parse(
-					await command("gh", [
-						"api",
-						`repos/${owner}/${name}/actions/runs/${id}`,
-					]),
-				),
+				await api.request("GET", `repos/${owner}/${name}/actions/runs/${id}`),
 			);
 		const run: any = id ? runs.get(id) : undefined;
 		const key = JSON.stringify([
@@ -137,11 +195,9 @@ export async function inspectGithubReadiness(
 		]);
 		if (checkReceipts?.[key]) check.failure = checkReceipts[key].failure;
 		else {
-			const detail = JSON.parse(
-				await command("gh", [
-					"api",
-					`repos/${owner}/${name}/check-runs/${source.databaseId}`,
-				]),
+			const detail = await api.request(
+				"GET",
+				`repos/${owner}/${name}/check-runs/${source.databaseId}`,
 			);
 			if (detail.head_sha !== pr.headRefOid) continue;
 			const evidence = [
@@ -217,6 +273,7 @@ export async function inspectGithubReadiness(
 			};
 		}
 	}
+
 	if (pr.state !== "OPEN" && pr.state !== "MERGED")
 		add("closed", "PR is closed", "wait");
 	if (pr.isDraft)
@@ -235,7 +292,7 @@ export async function inspectGithubReadiness(
 		add("conflicts", "Resolve merge conflicts", "fix");
 	else if (pr.mergeable === "UNKNOWN" || pr.mergeStateStatus === "UNKNOWN")
 		add("unknown", "GitHub is calculating mergeability", "wait");
-	if (pr.mergeStateStatus === "BEHIND")
+	if (pr.mergeStateStatus === "BEHIND" && !pr.isMergeQueueEnabled)
 		add("stale", "Branch must be updated from the base", "fix");
 	const openThreads = threads.filter((thread) => !thread.isResolved);
 	if (openThreads.length)
@@ -257,6 +314,7 @@ export async function inspectGithubReadiness(
 	if (
 		!pr.isDraft &&
 		["BLOCKED", "UNSTABLE", "HAS_HOOKS"].includes(pr.mergeStateStatus) &&
+		!pr.isMergeQueueEnabled &&
 		!blockers.length
 	)
 		add("rules", `GitHub merge rules: ${pr.mergeStateStatus}`, "wait");
@@ -272,7 +330,9 @@ export async function inspectGithubReadiness(
 		approved:
 			pr.state === "OPEN" &&
 			!blockers.length &&
-			["CLEAN", "UNSTABLE", "HAS_HOOKS"].includes(pr.mergeStateStatus),
+			(["CLEAN", "UNSTABLE", "HAS_HOOKS"].includes(pr.mergeStateStatus) ||
+				(pr.isMergeQueueEnabled &&
+					["BLOCKED", "BEHIND"].includes(pr.mergeStateStatus))),
 		reviewReady:
 			pr.state === "OPEN" &&
 			blockers.every((blocker) => blocker.action === "human"),
@@ -280,16 +340,11 @@ export async function inspectGithubReadiness(
 		blockers,
 		checks,
 		threads: openThreads,
-		comments: JSON.parse(
-			await command("gh", [
-				"api",
-				"--paginate",
-				"--slurp",
-				`repos/${owner}/${name}/issues/${number}/comments`,
-			]),
-		).flat(),
-		reviews: pr.reviews.nodes,
-		queued: Boolean(pr.mergeQueueEntry || pr.autoMergeRequest),
+		comments,
+		reviews,
+		queued: Boolean(
+			pr.isInMergeQueue || pr.mergeQueueEntry || pr.autoMergeRequest,
+		),
 		mergeMethod: method,
 	};
 }

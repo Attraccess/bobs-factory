@@ -62,7 +62,7 @@ it("offers GitLab subgroup and enterprise GitHub review links and checkout comma
 		reviewGate: { url: "https://github.example/team/repo/pull/4" },
 	});
 	expect(enterprise.commands[0]?.command).toBe(
-		"gh pr checkout 4 --repo 'https://github.example/team/repo'",
+		"git fetch origin pull/4/head\ngit checkout --detach FETCH_HEAD",
 	);
 });
 const ticketReference = {
@@ -97,9 +97,10 @@ it("prefers review PR and published branch, retaining the verified ticket", () =
 		ticket: { url: ticketReference.url, label: "TEAM-12" },
 		commands: [
 			{
-				label: "GitHub CLI",
-				command: "gh pr checkout 42",
-				help: "Run in a local clone with GitHub CLI installed.",
+				label: "Git",
+				command:
+					"git fetch origin pull/42/head\ngit checkout --detach FETCH_HEAD",
+				help: "Run in a local clone of this repository. Uses your existing Git authentication.",
 			},
 			{
 				label: "Git only",
@@ -150,7 +151,7 @@ it("falls back through malformed metadata without guessing links", () => {
 it("offers only commands supported by PR-only and branch-only metadata", () => {
 	expect(
 		reviewContext({ reviewGate: { url } }).commands.map((c) => c.label),
-	).toEqual(["GitHub CLI"]);
+	).toEqual(["Git"]);
 	expect(
 		reviewContext({
 			outputs: { "draft-pr": { branch: "feature" } },

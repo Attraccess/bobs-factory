@@ -6,6 +6,8 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
+- Add a shared public release manifest, verified anonymous installer, pinned Nix package and immutable publication workflow with candidate-bound native validation evidence. Exercise protected onboarding and native GitHub delivery with a mocked-agent F1 drive; migrate existing feedback/review fixtures to the native transport and update the complete prompt expectation, preserving approval and revision safeguards. Integrate durable delivery/recovery and bounded current-head CI retries with native GitHub transport; retain both runtime identity and protected setup contracts. Verify packaged identity against build metadata through the RPC and dashboard version endpoints ([#55](https://github.com/jappyjan/bobs-factory/pull/55)).
+
 - Prepare private workspace packages, embedded runtime assets, binary candidate verification and migration preservation checks for Taskbot #38. Retire upstream npm publication; retain historical tooling. Load user-prepared Cursor through a separate Node process with native ID, MCP, stream and cancellation regression checks; exclude its SDK/native sidecars from archives. Validate referenced MCP configuration before migration, preserve frozen workflow history while updating executable tool names, and share environment-file ownership between bootstrap and reload. Cover visual-review assistance batch recovery with regression tests and a simulated-agent F1 restart drive. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
 
 ### Fixed

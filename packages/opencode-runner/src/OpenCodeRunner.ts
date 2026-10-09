@@ -393,7 +393,7 @@ export class OpenCodeRunner extends EventEmitter implements IAgentRunner {
 				env: {
 					...(this.config.childEnvironment ?? process.env),
 					...this.config.env,
-					...(this.config.childEnvironment ? this.config.additionalEnv : {}),
+					...this.config.additionalEnv,
 					...runtimeEnv,
 				},
 				stdio: ["pipe", "pipe", "pipe"],

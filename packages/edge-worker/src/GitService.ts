@@ -33,6 +33,7 @@ import {
 	getDefaultWorktreesDir,
 	type ILogger,
 } from "bobs-factory-core";
+import { managedGithubGitEnvironment } from "./factory/GithubApi.js";
 import { WorktreeIncludeService } from "./WorktreeIncludeService.js";
 
 export interface CreateGitWorktreeOptions {
@@ -258,6 +259,18 @@ export class GitService {
 			this.logger,
 		);
 	}
+	private networkEnvironment(
+		directory: string,
+		repositoryUrl?: string,
+	): NodeJS.ProcessEnv | undefined {
+		if (this.childEnvironment) return this.childEnvironment;
+		const managed = managedGithubGitEnvironment({
+			factoryHome: this.factoryHome,
+			directory,
+			repositoryUrl,
+		});
+		return managed ? { ...process.env, ...managed } : undefined;
+	}
 
 	/**
 	 * Check if a branch exists locally or remotely
@@ -277,7 +290,7 @@ export class GitService {
 				const remoteOutput = execSync(
 					`git ls-remote --heads origin "${branchName}"`,
 					{
-						env: this.childEnvironment,
+						env: this.networkEnvironment(repoPath),
 						cwd: repoPath,
 						stdio: "pipe",
 					},
@@ -750,6 +763,7 @@ export class GitService {
 					detail: `[repo=...#${baseBranchOverride}]`,
 				}
 			: { branch: repository.baseBranch, source: "default" };
+		let managedGithub = false;
 
 		try {
 			// Verify this is a git repository
@@ -874,6 +888,17 @@ export class GitService {
 
 			// Fetch latest changes from remote
 			this.logger.debug("Fetching latest changes from remote...");
+			let networkEnvironment: NodeJS.ProcessEnv | undefined;
+			try {
+				networkEnvironment = this.networkEnvironment(
+					repository.repositoryPath,
+					repository.githubUrl,
+				);
+			} catch (error) {
+				managedGithub = true;
+				throw error;
+			}
+			managedGithub = !this.childEnvironment && Boolean(networkEnvironment);
 			let hasRemote = true;
 			try {
 				if (this.executionCapacity()) {
@@ -887,7 +912,7 @@ export class GitService {
 							promisify(execFile)("git", ["fetch", "origin"], {
 								cwd: repository.repositoryPath,
 								env: {
-									...(this.childEnvironment ?? process.env),
+									...(networkEnvironment ?? process.env),
 									...executionEnvironment(),
 								},
 								signal: scope?.signal,
@@ -899,13 +924,13 @@ export class GitService {
 				} else {
 					execSync("git fetch origin", {
 						cwd: repository.repositoryPath,
-						env: this.childEnvironment,
+						env: networkEnvironment,
 						stdio: "pipe",
 					});
 				}
 			} catch (e) {
 				setupExecutionScope.getStore()?.signal.throwIfAborted();
-				if (this.childEnvironment)
+				if (this.childEnvironment || managedGithub)
 					throw new Error(
 						"Selected execution account could not fetch the repository. Restore authentication or connectivity before retrying.",
 					);
@@ -926,7 +951,7 @@ export class GitService {
 						const remoteOutput = execSync(
 							`git ls-remote --heads origin "${baseBranch}"`,
 							{
-								env: this.childEnvironment,
+								env: networkEnvironment,
 								cwd: repository.repositoryPath,
 								stdio: "pipe",
 							},
@@ -1027,9 +1052,9 @@ export class GitService {
 				resolvedBaseBranches: { [repository.id]: resolution },
 			};
 		} catch (error) {
-			if (this.childEnvironment)
+			if (this.childEnvironment || managedGithub)
 				throw new Error(
-					`Failed to prepare the selected execution worktree. No fallback workspace was created. ${redactHookOutput(error instanceof Error ? error.message : "Git preparation failed", { cwd: repository.repositoryPath, env: this.childEnvironment })}`,
+					`Failed to prepare the selected execution worktree. No fallback workspace was created. ${redactHookOutput(error instanceof Error ? error.message : "Git preparation failed", { cwd: repository.repositoryPath, env: this.childEnvironment ?? {} })}`,
 				);
 			const errorMessage = (error as Error).message;
 			this.logger.error("Failed to create git worktree:", errorMessage);

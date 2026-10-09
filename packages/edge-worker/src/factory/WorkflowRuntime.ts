@@ -7,7 +7,7 @@ import {
 	renameSync,
 	writeFileSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type {
 	RunTitleJob,
@@ -278,6 +278,8 @@ export interface ChatMessage {
 	step: string;
 }
 export interface ExecutionContext {
+	/** Runtime-owned home, never inferred from a worktree or a private runner HOME. */
+	factoryHome?: string;
 	attemptId?: string;
 	reviewKey?: string;
 	execution?: ResolvedExecutionEnvironment;
@@ -976,6 +978,7 @@ export class WorkflowRuntime {
 				? await this.hooks.execution(run, step.runner ?? run.runner)
 				: undefined;
 			const context: ExecutionContext = {
+				factoryHome: dirname(this.directory),
 				attemptId: state.attemptId,
 				execution,
 				reviewKey: checkpoint.reviewKey,

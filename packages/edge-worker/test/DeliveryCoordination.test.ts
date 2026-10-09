@@ -7,6 +7,7 @@ import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { FactoryTools } from "../src/factory/FactoryTools.js";
 import { validateWorkflows } from "../src/factory/Workflow.js";
 import { WorkflowRuntime } from "../src/factory/WorkflowRuntime.js";
+import { githubApiReceipt, githubRequest } from "./fixtures/github-api.js";
 import { providerReceipt } from "./fixtures/merge-readiness.js";
 
 const homes: string[] = [];
@@ -521,11 +522,9 @@ it("keeps consequential base integration on the review path and explains it sepa
 				? args[0] === "rev-parse"
 					? "head"
 					: ""
-				: args[1] === "graphql"
-					? JSON.stringify(
-							providerReceipt({ baseRefOid: "consequential-new-base" }),
-						)
-					: "[]",
+				: JSON.stringify(
+						githubApiReceipt(args, { baseRefOid: "consequential-new-base" }),
+					),
 	});
 	const result = await tools.tool({
 		run,
@@ -571,7 +570,7 @@ it("does not freeze an eligible overlapping delivery behind a long provider queu
 		postComment: vi.fn(),
 		command: async ({ run }, exe, args) => {
 			if (exe === "git") return args[0] === "rev-parse" ? "head" : "";
-			if (args[1] === "graphql")
+			if (githubRequest(args).path === "graphql")
 				return JSON.stringify(
 					providerReceipt(
 						run.input === "outage"

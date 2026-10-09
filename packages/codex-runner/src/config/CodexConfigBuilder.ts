@@ -51,9 +51,9 @@ export class CodexConfigBuilder {
 							...(this.config.additionalDirectories ?? []),
 							...writableRoots,
 						],
-						this.config.childEnvironment
+						this.config.childEnvironment || this.config.additionalEnv
 							? {
-									...this.config.childEnvironment,
+									...(this.config.childEnvironment ?? process.env),
 									...this.config.additionalEnv,
 								}
 							: undefined,
@@ -128,7 +128,11 @@ export class CodexConfigBuilder {
 	private buildEnvOverride(
 		codexHome: string,
 	): Record<string, string> | undefined {
-		if (!this.config.codexHome && !this.config.childEnvironment) {
+		if (
+			!this.config.codexHome &&
+			!this.config.childEnvironment &&
+			!this.config.additionalEnv
+		) {
 			return undefined;
 		}
 		const env: Record<string, string> = {};
@@ -139,9 +143,10 @@ export class CodexConfigBuilder {
 				env[key] = value;
 			}
 		}
-		if (this.config.childEnvironment)
-			Object.assign(env, this.config.additionalEnv);
-		env.CODEX_HOME = codexHome;
+		Object.assign(env, this.config.additionalEnv);
+		// A native environment addition must preserve Codex's own home discovery.
+		if (this.config.codexHome || this.config.childEnvironment)
+			env.CODEX_HOME = codexHome;
 		return env;
 	}
 
@@ -210,7 +215,7 @@ export class CodexConfigBuilder {
 
 		const sourceEnv = {
 			...(this.config.childEnvironment ?? process.env),
-			...(this.config.childEnvironment ? this.config.additionalEnv : {}),
+			...this.config.additionalEnv,
 		};
 		const apiKey = sourceEnv.OPENAI_API_KEY;
 		if (!apiKey) return;
