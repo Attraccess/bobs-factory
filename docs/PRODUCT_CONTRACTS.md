@@ -50,3 +50,17 @@ does not rewrite their fields or interpret them as native conversation records.
 The issued egress certificate keeps its existing `cyrus-egress-ca.pem` filename
 inside the new home. Migration preserves certificate/key bytes and system trust;
 this retained artifact name does not enable an old command or home fallback.
+
+## Verified binary publication channels
+
+New CLI releases use schema-2 immutable manifests with explicit stable/nightly
+identity, originating source, candidate SHA and a complete four-target/evidence
+inventory. Schema-1 beta releases remain readable through the labelled compatibility
+endpoint. Stable discovery and GitHub latest never select nightly. Nightlies require
+changed main and a six-hour successful-publication cooldown, including manual runs.
+Stable candidates are freshly built from an explicitly selected verified published
+nightly, without newer main changes. Schedule activation requires separately authorized
+rollout; stable publication requires protected individual approval. Matching drafts
+resume uploads, immutable conflicts fail, and identical completed retries only
+synchronize discovery. These operations preserve factory state and native stores.
+See [public release operations](distribution/PUBLIC_RELEASES.md).

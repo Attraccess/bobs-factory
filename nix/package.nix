@@ -15,7 +15,7 @@ let
 in
 if release.status != "available" then
   throw "Bob's Factory public release is not available yet"
-else if release.schemaVersion != 1 || release.product != "bobs-factory"
+else if !(builtins.elem release.schemaVersion [ 1 2 ]) || release.product != "bobs-factory"
   || release.repository != "jappyjan/bobs-factory"
   || release.tag != "v${release.version}"
   || entry.archive != "bobs-factory-${release.version}-${target}.tar.gz"

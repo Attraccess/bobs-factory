@@ -174,6 +174,8 @@ test("evidence intake rejects a dirty version edit before retrieving build prove
 		for (const file of [
 			"prepare-release-evidence.mjs",
 			"lib/binary-release.mjs",
+			"lib/release-channels.mjs",
+			"lib/release-discovery.mjs",
 			"lib/release-material.mjs",
 		])
 			writeFileSync(

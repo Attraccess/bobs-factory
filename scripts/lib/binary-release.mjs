@@ -12,6 +12,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import {
+	releaseChannel,
+	requiredSupportingFiles,
+	validateCandidateMetadata,
+} from "./release-channels.mjs";
 
 export const REPOSITORY = "jappyjan/bobs-factory";
 export const TARGETS = [
@@ -125,7 +130,13 @@ export function selectPublicRelease(releases) {
 	// Stable installations stay on stable. Before 1.0, the reviewed beta is usable.
 	const stable = candidates.filter((release) => !release.prerelease);
 	return (
-		(stable.length ? stable : candidates).sort((a, b) =>
+		(stable.length
+			? stable
+			: candidates.filter(
+					(release) =>
+						releaseChannel(release.tag_name.slice(1)) === "prerelease",
+				)
+		).sort((a, b) =>
 			compareReleaseVersions(b.tag_name.slice(1), a.tag_name.slice(1)),
 		)[0] ?? null
 	);
@@ -169,7 +180,7 @@ function validateFile(record, expected) {
 }
 export function validateReleaseManifest(value) {
 	requireValue(
-		value?.schemaVersion === 1 &&
+		[1, 2].includes(value?.schemaVersion) &&
 			value.product === "bobs-factory" &&
 			value.repository === REPOSITORY,
 		"Unsupported release manifest identity",
@@ -182,13 +193,72 @@ export function validateReleaseManifest(value) {
 	validateIdentity(value.version, value.commit, value.buildRunId);
 	requireValue(
 		value.channel === undefined ||
-			value.channel === (value.version.includes("-") ? "prerelease" : "stable"),
+			value.channel ===
+				(value.schemaVersion === 1
+					? value.version.includes("-")
+						? "prerelease"
+						: "stable"
+					: releaseChannel(value.version)),
 		"Release channel must match exact version",
 	);
 	requireValue(
 		value.tag === `v${value.version}`,
 		"Release tag must match exact version",
 	);
+	if (value.schemaVersion === 2) {
+		validateCandidateMetadata(value, value.version);
+		requireValue(
+			value.channel === releaseChannel(value.version),
+			"Explicit release channel required",
+		);
+		requireValue(
+			Array.isArray(value.supportingAssets),
+			"Required evidence inventory missing",
+		);
+		const expected = requiredSupportingFiles().sort();
+		requireValue(
+			value.supportingAssets
+				.map((record) => record.file)
+				.sort()
+				.join() === expected.join(),
+			"Incomplete or duplicate evidence inventory",
+		);
+		for (const record of value.supportingAssets)
+			validateFile(record, record.file);
+		if (value.desktop !== undefined) {
+			requireValue(
+				value.desktop.schemaVersion === 1 &&
+					Array.isArray(value.desktop.artifacts) &&
+					value.desktop.artifacts.length > 0,
+				"Invalid delivered desktop inventory",
+			);
+			const targets = new Set();
+			for (const item of value.desktop.artifacts) {
+				requireValue(
+					item.version === value.version &&
+						item.commit === value.commit &&
+						item.channel === value.channel &&
+						typeof item.target === "string" &&
+						!targets.has(item.target) &&
+						typeof item.platformRequirements === "string" &&
+						item.platformRequirements.length > 0,
+					"Desktop identity/platform requirements mismatch",
+				);
+				targets.add(item.target);
+				for (const record of [
+					item.archive,
+					item.updateMetadata,
+					item.validation,
+				]) {
+					requireValue(
+						/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(record?.file),
+						"Unsafe desktop filename",
+					);
+					validateFile(record, record.file);
+				}
+			}
+		}
+	}
 	validateFile(value.installer, "install.sh");
 	validateFile(value.verifier, "install-binary.sh");
 	validateFile(value.source, "source-rebuild.tar.gz");
@@ -311,6 +381,7 @@ export function validateArtifactZip(
 		"runtime-smoke.txt",
 		"native-helpers.json",
 		"prepared-agent-boundaries.json",
+		"public-installer.json",
 	];
 	for (const file of needed) {
 		requireValue(

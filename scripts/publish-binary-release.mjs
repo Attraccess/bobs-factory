@@ -2,6 +2,7 @@
 // Maintainer-only publisher. Defaults to a read-only dry run; never rebuilds.
 import { execFileSync } from "node:child_process";
 import {
+	appendFileSync,
 	copyFileSync,
 	createReadStream,
 	existsSync,
@@ -26,13 +27,23 @@ import {
 	validateBuildProvenance,
 	validateEvidence,
 	validateIdentity,
-	validateLatestVersion,
 	validateNativeHelpers,
 	validatePreparedAgentBoundaries,
-	validatePublicationSlot,
 	validatePublicRepository,
 	validateReleaseManifest,
 } from "./lib/binary-release.mjs";
+import { receiptArchive } from "./lib/receipt-archive.mjs";
+import {
+	releaseChannel,
+	requiredSupportingFiles,
+	validateCandidateMetadata,
+} from "./lib/release-channels.mjs";
+import {
+	discoverChannels,
+	githubClient,
+	readPublishedManifest,
+} from "./lib/release-discovery.mjs";
+import { publishStagedRelease } from "./lib/release-publication.mjs";
 
 const { values } = parseArgs({
 	options: {
@@ -71,32 +82,7 @@ const evidence = validateEvidence(
 	evidenceDirectory,
 	identity,
 );
-const headers = {
-	Accept: "application/vnd.github+json",
-	"X-GitHub-Api-Version": "2022-11-28",
-	...(process.env.GH_TOKEN
-		? { Authorization: `Bearer ${process.env.GH_TOKEN}` }
-		: {}),
-};
-async function api(path, { method = "GET", body, allow404 = false } = {}) {
-	const response = await fetch(
-		`https://api.github.com/repos/${REPOSITORY}${path ? `/${path}` : ""}`,
-		{
-			method,
-			headers: {
-				...headers,
-				...(body ? { "Content-Type": "application/json" } : {}),
-			},
-			body: body ? JSON.stringify(body) : undefined,
-		},
-	);
-	if (allow404 && response.status === 404) return null;
-	requireValue(
-		response.ok,
-		`GitHub ${method} ${path} failed (${response.status})`,
-	);
-	return response.status === 204 ? null : response.json();
-}
+const { api, headers } = githubClient();
 async function pages(path, key) {
 	const result = [];
 	for (let page = 1; page <= 10; page++) {
@@ -110,18 +96,14 @@ async function pages(path, key) {
 	}
 	throw new Error(`Too many ${key}; refusing incomplete provenance`);
 }
-const [repository, run, jobs, artifacts, existingRelease, existingTag, latest] =
-	await Promise.all([
-		api(""),
-		api(`actions/runs/${identity.runId}`),
-		pages(`actions/runs/${identity.runId}/jobs`, "jobs"),
-		pages(`actions/runs/${identity.runId}/artifacts`, "artifacts"),
-		api(`releases/tags/v${identity.version}`, { allow404: true }),
-		api(`git/ref/tags/v${identity.version}`, { allow404: true }),
-		api("releases/latest", { allow404: true }),
-	]);
+const [repository, run, jobs, artifacts] = await Promise.all([
+	api(""),
+	api(`actions/runs/${identity.runId}`),
+	pages(`actions/runs/${identity.runId}/jobs`, "jobs"),
+	pages(`actions/runs/${identity.runId}/artifacts`, "artifacts"),
+]);
 validatePublicRepository(repository);
-validatePublicationSlot(identity, existingRelease, existingTag, latest);
+// Existing immutable attempts are checked against the complete staged hash inventory below.
 const selected = validateBuildProvenance(run, jobs, artifacts, identity);
 const packageContent = await api(
 	`contents/apps/cli/package.json?ref=${identity.commit}`,
@@ -133,6 +115,65 @@ requireValue(
 	pkg.version === identity.version,
 	"CLI version is not committed at the reviewed candidate SHA",
 );
+const candidate = pkg.bobsFactoryRelease;
+requireValue(
+	candidate,
+	"Release candidate metadata is required; prepare an immutable candidate first",
+);
+validateCandidateMetadata(candidate, identity.version);
+requireValue(
+	!values.publish ||
+		candidate.channel !== "nightly" ||
+		process.env.BOBS_FACTORY_RELEASE_AUTOMATION === "enabled",
+	"Nightly publication is disabled pending separately authorized rollout",
+);
+const parent =
+	candidate.channel === "stable"
+		? candidate.promotedFrom.commit
+		: candidate.originatingSourceSha;
+const comparison = await api(`compare/${parent}...${identity.commit}`);
+requireValue(
+	comparison.status === "ahead" &&
+		comparison.total_commits === 1 &&
+		comparison.files?.length === 1 &&
+		comparison.files[0].filename === "apps/cli/package.json",
+	"Candidate must contain only approved version metadata over its frozen source",
+);
+const parentContent = await api(`contents/apps/cli/package.json?ref=${parent}`);
+const parentPackage = JSON.parse(
+	Buffer.from(parentContent.content, "base64").toString("utf8"),
+);
+const payloadPackage = { ...pkg };
+delete payloadPackage.version;
+delete payloadPackage.bobsFactoryRelease;
+const sourcePackage = { ...parentPackage };
+delete sourcePackage.version;
+delete sourcePackage.bobsFactoryRelease;
+requireValue(
+	JSON.stringify(payloadPackage) === JSON.stringify(sourcePackage),
+	"Candidate changes non-version package metadata",
+);
+if (candidate.channel === "stable") {
+	const selectedNightly = await readPublishedManifest(
+		await api(`releases/tags/${candidate.promotedFrom.tag}`),
+	);
+	requireValue(
+		selectedNightly.manifest.schemaVersion === 2 &&
+			selectedNightly.manifest.channel === "nightly" &&
+			selectedNightly.manifest.commit === parent &&
+			selectedNightly.manifest.version === candidate.promotedFrom.version &&
+			selectedNightly.manifestSha256 ===
+				candidate.promotedFrom.manifestSha256 &&
+			selectedNightly.manifest.originatingSourceSha ===
+				candidate.originatingSourceSha,
+		"Selected promotion source no longer matches its verified nightly identity",
+	);
+	const sourceTag = await api(`git/ref/tags/${candidate.promotedFrom.tag}`);
+	requireValue(
+		sourceTag.object?.type === "commit" && sourceTag.object.sha === parent,
+		"Selected nightly tag differs from the verified manifest",
+	);
+}
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 for (const script of ["install.sh", "install-binary.sh"]) {
 	const content = await api(
@@ -233,7 +274,32 @@ for (const target of TARGETS) {
 		join(extracted, "runtime-smoke.txt"),
 		join(assets, `runtime-smoke-${target}.txt`),
 	);
-	for (const receipt of ["native-helpers", "prepared-agent-boundaries"])
+	const installerReceipt = JSON.parse(
+		readFileSync(join(extracted, "public-installer.json"), "utf8"),
+	);
+	requireValue(
+		installerReceipt.validation === "public-installer" &&
+			installerReceipt.status === "passed" &&
+			installerReceipt.scope === "native-archive-controlled-downloads" &&
+			installerReceipt.version === identity.version &&
+			installerReceipt.commit === identity.commit &&
+			installerReceipt.target === target &&
+			[
+				"channelResolution",
+				"exactVersion",
+				"repeatInstall",
+				"badHashPreservesInstallation",
+				"badSizePreservesInstallation",
+				"badSourcePreservesInstallation",
+				"unavailableTargetPreservesInstallation",
+			].every((check) => installerReceipt.checks?.[check] === "passed"),
+		`Missing candidate-bound public installer validation: ${target}`,
+	);
+	for (const receipt of [
+		"native-helpers",
+		"prepared-agent-boundaries",
+		"public-installer",
+	])
 		copyFileSync(
 			join(extracted, `${receipt}.json`),
 			join(assets, `${receipt}-${target}.json`),
@@ -270,25 +336,64 @@ mkdirSync(receiptsDirectory);
 for (const file of receiptFiles) {
 	const destination = join(receiptsDirectory, file);
 	mkdirSync(dirname(destination), { recursive: true });
-	writeFileSync(destination, readFileSync(join(evidenceDirectory, file)));
+	writeFileSync(destination, readFileSync(join(evidenceDirectory, file)), {
+		mode: 0o644,
+	});
 }
-execFileSync("tar", [
-	"-czf",
+writeFileSync(
 	join(assets, "validation-receipts.tar.gz"),
-	"-C",
-	receiptsDirectory,
-	...[...receiptFiles].sort(),
-]);
+	receiptArchive(receiptsDirectory, receiptFiles),
+);
 writeFileSync(
 	join(assets, "build-provenance.json"),
 	jsonBytes({ run, jobs, artifacts: selected }),
 );
+if (evidence.desktop) {
+	for (const item of evidence.desktop.artifacts ?? []) {
+		for (const record of [item.archive, item.updateMetadata, item.validation]) {
+			requireValue(
+				/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(record?.file) &&
+					!existsSync(join(assets, record.file)),
+				"Unsafe or conflicting delivered desktop filename",
+			);
+			const actual = fileRecord(
+				join(evidenceDirectory, record.file),
+				record.file,
+			);
+			requireValue(
+				actual.sha256 === record.sha256 && actual.size === record.size,
+				"Delivered desktop integrity mismatch",
+			);
+			copyFileSync(
+				join(evidenceDirectory, record.file),
+				join(assets, record.file),
+			);
+		}
+		const validation = JSON.parse(
+			readFileSync(join(assets, item.validation.file), "utf8"),
+		);
+		requireValue(
+			validation.product === "bobs-factory" &&
+				validation.status === "passed" &&
+				validation.version === identity.version &&
+				validation.commit === identity.commit &&
+				validation.target === item.target &&
+				validation.channel === candidate.channel,
+			"Missing candidate-bound desktop validation; retain desktop delivery as blocked",
+		);
+	}
+}
 const release = validateReleaseManifest({
-	schemaVersion: 1,
+	...candidate,
+	schemaVersion: 2,
 	product: "bobs-factory",
 	repository: REPOSITORY,
 	status: "available",
-	channel: identity.version.includes("-") ? "prerelease" : "stable",
+	channel: releaseChannel(identity.version),
+	...(evidence.desktop ? { desktop: evidence.desktop } : {}),
+	supportingAssets: requiredSupportingFiles().map((file) =>
+		fileRecord(join(assets, file), file),
+	),
 	version: identity.version,
 	tag: `v${identity.version}`,
 	commit: identity.commit,
@@ -314,98 +419,42 @@ writeFileSync(
 			.map((file) => fileRecord(join(assets, file), file)),
 	}),
 );
-if (!values.publish) {
-	console.log(
-		`Dry run passed. Reviewed public assets: ${assets}. No tag or release was created.`,
-	);
-} else {
-	// Recheck immediately before mutation. GitHub also rejects competing tag creation.
-	validatePublicRepository(await api(""));
-	requireValue(
-		!(await api(`releases/tags/${release.tag}`, { allow404: true })) &&
-			!(await api(`git/ref/tags/${release.tag}`, { allow404: true })),
-		"Version was published during validation; refusing overwrite",
-	);
-	await api("git/refs", {
-		method: "POST",
-		body: { ref: `refs/tags/${release.tag}`, sha: identity.commit },
-	});
-	let draft;
-	let published;
-	try {
-		draft = await api("releases", {
-			method: "POST",
-			body: {
-				tag_name: release.tag,
-				target_commitish: identity.commit,
-				name: `Bob's Factory ${identity.version}`,
-				draft: true,
-				prerelease: identity.version.includes("-"),
-				body: `Verified native binaries for all four macOS/Linux targets.\n\nReviewed source: ${identity.commit}\nBinary build: https://github.com/${REPOSITORY}/actions/runs/${identity.runId}\n\nInstall: https://jappyjan.github.io/bobs-factory/#start\nChecksums, native smoke receipts, source/rebuild material and release validation accompany the assets.`,
-			},
-		});
-		for (const file of readdirSync(assets).sort()) {
-			const record = fileRecord(join(assets, file), file);
-			const response = await fetch(
-				`https://uploads.github.com/repos/${REPOSITORY}/releases/${draft.id}/assets?name=${encodeURIComponent(file)}`,
-				{
-					method: "POST",
-					headers: {
-						...headers,
-						"Content-Type": "application/octet-stream",
-						"Content-Length": String(record.size),
-					},
-					body: createReadStream(join(assets, file)),
-					duplex: "half",
+const records = readdirSync(assets)
+	.sort()
+	.map((file) => fileRecord(join(assets, file), file));
+validatePublicRepository(await api(""));
+const result = await publishStagedRelease({
+	api,
+	identity,
+	manifest: release,
+	records,
+	dryRun: !values.publish,
+	approvedStable: process.env.BOBS_FACTORY_STABLE_RELEASE_APPROVED === "true",
+	lastNightly: async () => (await discoverChannels(api)).nightly,
+	receipt: (phase, detail) =>
+		appendFileSync(
+			join(output, "publication-phases.jsonl"),
+			`${JSON.stringify({ phase, ...identity, at: new Date().toISOString(), ...detail })}\n`,
+		),
+	upload: async (id, record) => {
+		const response = await fetch(
+			`https://uploads.github.com/repos/${REPOSITORY}/releases/${id}/assets?name=${encodeURIComponent(record.file)}`,
+			{
+				method: "POST",
+				headers: {
+					...headers,
+					"Content-Type": "application/octet-stream",
+					"Content-Length": String(record.size),
 				},
-			);
-			requireValue(response.ok, `Upload failed: ${file} (${response.status})`);
-			const uploaded = await response.json();
-			requireValue(
-				uploaded.size === record.size &&
-					uploaded.state === "uploaded" &&
-					uploaded.digest === `sha256:${record.sha256}`,
-				`Uploaded asset integrity failure: ${file}`,
-			);
-		}
-		const tag = await api(`git/ref/tags/${release.tag}`);
-		requireValue(
-			tag.object?.type === "commit" && tag.object.sha === identity.commit,
-			"Release tag changed during upload; retaining draft for inspection",
-		);
-		validateLatestVersion(
-			identity.version,
-			await api("releases/latest", { allow404: true }),
-		);
-		validatePublicRepository(await api(""));
-		published = await api(`releases/${draft.id}`, {
-			method: "PATCH",
-			body: {
-				draft: false,
-				make_latest: identity.version.includes("-") ? "false" : "true",
+				body: createReadStream(join(assets, record.file)),
+				duplex: "half",
 			},
-		});
-		console.log(
-			`Published ${published.html_url}. Previous releases were retained.`,
 		);
-		// GITHUB_TOKEN-created release events do not trigger other workflows.
-		// Dispatch explicitly only after the validated assets become public.
-		await api("actions/workflows/website.yml/dispatches", {
-			method: "POST",
-			body: { ref: "main" },
-		});
-		console.log(
-			"Dispatched website deployment to synchronize the shared release manifest.",
+		requireValue(
+			response.ok,
+			`Upload failed: ${record.file} (${response.status})`,
 		);
-	} catch (error) {
-		if (published)
-			console.error(
-				`Release is public at ${published.html_url}, but website synchronization failed. Run website.yml manually; do not republish or move the version tag.`,
-			);
-		else
-			console.error(
-				`Publication stopped. Retained immutable tag ${release.tag}${draft ? ` and draft release ${draft.html_url}` : ""}; inspect the staged assets before recovery. Never overwrite the version.`,
-			);
-		throw error;
-	}
-}
+		return response.json();
+	},
+});
+console.log(JSON.stringify(result));

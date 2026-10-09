@@ -145,3 +145,9 @@ unavailable manifest fails evaluation clearly. Update the pinned manifest when
 upgrading; avoid fetching a mutable latest pointer during evaluation. Keep the
 service's home, environment and conversations separate from the immutable Nix
 package, and drain/stop the old worker before an intentional upgrade.
+
+Verified channel publication uses immutable candidates and separate stable/nightly
+metadata. Scheduled automation stays disabled until separately authorized rollout;
+stable promotion selects an explicit published nightly and requires protected release
+approval. See [the public release operations](PUBLIC_RELEASES.md) for preparation, real evidence,
+six-hour nightly eligibility, upload recovery and Pages-only retries.

@@ -10,6 +10,8 @@ on:
       - 'scripts/install.sh'
       - 'scripts/sync-release-metadata.mjs'
       - 'scripts/lib/binary-release.mjs'
+      - 'scripts/lib/release-channels.mjs'
+      - 'scripts/lib/release-discovery.mjs'
       - '.github/workflows/website.yml'
   pull_request:
     branches:
@@ -19,6 +21,8 @@ on:
       - 'scripts/install.sh'
       - 'scripts/sync-release-metadata.mjs'
       - 'scripts/lib/binary-release.mjs'
+      - 'scripts/lib/release-channels.mjs'
+      - 'scripts/lib/release-discovery.mjs'
       - '.github/workflows/website.yml'
   release:
     types: [published]

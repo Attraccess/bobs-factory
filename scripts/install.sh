@@ -6,21 +6,24 @@ repository=jappyjan/bobs-factory
 site=https://jappyjan.github.io/bobs-factory
 prefix=${BOBS_FACTORY_INSTALL_PREFIX:-"$HOME/.local"}
 version=
+channel=stable
+explicit_channel=false
 modify_path=true
 usage() {
-  echo 'Usage: install.sh [--prefix DIRECTORY] [--version VERSION] [--no-modify-path]'
+  echo 'Usage: install.sh [--prefix DIRECTORY] [--version VERSION] [--channel stable|nightly] [--no-modify-path]'
 }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --prefix|--version)
+    --prefix|--version|--channel)
       [ "$#" -ge 2 ] || { usage >&2; exit 1; }
-      case "$1" in --prefix) prefix=$2;; --version) version=$2;; esac
+      case "$1" in --prefix) prefix=$2;; --version) version=$2;; --channel) channel=$2; explicit_channel=true;; esac
       shift 2;;
     --no-modify-path) modify_path=false; shift;;
     --help) usage; exit 0;;
     *) usage >&2; exit 1;;
   esac
 done
+case "$channel" in stable|nightly) ;; *) echo "Invalid channel: use stable or nightly." >&2; exit 1;; esac
 fail() { echo "Bob's Factory: $*" >&2; exit 1; }
 case "$prefix" in /*) ;; *) fail 'Install prefix must be an absolute path.';; esac
 case "$prefix" in *:*) fail 'Install prefix must not contain a PATH separator (:).';; esac
@@ -80,21 +83,47 @@ if [ -n "$version" ]; then
   valid_version "$version" || fail 'Invalid version.'
   metadata="https://github.com/$repository/releases/download/v$version/release.json"
 else
-  metadata="$site/releases/latest.json"
+  if [ "$explicit_channel" = true ] || [ "$channel" = nightly ]; then metadata="$site/releases/$channel.json"
+  else metadata="$site/releases/latest.json"; fi
 fi
 echo "Finding Bob's Factory for $target..."
 download "$metadata" "$work/release.json"
-[ "$(number "$work/release.json" schemaVersion)" = 1 ] || fail 'Unsupported release metadata. Download a fresh installer.'
-[ "$(field "$work/release.json" product)" = bobs-factory ] || fail 'Unexpected product in release metadata.'
-[ "$(field "$work/release.json" repository)" = "$repository" ] || fail 'Unexpected release repository.'
-status=$(field "$work/release.json" status)
-[ "$status" = available ] || fail 'The first public release is being prepared. Please check the homepage for availability.'
-release_version=$(field "$work/release.json" version)
+# Promotion provenance contains nested version/tag/commit fields. Read root scalars
+# separately so nested records cannot replace or ambiguously duplicate identity.
+sed -n '/^  "[^" ]*": ["0-9]/p' "$work/release.json" > "$work/release-header.json"
+schema=$(number "$work/release-header.json" schemaVersion)
+case "$schema" in 1|2) ;; *) fail 'Unsupported release metadata. Download a fresh installer.';; esac
+[ "$(field "$work/release-header.json" product)" = bobs-factory ] || fail 'Unexpected product in release metadata.'
+[ "$(field "$work/release-header.json" repository)" = "$repository" ] || fail 'Unexpected release repository.'
+status=$(field "$work/release-header.json" status)
+[ "$status" = available ] || fail "The first public release is being prepared, or the $channel channel is unavailable. Please check the homepage for availability."
+release_version=$(field "$work/release-header.json" version)
 valid_version "$release_version" || fail 'Invalid release version.'
 [ -z "$version" ] || [ "$version" = "$release_version" ] || fail 'Requested version does not match release metadata.'
-tag=$(field "$work/release.json" tag)
+case "$release_version" in
+  *-*)
+    prerelease=${release_version#*-}
+    case "$prerelease" in
+      nightly.*)
+        sequence=${prerelease#nightly.}
+        printf '%s' "$sequence" | LC_ALL=C grep -Eq '^[1-9][0-9]*$' || fail 'Invalid nightly sequence.'
+        resolved_channel=nightly;;
+      *) resolved_channel=prerelease;;
+    esac;;
+  *) resolved_channel=stable;;
+esac
+if [ "$schema" = 2 ]; then
+  [ "$(field "$work/release-header.json" channel)" = "$resolved_channel" ] || fail 'Release channel does not match version.'
+  [ "$resolved_channel" != prerelease ] || fail 'Unsupported new prerelease channel.'
+fi
+if [ "$explicit_channel" = true ]; then
+  [ "$channel" = "$resolved_channel" ] || fail 'Requested channel does not match release metadata.'
+elif [ -z "$version" ]; then
+  [ "$resolved_channel" != nightly ] || fail 'Default installation cannot select nightly. Use --channel nightly.'
+fi
+tag=$(field "$work/release-header.json" tag)
 [ "$tag" = "v$release_version" ] || fail 'Invalid immutable release tag.'
-commit=$(field "$work/release.json" commit)
+commit=$(field "$work/release-header.json" commit)
 printf '%s' "$commit" | LC_ALL=C grep -Eq '^[a-f0-9]{40}$' || fail 'Invalid immutable release source.'
 section "$work/release.json" "$target" "$work/target.json"
 section "$work/release.json" verifier "$work/verifier.json"

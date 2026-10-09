@@ -41,7 +41,7 @@ function fixture(version = "0.2.74") {
 	mkdirSync(bin);
 	writeFileSync(
 		join(bin, "curl"),
-		`#!/bin/sh\nset -eu\nurl=\noutput=\nwhile [ "$#" -gt 0 ]; do\n case "$1" in https://*) url=$1; shift;; --output) output=$2; shift 2;; *) shift;; esac\ndone\ncase "$url" in https://jappyjan.github.io/bobs-factory/releases/latest.json) file=latest.json;; https://github.com/jappyjan/bobs-factory/releases/download/v*) file=\${url##*/};; *) echo "Untrusted download URL" >&2; exit 1;; esac\ncp "$BOBS_FACTORY_TEST_DOWNLOADS/$file" "$output"\n`,
+		`#!/bin/sh\nset -eu\nurl=\noutput=\nwhile [ "$#" -gt 0 ]; do\n case "$1" in https://*) url=$1; shift;; --output) output=$2; shift 2;; *) shift;; esac\ndone\ncase "$url" in https://jappyjan.github.io/bobs-factory/releases/*.json) file=\${url##*/};; https://github.com/jappyjan/bobs-factory/releases/download/v*) file=\${url##*/};; *) echo "Untrusted download URL" >&2; exit 1;; esac\ncp "$BOBS_FACTORY_TEST_DOWNLOADS/$file" "$output"\n`,
 		{ mode: 0o755 },
 	);
 	const prefix = join(work, "prefix with 'quote");
@@ -158,6 +158,8 @@ function fixture(version = "0.2.74") {
 			targets,
 		};
 		writeFileSync(join(downloads, "latest.json"), jsonBytes(metadata));
+		writeFileSync(join(downloads, "stable.json"), jsonBytes(metadata));
+		writeFileSync(join(downloads, "nightly.json"), jsonBytes(metadata));
 		writeFileSync(join(downloads, "release.json"), jsonBytes(metadata));
 		return {
 			metadata,
@@ -309,6 +311,8 @@ test("Pages synchronizes a verified beta manifest and preserves prior metadata o
 			"sync-release-metadata.mjs",
 			"install.sh",
 			"lib/binary-release.mjs",
+			"lib/release-channels.mjs",
+			"lib/release-discovery.mjs",
 		])
 			copyFileSync(
 				join(root, "scripts", file),
@@ -626,6 +630,69 @@ test("release/archive validation rejects target omissions, source mismatch and u
 				),
 			/Unresolved release validation/,
 		);
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("explicit channels reject beta fallback and default cannot install nightly", () => {
+	const beta = fixture("1.0.0-beta");
+	try {
+		assert.match(
+			beta.install("--channel", "stable").stderr,
+			/Requested channel/,
+		);
+	} finally {
+		beta.cleanup();
+	}
+	const nightly = fixture("1.0.0-nightly.10");
+	try {
+		assert.match(
+			nightly.install().stderr,
+			/Default installation cannot select nightly/,
+		);
+		for (const args of [
+			["--channel", "nightly"],
+			["--channel", "nightly", "--version", "1.0.0-nightly.10"],
+			["--version", "1.0.0-nightly.10"],
+		]) {
+			const result = nightly.install(...args);
+			assert.equal(result.status, 0, result.stderr);
+		}
+		assert.match(
+			nightly.install("--channel", "stable", "--version", "1.0.0-nightly.10")
+				.stderr,
+			/Requested channel/,
+		);
+		assert.match(
+			nightly.install("--channel", "edge").stderr,
+			/Invalid channel/,
+		);
+	} finally {
+		nightly.cleanup();
+	}
+});
+
+test("stable promotion metadata reads root identity instead of the selected nightly's nested fields", () => {
+	const f = fixture("1.0.0");
+	try {
+		const metadata = {
+			...f.current.metadata,
+			schemaVersion: 2,
+			channel: "stable",
+			originatingSourceSha: "b".repeat(40),
+			createdAt: "2026-10-09T12:00:00Z",
+			promotedFrom: {
+				version: "1.0.0-nightly.10",
+				tag: "v1.0.0-nightly.10",
+				commit: "b".repeat(40),
+				manifestSha256: "c".repeat(64),
+			},
+		};
+		for (const file of ["latest.json", "stable.json", "release.json"])
+			writeFileSync(join(f.downloads, file), jsonBytes(metadata));
+		const result = f.install("--channel", "stable");
+		assert.equal(result.status, 0, result.stderr);
 	} finally {
 		f.cleanup();
 	}

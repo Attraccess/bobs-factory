@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Prepare immutable stable and nightly candidates, enforce a six-hour nightly publication cooldown, resume identical draft uploads, and expose separate verified channel downloads. Automation remains disabled pending rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117)).
+
 ### Fixed
 
 - Resume Factory roles with uncommitted work by requesting artifact submission only when the scoped MCP server has a clean revision binding; prevent repeated missing-tool startup failures. ([#66](https://github.com/jappyjan/bobs-factory/pull/66))

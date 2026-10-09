@@ -28,3 +28,9 @@ Minimum macOS/libc support must be backed by native execution evidence before
 publication. See
 [the public release procedure](../../docs/distribution/PUBLIC_RELEASES.md) and
 [the full-payload assessment](../../docs/distribution/RELEASE_F1_ASSESSMENT.md).
+
+Verified channel publication uses immutable candidates and separate stable/nightly
+metadata. Scheduled automation stays disabled until separately authorized rollout;
+stable promotion selects an explicit published nightly and requires protected release
+approval. See [the public release operations](../../docs/distribution/PUBLIC_RELEASES.md) for preparation, real evidence,
+six-hour nightly eligibility, upload recovery and Pages-only retries.

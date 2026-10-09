@@ -1,4 +1,6 @@
 import {
+	channelDownloads,
+	channelInstallCommand,
 	INSTALL_COMMAND,
 	LAUNCH_COMMAND,
 	REPO,
@@ -118,6 +120,72 @@ export function GetStarted() {
 							{release.version} · public download · no GitHub sign-in
 						</p>
 					)}
+					<section
+						className="mt-8 scroll-mt-24 space-y-4"
+						aria-label="Stable and nightly downloads"
+					>
+						{channelDownloads.map((download) => (
+							<article
+								key={download.channel}
+								className="rounded-2xl border border-line bg-white/70 p-5"
+							>
+								<h3 className="font-bold capitalize text-ink">
+									{download.channel}
+								</h3>
+								{download.status === "available" ? (
+									<>
+										<p className="mt-2 text-sm text-ink-2">
+											{download.version} · candidate{" "}
+											<code className="break-all">{download.commit}</code>
+										</p>
+										<pre className="mt-3 whitespace-pre-wrap break-all text-xs">
+											<code>{channelInstallCommand(download.channel!)}</code>
+										</pre>
+										<CopyCommand
+											command={channelInstallCommand(download.channel!)}
+											label={`Copy ${download.channel} install command`}
+										/>
+										<p className="mt-3 text-sm">Exact version:</p>
+										<pre className="whitespace-pre-wrap break-all text-xs">
+											<code>
+												{channelInstallCommand(
+													download.channel!,
+													download.version,
+												)}
+											</code>
+										</pre>
+										<ul className="mt-3 flex flex-wrap gap-3 text-sm">
+											{Object.entries(download.targets ?? {}).map(
+												([target, asset]) => (
+													<li key={target}>
+														<a
+															className="underline"
+															href={`${REPO}/releases/download/${download.tag}/${asset.archive}`}
+														>
+															{target}
+														</a>
+													</li>
+												),
+											)}
+											<li>
+												<a
+													className="underline"
+													href={`${REPO}/releases/download/${download.tag}/release.json`}
+												>
+													Manifest and checksums
+												</a>
+											</li>
+										</ul>
+									</>
+								) : (
+									<p role="status" className="mt-2 text-sm text-ink-2">
+										{download.message ??
+											`No verified ${download.channel} release is available yet.`}
+									</p>
+								)}
+							</article>
+						))}
+					</section>
 					<Reveal delay={0.1} className="mt-8 flex flex-wrap gap-3">
 						<a
 							href={REPO}
