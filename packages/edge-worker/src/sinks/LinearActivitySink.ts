@@ -92,9 +92,13 @@ export class LinearActivitySink implements IActivitySink {
 		if (!presented) return {};
 		const result = await this.issueTracker.createAgentActivity({
 			agentSessionId: sessionId,
-			content: presented,
+			// Preserve internal event semantics for the delivery queue's priority.
+			// LinearIssueTrackerService converts the type at the final wire boundary.
+			content: ["response", "elicitation", "error"].includes(activity.type)
+				? ({ ...presented, type: activity.type } as AgentActivityContent)
+				: presented,
 			...(options?.ephemeral !== undefined &&
-				["thought", "action"].includes(presented.type) && {
+				["thought", "action"].includes(activity.type) && {
 					ephemeral: options.ephemeral,
 				}),
 			...(options?.signal && { signal: this.mapSignal(options.signal) }),

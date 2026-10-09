@@ -110,6 +110,10 @@ describe("LinearActivitySink", () => {
 			const result = await sink.postActivity(mockSessionId, activity);
 
 			expect(result).toEqual({ activityId: "activity-3" });
+			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledWith({
+				agentSessionId: mockSessionId,
+				content: activity,
+			});
 		});
 
 		it("should post an error activity", async () => {
@@ -126,6 +130,10 @@ describe("LinearActivitySink", () => {
 			const result = await sink.postActivity(mockSessionId, activity);
 
 			expect(result).toEqual({ activityId: "activity-4" });
+			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledWith({
+				agentSessionId: mockSessionId,
+				content: activity,
+			});
 		});
 
 		it("should post an elicitation activity", async () => {
@@ -142,6 +150,10 @@ describe("LinearActivitySink", () => {
 			const result = await sink.postActivity(mockSessionId, activity);
 
 			expect(result).toEqual({ activityId: "activity-5" });
+			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledWith({
+				agentSessionId: mockSessionId,
+				content: activity,
+			});
 		});
 
 		it("should handle activity posting errors", async () => {

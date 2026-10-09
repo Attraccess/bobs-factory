@@ -488,10 +488,7 @@ export function nativeAdapter(
 		...(ref.platform === "linear"
 			? {
 					async publish(receipt: TicketMilestone, documentationBody: string) {
-						if (
-							receipt.purpose === "documentation" ||
-							(receipt.merged && !options)
-						) {
+						if (receipt.purpose === "documentation" || receipt.merged) {
 							await tracker.createComment(ref.id, { body: documentationBody });
 							return;
 						}
@@ -506,12 +503,10 @@ export function nativeAdapter(
 							id: receipt.deliveryId,
 							agentSessionId: sessionId,
 							content: {
-								type: receipt.merged
-									? "response"
-									: receipt.key.startsWith("questions:")
-										? "elicitation"
-										: "thought",
-								body: receipt.merged ? documentationBody : receipt.body,
+								type: receipt.key.startsWith("questions:")
+									? "elicitation"
+									: "thought",
+								body: receipt.body,
 							},
 						});
 						if (!result.success)

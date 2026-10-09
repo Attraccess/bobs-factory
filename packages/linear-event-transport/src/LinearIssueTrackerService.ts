@@ -258,7 +258,7 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 						? {
 								...input,
 								content,
-								...(!["thought", "action"].includes(content.type)
+								...(!["thought", "action"].includes(input.content.type)
 									? { ephemeral: undefined }
 									: {}),
 							}
@@ -1138,7 +1138,7 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 			return this.linearClient.createAgentActivity({
 				...input,
 				content,
-				...(!["thought", "action"].includes(content.type)
+				...(!["thought", "action"].includes(input.content.type)
 					? { ephemeral: undefined }
 					: {}),
 			});

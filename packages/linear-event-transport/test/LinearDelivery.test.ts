@@ -15,7 +15,7 @@ it("keeps compact delivered receipts that still deduplicate and reject changed c
 		id: "fa46e14c-29a9-46e9-9a02-26276d10d34f",
 		agentSessionId: "session",
 		content: {
-			type: "response",
+			type: "thought",
 			body: "Distinct full delivery payload".repeat(1000),
 		},
 	};
@@ -174,7 +174,7 @@ it("prioritizes a newly queued question ahead of a routine backlog while deliver
 		await outcomes;
 		expect(sent.slice(0, 2)).toEqual([
 			{ type: "thought", body: "Initial progress" },
-			{ type: "elicitation", body: "Which target?" },
+			{ type: "thought", body: "Which target?" },
 		]);
 		expect(tracker.getActivityDeliveryStatus()).toMatchObject({
 			delivered: 10,
@@ -239,7 +239,7 @@ it("retains a final event after throttling and delivers it once after restart", 
 		expect(sent).toHaveLength(1);
 		expect(sent[0]).toMatchObject({
 			agentSessionId: "session",
-			content: { type: "response", body: "Delivered PR with validation" },
+			content: { type: "thought", body: "Delivered PR with validation" },
 			id: expect.stringMatching(/^[a-f0-9-]{36}$/),
 		});
 		await second.flushActivityDelivery();
@@ -557,7 +557,7 @@ it("honors provider throttling across concurrent sessions and sends their final 
 	await Promise.all([progress, final]);
 	expect(requests).toEqual([
 		{ at: 0, type: "thought" },
-		{ at: 120_000, type: "response" },
+		{ at: 120_000, type: "thought" },
 		{ at: 122_000, type: "thought" },
 	]);
 });

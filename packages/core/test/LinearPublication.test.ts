@@ -50,7 +50,7 @@ it("preserves complete questions and surfaces tool failures without envelopes", 
 	const body =
 		"1. Which provider?\n\n- A: first\n- B: second\n\nRecommended: A, because it supports recovery.";
 	expect(presentLinearActivity({ type: "elicitation", body })).toEqual({
-		type: "elicitation",
+		type: "thought",
 		body,
 	});
 	expect(
@@ -86,5 +86,53 @@ it("includes actionable blockers and review feedback without raw records", () =>
 		markdown:
 			"Rendering could not be checked.\n\nNeeds attention:\n\n- Supply an authenticated test session.\n\nFeedback:\n\n- Retain the recovery evidence.",
 		version: 1,
+	});
+});
+
+it("keeps operational prose in thoughts so Linear cannot create implicit comments", () => {
+	for (const type of ["response", "elicitation", "error"]) {
+		expect(
+			presentLinearActivity({ type, body: "Waiting for your answer." }),
+		).toEqual({
+			type: "thought",
+			body: "Waiting for your answer.",
+		});
+	}
+	expect(
+		presentLinearActivity({
+			type: "action",
+			action: "Build failed",
+			result: "Access denied",
+		}),
+	).toEqual({
+		type: "thought",
+		body: "Build failed\n\nAccess denied",
+	});
+});
+
+it("extracts actionable diagnostics from bulk text and structured errors", () => {
+	const raw = `${"Building module successfully\n".repeat(2000)}src/app.ts:42 error TS2345: Invalid argument\nExpected a string.\n${"Build details\n".repeat(1000)}`;
+	const expected =
+		"Building module successfully\nsrc/app.ts:42 error TS2345: Invalid argument\nExpected a string.\nBuild details…\n\nFull output is retained in Factory.";
+	expect(publicFailure(raw)).toBe(expected);
+	expect(publicFailure(JSON.stringify({ error: raw }))).toBe(expected);
+	expect(presentLinearActivity({ type: "error", body: raw })).toEqual({
+		type: "thought",
+		body: expected,
+	});
+	expect(
+		publicFailure(`error: ${"x".repeat(10000)}`).length,
+	).toBeLessThanOrEqual(2400);
+});
+
+it("suppresses legacy fenced review contracts while retaining intentional examples", () => {
+	const record = '```json\n{"findings":[],"summary":"Review completed"}\n```';
+	expect(
+		presentLinearActivity({ type: "response", body: record }),
+	).toBeUndefined();
+	const example = `Example review contract:\n\n${record}`;
+	expect(presentLinearActivity({ type: "thought", body: example })).toEqual({
+		type: "thought",
+		body: example,
 	});
 });

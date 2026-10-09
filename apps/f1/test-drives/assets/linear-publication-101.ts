@@ -22,6 +22,7 @@ import { LinearIssueTrackerService } from "../../../../packages/linear-event-tra
 import { MockAgentRunner } from "../../src/MockAgentRunner.ts";
 
 // Real SDK and local HTTP. Agent, ticket reads/status, Git and provider rendering are simulated.
+// Model Linear's automatic threaded comments for response/elicitation/error activities.
 const require = createRequire(
 	new URL(
 		"../../../../packages/linear-event-transport/package.json",
@@ -63,6 +64,8 @@ try {
 			: { ...input, issue: { id: input.issueId }, reactions: [] };
 		remote.set(input.id, value);
 		(input.content ? activities : comments).push(input);
+		if (["response", "elicitation", "error"].includes(input.content?.type))
+			comments.push({ body: input.content.body, implicit: true });
 		return {
 			data: input.content
 				? { agentActivityCreate: { success: true, agentActivity: value } }
@@ -312,27 +315,31 @@ try {
 	for (
 		let i = 0;
 		i < 100 &&
-		!activities.some((value) => value.content.type === "elicitation");
+		!activities.some((value) =>
+			value.content.body?.startsWith("Factory needs assistance:"),
+		);
 		i++
 	)
 		await new Promise((resolve) => setTimeout(resolve, 10));
 	assert.equal(run.status, "waiting");
 	assert.equal(
-		activities.filter((value) => value.content.type === "elicitation").length,
+		activities.filter((value) =>
+			value.content.body?.startsWith("Factory needs assistance:"),
+		).length,
 		1,
 	);
 	assert.equal(comments.length, 0);
 	runtime.answer(run.id, "English");
 	await completion;
 	assert.equal(run.status, "completed");
-	assert.equal(comments.length, 1);
+	assert.equal(comments.length, 2);
 	assert.equal(
 		comments[0].body.replace(/\n\n<!-- factory:[^\n]+ -->$/, ""),
 		"**Which default?**\n\nEnglish\n\nRationale: Shared readers",
 	);
 	assert.equal(
 		activities.filter((value) => value.content.type === "response").length,
-		1,
+		0,
 	);
 	assert.equal(
 		activities.filter((value) => value.content.body === "CI checks pending")
@@ -357,6 +364,31 @@ try {
 			.serializeState()
 			.entries[sessionId].some((value) => value.metadata?.factoryStepKey),
 	);
+	assert.equal(
+		comments[1].body.replace(/\n\n<!-- factory:[^\n]+ -->$/, ""),
+		"Delivered: https://github.com/example/fixture/pull/1. The Git provider confirmed merge.\n\nReadable publishing implemented.\n\nVerification:\n- Simulated provider checks passed",
+	);
+	const rawBuild = `${"Building module successfully\n".repeat(2000)}src/app.ts:42 error TS2345: Invalid argument\nExpected a string.\n${"Build details\n".repeat(1000)}`;
+	await wire.createAgentActivity({
+		agentSessionId: sessionId,
+		content: { type: "error", body: rawBuild },
+	});
+	const failure = activities.at(-1).content;
+	assert.equal(failure.type, "thought");
+	assert.equal(
+		failure.body,
+		"Building module successfully\nsrc/app.ts:42 error TS2345: Invalid argument\nExpected a string.\nBuild details…\n\nFull output is retained in Factory.",
+	);
+	const afterFailure = activities.length;
+	await wire.createAgentActivity({
+		agentSessionId: sessionId,
+		content: {
+			type: "response",
+			body: '```json\n{"findings":[],"summary":"Review completed"}\n```',
+		},
+	});
+	assert.equal(activities.length, afterFailure);
+	assert.equal(comments.filter((value) => value.implicit).length, 0);
 	const before = activities.length + comments.length;
 	tracking.stop();
 	wire.stopDelivery();
@@ -381,7 +413,7 @@ try {
 			standaloneDocumentationComments: comments.length,
 			operationalComments: 0,
 			clarificationEvents: 1,
-			deliveryResponses: 1,
+			deliveryResponses: 0,
 			restartDuplicates: 0,
 			nestedAndParallel: true,
 			localMessages: rawMessages.length,

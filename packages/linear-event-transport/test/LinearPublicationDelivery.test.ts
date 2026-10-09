@@ -91,7 +91,7 @@ it("suppresses an unsent legacy result and retains its evidence and disposition"
 		agentSessionId: "session",
 		content: {
 			type: "response",
-			body: '{"status":"completed","summary":"raw"}',
+			body: '```json\n{"findings":[],"summary":"Review completed"}\n```',
 		},
 	};
 	const f = fixture({ input, ambiguous: false });
@@ -142,7 +142,7 @@ it("coalesces unchanged check states durably but publishes failure and resume tr
 	await f.box.post(input);
 	expect(f.send.mock.calls.map(([value]) => value.content)).toEqual([
 		input.content,
-		{ type: "error", body: "CI checks failed: restore access" },
+		{ type: "thought", body: "CI checks failed: restore access" },
 		input.content,
 	]);
 	await expect(
@@ -189,4 +189,73 @@ it("retains legacy operational comments pending without sending them as document
 		"Factory work started: existing run",
 	);
 	tracker.stopDelivery();
+});
+
+it("retains the full failed log locally while sending only diagnostic prose", async () => {
+	const f = fixture();
+	const input = {
+		agentSessionId: "session",
+		content: {
+			type: "error",
+			body: `${"Building module\n".repeat(3000)}error TS2345: Expected a string.`,
+		},
+	};
+	await f.box.post(input);
+	expect(f.send.mock.calls[0]![0].content).toEqual({
+		type: "thought",
+		body: "Building module\nerror TS2345: Expected a string.…\n\nFull output is retained in Factory.",
+	});
+	expect(f.records()[0]).toMatchObject({
+		status: "delivered",
+		originalEvidence: input,
+	});
+	f.box.stop(f.owner);
+});
+
+it("sends durable operational thoughts through direct and queued SDK delivery", async () => {
+	const { LinearClient } = await import("@linear/sdk");
+	const { LinearIssueTrackerService } = await import(
+		"../src/LinearIssueTrackerService.js"
+	);
+	const home = mkdtempSync(join(tmpdir(), "linear-operational-thoughts-"));
+	homes.push(home);
+	for (const factoryHome of [undefined, home]) {
+		const sent: unknown[] = [];
+		const client = new LinearClient({ accessToken: "isolated-wire-fixture" });
+		client.client.request = vi.fn(async (_document, variables: any) => {
+			sent.push(variables.input);
+			return {
+				agentActivityCreate: {
+					success: true,
+					agentActivity: { id: variables.input.id },
+					lastSyncId: 1,
+				},
+			};
+		}) as any;
+		const tracker = new LinearIssueTrackerService(
+			client,
+			undefined,
+			undefined,
+			{ factoryHome, workspaceId: "wire-fixture", requestIntervalMs: 0 },
+		);
+		try {
+			for (const type of ["response", "elicitation", "error"]) {
+				await tracker.createAgentActivity({
+					agentSessionId: "session",
+					content: { type, body: "Please restore access." },
+					ephemeral: true,
+				});
+			}
+			expect(sent).toEqual(
+				["response", "elicitation", "error"].map(() => ({
+					agentSessionId: "session",
+					content: { type: "thought", body: "Please restore access." },
+					ephemeral: undefined,
+					...(factoryHome ? { id: expect.any(String) } : {}),
+				})),
+			);
+		} finally {
+			tracker.stopDelivery();
+		}
+	}
 });

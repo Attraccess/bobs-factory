@@ -37,6 +37,8 @@ export function isInternalPublication(text: string, depth = 0): boolean {
 			parsed !== null &&
 			typeof parsed === "object" &&
 			(!fenced ||
+				(Array.isArray(parsed.findings) &&
+					typeof parsed.summary === "string") ||
 				[
 					"status",
 					"questions",
@@ -146,25 +148,67 @@ export function presentLinearActivity<
 		if (!/error|fail|❌/i.test(content.action ?? "")) return undefined;
 		const detail = publicFailure(content.result ?? "");
 		return {
-			type: "error",
+			type: "thought",
 			body: `${cleanPublicMarkdown(content.action ?? "Tool failed")}\n\n${detail}`,
 		} as T;
 	}
-	if (typeof content.body !== "string") return content;
+	// Linear automatically creates threaded comments for response, elicitation and
+	// error. Preserve their prose and signals in the transcript using thoughts.
+	// Factory/runner lifecycle state is managed independently of this wire type.
+	const type = ["response", "elicitation", "error"].includes(content.type)
+		? "thought"
+		: content.type;
+	if (typeof content.body !== "string") return { ...content, type };
 	const body = cleanPublicMarkdown(content.body);
 	if (!body) return undefined;
 	if (isInternalPublication(body)) {
 		if (content.type === "error")
-			return { ...content, body: publicFailure(body) };
+			return { ...content, type, body: publicFailure(body) };
 		return undefined;
 	}
-	return { ...content, body };
+	return {
+		...content,
+		type,
+		body: content.type === "error" ? publicFailure(body) : body,
+	};
+}
+
+/** Keep short errors intact; extract diagnostics from bulk logs without publishing the dump. */
+function summarizeFailure(text: string): string {
+	const limit = 2400;
+	if (text.length <= limit) return text;
+	const lines = text.split("\n");
+	const selected = new Set<number>();
+	for (let i = 0; i < lines.length; i++) {
+		if (
+			/\b(?:error|failed|failure|exception|denied|fatal|ENOENT|EACCES|TS\d{4})\b/i.test(
+				lines[i]!,
+			)
+		) {
+			for (
+				let j = Math.max(0, i - 1);
+				j <= Math.min(lines.length - 1, i + 2);
+				j++
+			)
+				selected.add(j);
+		}
+	}
+	const diagnostics = [...selected]
+		.map((i) => lines[i])
+		.join("\n")
+		.trim();
+	const excerpt = diagnostics || lines.slice(-8).join("\n").trim();
+	const note = "Full output is retained in Factory.";
+	return `${excerpt.slice(0, limit - note.length - 5)}…\n\n${note}`;
 }
 
 export function publicFailure(raw: string): string {
 	const text = cleanPublicMarkdown(raw);
 	if (!isInternalPublication(text))
-		return text || "The tool failed. Full output is retained in Factory.";
+		return (
+			summarizeFailure(text) ||
+			"The tool failed. Full output is retained in Factory."
+		);
 	try {
 		const value = JSON.parse(text);
 		const collect = (item: unknown, depth = 0): string[] => {
@@ -188,7 +232,7 @@ export function publicFailure(raw: string): string {
 			return [...messages, ...collect(record.structuredContent, depth + 1)];
 		};
 		return (
-			[...new Set(collect(value))].join("\n\n") ||
+			summarizeFailure([...new Set(collect(value))].join("\n\n")) ||
 			"The tool failed. Full output is retained in Factory."
 		);
 	} catch {
