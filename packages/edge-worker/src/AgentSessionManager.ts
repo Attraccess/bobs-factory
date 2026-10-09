@@ -1021,7 +1021,7 @@ export class AgentSessionManager extends EventEmitter {
 			) {
 				await this.postActivity(
 					sessionId,
-					{ content: { type: "error", body: publicFailure(entry.content) } },
+					{ content: { type: "thought", body: publicFailure(entry.content) } },
 					"tool error",
 				);
 				return;

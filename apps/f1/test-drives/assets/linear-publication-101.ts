@@ -34,6 +34,7 @@ const server = require("fastify")();
 const home = mkdtempSync(join(tmpdir(), "f1-linear-publication-101-"));
 const activities: any[] = [];
 const comments: any[] = [];
+const providerStates = new Map<string, string>();
 const remote = new Map<string, any>();
 const rawMessages: unknown[] = [];
 const unhandled: unknown[] = [];
@@ -64,6 +65,24 @@ try {
 			: { ...input, issue: { id: input.issueId }, reactions: [] };
 		remote.set(input.id, value);
 		(input.content ? activities : comments).push(input);
+		if (input.content) {
+			if (["auth", "select"].includes(input.signal))
+				assert.equal(
+					input.content.type,
+					"elicitation",
+					"signals require elicitation",
+				);
+			providerStates.set(
+				input.agentSessionId,
+				(
+					{
+						response: "complete",
+						elicitation: "awaitingInput",
+						error: "error",
+					} as Record<string, string>
+				)[input.content.type] ?? "active",
+			);
+		}
 		if (["response", "elicitation", "error"].includes(input.content?.type))
 			comments.push({ body: input.content.body, implicit: true });
 		return {
@@ -328,18 +347,20 @@ try {
 		).length,
 		1,
 	);
-	assert.equal(comments.length, 0);
+	assert.equal(comments.length, 1);
+	assert.equal(providerStates.get(sessionId), "awaitingInput");
 	runtime.answer(run.id, "English");
 	await completion;
 	assert.equal(run.status, "completed");
-	assert.equal(comments.length, 2);
+	assert.equal(comments.length, 4);
+	assert.equal(providerStates.get(sessionId), "complete");
 	assert.equal(
-		comments[0].body.replace(/\n\n<!-- factory:[^\n]+ -->$/, ""),
+		comments[1].body.replace(/\n\n<!-- factory:[^\n]+ -->$/, ""),
 		"**Which default?**\n\nEnglish\n\nRationale: Shared readers",
 	);
 	assert.equal(
 		activities.filter((value) => value.content.type === "response").length,
-		0,
+		1,
 	);
 	assert.equal(
 		activities.filter((value) => value.content.body === "CI checks pending")
@@ -365,7 +386,7 @@ try {
 			.entries[sessionId].some((value) => value.metadata?.factoryStepKey),
 	);
 	assert.equal(
-		comments[1].body.replace(/\n\n<!-- factory:[^\n]+ -->$/, ""),
+		comments[3].body.replace(/\n\n<!-- factory:[^\n]+ -->$/, ""),
 		"Delivered: https://github.com/example/fixture/pull/1. The Git provider confirmed merge.\n\nReadable publishing implemented.\n\nVerification:\n- Simulated provider checks passed",
 	);
 	const rawBuild = `${"Building module successfully\n".repeat(2000)}src/app.ts:42 error TS2345: Invalid argument\nExpected a string.\n${"Build details\n".repeat(1000)}`;
@@ -374,7 +395,8 @@ try {
 		content: { type: "error", body: rawBuild },
 	});
 	const failure = activities.at(-1).content;
-	assert.equal(failure.type, "thought");
+	assert.equal(failure.type, "error");
+	assert.equal(providerStates.get(sessionId), "error");
 	assert.equal(
 		failure.body,
 		"Building module successfully\nsrc/app.ts:42 error TS2345: Invalid argument\nExpected a string.\nBuild details…\n\nFull output is retained in Factory.",
@@ -388,7 +410,56 @@ try {
 		},
 	});
 	assert.equal(activities.length, afterFailure);
-	assert.equal(comments.filter((value) => value.implicit).length, 0);
+	assert.equal(comments.filter((value) => value.implicit).length, 4);
+	const lifecycleAdapter = nativeAdapter(run.ticketReference as any, tracker, {
+		getTranscriptSession: async () => sessionId,
+	});
+	for (const [key, body, state] of [
+		["review:fixture", "Please review the delivery.", "awaitingInput"],
+		["outcome:failed:fixture", "Workflow failed: restore access.", "error"],
+		[
+			"outcome:stopped:fixture",
+			"Workflow stopped; work is preserved.",
+			"complete",
+		],
+	] as const) {
+		await lifecycleAdapter.publish!({ key, body }, body);
+		assert.equal(providerStates.get(sessionId), state);
+		assert.equal(activities.at(-1).content.body, body);
+	}
+	await manager.createApprovalElicitation(
+		sessionId,
+		"Please approve the delivery.",
+		"https://example.com/approve",
+	);
+	assert.equal(providerStates.get(sessionId), "awaitingInput");
+	assert.equal(activities.at(-1).signal, "auth");
+	assert.deepEqual(activities.at(-1).signalMetadata, {
+		url: "https://example.com/approve",
+	});
+	await new LinearActivitySink(wire, "fixture").postActivity(
+		sessionId,
+		{ type: "elicitation", body: "Choose a repository." },
+		{
+			signal: "select",
+			signalMetadata: { options: [{ label: "Fixture", value: "fixture" }] },
+		},
+	);
+	assert.equal(providerStates.get(sessionId), "awaitingInput");
+	assert.equal(activities.at(-1).signal, "select");
+	await wire.createAgentActivity({
+		agentSessionId: sessionId,
+		content: { type: "thought", body: "Resuming after approval." },
+	});
+	assert.equal(providerStates.get(sessionId), "active");
+	await wire.createAgentActivity({
+		agentSessionId: sessionId,
+		content: {
+			type: "response",
+			body: "Stopped after approval; the delivery remains available.",
+		},
+	});
+	assert.equal(providerStates.get(sessionId), "complete");
 	const before = activities.length + comments.length;
 	tracking.stop();
 	wire.stopDelivery();
@@ -410,10 +481,15 @@ try {
 		JSON.stringify({
 			result: "PASS",
 			mode: "mock",
-			standaloneDocumentationComments: comments.length,
-			operationalComments: 0,
+			explicitDocumentationComments: comments.filter((value) => !value.implicit)
+				.length,
+			nativeLifecycleComments: comments.filter((value) => value.implicit)
+				.length,
+			routineProgressComments: 0,
+			providerStates: ["awaitingInput", "active", "error", "complete"],
+			approvalSignals: ["auth", "select"],
 			clarificationEvents: 1,
-			deliveryResponses: 0,
+			deliveryResponses: 1,
 			restartDuplicates: 0,
 			nestedAndParallel: true,
 			localMessages: rawMessages.length,

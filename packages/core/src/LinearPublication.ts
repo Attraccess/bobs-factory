@@ -152,12 +152,10 @@ export function presentLinearActivity<
 			body: `${cleanPublicMarkdown(content.action ?? "Tool failed")}\n\n${detail}`,
 		} as T;
 	}
-	// Linear automatically creates threaded comments for response, elicitation and
-	// error. Preserve their prose and signals in the transcript using thoughts.
-	// Factory/runner lifecycle state is managed independently of this wire type.
-	const type = ["response", "elicitation", "error"].includes(content.type)
-		? "thought"
-		: content.type;
+	// Preserve native completion, waiting/error states and elicitation signals.
+	// Linear's automatic threaded comments for these activities are an accepted
+	// exception; routine progress and role outcomes are authored as thoughts.
+	const type = content.type;
 	if (typeof content.body !== "string") return { ...content, type };
 	const body = cleanPublicMarkdown(content.body);
 	if (!body) return undefined;

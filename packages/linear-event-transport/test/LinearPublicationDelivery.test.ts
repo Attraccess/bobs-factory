@@ -9,7 +9,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createLogger, presentLinearActivity } from "bobs-factory-core";
+import {
+	AgentActivitySignal,
+	createLogger,
+	presentLinearActivity,
+} from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import { LinearDeliveryOutbox } from "../src/LinearDeliveryOutbox.js";
 
@@ -142,7 +146,7 @@ it("coalesces unchanged check states durably but publishes failure and resume tr
 	await f.box.post(input);
 	expect(f.send.mock.calls.map(([value]) => value.content)).toEqual([
 		input.content,
-		{ type: "thought", body: "CI checks failed: restore access" },
+		{ type: "error", body: "CI checks failed: restore access" },
 		input.content,
 	]);
 	await expect(
@@ -202,7 +206,7 @@ it("retains the full failed log locally while sending only diagnostic prose", as
 	};
 	await f.box.post(input);
 	expect(f.send.mock.calls[0]![0].content).toEqual({
-		type: "thought",
+		type: "error",
 		body: "Building module\nerror TS2345: Expected a string.…\n\nFull output is retained in Factory.",
 	});
 	expect(f.records()[0]).toMatchObject({
@@ -212,7 +216,7 @@ it("retains the full failed log locally while sending only diagnostic prose", as
 	f.box.stop(f.owner);
 });
 
-it("sends durable operational thoughts through direct and queued SDK delivery", async () => {
+it("preserves native lifecycle and signals through direct and queued SDK delivery", async () => {
 	const { LinearClient } = await import("@linear/sdk");
 	const { LinearIssueTrackerService } = await import(
 		"../src/LinearIssueTrackerService.js"
@@ -244,13 +248,25 @@ it("sends durable operational thoughts through direct and queued SDK delivery", 
 					agentSessionId: "session",
 					content: { type, body: "Please restore access." },
 					ephemeral: true,
+					...(type === "elicitation"
+						? {
+								signal: AgentActivitySignal.Auth,
+								signalMetadata: { url: "https://example.com/approve" },
+							}
+						: {}),
 				});
 			}
 			expect(sent).toEqual(
-				["response", "elicitation", "error"].map(() => ({
+				["response", "elicitation", "error"].map((type) => ({
 					agentSessionId: "session",
-					content: { type: "thought", body: "Please restore access." },
+					content: { type, body: "Please restore access." },
 					ephemeral: undefined,
+					...(type === "elicitation"
+						? {
+								signal: "auth",
+								signalMetadata: { url: "https://example.com/approve" },
+							}
+						: {}),
 					...(factoryHome ? { id: expect.any(String) } : {}),
 				})),
 			);

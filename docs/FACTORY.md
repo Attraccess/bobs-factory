@@ -1374,8 +1374,11 @@ Ticket status and PR attachments are processed independently of comment markers.
 
 Linear's provider may create threaded comments for elicitation/error/response
 activities ([provider guidance](https://linear.app/developers/agent-best-practices)).
-Factory operational role outcomes use thoughts. Clarifications retain elicitation
-and selection signals so native replies continue to work. Confirm rendering in an
+Factory operational role outcomes and routine tool failures use thoughts. Native
+completion, terminal errors, clarification and approval requests retain response,
+error and elicitation types. Their automatic threaded comments are an accepted
+exception to the documentation-only comment policy (Taskbot #101, October 9).
+Selection and authentication signals remain attached to elicitations. Confirm rendering in an
 authorized Linear test session when changing this policy.
 
 Synchronization receipts live on the run as `ticketReference` and `ticketSync`.

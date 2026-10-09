@@ -50,7 +50,7 @@ it("preserves complete questions and surfaces tool failures without envelopes", 
 	const body =
 		"1. Which provider?\n\n- A: first\n- B: second\n\nRecommended: A, because it supports recovery.";
 	expect(presentLinearActivity({ type: "elicitation", body })).toEqual({
-		type: "thought",
+		type: "elicitation",
 		body,
 	});
 	expect(
@@ -89,12 +89,12 @@ it("includes actionable blockers and review feedback without raw records", () =>
 	});
 });
 
-it("keeps operational prose in thoughts so Linear cannot create implicit comments", () => {
+it("preserves native lifecycle types while routine actions remain thoughts", () => {
 	for (const type of ["response", "elicitation", "error"]) {
 		expect(
 			presentLinearActivity({ type, body: "Waiting for your answer." }),
 		).toEqual({
-			type: "thought",
+			type,
 			body: "Waiting for your answer.",
 		});
 	}
@@ -117,7 +117,7 @@ it("extracts actionable diagnostics from bulk text and structured errors", () =>
 	expect(publicFailure(raw)).toBe(expected);
 	expect(publicFailure(JSON.stringify({ error: raw }))).toBe(expected);
 	expect(presentLinearActivity({ type: "error", body: raw })).toEqual({
-		type: "thought",
+		type: "error",
 		body: expected,
 	});
 	expect(

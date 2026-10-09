@@ -975,7 +975,7 @@ it("keeps an ambiguous transcript creation identity when a later reconciliation 
 	expect(creates).toBe(1);
 });
 
-it("delivers confirmed merge documentation as one explicit comment", async () => {
+it("delivers confirmed merge documentation as one native completion response", async () => {
 	const tracker = new CLIIssueTrackerService();
 	tracker.seedDefaultData();
 	const issue = await tracker.createIssue({
@@ -1007,12 +1007,12 @@ it("delivers confirmed merge documentation as one explicit comment", async () =>
 		},
 		documentation,
 	);
+	expect((await tracker.fetchComments(issue.id)).nodes).toEqual([]);
 	expect(
-		(await tracker.fetchComments(issue.id)).nodes.map(
-			(comment) => comment.body,
-		),
-	).toEqual([documentation]);
-	expect(tracker.listAgentActivities(session!.id)).toEqual([]);
+		tracker
+			.listAgentActivities(session!.id)
+			.map((activity) => ({ type: activity.type, body: activity.content })),
+	).toEqual([{ type: "response", body: documentation }]);
 });
 
 it("applies status and PR attachments even when documentation already exists", async () => {
