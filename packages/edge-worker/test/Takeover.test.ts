@@ -1,11 +1,13 @@
 import { expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { FactoryTools } from "../src/factory/FactoryTools.js";
+import { GITHUB_API_COMMAND } from "../src/factory/GithubApi.js";
 import {
 	inspectPullRequest,
 	ticketIdentifier,
 } from "../src/factory/Takeover.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
+import { githubRequest } from "./fixtures/github-api.js";
 
 const pr = {
 	url: "https://github.com/owner/repo/pull/3",
@@ -19,40 +21,56 @@ const pr = {
 	isDraft: false,
 	isCrossRepository: false,
 };
+const apiPr = {
+	html_url: pr.url,
+	number: pr.number,
+	node_id: "PR_node",
+	title: pr.title,
+	body: pr.body,
+	draft: false,
+	state: "open",
+	merged: false,
+	head: {
+		ref: pr.headRefName,
+		sha: pr.headRefOid,
+		repo: { full_name: "owner/repo" },
+	},
+	base: { ref: pr.baseRefName, repo: { full_name: "owner/repo" } },
+};
 it("captures all issue/review discussion pages and rejects another repository or fork PR", async () => {
-	const command = vi.fn(async (_exe: string, args: string[]) =>
-		args[0] === "repo"
-			? JSON.stringify({ nameWithOwner: "owner/repo" })
-			: args[0] === "pr"
-				? JSON.stringify(pr)
-				: JSON.stringify([[{ body: "first page" }], [{ body: "second page" }]]),
-	);
+	const command = vi.fn(async (exe: string, args: string[]) => {
+		if (exe === "git") return "git@github.com:owner/repo.git";
+		expect(exe).toBe(GITHUB_API_COMMAND);
+		const request = githubRequest(args);
+		if (request.path === "repos/owner/repo/pulls/3")
+			return JSON.stringify(apiPr);
+		return JSON.stringify(
+			request.path.endsWith("page=1")
+				? Array.from({ length: 100 }, (_, id) => ({ id, body: "first page" }))
+				: [{ id: 100, body: "second page" }],
+		);
+	});
 	const snapshot = await inspectPullRequest(command, pr.url);
-	expect(snapshot.comments).toEqual([
-		{ body: "first page" },
-		{ body: "second page" },
-	]);
-	expect(snapshot.reviews).toHaveLength(2);
-	expect(snapshot.reviewComments).toHaveLength(2);
-	expect(
-		command.mock.calls
-			.filter(([, args]) => args[0] === "api")
-			.every(
-				([, args]) => args.includes("--paginate") && args.includes("--slurp"),
-			),
-	).toBe(true);
+	expect(snapshot.comments).toHaveLength(101);
+	expect(snapshot.comments.at(-1)).toMatchObject({ body: "second page" });
+	expect(snapshot.reviews).toHaveLength(101);
+	expect(snapshot.reviewComments).toHaveLength(101);
 	await expect(
 		inspectPullRequest(command, "https://github.com/another/repo/pull/3"),
 	).rejects.toThrow("selected repository");
 	await expect(
 		inspectPullRequest(
-			async (_exe, args) =>
-				args[0] === "repo"
-					? JSON.stringify({ nameWithOwner: "owner/repo" })
-					: JSON.stringify({ ...pr, isCrossRepository: true }),
+			async (exe) =>
+				exe === "git"
+					? "git@github.com:owner/repo.git"
+					: JSON.stringify({
+							...apiPr,
+							head: { ...apiPr.head, repo: { full_name: "fork/repo" } },
+						}),
 			pr.url,
 		),
 	).rejects.toThrow();
+	expect(command.mock.calls.some(([exe]) => exe === "gh")).toBe(false);
 	expect(ticketIdentifier("TEAM-4")).toBe("TEAM-4");
 	expect(
 		ticketIdentifier("https://linear.app/workspace/issue/TEAM-4/existing"),
@@ -107,14 +125,35 @@ it("takes over the same PR, converts it to draft and never creates a replacement
 			if (args[0] === "rev-list") return "1";
 			if (args[0] === "diff" && args.includes("--name-only"))
 				return "feature.ts";
-			if (args[0] === "pr" && args[1] === "view")
-				return JSON.stringify({ state: "OPEN", isDraft: true });
-			if (args[0] === "pr" && args[1] === "list") return "[]";
+			if (exe === GITHUB_API_COMMAND) {
+				const request = githubRequest(args);
+				if (request.path.includes("?state=open")) return "[]";
+				if (request.path === "graphql")
+					return JSON.stringify({
+						data: {
+							convertPullRequestToDraft: {
+								pullRequest: { id: "PR_node", isDraft: true },
+							},
+						},
+					});
+				return JSON.stringify({ ...apiPr, draft: true });
+			}
 			return "";
 		},
 	});
 	await tools.tool(ctx);
-	expect(commands).toContainEqual(["gh", "pr", "ready", pr.url, "--undo"]);
+	expect(
+		commands
+			.filter(([exe]) => exe === GITHUB_API_COMMAND)
+			.map(([, arg]) => githubRequest([arg!])),
+	).toContainEqual(
+		expect.objectContaining({
+			path: "graphql",
+			body: expect.objectContaining({
+				query: expect.stringContaining("convertPullRequestToDraft"),
+			}),
+		}),
+	);
 	ctx.step = { ...ctx.step, tool: "draft-pr" };
 	expect(await tools.tool(ctx)).toMatchObject({
 		url: pr.url,
@@ -122,7 +161,10 @@ it("takes over the same PR, converts it to draft and never creates a replacement
 	});
 	expect(
 		commands.some(
-			(args) => args[0] === "gh" && args[1] === "pr" && args[2] === "create",
+			(args) =>
+				args[0] === GITHUB_API_COMMAND &&
+				githubRequest(args.slice(1)).method === "POST" &&
+				githubRequest(args.slice(1)).path !== "graphql",
 		),
 	).toBe(false);
 });

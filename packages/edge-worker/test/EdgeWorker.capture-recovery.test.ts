@@ -19,7 +19,7 @@ import {
 import { questionInstructions } from "../src/factory/Questions.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 import { SessionSemaphore } from "../src/RunnerConcurrency.js";
-import { providerReceipt } from "./fixtures/merge-readiness.js";
+import { githubApiReceipt, githubRequest } from "./fixtures/github-api.js";
 
 const directories: string[] = [];
 afterEach(() => {
@@ -248,9 +248,9 @@ it.each([
 	};
 	const readiness = await inspectMergeReadiness(
 		async (_exe, args) =>
-			args.includes("graphql")
-				? JSON.stringify(providerReceipt())
-				: JSON.stringify([[comment]]),
+			githubRequest(args).path.includes("/comments?")
+				? JSON.stringify([comment])
+				: JSON.stringify(githubApiReceipt(args)),
 		"https://github.com/test/repo/pull/1",
 	);
 	if (legacy) {
@@ -475,6 +475,44 @@ async function guideFixture() {
 	return { ...f, guide, invalid };
 }
 
+it.each([
+	{ dirty: false, resume: false },
+	{ dirty: false, resume: true },
+	{ dirty: true, resume: false },
+	{ dirty: true, resume: true },
+])("requests only available context tools (dirty: $dirty, resume: $resume)", async ({
+	dirty,
+	resume,
+}) => {
+	const f = await fixture();
+	f.ctx.step = {
+		id: "implement",
+		name: "Implement",
+		type: "agent",
+		prompt: "Implement",
+	};
+	f.ctx.run.step = "pipeline/implement";
+	f.ctx.resumeAgent = resume
+		? { runner: "codex", sessionId: "existing-conversation" }
+		: undefined;
+	if (dirty)
+		writeFileSync(join(f.ctx.run.workspace, "other.txt"), "Uncommitted work");
+	f.runner.getMessages = () => [
+		{ type: "result", result: JSON.stringify({ summary: "Implemented" }) },
+	];
+	await f.worker.executeFactoryAgent(f.ctx);
+	expect(f.getInput().progress.currentRevision.dirty).toBe(dirty);
+	expect(f.getConfig().resumeSessionId).toBe(
+		resume ? "existing-conversation" : undefined,
+	);
+	expect(f.getConfig().allowedTools).toEqual([
+		"mcp__factory-context__list_context",
+		"mcp__factory-context__read_context",
+		...(!dirty ? ["mcp__factory-context__submit_result_artifact"] : []),
+	]);
+	expect(Boolean(f.getInput().resultSubmission)).toBe(!dirty);
+});
+
 it("validates recovered guide coverage and resumes the same conversation with exact issues", async () => {
 	const f = await guideFixture();
 	const output = await f.worker.executeFactoryAgent(f.ctx);
@@ -551,13 +589,37 @@ it("corrects fresh malformed JSON and missing PR files through the same boundary
 	});
 });
 
-it("preserves a correction through pre-turn infrastructure failure without spending its budget", async () => {
+const mcpHandshakeFailure =
+	"error creating thread: Fatal error: Failed to initialize session: required MCP servers failed to initialize: factory-context: timed out handshaking with MCP server after 44.999999833s";
+
+it.each([
+	{ failure: "Transport offline", source: "start" },
+	{ failure: `thread/start failed: ${mcpHandshakeFailure}`, source: "start" },
+	{ failure: `thread/start failed: ${mcpHandshakeFailure}`, source: "result" },
+	{ failure: `thread/resume failed: ${mcpHandshakeFailure}`, source: "start" },
+	{ failure: `thread/resume failed: ${mcpHandshakeFailure}`, source: "result" },
+	{ failure: "thread/start timed out after 60000ms", source: "start" },
+	{ failure: "thread/start timed out after 60000ms", source: "result" },
+	{ failure: "thread/resume timed out after 60000ms", source: "start" },
+	{ failure: "thread/resume timed out after 60000ms", source: "result" },
+])("preserves a correction through pre-turn $source failure ($failure) without spending its budget", async ({
+	failure,
+	source,
+}) => {
 	const f = await guideFixture();
-	f.runner.start.mockRejectedValueOnce(new Error("Transport offline"));
-	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
-		"Transport offline",
-	);
+	if (source === "start")
+		f.runner.start.mockRejectedValueOnce(new Error(failure));
+	else {
+		f.runner.start.mockResolvedValueOnce(undefined);
+		const getMessages = f.runner.getMessages;
+		f.runner.getMessages = () =>
+			f.runner.start.mock.calls.length === 1
+				? [{ type: "result", is_error: true, errors: [failure] }]
+				: getMessages();
+	}
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(failure);
 	const checkpoint = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
+	expect(checkpoint.infrastructureFailure.reason).toContain(failure);
 	expect(checkpoint.rejected).toMatchObject({
 		attempts: 0,
 		reserved: false,
@@ -574,7 +636,39 @@ it("preserves a correction through pre-turn infrastructure failure without spend
 	expect(f.getConfig().resumeSessionId).toBe("existing-conversation");
 });
 
-it("persists correction after confirmed startup and bounds repeated validation rejection", async () => {
+it("retains a fresh MCP startup failure without inventing a native session", async () => {
+	const f = await guideFixture();
+	delete f.ctx.resumeAgent;
+	f.runner.start.mockResolvedValueOnce(undefined);
+	const getMessages = f.runner.getMessages;
+	f.runner.getMessages = () =>
+		f.runner.start.mock.calls.length === 1
+			? [
+					{
+						type: "result",
+						is_error: true,
+						session_id: "pending",
+						errors: [`thread/start failed: ${mcpHandshakeFailure}`],
+					},
+				]
+			: getMessages();
+	await expect(f.worker.executeFactoryAgent(f.ctx)).rejects.toThrow(
+		"required MCP servers failed to initialize",
+	);
+	expect(f.ctx.resumeAgent).toMatchObject({
+		runner: "codex",
+		infrastructureFailure: {
+			reason: expect.stringContaining(mcpHandshakeFailure),
+		},
+	});
+	expect(f.ctx.resumeAgent?.sessionId).toBeUndefined();
+	await expect(f.worker.executeFactoryAgent(f.ctx)).resolves.toMatchObject(
+		f.guide,
+	);
+	expect(f.getConfig().resumeSessionId).toBeUndefined();
+});
+
+it("refunds confirmed transport failures and still bounds repeated validation rejection", async () => {
 	const f = await guideFixture();
 	const start = f.runner.start.getMockImplementation()!;
 	f.runner.start.mockImplementationOnce(async (...args) => {
@@ -586,9 +680,12 @@ it("persists correction after confirmed startup and bounds repeated validation r
 	);
 	const checkpoint = JSON.parse(JSON.stringify(f.ctx.resumeAgent));
 	expect(checkpoint.rejected).toMatchObject({
-		attempts: 1,
+		attempts: 0,
 		reserved: false,
 		output: f.invalid,
+	});
+	expect(checkpoint.infrastructureFailure).toMatchObject({
+		reason: "Transport offline after startup",
 	});
 	f.ctx.resumeAgent = checkpoint;
 	f.runner.start.mockImplementation(start);

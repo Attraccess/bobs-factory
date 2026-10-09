@@ -30,7 +30,33 @@ export { EgressProxy } from "./EgressProxy.js";
 export {
 	authorizeFactoryEnrollment,
 	requestFactoryAuthRecovery,
+	requestFactoryTerminalSession,
 } from "./factory/FactoryAuthOperator.js";
+export type { FactoryOnboarding } from "./factory/FactoryOnboarding.js";
+export type {
+	GithubApiRequest,
+	GithubAuthBinding,
+} from "./factory/GithubApi.js";
+export {
+	executeGithubApi,
+	GITHUB_AUTH_FILENAME,
+	githubRuntimeCredentials,
+	readGithubAuth,
+} from "./factory/GithubApi.js";
+export {
+	type Recommendation,
+	resolveAnswers,
+	serializeAnswers,
+} from "./factory/QuestionAnswers.js";
+export {
+	type Attention,
+	active,
+	attention,
+	finished,
+	type RunSummary,
+	settleReason,
+	workingLabel,
+} from "./factory/RunAttention.js";
 export type { CreateGitWorktreeOptions } from "./GitService.js";
 export { GitService } from "./GitService.js";
 export type { SerializedGlobalRegistryState } from "./GlobalSessionRegistry.js";

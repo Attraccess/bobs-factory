@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { TakeoverSourceSchema } from "../src/factory/Takeover.js";
 import {
+	ensureTicketTranscript,
 	nativeAdapter,
 	originatingTicket,
 	type TicketSnapshot,
@@ -404,7 +405,7 @@ it("recovers ambiguous comments after restart without duplicate comments or stag
 	});
 	expect(
 		restored.ticketSync?.receipts.find((r) => r.key === "old-review")
-			?.superseded,
+			?.stageSuperseded,
 	).toBe(true);
 	expect(f.ticket.status).toBe("done");
 });
@@ -779,4 +780,320 @@ it.each([
 	expect((await (await tracker.fetchIssue(issue.id)).state)?.id).toBe(
 		"state-todo",
 	);
+});
+
+it("routes native Linear questions to one transcript event while linking PRs and moving status independently", async () => {
+	const tracker = new CLIIssueTrackerService();
+	tracker.seedDefaultData();
+	const issue = await tracker.createIssue({
+		teamId: "team-default",
+		title: "Question delivery",
+	});
+	const session = await (
+		await tracker.createAgentSessionOnIssue({ issueId: issue.id })
+	).agentSession;
+	const f = fixture();
+	f.run.ticketReference = {
+		provider: "native",
+		platform: "linear",
+		workspaceId: "ticket-transcript",
+		id: issue.id,
+		url: issue.url,
+	};
+	const adapter = nativeAdapter(f.run.ticketReference, tracker, {
+		getTranscriptSession: async () => session!.id,
+	});
+	const service = new TicketTracking(
+		async () => adapter,
+		(run) => f.runtime.save(run),
+		() => {},
+	);
+	services.push(service);
+	await service.record(f.run, {
+		key: "questions:clarify:0:batch",
+		body: "Which target?",
+		stage: "in_progress",
+		pr: "https://github.com/org/repo/pull/1",
+	});
+	await service.flush(f.run);
+	expect(f.run.ticketSync?.error).toBeUndefined();
+	expect((await tracker.fetchComments(issue.id)).nodes).toEqual([]);
+	const activities = tracker.listAgentActivities(session!.id);
+	expect(activities).toHaveLength(1);
+	expect(activities[0]).toMatchObject({
+		type: "elicitation",
+		content: "Which target?",
+	});
+	expect(
+		(await tracker.fetchIssueAttachments(issue.id)).map((link) => link.url),
+	).toEqual(["https://github.com/org/repo/pull/1"]);
+	expect((await (await tracker.fetchIssue(issue.id)).state)?.type).toBe(
+		"started",
+	);
+	expect(f.run.ticketSync?.receipts[0]?.delivered).toBe(true);
+});
+
+it("reconciles a manual transcript creation response lost in transit without creating another session", async () => {
+	const { LinearClient } = await import("@linear/sdk");
+	const { LinearIssueTrackerService } = await import(
+		"bobs-factory-linear-event-transport"
+	);
+	const client = new LinearClient({ accessToken: "manual-transcript-test" });
+	const f = fixture();
+	f.run.ticketReference = {
+		provider: "native",
+		platform: "linear",
+		workspaceId: "manual",
+		id: "issue",
+		url: "https://linear.app/example/issue/EX-1/example",
+	};
+	const link = `https://factory.example/#/runs/${f.run.id}`;
+	let remote: any;
+	let creates = 0;
+	client.client.request = vi.fn(async (_doc, variables: any) => {
+		if (variables.input) {
+			creates++;
+			remote = {
+				id: "transcript",
+				externalLink: variables.input.externalLink,
+				issue: { id: "issue" },
+			};
+			throw new Error("lost session response");
+		}
+		return {
+			agentSessions: {
+				nodes: remote ? [remote] : [],
+				pageInfo: { hasNextPage: false },
+			},
+		};
+	}) as any;
+	const tracker = new LinearIssueTrackerService(client, undefined, undefined, {
+		workspaceId: "manual",
+		requestIntervalMs: 0,
+	});
+	await expect(
+		ensureTicketTranscript(
+			f.run,
+			tracker,
+			(run) => f.runtime.save(run),
+			undefined,
+			link,
+		),
+	).rejects.toThrow();
+	expect(
+		await ensureTicketTranscript(
+			f.run,
+			tracker,
+			(run) => f.runtime.save(run),
+			undefined,
+			link,
+		),
+	).toBe("transcript");
+	expect(
+		await ensureTicketTranscript(
+			f.run,
+			tracker,
+			(run) => f.runtime.save(run),
+			undefined,
+			link,
+		),
+	).toBe("transcript");
+	expect(creates).toBe(1);
+});
+
+it("keeps an ambiguous transcript creation identity when a later reconciliation lookup is throttled", async () => {
+	const { LinearClient } = await import("@linear/sdk");
+	const { LinearIssueTrackerService } = await import(
+		"bobs-factory-linear-event-transport"
+	);
+	const client = new LinearClient({
+		accessToken: "manual-transcript-lookup-throttle",
+	});
+	const f = fixture();
+	f.run.ticketReference = {
+		provider: "native",
+		platform: "linear",
+		workspaceId: "manual-throttle",
+		id: "issue",
+		url: "https://linear.app/example/issue/EX-1/example",
+	};
+	const link = `https://factory.example/#/runs/${f.run.id}`;
+	let creates = 0;
+	let lookupFails = false;
+	client.client.request = vi.fn(async (_doc, variables: any) => {
+		if (variables.input) {
+			creates++;
+			throw new Error("lost session response");
+		}
+		if (lookupFails)
+			throw {
+				response: {
+					status: 400,
+					errors: [
+						{ extensions: { code: "RATELIMITED", type: "ratelimited" } },
+					],
+				},
+			};
+		return { agentSessions: { nodes: [], pageInfo: { hasNextPage: false } } };
+	}) as any;
+	const tracker = new LinearIssueTrackerService(client, undefined, undefined, {
+		workspaceId: "manual-throttle",
+		requestIntervalMs: 0,
+	});
+	await expect(
+		ensureTicketTranscript(
+			f.run,
+			tracker,
+			(run) => f.runtime.save(run),
+			undefined,
+			link,
+		),
+	).rejects.toThrow();
+	lookupFails = true;
+	await expect(
+		ensureTicketTranscript(
+			f.run,
+			tracker,
+			(run) => f.runtime.save(run),
+			undefined,
+			link,
+		),
+	).rejects.toThrow();
+	expect(f.run.ticketSync?.transcript?.createAttempted).toBe(true);
+	lookupFails = false;
+	vi.useFakeTimers();
+	await vi.advanceTimersByTimeAsync(30_000);
+	await expect(
+		ensureTicketTranscript(
+			f.run,
+			tracker,
+			(run) => f.runtime.save(run),
+			undefined,
+			link,
+		),
+	).rejects.toThrow("unconfirmed");
+	expect(creates).toBe(1);
+});
+
+it("persists publication before delayed tracking and lets another delivery advance, with idempotent restart", async () => {
+	const f = fixture();
+	let release!: () => void;
+	const held = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const original = f.call.getMockImplementation()!;
+	f.call.mockImplementation(async (tool, args) => {
+		await held;
+		return original(tool, args);
+	});
+	const published: string[] = [];
+	const runtime = new WorkflowRuntime(f.home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async ({ run }) => {
+			published.push(run.id);
+			return { url: "https://github.com/test/repo/pull/1", headSha: "head" };
+		},
+		track: (run, milestone) => f.service.record(run, milestone),
+	});
+	const definition = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "published",
+			name: "Published",
+			steps: [
+				{
+					id: "draft-pr",
+					name: "Publish",
+					type: "tool",
+					tool: "draft-pr",
+					next: "end",
+				},
+			],
+		},
+	]).at(-1)!;
+	const first = runtime.get(f.run.id);
+	first.ticketReference = f.run.ticketReference;
+	first.workflow = definition;
+	first.outputs.repository = {
+		githubUrl: "https://github.com/test/repo",
+		baseBranch: "main",
+	};
+	await runtime.launch(first);
+	expect(first.status).toBe("completed");
+	expect(
+		first.ticketSync?.receipts.find((receipt) => receipt.pr)?.delivered,
+	).toBeUndefined();
+	expect(first.deliveryCoordination?.phase).toBe("released");
+	const second = runtime.create({
+		workflow: definition,
+		repositoryId: "repo",
+		workspace: f.home,
+		input: "Independent",
+		triggerOrigin: { type: "manual", workflowId: definition.id, at: "" },
+	});
+	second.outputs.repository = first.outputs.repository;
+	await runtime.launch(second);
+	expect(second.status).toBe("completed");
+	expect(published).toEqual([first.id, second.id]);
+	// The serialized receipt exists before any remote side effect can finish.
+	const restoredRuntime = new WorkflowRuntime(f.home, {
+		agent: async () => ({}),
+		script: async () => ({}),
+		tool: async () => {
+			throw new Error("Must not republish");
+		},
+	});
+	const restored = restoredRuntime.get(first.id);
+	expect(restored.ticketSync?.receipts.find((receipt) => receipt.pr)?.pr).toBe(
+		"https://github.com/test/repo/pull/1",
+	);
+	release();
+	await f.service.flush(first);
+	const calls = f.calls.filter((call) =>
+		["comment", "set_status", "add_attachment"].includes(call.tool),
+	);
+	await f.service.flush(restored);
+	expect(
+		f.calls.filter((call) =>
+			["comment", "set_status", "add_attachment"].includes(call.tool),
+		),
+	).toEqual(calls);
+	expect(f.ticket.attachments).toHaveLength(1);
+	await runtime.shutdown();
+	await restoredRuntime.shutdown();
+});
+
+it("retains failed documentation and links when newer status milestones supersede old status intent", async () => {
+	const f = fixture();
+	const original = f.call.getMockImplementation()!;
+	f.call.mockRejectedValue(new Error("offline"));
+	await f.service.record(f.run, {
+		key: "implementation",
+		purpose: "documentation",
+		body: "Implemented the accepted decision",
+		pr: "https://github.com/test/repo/pull/1",
+		stage: "in_progress",
+	});
+	await f.service.record(f.run, {
+		key: "review",
+		body: "Review pending",
+		stage: "in_review",
+	});
+	expect(f.run.ticketSync?.receipts[0]).toMatchObject({
+		stageSuperseded: true,
+		error: "offline",
+	});
+	expect(f.run.ticketSync?.receipts[0]?.superseded).toBeUndefined();
+	f.call.mockImplementation(original);
+	await f.service.flush(f.run);
+	expect(
+		f.ticket.comments.map((comment) => comment.body.split("\n")[0]),
+	).toEqual(["Implemented the accepted decision", "Review pending"]);
+	expect(f.ticket.attachments).toHaveLength(1);
+	expect(
+		f.calls
+			.filter((call) => call.tool === "set_status")
+			.map((call) => call.args.to),
+	).toEqual(["in_review"]);
 });

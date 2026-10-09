@@ -29,9 +29,15 @@ import type {
 	ExecutionSnapshot,
 } from "./ExecutionProfiles.js";
 import { executionSettings } from "./ExecutionSettings.js";
+import { allowGithubHelperExecutable } from "./GithubApi.js";
 import { githubAppBinding } from "./GithubAppBinding.js";
 
 export interface ResolvedExecutionEnvironment {
+	/** Private provider bindings. Never serialize into runs, API responses or receipts. */
+	githubBindings?: Record<
+		string,
+		{ token: string; apiUrl: string; projects: string[] }
+	>;
 	environment: Record<string, string>;
 	mcp: Record<string, McpServerConfig>;
 	root: string;
@@ -277,6 +283,9 @@ export class ExecutionEnvironmentResolver {
 		mkdirSync(root, { recursive: true, mode: 0o700 });
 		chmodSync(root, 0o700);
 		const secrets = new Set<string>();
+		const githubBindings: NonNullable<
+			ResolvedExecutionEnvironment["githubBindings"]
+		> = {};
 		const credential = (ref: CredentialReference, pin = true) => {
 			const value = this.credential(ref, secrets);
 			if (pin) this.pin(root, ref, value);
@@ -290,6 +299,11 @@ export class ExecutionEnvironmentResolver {
 						),
 					)
 				: { ...this.host };
+		if (this.host.BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND)
+			env.BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND =
+				this.host.BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND;
+		env.BOBS_FACTORY_HOME = dirname(this.directory);
+		env.BOBS_FACTORY_GITHUB_EXPLICIT_CREDENTIALS = "1";
 		// These locate prepared tools, not credentials or host configuration.
 		// Expand SDK home paths before assigning the private runner HOME.
 		if (runner === "cursor") {
@@ -575,6 +589,14 @@ export class ExecutionEnvironmentResolver {
 						);
 				}
 				accounts.push({ host: binding.host, account, verified: true });
+				if (binding.provider === "github")
+					githubBindings[binding.host] = {
+						token,
+						apiUrl: api,
+						projects: destinations
+							.filter((destination) => destination.host === binding.host)
+							.map((destination) => destination.project),
+					};
 				const tokenName = `FACTORY_REPOSITORY_TOKEN_${accounts.length}`;
 				env[tokenName] = token;
 				const helper = join(root, `credential-${accounts.length}.cjs`);
@@ -584,8 +606,16 @@ export class ExecutionEnvironmentResolver {
 				);
 				overrides.push([
 					`credential.https://${binding.host}.helper`,
-					`!node '${helper.replace(/'/g, "'\\''")}'`,
+					env.BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND &&
+					binding.provider === "github"
+						? `!${env.BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND} git-credential`
+						: `!node '${helper.replace(/'/g, "'\\''")}'`,
 				]);
+				if (binding.provider === "github")
+					overrides.push([
+						`credential.https://${binding.host}.useHttpPath`,
+						"true",
+					]);
 				env[
 					binding.provider === "github"
 						? binding.host === "github.com"
@@ -595,6 +625,8 @@ export class ExecutionEnvironmentResolver {
 				] = token;
 				env[binding.provider === "github" ? "GH_HOST" : "GITLAB_HOST"] =
 					binding.host;
+				if (binding.provider === "github" && binding.host !== "github.com")
+					env.BOBS_FACTORY_GITHUB_ENTERPRISE_HOST = binding.host;
 				if (binding.provider === "gitlab") {
 					env.GITLAB_API_HOST = new URL(api).host;
 					env.GLAB_API_PROTOCOL = "https";
@@ -604,6 +636,17 @@ export class ExecutionEnvironmentResolver {
 				}
 			}
 			env.GH_CONFIG_DIR = join(home, "gh");
+			env.BOBS_FACTORY_GITHUB_REPOSITORIES = JSON.stringify(
+				destinations.filter((destination) => githubBindings[destination.host]),
+			);
+			env.BOBS_FACTORY_GITHUB_API_URLS = JSON.stringify(
+				Object.fromEntries(
+					Object.entries(githubBindings).map(([host, binding]) => [
+						host,
+						binding.apiUrl,
+					]),
+				),
+			);
 			env.GLAB_CONFIG_DIR = join(home, "glab");
 			env.GLAB_USE_KEYRING = "false";
 			env.USE_KEYRING = "false";
@@ -933,6 +976,7 @@ export class ExecutionEnvironmentResolver {
 				);
 			return {
 				root,
+				githubBindings,
 				git: {
 					author: `${env.GIT_AUTHOR_NAME} <${env.GIT_AUTHOR_EMAIL}>`,
 					committer: `${env.GIT_COMMITTER_NAME} <${env.GIT_COMMITTER_EMAIL}>`,
@@ -1190,6 +1234,11 @@ export class ExecutionEnvironmentResolver {
 				...snapshot.tools.denyTools,
 			];
 		}
+		if (this.host.BOBS_FACTORY_GITHUB_CREDENTIAL_COMMAND)
+			allowGithubHelperExecutable(
+				config,
+				this.host.BOBS_FACTORY_INTERNAL_EXECUTABLE,
+			);
 	}
 }
 

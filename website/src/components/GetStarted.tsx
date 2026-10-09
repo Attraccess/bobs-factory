@@ -1,70 +1,71 @@
-import { motion, useInView } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
+import {
+	channels,
+	type InstallChannel,
+	installCommand,
+	LAUNCH_COMMAND,
+	type PublicRelease,
+	REPO,
+} from "../install";
 import { Bob } from "./Bob";
 import { CopyCommand } from "./CopyCommand";
 import { Reveal, SectionTitle } from "./ui";
 
-export const REPO = "https://github.com/jappyjan/bobs-factory";
-
-const lines = [
-	{ cmd: "# Download a verified macOS or Linux binary release" },
-	{ cmd: "./install-binary.sh ARCHIVE.tar.gz ARCHIVE.manifest.json ~/.local" },
-	{
-		cmd: "bobs-factory --repo ~/code/pancake-palace --agent claude",
-		out: "Bob's Factory: http://127.0.0.1:3457\nRepository: ~/code/pancake-palace\nState: ~/.bobs-factory",
-	},
-];
-
-function Terminal() {
-	const ref = useRef<HTMLDivElement>(null);
-	const inView = useInView(ref, { once: true, margin: "-120px" });
-	const [typed, setTyped] = useState(0);
-	const total = lines.reduce((sum, line) => sum + line.cmd.length, 0);
-	useEffect(() => {
-		if (!inView || typed >= total) return;
-		const timer = setTimeout(() => setTyped((value) => value + 2), 22);
-		return () => clearTimeout(timer);
-	}, [inView, typed, total]);
-	let budget = typed;
+function InstallTerminal({
+	channel,
+	selected,
+}: {
+	channel: InstallChannel;
+	selected: PublicRelease;
+}) {
+	const command = installCommand(channel);
+	const available = selected.status === "available";
 	return (
-		<div
-			ref={ref}
-			className="rounded-[26px] border border-white/10 bg-night p-6 font-mono text-[13px] leading-relaxed shadow-[0_40px_90px_-30px_#2b2346aa] sm:text-sm"
-		>
-			<div className="mb-5 flex gap-1.5">
+		<div className="rounded-[26px] border border-white/10 bg-night p-6 font-mono text-[13px] leading-relaxed shadow-[0_40px_90px_-30px_#2b2346aa] sm:p-8 sm:text-sm">
+			<div aria-hidden className="mb-7 flex gap-1.5">
 				<span className="size-3 rounded-full bg-[#ff5d73]" />
 				<span className="size-3 rounded-full bg-[#ffd23f]" />
 				<span className="size-3 rounded-full bg-[#3ddc97]" />
 			</div>
-			{lines.map((line, index) => {
-				const shown = line.cmd.slice(0, Math.max(0, budget));
-				const done = budget >= line.cmd.length;
-				budget -= line.cmd.length;
-				if (!shown) return null;
-				return (
-					<div key={index} className="mb-3">
-						<div className="break-all text-white">
-							<span className="text-r4">❯ </span>
-							{shown}
-							{!done && <span className="blink-caret" />}
-						</div>
-						{done && line.out && (
-							<motion.pre
-								initial={{ opacity: 0 }}
-								animate={{ opacity: 1 }}
-								className="whitespace-pre-wrap text-white/50"
-							>
-								{line.out}
-							</motion.pre>
-						)}
-					</div>
-				);
-			})}
+			<p className="mb-3 text-xs font-bold uppercase tracking-widest text-white/50">
+				Install Bob
+			</p>
+			<pre className="whitespace-pre-wrap text-white [overflow-wrap:anywhere]">
+				<code>{command}</code>
+			</pre>
+			<div className="mt-5 flex justify-end">
+				<CopyCommand
+					command={command}
+					label="Copy install command"
+					dark
+					disabled={!available}
+				/>
+			</div>
+			<div className="my-7 border-t border-white/10" />
+			<p className="mb-3 text-xs font-bold uppercase tracking-widest text-white/50">
+				Then launch Bob
+			</p>
+			<pre className="whitespace-pre-wrap text-white [overflow-wrap:anywhere]">
+				<code>{LAUNCH_COMMAND}</code>
+			</pre>
+			<div className="mt-5 flex justify-end">
+				<CopyCommand
+					command={LAUNCH_COMMAND}
+					label="Copy launch command"
+					dark
+				/>
+			</div>
+			<p className="mt-7 font-sans text-sm leading-relaxed text-white/60">
+				Your browser opens. Bob walks you through the rest.
+			</p>
 		</div>
 	);
 }
 
 export function GetStarted() {
+	const [channel, setChannel] = useState<InstallChannel>("stable");
+	const selected = channels[channel];
+	const available = selected.status === "available";
 	return (
 		<section id="start" className="relative overflow-hidden py-28 sm:py-36">
 			<div aria-hidden className="pointer-events-none absolute inset-0">
@@ -77,18 +78,103 @@ export function GetStarted() {
 						color="#08683f"
 						title={
 							<>
-								From your laptop to{" "}
-								<span className="rainbow-text">your first PR.</span>
+								Install Bob.
+								<br />
+								<span className="rainbow-text">He'll take it from here.</span>
 							</>
 						}
 					>
-						Install a verified binary for macOS or Linux. You'll need Git, the
-						GitHub CLI and an authenticated agent CLI. Your repository needs an{" "}
-						<code className="font-mono text-base">origin</code> you can push to.
-						The factory bundles its runtime. Then open the dashboard and tell
-						Bob what to build. Binary releases are being validated; use the docs
-						for current availability.
+						One install command for macOS and Linux. Bob brings his runtime,
+						dashboard and workflows.
 					</SectionTitle>
+					<ol className="mt-8 space-y-6 text-base leading-relaxed text-ink-2">
+						<li>
+							<h3 className="font-bold text-ink">1. Install</h3>
+							<p className="mt-1">
+								Paste the install command into your terminal. Bob picks the
+								right binary, verifies the publisher signature and download and
+								installs it for your user.
+							</p>
+						</li>
+						<li>
+							<h3 className="font-bold text-ink">2. Launch</h3>
+							<p className="mt-1">
+								Run the launch command in the same terminal. Your browser opens
+								automatically. Create your passkey using the setup code Bob
+								shows you.
+							</p>
+						</li>
+						<li>
+							<h3 className="font-bold text-ink">3. Make it yours</h3>
+							<p className="mt-1">
+								Choose your project and coding agent in the browser. Connect
+								GitHub when you're ready to deliver PRs, then tell Bob what to
+								build.
+							</p>
+						</li>
+					</ol>
+					<p className="mt-6 text-sm leading-relaxed text-ink-2">
+						You'll need Git and a coding agent. Bob helps check what's ready. No
+						GitHub CLI, Node or Bun is needed to install Bob. Signature checks
+						use your system’s OpenSSL.
+					</p>
+					<fieldset className="mt-6 flex gap-3" aria-label="Release channel">
+						{(["stable", "nightly"] as const).map((choice) => (
+							<button
+								type="button"
+								key={choice}
+								aria-pressed={channel === choice}
+								onClick={() => setChannel(choice)}
+								className={`rounded-xl border px-5 py-3 font-bold ${channel === choice ? "border-ink bg-ink text-white" : "border-line bg-white text-ink"}`}
+							>
+								{choice === "stable" ? "Stable" : "Nightly"}
+							</button>
+						))}
+					</fieldset>
+					{channel === "nightly" && (
+						<p className="mt-3 text-sm text-ink-2">
+							Opt in to the newest verified prerelease. Nightly does not change
+							the stable channel.
+						</p>
+					)}
+					{!available && (
+						<p
+							role="status"
+							className="mt-6 rounded-2xl border border-[#ffd23f]/60 bg-[#fff8d9] p-4 text-sm leading-relaxed text-ink"
+						>
+							{selected.message ??
+								"No verified release is available for this channel."}{" "}
+							The install command becomes available when downloads are ready.
+						</p>
+					)}
+					{available && (
+						<p className="mt-5 text-sm text-ink-2">
+							{selected.channel === "beta" ||
+							selected.version?.includes("-beta")
+								? "Verified beta fallback"
+								: channel === "nightly"
+									? "Verified nightly"
+									: "Verified stable"}{" "}
+							{selected.version} · public download · no GitHub sign-in
+						</p>
+					)}
+					{available && selected.targets && (
+						<ul
+							className="mt-4 flex flex-wrap gap-3 text-sm"
+							aria-label="Native downloads"
+						>
+							{Object.entries(selected.targets).map(([target, entry]) => (
+								<li key={target}>
+									<a
+										className="underline"
+										href={`${REPO}/releases/download/${selected.tag}/${entry.archive}`}
+									>
+										{target}
+									</a>
+								</li>
+							))}
+						</ul>
+					)}
 					<Reveal delay={0.1} className="mt-8 flex flex-wrap gap-3">
 						<a
 							href={REPO}
@@ -104,15 +190,12 @@ export function GetStarted() {
 						</a>
 					</Reveal>
 				</div>
-				<Reveal delay={0.15} className="relative min-w-0">
+				<div className="relative min-w-0">
 					<div className="absolute -right-2 -top-[92px] z-10">
 						<Bob mood="happy" size={96} />
 					</div>
-					<Terminal />
-					<div className="mt-4 flex justify-center">
-						<CopyCommand command="bobs-factory --repo . --agent codex" />
-					</div>
-				</Reveal>
+					<InstallTerminal channel={channel} selected={selected} />
+				</div>
 			</div>
 		</section>
 	);

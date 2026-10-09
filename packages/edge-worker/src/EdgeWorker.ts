@@ -60,6 +60,7 @@ import {
 	createLogger,
 	DEFAULT_PROXY_URL,
 	executionEnvironment,
+	factoryRuntimeIdentity,
 	GitHubTokenStore,
 	isAgentSessionCreatedWebhook,
 	isAgentSessionPromptedWebhook,
@@ -140,10 +141,12 @@ import {
 	callConfiguredTool,
 	createCyrusToolsServer,
 	createFetchFailureModesClient,
+	FactoryContextInfrastructureError,
 	type FailureModesHttpClient,
 	factoryContextInstructions,
 	prepareFactoryContext,
 	type ResolvedSession,
+	verifyFactoryContext,
 } from "bobs-factory-mcp-tools";
 import { OpenCodeRunner } from "bobs-factory-opencode-runner";
 import {
@@ -166,6 +169,7 @@ import { ChatSessionHandler } from "./ChatSessionHandler.js";
 import { ConfigManager, type RepositoryChanges } from "./ConfigManager.js";
 import { DefaultSkillsDeployer } from "./DefaultSkillsDeployer.js";
 import { EgressProxy } from "./EgressProxy.js";
+import { nativeInfrastructureFailure } from "./factory/AgentInfrastructure.js";
 import { resolveAgentSettings } from "./factory/AgentSettings.js";
 import { TicketDelivery, type TicketTarget } from "./factory/Delivery.js";
 import {
@@ -180,8 +184,12 @@ import {
 	ExecutionProfileStore,
 	ExecutionSnapshotSchema,
 } from "./factory/ExecutionProfiles.js";
+import type { FactoryOnboarding } from "./factory/FactoryOnboarding.js";
 import { FactoryPush } from "./factory/FactoryPush.js";
-import { validateFactoryResult } from "./factory/FactoryResults.js";
+import {
+	reviewCompletionInstructions,
+	validateFactoryResult,
+} from "./factory/FactoryResults.js";
 import { FactoryServer } from "./factory/FactoryServer.js";
 import {
 	CaptureReuseError,
@@ -192,6 +200,7 @@ import {
 	toolArguments,
 } from "./factory/FactoryTools.js";
 import { factoryFeedbackContext } from "./factory/FeedbackPolicy.js";
+import { applyManagedGithubAgentEnvironment } from "./factory/GithubApi.js";
 import {
 	normalizeGitProviderConfig,
 	resolveGitProvider,
@@ -229,6 +238,12 @@ import {
 	OutputValidationError,
 	outputValidationError,
 } from "./factory/OutputValidation.js";
+import {
+	beginStepAttempt,
+	finishStepAttempt,
+	recordAttemptInstructions,
+	runProvenance,
+} from "./factory/Provenance.js";
 import { type QaScope, qaDigest, qaRequirementIssues } from "./factory/Qa.js";
 import {
 	normalizeQuestionResult,
@@ -240,6 +255,10 @@ import {
 	repositoryScopes,
 	snapshotRepositories,
 } from "./factory/RepositoryScope.js";
+import {
+	resolveRoleResult,
+	roleResultArtifactBinding,
+} from "./factory/ResultArtifacts.js";
 import { finalizeGuideFiles } from "./factory/ReviewFiles.js";
 import {
 	factoryReviewFixContext,
@@ -271,6 +290,7 @@ import {
 	taskbotDeliveryAdapter,
 } from "./factory/TicketDeliveryAdapters.js";
 import {
+	ensureTicketTranscript,
 	nativeAdapter,
 	originatingTicket,
 	type TicketAdapter,
@@ -504,7 +524,10 @@ export class EdgeWorker extends EventEmitter {
 		};
 	}
 
-	constructor(config: EdgeWorkerConfig) {
+	constructor(
+		config: EdgeWorkerConfig,
+		private readonly localSetup?: FactoryOnboarding,
+	) {
 		super();
 		this.config = EdgeWorker.normalizeConfigPaths(config);
 		this.factoryHome = config.factoryHome;
@@ -689,6 +712,11 @@ export class EdgeWorker extends EventEmitter {
 									accessToken: wsConfig.linearToken,
 								}),
 								this.buildOAuthConfig(linearWorkspaceId),
+								undefined,
+								{
+									workspaceId: linearWorkspaceId,
+									factoryHome: this.factoryHome,
+								},
 							);
 				this.issueTrackers.set(linearWorkspaceId, issueTracker);
 			}
@@ -907,7 +935,10 @@ export class EdgeWorker extends EventEmitter {
 		}
 
 		// Initialize and register components BEFORE starting server (routes must be registered before listen())
+		this.webhookIpValidator.startRefreshing();
 		await this.initializeComponents();
+		for (const tracker of this.issueTrackers.values())
+			if (tracker instanceof LinearIssueTrackerService) tracker.startDelivery();
 
 		// Refresh GitHub webhook allowlist from /meta API (non-blocking)
 		if (this.webhookIpValidator.isEnabled()) {
@@ -960,8 +991,24 @@ export class EdgeWorker extends EventEmitter {
 		) {
 			this.factoryPush ??= new FactoryPush(this.factoryHome);
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
+				onboarding: this.localSetup,
 				push: this.factoryPush,
 				capacity: this.runnerSlots,
+				deliveryStatus: () =>
+					[...this.issueTrackers.entries()].flatMap(
+						([workspaceId, tracker]) => {
+							if (!(tracker instanceof LinearIssueTrackerService)) return [];
+							const { error, ...status } = tracker.getActivityDeliveryStatus();
+							return [
+								{
+									platform: "linear",
+									workspaceId,
+									...status,
+									hasError: !!error,
+								},
+							];
+						},
+					),
 				defaultRunner: () => this.runnerSelectionService.getDefaultRunner(),
 				repositories: () =>
 					repositoryScopes(Array.from(this.repositories.values())),
@@ -1160,7 +1207,7 @@ export class EdgeWorker extends EventEmitter {
 				secret,
 				ipAllowlist:
 					verificationMode === "direct" && this.webhookIpValidator.isEnabled()
-						? this.webhookIpValidator.getAllowlist("linear")
+						? () => this.webhookIpValidator.getAllowlist("linear")
 						: undefined,
 			});
 
@@ -1253,6 +1300,7 @@ export class EdgeWorker extends EventEmitter {
 		fastify.get("/version", async (_request, reply) => {
 			return reply.status(200).send({
 				cyrus_cli_version: this.config.version ?? null,
+				runtime: factoryRuntimeIdentity,
 			});
 		});
 
@@ -2496,7 +2544,7 @@ ${reviewBody}
 - Respond with a concise summary of the changes you made`
 			: `## Instructions
 - The reviewer has requested changes but did not leave a summary comment
-- Use \`gh api repos/${repoFullName}/pulls/${prNumber}/reviews\` to read the review comments and understand what changes are needed
+- Use the built-in GitHub API helper described in the shipping skill to GET \`repos/${repoFullName}/pulls/${prNumber}/reviews\`, paginating the complete result, and understand what changes are needed. GitHub CLI is optional.
 - You are already checked out on the PR branch \`${branchRef}\`
 - Address all the reviewer's feedback and make the necessary changes
 - After making changes, commit and push them to the branch
@@ -3253,6 +3301,9 @@ ${taskSection}`;
 	 */
 	async stop(): Promise<void> {
 		this.stopping = true;
+		this.webhookIpValidator.stopRefreshing();
+		for (const tracker of this.issueTrackers.values())
+			if (tracker instanceof LinearIssueTrackerService) tracker.stopDelivery();
 		await this.factoryPush?.stop();
 		await this.runnerSlots.shutdown();
 		this.recoveryAbort.abort();
@@ -3464,6 +3515,47 @@ ${taskSection}`;
 		this.configManager.setConfigPath(configPath);
 	}
 
+	/** Apply an authenticated local launch setup without restarting the dashboard. */
+	async configureLocalRepository(
+		repository: RepositoryConfig,
+		runner: RunnerType,
+	): Promise<void> {
+		if (!this.localSetup || this.config.platform !== "cli")
+			throw new Error("Local project setup is unavailable on this worker");
+		if (this.repositories.has(repository.id))
+			await this.updateModifiedRepositories([repository]);
+		else await this.addNewRepositories([repository]);
+		const workspace = repository.linearWorkspaceId;
+		if (workspace && !this.issueTrackers.has(workspace)) {
+			const service = new CLIIssueTrackerService();
+			service.seedDefaultData();
+			this.issueTrackers.set(workspace, service);
+			this.activitySinks.set(
+				workspace,
+				new LinearActivitySink(service, workspace),
+			);
+		}
+		const repositories = this.config.repositories.filter(
+			(repo) => repo.id !== repository.id,
+		);
+		const ordered = [
+			this.repositories.get(repository.id)!,
+			...Array.from(this.repositories.values()).filter(
+				(repo) => repo.id !== repository.id,
+			),
+		];
+		this.repositories.clear();
+		for (const repo of ordered) this.repositories.set(repo.id, repo);
+		this.config = {
+			...this.config,
+			repositories: [repository, ...repositories],
+			defaultRunner: runner,
+		};
+		this.configManager.setConfig(this.config);
+		this.runnerSelectionService.setConfig(this.config);
+		this.toolPermissionResolver.setConfig(this.config);
+	}
+
 	/**
 	 * Handle resuming a parent session when a child session completes
 	 * This is the core logic used by the resume parent session callback
@@ -3600,7 +3692,10 @@ ${taskSection}`;
 				const newIssueTracker = new LinearIssueTrackerService(
 					new LinearClient({ accessToken: newToken }),
 					this.buildOAuthConfig(workspaceId),
+					undefined,
+					{ workspaceId, factoryHome: this.factoryHome },
 				);
+				if (!this.stopping) newIssueTracker.startDelivery();
 				this.issueTrackers.set(workspaceId, newIssueTracker);
 				this.activitySinks.set(
 					workspaceId,
@@ -5378,6 +5473,58 @@ ${taskSection}`;
 		webhook: AgentSessionCreatedWebhook,
 		repos: RepositoryConfig[],
 	): Promise<void> {
+		// A runtime-created transcript belongs to its existing run, even after that run completed.
+		// Treat only exact persisted workspace/issue/run-link bindings as delivery receipts.
+		const externalLink = (webhook.agentSession as { externalLink?: string })
+			.externalLink;
+		if (externalLink && webhook.agentSession.issue) {
+			const runtime = this.getFactoryRuntime();
+			const bound = [...runtime.runs.values()].find((run) => {
+				const ref = run.ticketReference;
+				const binding = run.ticketSync?.transcript;
+				if (
+					ref?.provider !== "native" ||
+					ref.platform !== "linear" ||
+					ref.workspaceId !== webhook.organizationId ||
+					ref.id !== webhook.agentSession.issue!.id ||
+					binding?.externalLink !== externalLink ||
+					!(
+						binding.createAttempted ||
+						binding.sessionId === webhook.agentSession.id
+					)
+				)
+					return false;
+				try {
+					const url = new URL(externalLink);
+					return (
+						url.protocol === "https:" &&
+						!url.username &&
+						!url.password &&
+						url.pathname === "/" &&
+						!url.search &&
+						url.hash === `#/runs/${encodeURIComponent(run.id)}`
+					);
+				} catch {
+					return false;
+				}
+			});
+			if (bound) {
+				const binding = bound.ticketSync!.transcript!;
+				if (
+					binding.sessionId &&
+					binding.sessionId !== webhook.agentSession.id
+				) {
+					binding.error =
+						"Another Linear transcript session claimed this run link; retained the original session binding";
+					runtime.log(bound, "ticket-sync", binding.error);
+				} else {
+					binding.sessionId = webhook.agentSession.id;
+					delete binding.error;
+				}
+				runtime.save(bound);
+				return;
+			}
+		}
 		this.captureTicketOrigin(webhook, true);
 		const issue = webhook.agentSession.issue;
 		if (!issue) return;
@@ -7075,6 +7222,26 @@ ${taskSection}`;
 				run.executionSnapshot!,
 				resolved,
 			);
+		} else {
+			applyManagedGithubAgentEnvironment(config, {
+				factoryHome: this.factoryHome,
+				environment: { ...process.env, ...config.additionalEnv },
+				repositories: this.factoryRepositories(run)
+					.filter(
+						(repository) =>
+							!repository.gitProvider ||
+							repository.gitProvider.type === "github",
+					)
+					.map((repository) => ({
+						directory:
+							run.repositories?.find(
+								(retained) => retained.id === repository.id,
+							)?.workspace ??
+							run.workspace ??
+							repository.repositoryPath,
+						repositoryUrl: repository.githubUrl,
+					})),
+			});
 		}
 		return resolved;
 	}
@@ -7130,6 +7297,11 @@ ${taskSection}`;
 				question: async (run) => {
 					const body = `## Factory clarification\n\n${questionNotification(run.questions, run.questionRecommendations)}`;
 					if (!run.ticketReference) await this.postFactoryComment(run, body);
+					if (
+						run.ticketReference?.provider === "native" &&
+						run.ticketReference.platform === "linear"
+					)
+						return;
 					await this.agentSessionManager.createResponseActivity(run.id, body);
 				},
 			});
@@ -7403,7 +7575,7 @@ ${taskSection}`;
 					(r, t) => this.factoryDeliveryAdapter(r, t),
 					(r) =>
 						this.getFactoryRuntime().save(this.getFactoryRuntime().get(r.id)),
-				).finalCheck(run),
+				).finalCheck(run, true),
 		);
 		return this.ticketTracking;
 	}
@@ -7584,7 +7756,23 @@ ${taskSection}`;
 				throw new Error(
 					"Originating ticket tracker unavailable; restore its workspace configuration",
 				);
-			return nativeAdapter(ref, tracker);
+			return nativeAdapter(ref, tracker, {
+				getTranscriptSession: () => {
+					const origin = this.factoryServer?.auth.access.origins.find((value) =>
+						value.startsWith("https://"),
+					);
+					return ensureTicketTranscript(
+						run,
+						tracker,
+						(value) => this.getFactoryRuntime().save(value),
+						this.agentSessionManager.getSession(run.id)?.externalSessionId ??
+							run.sessionSnapshot?.externalSessionId,
+						origin
+							? `${origin}/#/runs/${encodeURIComponent(run.id)}`
+							: undefined,
+					);
+				},
+			});
 		}
 		const { servers, callTool } = await this.factoryMcpConfig(run);
 		if (taskbotServer(ref.instance, servers) !== ref.server)
@@ -7680,6 +7868,7 @@ ${taskSection}`;
 		if (run.ticketReference) {
 			await this.getTicketTracking().record(run, {
 				key: `comment:${body}`,
+				purpose: "documentation",
 				body,
 			});
 			return;
@@ -7852,7 +8041,11 @@ ${taskSection}`;
 						context.resumeAgent?.rejected ||
 						context.resumeAgent?.result?.finalizing
 					) {
-						const { rejected: _rejected, ...agent } = context.resumeAgent;
+						const {
+							rejected: _rejected,
+							infrastructureFailure: _infrastructureFailure,
+							...agent
+						} = context.resumeAgent;
 						if (agent.result) {
 							const { finalizing: _finalizing, ...result } = agent.result;
 							agent.result = result;
@@ -7886,6 +8079,7 @@ ${taskSection}`;
 							? (previous?.attempts ?? 0)
 							: 0;
 					const rejection = {
+						retryGeneration: previous?.retryGeneration ?? 0,
 						output:
 							error instanceof OutputValidationError
 								? error.output
@@ -7961,7 +8155,7 @@ ${taskSection}`;
 
 		// Review fixers and QA roles can request assistance without askQuestions;
 		// saved recipes must receive the same question guidance as new ones.
-		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${repositoryScopeInstructions(run)}\nGit provider: ${JSON.stringify(run.gitProvider ?? { gitProvider: repository.gitProvider, githubUrl: repository.githubUrl, gitlabUrl: repository.gitlabUrl })}. Use the selected provider for review, discussion resolution and CI tooling; do not assume GitHub or use gh for another provider. Runtime publication and merge retain the accepted provider. ${run.gitProvider?.type === "custom" ? (run.gitProvider.instructions ?? "") : repository.gitProvider?.type === "custom" ? (repository.gitProvider.instructions ?? "") : ""}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns built-in ticket status, PR links and lifecycle comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${questionInstructions(run.id)}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
+		const instruction = `You are executing one software-factory step: ${step.name}. Execute ONLY this role. Other pipeline steps handle planning, review, publishing and handoff. Do not execute a full-development/verify-and-ship workflow unless explicitly requested by this role. Do not merge or mark a PR ready.\n${step.prompt}\n${repositoryScopeInstructions(run)}\nGit provider: ${JSON.stringify(run.gitProvider ?? { gitProvider: repository.gitProvider, githubUrl: repository.githubUrl, gitlabUrl: repository.gitlabUrl })}. Use the selected provider for review, discussion resolution and CI tooling; do not assume GitHub or use gh for another provider. Runtime publication and merge retain the accepted provider. ${run.gitProvider?.type === "custom" ? (run.gitProvider.instructions ?? "") : repository.gitProvider?.type === "custom" ? (repository.gitProvider.instructions ?? "") : ""}\nOriginating ticket: ${run.ticketReference ? JSON.stringify(run.ticketReference) : "none"}. The runtime tracking service owns ticket status, PR links and publication: native Linear operational communication goes to its transcript; durable developer documentation and delivery summaries remain issue comments; Taskbot keeps milestone comments. Supply meaningful summaries and blockers; do not duplicate these mutations or mark coding tickets Done before confirmed merge. Retain ticket synchronization gaps as limitations.\n${questionInstructions(run.id)}\n${workflowTriggerInstructions}\n${incrementalInstructions}\n${incrementalRoleInstructions[step.id] ?? ""}\n${["code-review", "visual-review"].includes(step.id) || ["specialist-v1", "coverage-v1"].includes(step.reviewContract ?? "") ? reviewCompletionInstructions : ""}\n${step.json === false ? "" : "Your final response MUST be a single JSON object matching the requested shape, with no prose outside it."}`;
 		const built = await this.buildAgentRunnerConfig(
 			session,
 			repository,
@@ -8018,13 +8212,6 @@ ${taskSection}`;
 			context.evidenceDir,
 		];
 		built.config.onAskUserQuestion = undefined; // Clarification uses the persisted workflow checkpoint.
-		built.config.allowedTools = [
-			...(step.id === "question-explanation"
-				? []
-				: (built.config.allowedTools ?? [])),
-			"mcp__factory-context__list_context",
-			"mcp__factory-context__read_context",
-		];
 		const originalMessage = built.config.onMessage;
 		let agentCheckpoint = context.resumeAgent;
 		let startupConfirmed = false;
@@ -8042,6 +8229,12 @@ ${taskSection}`;
 					runner: runnerType,
 					sessionId: message.session_id,
 					idleRetries: context.resumeAgent?.idleRetries,
+					...(context.resumeAgent?.infrastructureFailure
+						? {
+								infrastructureFailure:
+									context.resumeAgent.infrastructureFailure,
+							}
+						: {}),
 					...(context.resumeAgent?.result
 						? { result: context.resumeAgent.result }
 						: {}),
@@ -8062,21 +8255,76 @@ ${taskSection}`;
 		};
 		context.progress = await roleProgress(context);
 		this.refreshFactoryFeedbackContext(context);
-		const factoryContext = prepareFactoryContext({
-			...(context.input && typeof context.input === "object"
-				? context.input
-				: { input: context.input }),
-			progress: context.progress,
-			...(step.id === "ci-fix"
-				? { feedback: factoryFeedbackContext(context) }
-				: {}),
-			...(["code-fix", "visual-fix"].includes(step.id)
-				? { reviewFix: factoryReviewFixContext(context) }
-				: {}),
-			...(captureCorrection ? { captureCorrection } : {}),
-			...(outputCorrection ? { outputCorrection } : {}),
-		});
+		const artifactBinding =
+			context.progress.currentRevision &&
+			!context.progress.currentRevision.dirty
+				? roleResultArtifactBinding(context)
+				: undefined;
+		// Required-server readiness checks every requested tool. Artifact submission
+		// exists only when the scoped server has a clean-revision binding, including
+		// on resume with uncommitted work from the previous turn.
+		built.config.allowedTools = [
+			...(step.id === "question-explanation"
+				? []
+				: (built.config.allowedTools ?? [])),
+			"mcp__factory-context__list_context",
+			"mcp__factory-context__read_context",
+			...(artifactBinding
+				? ["mcp__factory-context__submit_result_artifact"]
+				: []),
+		];
+		if (artifactBinding)
+			await mkdir(artifactBinding.directory, { recursive: true });
+		const factoryContext = prepareFactoryContext(
+			{
+				...(context.input && typeof context.input === "object"
+					? context.input
+					: { input: context.input }),
+				progress: context.progress,
+				...(step.id === "ci-fix"
+					? { feedback: factoryFeedbackContext(context) }
+					: {}),
+				...(["code-fix", "visual-fix"].includes(step.id)
+					? { reviewFix: factoryReviewFixContext(context) }
+					: {}),
+				...(captureCorrection ? { captureCorrection } : {}),
+				...(outputCorrection ? { outputCorrection } : {}),
+				provenance: runProvenance(run),
+				...(artifactBinding
+					? {
+							resultSubmission: {
+								...artifactBinding,
+								maxBytes: 8 * 1024 * 1024,
+							},
+						}
+					: {}),
+			},
+			artifactBinding,
+		);
+		const graphAttemptId = context.attemptId;
+		let turnCompleted = false;
+		let reviewOutcome: "blocked" | "failed" | undefined;
+		let turnStarted = false;
+		let infrastructureFailure: FactoryContextInfrastructureError | undefined;
 		try {
+			// Codex's required server handshake verifies the native attachment before
+			// turn/start; other adapters need a bounded scoped connection preflight.
+			if (runnerType !== "codex")
+				await verifyFactoryContext(
+					factoryContext.config,
+					context.signal,
+					run.workspace,
+				);
+			beginStepAttempt(context, {
+				kind: "agent-turn",
+				parentAttemptId: graphAttemptId,
+				...(context.resumeAgent?.infrastructureFailure
+					? { reason: "infrastructure-retry" }
+					: outputCorrection
+						? { reason: "output-correction" }
+						: {}),
+			});
+			turnStarted = true;
 			built.config.mcpConfig = {
 				...built.config.mcpConfig,
 				"factory-context": {
@@ -8108,16 +8356,37 @@ ${taskSection}`;
 					context.chat && runner.supportsStreamingInput && runner.startStreaming
 						? runner.startStreaming.bind(runner)
 						: runner.start.bind(runner);
-				await start(
-					`${outputCorrection && !captureCorrection ? "Your previous output failed validation. Read /outputCorrection from the NEW factory-context connection: it contains the rejected candidate, precise issues, and revision. Correct those issues and return the COMPLETE result for this role. Preserve accepted evidence and completed work; correct only this role output and, for capture, invalid states. Do not replay other pipeline roles. This is an output correction, not a process restart.\n\n" : captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent ? "Continue this role from your existing conversation and worktree. Read the latest answers through the new factory-context connection and inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`,
+				const nativePrompt = `${outputCorrection && !captureCorrection ? "Your previous output failed validation. Read /outputCorrection from the NEW factory-context connection: it contains the rejected candidate, precise issues, and revision. Correct those issues and return the COMPLETE result for this role. Preserve accepted evidence and completed work; correct only this role output and, for capture, invalid states. Do not replay other pipeline roles. This is an output correction, not a process restart.\n\n" : captureCorrection ? "Your completed capture failed screenshot-reuse validation. Read /captureCorrection through the new factory-context tools: rejectedOutput contains your complete saved inventory, and screenshots lists every rejected state. Replace those images with fresh filenames; preserve the other valid captures and return the COMPLETE corrected inventory. Do not repeat completed setup or unrelated captures. The old factory-context connection is gone.\n\n" : context.resumeAgent?.sessionId ? "Continue this role from your existing conversation and worktree. Read the latest answers through the new factory-context connection and inspect current files and past tool results before repeating actions. The old factory-context connection is gone; use the new factory-context tools below.\n\n" : ""}${factoryContextInstructions}\n\nEvidence directory: ${context.evidenceDir}`;
+				// Include the managed capacity addendum applied by buildRunnerForType.
+				// Provider implicit defaults are outside this Factory-supplied identity.
+				const nativeConfig = this.managedRunnerConfig(built.config);
+				recordAttemptInstructions(
+					context,
+					JSON.stringify({
+						systemPrompt:
+							(nativeConfig as AgentRunnerConfig & { systemPrompt?: unknown })
+								.systemPrompt ?? null,
+						appendSystemPrompt: nativeConfig.appendSystemPrompt ?? null,
+						userPrompt: nativePrompt,
+					}),
 				);
+				try {
+					await start(nativePrompt);
+				} catch (error) {
+					context.signal.throwIfAborted();
+					throw nativeInfrastructureFailure(error) ?? error;
+				}
 				context.signal.throwIfAborted();
 				const messages = runner.getMessages();
 				const result = messages
 					.filter((message) => message.type === "result")
 					.at(-1);
-				if (result?.type === "result" && result.is_error)
-					throw new Error(`Agent step failed: ${JSON.stringify(result)}`);
+				if (result?.type === "result" && result.is_error) {
+					const error = new Error(
+						`Agent step failed: ${JSON.stringify(result)}`,
+					);
+					throw nativeInfrastructureFailure(error, result) ?? error;
+				}
 				startupConfirmed = true;
 				const assistant = messages
 					.filter((message) => message.type === "assistant")
@@ -8140,7 +8409,41 @@ ${taskSection}`;
 				const authoredScope = context.progress?.reviewScope;
 				context.progress = await roleProgress(context);
 				if (step.id === "guide") context.progress.reviewScope = authoredScope;
+				output = await resolveRoleResult(context, output);
+				if (
+					output &&
+					typeof output === "object" &&
+					"infrastructureFailure" in output
+				) {
+					const failure = (
+						output as { infrastructureFailure?: { reason?: unknown } }
+					).infrastructureFailure;
+					if (typeof failure?.reason !== "string" || !failure.reason.trim())
+						throw outputValidationError(
+							output,
+							new Error("Infrastructure failure requires a precise reason"),
+						);
+					throw new FactoryContextInfrastructureError(failure.reason, output);
+				}
+				if (
+					["specialist-v1", "coverage-v1"].includes(
+						step.reviewContract ?? "",
+					) &&
+					output &&
+					typeof output === "object" &&
+					"status" in output &&
+					(output.status === "blocked" || output.status === "failed")
+				)
+					throw new FactoryContextInfrastructureError(
+						`Required reviewer ${step.id} did not complete: ${String((output as { summary?: unknown }).summary ?? "Missing required review input")}`,
+						output,
+					);
 				output = this.validateFactoryAgentOutput(context, output);
+				if (["code-review", "visual-review"].includes(step.id)) {
+					const status = (output as { status?: string }).status;
+					if (status === "blocked" || status === "failed")
+						reviewOutcome = status;
+				}
 				const completed = (await roleProgress(context)).currentRevision;
 				if (agentCheckpoint && completed)
 					context.checkpointAgent?.({
@@ -8157,14 +8460,56 @@ ${taskSection}`;
 							reviewScope: context.progress?.reviewScope,
 						},
 					});
-				return this.finalizeFactoryAgentOutput(context, output);
+				const finalized = await this.finalizeFactoryAgentOutput(
+					context,
+					output,
+				);
+				turnCompleted = true;
+				return finalized;
 			} finally {
 				context.signal.removeEventListener("abort", stop);
 				unregisterChat();
 			}
+		} catch (caught) {
+			const error =
+				!(caught instanceof FactoryContextInfrastructureError) &&
+				caught instanceof Error &&
+				/Required MCP server ['"]factory-context['"] is unavailable before model work/.test(
+					caught.message,
+				)
+					? new FactoryContextInfrastructureError(caught.message)
+					: caught;
+			if (error instanceof FactoryContextInfrastructureError) {
+				infrastructureFailure = error;
+				context.checkpointAgent?.({
+					...(context.resumeAgent ?? { runner: runnerType }),
+					infrastructureFailure: {
+						reason: error.message,
+						at: new Date().toISOString(),
+						...(error.output !== undefined ? { output: error.output } : {}),
+					},
+				});
+			}
+			throw error;
 		} finally {
+			if (turnStarted)
+				finishStepAttempt(
+					context,
+					context.signal.aborted
+						? "interrupted"
+						: infrastructureFailure
+							? "blocked"
+							: turnCompleted
+								? (reviewOutcome ?? "completed")
+								: "failed",
+				);
+			context.attemptId = graphAttemptId;
 			const rejected = context.resumeAgent?.rejected;
-			if (runnerType === "codex" && !startupConfirmed && rejected?.reserved) {
+			if (
+				rejected &&
+				((runnerType === "codex" && !startupConfirmed && rejected.reserved) ||
+					(infrastructureFailure && outputCorrection?.reserved))
+			) {
 				// No ready thread or model work: return the launch reservation,
 				// preserving the rejected candidate for an infrastructure retry.
 				context.checkpointAgent?.({
@@ -8257,6 +8602,7 @@ ${taskSection}`;
 		value: unknown,
 	): Promise<unknown> {
 		const { run, step } = context;
+		value = await resolveRoleResult(context, value);
 		let output = this.validateFactoryAgentOutput(context, value);
 		if (step.id === "guide") {
 			if (step.videoContract) {
@@ -8515,6 +8861,7 @@ ${taskSection}`;
 			) {
 				if (input.source && isPullRequestSource(input.source)) {
 					const setupContext: ExecutionContext = {
+						factoryHome: this.factoryHome,
 						execution,
 						run: { ...run, workspace: repository.repositoryPath },
 						step: workflow.steps[0]!,
@@ -8617,6 +8964,7 @@ ${taskSection}`;
 						);
 					if (links[0]) {
 						const context: ExecutionContext = {
+							factoryHome: this.factoryHome,
 							execution,
 							run: { ...run, workspace: repository.repositoryPath },
 							step: workflow.steps[0]!,
@@ -8789,6 +9137,7 @@ ${taskSection}`;
 					);
 					await mkdir(evidenceDir, { recursive: true });
 					const context: ExecutionContext = {
+						factoryHome: this.factoryHome,
 						execution: await this.resolveRunExecution(run),
 						run,
 						step: pending.step,
@@ -8825,6 +9174,7 @@ ${taskSection}`;
 				);
 				await mkdir(evidenceDir, { recursive: true });
 				const context: ExecutionContext = {
+					factoryHome: this.factoryHome,
 					execution: await this.resolveRunExecution(run),
 					run: { ...run, workspace: repository.repositoryPath },
 					step: pending.step,
@@ -9382,7 +9732,7 @@ ${taskSection}`;
 				return new CodexRunner({
 					...config,
 					configOverrides: { features: { multi_agent: false } },
-					sandbox: this.config.codexSandboxMode ?? "workspace-write",
+					sandbox: this.config.codexSandboxMode ?? "danger-full-access",
 				});
 			case "cursor":
 				return new CursorRunner(config);
@@ -10592,6 +10942,21 @@ ${input.userComment}
 		const result = this.runnerConfigBuilder.buildIssueConfig({
 			session,
 			repository,
+			repositories: [
+				...new Set([
+					repository.id,
+					...(session.repositories ?? []).map((repo) => repo.repositoryId),
+					...Object.keys(session.workspace.repoPaths ?? {}),
+				]),
+			]
+				.map((id) =>
+					id === repository.id ? repository : this.repositories.get(id),
+				)
+				.filter((repo): repo is RepositoryConfig => !!repo),
+			nativeGithubCredentials: !(
+				session.metadata?.executionSnapshot ||
+				this.factoryRuntime?.runs.get(sessionId)?.executionSnapshot
+			),
 			sessionId,
 			systemPrompt,
 			allowedTools,

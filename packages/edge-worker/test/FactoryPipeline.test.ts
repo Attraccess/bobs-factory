@@ -23,8 +23,8 @@ import {
 	type ExecutionContext,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
+import { githubApiReceipt, githubRequest } from "./fixtures/github-api.js";
 import { legacyReviewWorkflows } from "./fixtures/legacy-review.js";
-import { providerReceipt } from "./fixtures/merge-readiness.js";
 import { qaExecution, qaScope } from "./fixtures/qa.js";
 
 const directories: string[] = [];
@@ -38,9 +38,9 @@ it("keeps internal provider stdout quiet while preserving explicit CLI output an
 			const output =
 				exe === "git"
 					? "head"
-					: args.includes("graphql")
-						? JSON.stringify(providerReceipt())
-						: "[[]]";
+					: githubRequest(args).path === "graphql"
+						? JSON.stringify(githubApiReceipt(args))
+						: "[]";
 			return executeCommand(ctx, process.execPath, [
 				"-e",
 				"process.stdout.write(process.argv[1])",
@@ -312,6 +312,41 @@ function context(): ExecutionContext {
 	};
 }
 
+it("blocks an unexecuted legacy review instead of approving empty findings", async () => {
+	const ctx = context();
+	ctx.step = { ...ctx.step, id: "review-gate", tool: "review-gate" };
+	ctx.run.outputs["code-review"] = {
+		findings: [],
+		summary:
+			"Blocked: factory-context tools were unavailable, so no review was performed.",
+	};
+	const tools = new FactoryTools();
+	await expect(tools.tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		reviewIncomplete: true,
+		findings: [],
+		questions: [expect.stringContaining("no review was performed")],
+	});
+});
+
+it("requires an explicit outcome from newly authored reviewers and approves a completed clean review", async () => {
+	expect(() =>
+		validateFactoryResult("code-review", { findings: [], summary: "Clean" }),
+	).toThrow("status");
+	const ctx = context();
+	ctx.step = { ...ctx.step, id: "review-gate", tool: "review-gate" };
+	ctx.run.outputs["code-review"] = validateFactoryResult("code-review", {
+		status: "completed",
+		blockers: [],
+		findings: [],
+		summary: "Reviewed all inputs and diff",
+	});
+	await expect(new FactoryTools().tool(ctx)).resolves.toMatchObject({
+		approved: true,
+		findings: [],
+	});
+});
+
 it("routes a CI revision mismatch to the configured fixer without accepting old checks", async () => {
 	const ctx = context();
 	ctx.step.tool = "ci";
@@ -321,9 +356,11 @@ it("routes a CI revision mismatch to the configured fixer without accepting old 
 		postComment: vi.fn(),
 		command: async (_ctx, exe, args) => {
 			if (exe === "git") return "current-head";
-			if (args.includes("graphql"))
-				return JSON.stringify(providerReceipt({ headRefOid: "old-head" }));
-			return "[[]]";
+			if (githubRequest(args).path === "graphql")
+				return JSON.stringify(
+					githubApiReceipt(args, { headRefOid: "old-head" }),
+				);
+			return "[]";
 		},
 	});
 	await expect(tools.tool(ctx)).resolves.toMatchObject({
@@ -375,15 +412,15 @@ it.each([
 					: progress === "local-changed"
 						? "new-head"
 						: "current-head";
-			if (args.includes("graphql"))
+			if (githubRequest(args).path === "graphql")
 				return JSON.stringify(
-					providerReceipt({
+					githubApiReceipt(args, {
 						headRefOid:
 							progress === "pr-synchronized" ? "current-head" : "old-head",
 						baseRefOid: "base",
 					}),
 				);
-			return "[[]]";
+			return "[]";
 		},
 	});
 	const result = await tools.tool(ctx);
@@ -415,7 +452,7 @@ it("publishes with a conventional commit message instead of a raw ticket title",
 				return "";
 			}
 			return JSON.stringify([
-				{ url: "https://github.com/test/repo/pull/1", isDraft: true },
+				{ html_url: "https://github.com/test/repo/pull/1", draft: true },
 			]);
 		},
 	);
@@ -428,7 +465,12 @@ it("publishes with a conventional commit message instead of a raw ticket title",
 		([, exe, args]) => exe === "git" && args[0] === "commit",
 	);
 	expect(commits.map(([, , args]) => args)).toEqual([
-		["commit", "-m", "chore: power consumption billing with clarification"],
+		[
+			"commit",
+			"--no-verify",
+			"-m",
+			"chore: power consumption billing with clarification",
+		],
 	]);
 });
 
@@ -441,7 +483,13 @@ it("blocks handoff when the reviewed CI revision is stale", async () => {
 				? args[0] === "status"
 					? ""
 					: "new"
-				: JSON.stringify({ headRefOid: "new", isDraft: true, state: "OPEN" }),
+				: JSON.stringify(
+						githubApiReceipt(args, {
+							headRefOid: "new",
+							isDraft: true,
+							state: "OPEN",
+						}),
+					),
 	});
 	await expect(tools.tool(context())).rejects.toThrow(
 		"revision or CI evidence",
@@ -457,9 +505,9 @@ it("rechecks live CI before handing a draft PR to a human", async () => {
 		postComment,
 		command: async (_context, exe, args) => {
 			if (exe === "git") return args[0] === "status" ? "" : "head";
-			if (args.includes("graphql"))
+			if (githubRequest(args).path === "graphql")
 				return JSON.stringify(
-					providerReceipt({
+					githubApiReceipt(args, {
 						statusCheckRollup: {
 							contexts: {
 								nodes: [{ name: "test", conclusion: "FAILURE" }],
@@ -468,9 +516,9 @@ it("rechecks live CI before handing a draft PR to a human", async () => {
 						},
 					}),
 				);
-			if (args[0] === "api") return "[[]]";
-			return args[1] === "view"
-				? JSON.stringify({ headRefOid: "head", isDraft: true, state: "OPEN" })
+			if (/\/(comments|reviews)\?/.test(githubRequest(args).path)) return "[]";
+			return /\/pulls\/\d+$/.test(githubRequest(args).path)
+				? JSON.stringify(githubApiReceipt(args))
 				: JSON.stringify([{ bucket: "fail" }]);
 		},
 	});
@@ -493,9 +541,10 @@ it.each([
 		postComment: publish,
 		command: async (_ctx, exe, args) => {
 			if (exe === "git") return args[0] === "status" ? "" : "head";
-			if (args.includes("graphql"))
+			if (githubRequest(args).path === "graphql")
 				return JSON.stringify(
-					providerReceipt(
+					githubApiReceipt(
+						args,
 						kind === "conflicts"
 							? { mergeable: "CONFLICTING", mergeStateStatus: "DIRTY" }
 							: kind === "checks"
@@ -510,11 +559,11 @@ it.each([
 								: {},
 					),
 				);
-			if (args[0] === "api")
+			if (/\/(comments|reviews)\?/.test(githubRequest(args).path))
 				return kind === "feedback"
-					? JSON.stringify([[{ id: 42, body: "Please fix the bug" }]])
-					: "[[]]";
-			return JSON.stringify({ headRefOid: "head", state: "OPEN" });
+					? JSON.stringify([{ id: 42, body: "Please fix the bug" }])
+					: "[]";
+			return JSON.stringify(githubApiReceipt(args));
 		},
 	});
 	const result = await tools.tool(input);
@@ -525,6 +574,82 @@ it.each([
 	});
 	expect(input.run.outputs.ci).toEqual(result);
 	expect(publish).not.toHaveBeenCalled();
+});
+
+it.each([
+	"needs-attention",
+	"blocked",
+	"ready",
+])("routes a guide gap back to correction even when its decision is %s", async (status) => {
+	const input = context();
+	input.run.step = "pipeline/handoff";
+	input.run.outputs.ci = { headSha: "head" };
+	input.run.outputs.guide = {
+		decision: { status, summary: "Delivery needs reconciliation" },
+		requirements: [
+			{
+				criterion: "Continue the accepted PR",
+				status: status === "blocked" ? "unverified" : "gap",
+				evidence: ["A replacement PR was created without reconciliation"],
+			},
+		],
+	};
+	input.step.branches = [
+		{ when: { path: "fix", equals: true }, next: "ci-fix" },
+	];
+	const publish = vi.fn();
+	const tools = new FactoryTools({
+		postComment: publish,
+		command: async (_ctx, exe, args) =>
+			exe === "git"
+				? args[0] === "status"
+					? ""
+					: "head"
+				: JSON.stringify(githubApiReceipt(args)),
+	});
+	const result = await tools.tool(input);
+	expect(result).toMatchObject({
+		fix: true,
+		approved: false,
+		reviewReady: false,
+		blockers: expect.arrayContaining([
+			expect.objectContaining({
+				kind: "guide",
+				action: "fix",
+				message: expect.stringContaining("Continue the accepted PR"),
+			}),
+		]),
+	});
+	expect(input.run.outputs.ci).toEqual(result);
+	expect(publish).not.toHaveBeenCalled();
+	input.run.history.push(
+		{
+			step: "pipeline/handoff",
+			at: new Date().toISOString(),
+			output:
+				status === "blocked"
+					? {
+							scopeVersion: 1,
+							deliveries: [
+								{ repositoryId: "repo", name: "Repo", output: result },
+							],
+						}
+					: result,
+		},
+		{ step: "pipeline/ci-fix", at: new Date().toISOString(), output: {} },
+	);
+	await expect(tools.tool(input)).resolves.toMatchObject({
+		fix: false,
+		ciAssistance: [expect.stringContaining("Continue the accepted PR")],
+	});
+	input.run.answers.push({
+		answer: "Access restored; reconcile the existing PR",
+		at: new Date().toISOString(),
+		questions: ["Restore access"],
+	});
+	await expect(tools.tool(input)).resolves.toMatchObject({ fix: true });
+	input.step.branches = [];
+	await expect(tools.tool(input)).rejects.toThrow("handoff blocked");
 });
 
 it.each([
@@ -552,7 +677,7 @@ it.each([
 			postComment: publish,
 			command: async (_context, exe, args) => {
 				if (exe === "git") return args[0] === "status" ? "" : "head";
-				if (args.includes("graphql")) {
+				if (githubRequest(args).path === "graphql") {
 					polls++;
 					const extra =
 						polls > 1
@@ -567,11 +692,12 @@ it.each([
 											},
 										},
 									};
-					return JSON.stringify(providerReceipt(extra));
+					return JSON.stringify(githubApiReceipt(args, extra));
 				}
-				if (args[0] === "api") return "[[]]";
-				if (args[1] === "view")
-					return JSON.stringify({ headRefOid: "head", state: "OPEN" });
+				if (/\/(comments|reviews)\?/.test(githubRequest(args).path))
+					return "[]";
+				if (/\/pulls\/\d+$/.test(githubRequest(args).path))
+					return JSON.stringify(githubApiReceipt(args));
 				return "";
 			},
 		});
@@ -621,10 +747,11 @@ it.each([
 							? " M changed.ts"
 							: ""
 						: "head";
-				if (args.includes("graphql")) {
+				if (githubRequest(args).path === "graphql") {
 					polls++;
 					return JSON.stringify(
-						providerReceipt(
+						githubApiReceipt(
+							args,
 							polls === 1
 								? { mergeable: "UNKNOWN" }
 								: change === "revision"
@@ -633,11 +760,11 @@ it.each([
 						),
 					);
 				}
-				if (args[0] === "api")
+				if (/\/(comments|reviews)\?/.test(githubRequest(args).path))
 					return polls > 1 && change === "feedback"
-						? JSON.stringify([[{ id: 42, body: "Please fix the bug" }]])
-						: "[[]]";
-				return JSON.stringify({ headRefOid: "head", state: "OPEN" });
+						? JSON.stringify([{ id: 42, body: "Please fix the bug" }])
+						: "[]";
+				return JSON.stringify(githubApiReceipt(args));
 			},
 		});
 		const execution = tools.tool(input);
@@ -695,16 +822,12 @@ it("publishes a grounded human review guide while keeping the PR draft", async (
 		command: async (_context, exe, args) => {
 			commands.push([exe, ...args]);
 			if (exe === "git") return args[0] === "status" ? "" : "head";
-			if (args[1] === "view")
-				return JSON.stringify({
-					headRefOid: "head",
-					isDraft: true,
-					state: "OPEN",
-				});
-			if (args.includes("graphql")) return JSON.stringify(providerReceipt());
-			if (args[0] === "api") return "[[]]";
-			if (args[1] === "checks") return JSON.stringify([{ bucket: "pass" }]);
-			return "";
+			if (/\/pulls\/\d+$/.test(githubRequest(args).path))
+				return JSON.stringify(githubApiReceipt(args));
+			if (githubRequest(args).path === "graphql")
+				return JSON.stringify(githubApiReceipt(args));
+			if (/\/(comments|reviews)\?/.test(githubRequest(args).path)) return "[]";
+			return JSON.stringify(githubApiReceipt(args));
 		},
 	});
 	expect(await tools.tool(input)).toEqual({
@@ -712,13 +835,11 @@ it("publishes a grounded human review guide while keeping the PR draft", async (
 		headSha: "head",
 		ready: true,
 	});
-	expect(commands.at(-1)?.slice(0, 5)).toEqual([
-		"gh",
-		"pr",
-		"edit",
-		"https://github.com/test/repo/pull/1",
-		"--body",
-	]);
+	expect(commands.at(-1)?.[0]).toBe("bobs-factory:github-api");
+	expect(githubRequest(commands.at(-1)!.slice(1))).toMatchObject({
+		method: "PATCH",
+		path: "repos/test/repo/pulls/1",
+	});
 	expect(postComment).toHaveBeenCalledOnce();
 	expect(
 		commands.some(
@@ -849,6 +970,7 @@ it.each([
 			const capture = ctx.run.outputs.capture as { screenshots: unknown[] };
 			// Even an incorrectly approving reviewer cannot bypass missing captures.
 			return {
+				status: "completed",
 				findings: [],
 				summary: "Web accepted",
 				acceptedScreenshots: capture.screenshots,
@@ -978,7 +1100,11 @@ it.each([
 it("offers capture assistance when selected states are missing even without an unavailable report", async () => {
 	const ctx = context();
 	ctx.step.tool = "visual-gate";
-	ctx.run.outputs["visual-review"] = { findings: [], summary: "No findings" };
+	ctx.run.outputs["visual-review"] = {
+		status: "completed",
+		findings: [],
+		summary: "No findings",
+	};
 	const path = join(ctx.evidenceDir, "web.png");
 	writeFileSync(path, Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 0]));
 	ctx.run.outputs.capture = {
@@ -1012,7 +1138,7 @@ it("waits again when capture remains blocked after an answer, and stops without 
 						screenshots: [],
 						unavailable: [{ area: "Reader", reason: "Login still fails" }],
 					}
-				: { findings: [], summary: "No screenshots" },
+				: { status: "completed", findings: [], summary: "No screenshots" },
 		script: async () => {
 			handoff();
 			return {};
@@ -1080,6 +1206,7 @@ it("fails safely when a custom visual gate has no capture recovery path", async 
 	ctx.run.workflow.steps = [gate];
 	ctx.run.outputs.capture = { screenshots: [], unavailable: [] };
 	ctx.run.outputs["visual-review"] = {
+		status: "completed",
 		findings: [],
 		summary: "No screenshots",
 	};
@@ -1226,6 +1353,7 @@ function stampQa(ctx: ExecutionContext, output = qaExecution()) {
 		output,
 	);
 	ctx.run.outputs["visual-review"] = {
+		status: "completed",
 		qaContract: "qa-v1",
 		findings: [],
 		summary: "Reviewed executed receipts",
@@ -1282,6 +1410,36 @@ it("generates an actionable stable QA finding when a reviewer approves failed be
 	});
 	stampQa(ctx, qaExecution());
 	await expect(qaTools().tool(ctx)).resolves.toMatchObject({ approved: true });
+});
+it.each([
+	"failed",
+	"blocked",
+] as const)("routes recorded product failures to correction when the QA reviewer reports %s", async (status) => {
+	const ctx = qaContext();
+	stampQa(ctx, qaExecution("failed"));
+	Object.assign(ctx.run.outputs["visual-review"] as object, {
+		status,
+		blockers: ["The required save behavior failed during QA."],
+	});
+	const gate = await qaTools().tool(ctx);
+	expect(gate).toMatchObject({
+		approved: false,
+		findings: [expect.objectContaining({ criterionId: "saved" })],
+	});
+	expect(gate).not.toHaveProperty("reviewIncomplete");
+	expect(gate).not.toHaveProperty("questions");
+
+	// Repairing the product does not establish that an incomplete review ran.
+	stampQa(ctx, qaExecution());
+	Object.assign(ctx.run.outputs["visual-review"] as object, {
+		status,
+		blockers: ["The reviewer cannot read the required diff."],
+	});
+	await expect(qaTools().tool(ctx)).resolves.toMatchObject({
+		approved: false,
+		reviewIncomplete: true,
+		questions: [expect.stringContaining("cannot read the required diff")],
+	});
 });
 it("keeps independently reported consequential findings blocking even when all criteria pass", async () => {
 	const ctx = qaContext(),
@@ -1441,13 +1599,10 @@ it("blocks handoff when a previously approved QA artifact changes", async () => 
 		postComment,
 		command: async (_ctx, exe, args) => {
 			if (exe === "git") return args[0] === "status" ? "" : "head";
-			if (args.includes("graphql")) return JSON.stringify(providerReceipt());
-			if (args[0] === "api") return "[[]]";
-			return JSON.stringify({
-				headRefOid: "head",
-				isDraft: true,
-				state: "OPEN",
-			});
+			if (githubRequest(args).path === "graphql")
+				return JSON.stringify(githubApiReceipt(args));
+			if (/\/(comments|reviews)\?/.test(githubRequest(args).path)) return "[]";
+			return JSON.stringify(githubApiReceipt(args));
 		},
 	});
 	await expect(tools.tool(ctx)).rejects.toThrow(
@@ -1463,6 +1618,7 @@ it("does not present legacy screenshot-only roles as QA when a runner supplies e
 	});
 	expect(
 		validateFactoryResult("visual-review", {
+			status: "completed",
 			qaContract: "qa-v1",
 			findings: [],
 			summary: "Screenshot-only review",
@@ -1473,7 +1629,12 @@ it("does not present legacy screenshot-only roles as QA when a runner supplies e
 				scopeHash: "invented",
 			},
 		}),
-	).toEqual({ findings: [], summary: "Screenshot-only review" });
+	).toEqual({
+		status: "completed",
+		blockers: [],
+		findings: [],
+		summary: "Screenshot-only review",
+	});
 });
 
 it("uses a reported open criterion failure without generating a duplicate, but never accepts a rejection of failed behavior", async () => {
@@ -1567,14 +1728,12 @@ it.each([
 		postComment: vi.fn(),
 		command: async (_ctx, exe, args) => {
 			if (exe === "git") return args[0] === "status" ? "" : "head";
-			if (args.includes("graphql"))
-				return JSON.stringify(providerReceipt({ mergeable: "CONFLICTING" }));
-			if (args.includes("--slurp")) return "[[]]";
-			return JSON.stringify({
-				headRefOid: "head",
-				state: "OPEN",
-				isDraft: true,
-			});
+			if (githubRequest(args).path === "graphql")
+				return JSON.stringify(
+					githubApiReceipt(args, { mergeable: "CONFLICTING" }),
+				);
+			if (/\/(comments|reviews)\?/.test(githubRequest(args).path)) return "[]";
+			return JSON.stringify(githubApiReceipt(args));
 		},
 	});
 	await expect(tools.tool(ctx)).resolves.toMatchObject({

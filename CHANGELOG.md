@@ -4,10 +4,44 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Prepare frozen stable and nightly binary candidates with signed channel discovery, exact-asset stable approval and recoverable publication. Check stable ordering against complete provider history, block nightly eligibility when the latest published nightly cannot be verified, authenticate efficient website discovery, and explain unavailable installer channels. Nightlies remain opt-in and publication stays disabled pending protected signing and rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117), [#70](https://github.com/jappyjan/bobs-factory/pull/70)).
+
+### Fixed
+
+- Release Factory delivery ownership after publication instead of waiting on ticket synchronization or independent review/QA. Reserve affected repositories, protect shared QA resources, refresh queued fixers and revalidate merge attempts while preserving pending documentation and approval gates. ([Taskbot #126](https://taskbot.apps.janjaap.de/p/bobs-factory/t/126), [#77](https://github.com/jappyjan/bobs-factory/pull/77), [F1 validation](apps/f1/test-drives/2026-10-09-delivery-boundaries.md))
+- Route recorded QA product failures to the existing visual fixer even when a reviewer reports a failed or blocked review; require fresh QA and a completed review before approval. Clarify that review completion describes execution, not a passing product. ([#78](https://github.com/jappyjan/bobs-factory/pull/78), [F1 validation](apps/f1/test-drives/2026-10-09-qa-product-failure-routing.md))
+
+- Reject incomplete or mismatched signed beta inventories before Nix unpacks an archive. Require all four targets and their validation receipts, with unique valid records matching the signed manifest ([#70](https://github.com/jappyjan/bobs-factory/pull/70)).
+- Route unresolved review-guide requirements and delivery gaps back through the existing fixer, with a resumable assistance wait after unsuccessful correction; retain evidence and explicit human approval. ([#76](https://github.com/jappyjan/bobs-factory/pull/76), [F1 recovery validation](apps/f1/test-drives/2026-10-09-guide-gap-recovery.md))
+- Accept GitHub owner and repository capitalization differences when publishing, inspecting and merging pull requests, so retries can reuse a draft PR created before a delivery failure. ([#75](https://github.com/jappyjan/bobs-factory/pull/75))
+
+- Allow slow Codex thread startup and resume to finish within a bounded three-minute deadline, and preserve conversation checkpoints and correction budgets if setup still times out. ([#67](https://github.com/jappyjan/bobs-factory/pull/67))
+
+- Resume Factory roles with uncommitted work by requesting artifact submission only when the scoped MCP server has a clean revision binding; prevent repeated missing-tool startup failures. ([#66](https://github.com/jappyjan/bobs-factory/pull/66))
+
+- Preserve infrastructure checkpoints and output-correction budgets when Codex cannot initialize a required MCP server, so retries retain completed work and native conversations. ([#64](https://github.com/jappyjan/bobs-factory/pull/64))
+
+- Build the homepage with published beta metadata, advertise verified release availability, and check website builds on pull requests before deploying. ([#63](https://github.com/jappyjan/bobs-factory/pull/63))
+
+- Switching tabs or brief connection drops no longer reload the dashboard or discard unsent edits. Factory reconnects in the background while Bob looks around for it, the header shows "Reconnecting…" only for longer outages, and repeated failures open a dialog with retry over the still-loaded page. The dashboard only signs you out when Factory confirms the session ended. ([Taskbot #113](https://taskbot.apps.janjaap.de/p/bobs-factory/t/113), [#62](https://github.com/jappyjan/bobs-factory/pull/62))
+- Draft PR delivery no longer fails on every retry when a repository's commit hooks run long or failing full-suite checks; Factory's own commit skips commit hooks while implementation checks, review and CI keep owning verification. Push hooks such as Git LFS still run. ([#59](https://github.com/jappyjan/bobs-factory/pull/59), [F1 delivery validation](apps/f1/test-drives/2026-10-09-delivery-commit-hooks.md))
+
 ### Changed
 
-- Standard Factory can deliver authorized Linear and Taskbot ticket changes through independent verification, human acceptance and a final state check. Retries preserve intervening edits and shared relationships; mixed feedback renews contracts and retains confirmed repository merges. Failed external publication supports audited recovery ([Taskbot #95](https://taskbot.apps.janjaap.de/p/bobs-factory/t/95), [#80](https://github.com/JappyJan/bobs-factory/pull/80)).
+- Standard Factory can deliver authorized Linear and Taskbot ticket changes through independent verification, human acceptance and a final state check. Retries preserve intervening edits and shared relationships; mixed feedback renews contracts and retains confirmed repository merges. Background tracking preserves completion proof during rereads and blocks closure on drift or lost access. Failed external publication supports audited recovery ([Taskbot #95](https://taskbot.apps.janjaap.de/p/bobs-factory/t/95), [#80](https://github.com/JappyJan/bobs-factory/pull/80)).
 
+- Default Codex execution to full host access so installed shell commands, process inspection and local browsers can run; preserve explicit `workspace-write` and `read-only` settings and managed tool-source conflict checks. ([#69](https://github.com/jappyjan/bobs-factory/pull/69))
+
+- Use mocked agent protocol checks for every release; live provider tests are manual-only and require explicit approval for the specific test. ([#61](https://github.com/jappyjan/bobs-factory/pull/61))
+
+- Include the pinned Bun production dependency notices and corresponding MPL source in beta release materials ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).
+
+- Prepare `1.0.0-beta` binary candidates, keep beta downloads distinct from stable releases, and verify installed native helpers before publication ([#57](https://github.com/jappyjan/bobs-factory/pull/57)).
+- Simplify binary installation to one public download command and guided first launch, including project/agent selection and GitHub setup without requiring the GitHub CLI. Preserve existing passkeys, state and native credentials. ([#55](https://github.com/jappyjan/bobs-factory/pull/55)).
+- Coordinate overlapping repository/base-branch finalization while keeping implementation parallel, and supervise bounded CI infrastructure retries without agent polling or empty source commits. Native Linear operational updates use the agent transcript; durable developer documentation remains issue comments. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))
+- Show complete binary installation on the homepage for all four macOS/Linux targets, from verified downloads and PATH setup to dashboard passkey enrollment, with all commands immediately visible ([#54](https://github.com/jappyjan/bobs-factory/pull/54)).
 - Updated source, installation and homepage links for the move to `jappyjan/bobs-factory` ([#53](https://github.com/jappyjan/bobs-factory/pull/53)).
 - Make guided review more compact, require system maps for new technical and mixed guides, identify individual file areas, and collect feedback and review actions on Decide. Keep neighboring map labels and reverse connections distinct, align split-diff columns across long lines, and keep unopened flow-stage numbers readable. Keep chapter checks compact, use a plain reviewed checkbox row, and announce singular feedback counts correctly ([Taskbot #92](https://taskbot.apps.janjaap.de/p/bobs-factory/t/92), [#44](https://github.com/Attraccess/bobs-factory/pull/44)).
 - Record the user-approved simulated-agent QA scope for refinement recommendations, retaining real-agent and ticket-delivery limitations. ([#34](https://github.com/Attraccess/bobs-factory/pull/34))
@@ -15,6 +49,10 @@ All notable changes to this project will be documented in this file.
 
 
 ### Added
+
+- Add `bobs-factory tui` for starting runs, following live activity, answering questions, reviewing, retrying and settling work from a fullscreen terminal inbox. Share the web palette and light/dark themes, with Ctrl-K run search and authenticated local-operator access. ([Taskbot #114](https://taskbot.apps.janjaap.de/p/bobs-factory/t/114), [#65](https://github.com/jappyjan/bobs-factory/pull/65))
+
+- Submit large structured role results as bounded, revision-bound artifacts with complete runtime-owned file coverage. Expose actual runtime build identity and secret-safe per-attempt workflow, contract and instruction provenance across recovery. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))
 
 - Capture authentic feature demonstrations for Factory review guides and the inspector, with lazy playback, transcripts, validated revision evidence and safe seeking. Changed QA scenarios require fresh recordings, and expired recordings from every capture round are cleaned up across restarts. Keep optional recording failures visible and preserve screenshots and explicit human approval. ([Taskbot #31](https://taskbot.apps.janjaap.de/p/bobs-factory/t/31), [#33](https://github.com/Attraccess/bobs-factory/pull/33))
 - Share repository grouping across Factory, Takeover, Simple and custom workflows. Show one composer project for matching routing-label sets and publish, review and merge one PR/MR per changed repository, preserving partial delivery receipts and approval for exact revisions. ([#51](https://github.com/Attraccess/bobs-factory/pull/51))
@@ -73,6 +111,8 @@ All notable changes to this project will be documented in this file.
 - Redesign the local factory UI around RainbowBob: focused questions/reviews, compact running work, persistent settling, configurable recipes, mobile/light/dark layouts, step conversations and rich artifact inspectors. React and managed queries preserve UI state during live updates. ([#1](https://github.com/Attraccess/bobs-factory/pull/1))
 
 ### Fixed
+
+- Block approval when a required review did not complete; cap oversized context page requests, replace expired scoped context connections on resume, and retain bounded correction recovery after tooling repair. Budget Linear requests, persist and reconcile activity/document delivery, and refresh signed webhook source validation without losing custom allowlists. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))
 
 - Start a fresh ticket run after settling previous stopped or failed runs, including older sessions. Live execution and background work still prevent competing launches. ([#23](https://github.com/Attraccess/bobs-factory/pull/23))
 

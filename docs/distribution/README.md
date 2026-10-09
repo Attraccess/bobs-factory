@@ -1,8 +1,30 @@
 # Binary distribution
 
+Install with the [two-command quick start](../../README.md#install-and-start).
+The public installer detects your OS/CPU and downloads a verified version without
+GitHub login, GitHub CLI, Node or Bun. System OpenSSL verifies publisher signatures. First launch opens protected browser setup
+for a project, prepared agent and GitHub connection. Agents may have their own
+runtime and login requirements.
+
+The shared [`release.json` contract](PUBLIC_RELEASES.md) drives the installer,
+homepage and Nix package. The installer selects verified stable releases, or the
+latest authenticated beta before the first stable release. Nightly is explicit
+(`--channel nightly`) and never becomes the default. When no reviewed release is
+available, the homepage and installer report unavailable downloads. CI artifacts
+remain maintainer validation material.
+
 The artifact contract is `bobs-factory-VERSION-TARGET.tar.gz` with a matching
 `.manifest.json`: schema version, product, exact version, commit, target, byte size
 and SHA-256. `build.json` inside adds tooling, executable hash and resource digest.
+Release candidates also bind a digest, committed package version and frozen tooling
+revision. CI accepts a release-version override without editing the checkout;
+stable rebuilds receive their own byte-bound validation.
+The same verified commit, target and resource digest are embedded in the runtime
+identity returned by `/version` and `/api/version`, alongside the product
+version and dirty-build flag. Development runtimes report unknown source identity;
+the current Git checkout is not evidence of the installed executable's commit.
+Run attempt provenance retains the identity that actually executed each attempt,
+including when a frozen run resumes after an upgrade.
 Supported target names: `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`.
 Bun 1.4.2 bundles the runtime; immutable dashboard/prompts/skills are embedded and
 verified before extraction into a content-addressed private resource directory.
@@ -11,7 +33,8 @@ verified before extraction into a content-addressed private resource directory.
 pnpm install --frozen-lockfile
 pnpm --filter 'bobs-factory...' build
 bun run scripts/build-binary.ts --target darwin-arm64 --output /tmp/factory-build
-./scripts/smoke-binary.sh /tmp/factory-build/bobs-factory-0.2.73-darwin-arm64/bobs-factory
+factory_version=$(node -p 'require("./apps/cli/package.json").version')
+./scripts/smoke-binary.sh "/tmp/factory-build/bobs-factory-$factory_version-darwin-arm64/bobs-factory"
 ```
 
 Compile success is not runtime evidence. Native-target smoke must check isolated
@@ -80,12 +103,14 @@ The archive's runtime dependency inventory excludes them.
 
 ## Installation and manual replacement
 
-Download an exact version's archive, matching manifest and `install-binary.sh`
-from the same trusted project release. The SHA-256 manifest verifies downloaded
-bytes, not publisher identity; trust the release source as well. Run:
+The public installer is the primary installation path. For maintainer validation
+or manual replacement, download an exact version's archive, matching manifest and
+`install-binary.sh` from the same trusted release. When validating CI artifacts,
+retrieve the verifier from the immutable candidate's source commit. The SHA-256
+manifest verifies downloaded bytes; trust the release source as well. Run:
 
 ```sh
-./install-binary.sh ARCHIVE.tar.gz ARCHIVE.manifest.json ~/.local
+sh install-binary.sh ARCHIVE.tar.gz ARCHIVE.manifest.json ~/.local
 export PATH="$HOME/.local/bin:$PATH"
 bobs-factory --version
 ```
@@ -99,8 +124,38 @@ replacement consumers, point the executable link to the retained previous versio
 and restore separately backed-up mutable state only if needed. Do not run old and
 new workers together. Automatic polling/updating is deferred.
 
-The binary CI workflow is build/verification only, with immutable candidate input
-and a default dry run. It does not publish releases or move stable tags. Upstream
+The binary CI workflow remains build/verification only, with immutable candidate
+input. The separate [public release workflow](PUBLIC_RELEASES.md) defaults to a
+dry run and publishes only explicitly approved, fully validated immutable artifacts. Upstream
 npm publishing scripts/workflow are retained as historical files in `scripts/archive`;
 they are not supported fork commands. Future publishing must retain the exact
 reviewed candidate, all-target evidence and manifest checks.
+
+## Nix from the same release manifest
+
+Pin a reviewed release's `release.json` as a file in your Nix configuration.
+[`nix/package.nix`](../../nix/package.nix) selects the platform and fixed archive
+checksum from that manifest:
+
+```nix
+bobs-factory = import /path/to/bobs-factory/nix/package.nix {
+  inherit pkgs;
+  releaseManifest = ./bobs-factory-release.json;
+  releaseSignature = ./bobs-factory-release.json.sig;
+  releaseKeyId = "reviewed-active-publisher-key-id";
+};
+```
+
+Keep the exact manifest bytes and detached signature together. The key ID must
+match an active public key in the reviewed release tooling. Historical beta
+manifests also require the signed inventory attestation described in
+[the public release contract](PUBLIC_RELEASES.md). Before unpacking, Nix verifies
+both signatures, the attestation's exact manifest identity and bytes, every
+manifest-bound inventory record, and the required validation receipts for all
+four targets. Missing, duplicate, malformed or mismatched records fail the build.
+Keep `nix/validate-beta-attestation.jq` with `nix/package.nix` in reviewed tooling.
+The package fetches public versioned assets without GitHub credentials. An
+unavailable manifest fails evaluation clearly. Update the pinned manifest when
+upgrading; avoid fetching a mutable latest pointer during evaluation. Keep the
+service's home, environment and conversations separate from the immutable Nix
+package, and drain/stop the old worker before an intentional upgrade.

@@ -29,8 +29,10 @@ export class ActivityPoster {
 		try {
 			const result = await issueTracker.createAgentActivity(input);
 			if (result.success) {
-				if (result.agentActivity) {
-					const activity = await result.agentActivity;
+				if (result.agentActivityId) return result.agentActivityId;
+				const createdActivity = result.agentActivity;
+				if (createdActivity) {
+					const activity = await createdActivity;
 					this.logger.debug(`Created ${label} activity ${activity.id}`);
 					return activity.id;
 				}

@@ -11,6 +11,7 @@ import {
 	useNavigate,
 	useParams,
 } from "react-router-dom";
+import { deliveryTargetLabel } from "../RunAttention";
 import { ArtifactCard, Inspector } from "./artifacts";
 import { AccessBoundary } from "./auth";
 import {
@@ -47,8 +48,14 @@ import {
 } from "./focus";
 import { Composer, Recipes } from "./forms";
 import { NotificationsControl } from "./notifications-ui";
+import { SetupBoundary } from "./onboarding";
 import { pwaState, startPwa, usePwa } from "./pwa";
-import { ConnectionNotice, InstallControl } from "./pwa-ui";
+import {
+	ConnectionNotice,
+	ConnectionStatus,
+	InstallControl,
+	useConnectionIndicator,
+} from "./pwa-ui";
 import { useReadingPosition } from "./reading-position";
 import {
 	completeRestoration,
@@ -163,18 +170,25 @@ function Header({
 	onShortcuts: () => void;
 }) {
 	const location = useLocation(),
-		theme = useTheme();
+		theme = useTheme(),
+		connection = useConnectionIndicator();
 	return (
 		<header className="site-header">
 			<div>
-				<Link
-					to="/"
-					state={todayContext(location.pathname, location.state)}
-					className="brand"
+				<div
+					className="brand-area"
+					data-connection={connection.status ? "" : undefined}
 				>
-					<Bob mood={mood} />
-					<strong>Bob's Factory</strong>
-				</Link>
+					<Link
+						to="/"
+						state={todayContext(location.pathname, location.state)}
+						className="brand"
+					>
+						<Bob mood={connection.mood ?? mood} />
+						<strong>Bob's Factory</strong>
+					</Link>
+					<ConnectionStatus status={connection.status} />
+				</div>
 				<nav className="nav-pill" aria-label="Main navigation">
 					<Link
 						aria-current={
@@ -903,7 +917,40 @@ function RunPage({
 				</div>
 			</header>
 			<ExecutionDetails run={run} />
+			{run.deliveryCoordination?.phase === "queued" && (
+				<p role="status">
+					{workingLabel(run)}.{" "}
+					{(run.deliveryCoordination.blockers ?? []).map(
+						(
+							blocker: { runId: string; operation: string; targets: string[] },
+							index: number,
+						) => (
+							<span key={`${blocker.runId}:${blocker.operation}`}>
+								{index > 0 && "; "}Blocked by{" "}
+								<Link to={`/runs/${blocker.runId}`}>run {blocker.runId}</Link>{" "}
+								at {blocker.operation.replace(/:(mutation|resources)$/, "")} for{" "}
+								{blocker.targets.map(deliveryTargetLabel).join(", ")}.
+							</span>
+						),
+					)}
+				</p>
+			)}
 			<RunOrigin run={run} />
+			{run.ticketSync?.receipts?.some(
+				(receipt: { delivered?: boolean; superseded?: boolean }) =>
+					!receipt.delivered && !receipt.superseded,
+			) && (
+				<p role="status">
+					{run.ticketSync.receipts.some(
+						(receipt: { conflict?: boolean }) => receipt.conflict,
+					)
+						? "Ticket synchronization needs ownership reassessment"
+						: "Ticket synchronization pending"}
+					.{" "}
+					{run.ticketSync.error ??
+						"Saved updates are being delivered in the background."}
+				</p>
+			)}
 			{kind && !reason && (
 				<FocusCard
 					summary={run}
@@ -1235,7 +1282,9 @@ createRoot(document.getElementById("root")!).render(
 		<HashRouter>
 			<ToastProvider>
 				<AccessBoundary>
-					<App />
+					<SetupBoundary>
+						<App />
+					</SetupBoundary>
 				</AccessBoundary>
 			</ToastProvider>
 		</HashRouter>

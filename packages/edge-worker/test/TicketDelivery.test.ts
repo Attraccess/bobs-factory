@@ -415,6 +415,45 @@ it("invalidates final proof on a failed fresh read and rejects corrupted evidenc
 	f.run.delivery!.verification!.criteria = [];
 	expect(externalCompletionProven(f.run)).toBe(false);
 });
+it("background tracking preserves completion proof while reading and invalidates drift or lost access", async () => {
+	const f = setup();
+	await f.service.apply(f.run);
+	await f.service.verify(f.run);
+	accept(f.run);
+	await f.service.finalCheck(f.run);
+	let release!: () => void;
+	let entered!: () => void;
+	const reading = new Promise<void>((resolve) => {
+		entered = resolve;
+	});
+	const pending = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const read = f.adapter.read;
+	f.adapter.read = async () => {
+		entered();
+		await pending;
+		return read();
+	};
+	const check = f.service.finalCheck(f.run, true);
+	await reading;
+	expect(externalCompletionProven(f.run)).toBe(true);
+	release();
+	expect(await check).toBe(true);
+	expect(externalCompletionProven(f.run)).toBe(true);
+	f.state().fields.description = "Intervening edit";
+	expect(await f.service.finalCheck(f.run, true)).toBe(false);
+	expect(externalCompletionProven(f.run)).toBe(false);
+	f.state().fields.description = "after";
+	await f.service.finalCheck(f.run);
+	f.adapter.read = async () => {
+		throw new Error("Read access lost");
+	};
+	await expect(f.service.finalCheck(f.run, true)).rejects.toThrow(
+		"Read access lost",
+	);
+	expect(externalCompletionProven(f.run)).toBe(false);
+});
 it("tracking-only retries recheck external state and never replay task mutations", async () => {
 	const f = setup();
 	await f.service.apply(f.run);

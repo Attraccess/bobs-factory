@@ -561,7 +561,10 @@ export class TicketDelivery {
 		this.save(run);
 		return snapshot;
 	}
-	async finalCheck(run: FactoryRun): Promise<boolean> {
+	async finalCheck(
+		run: FactoryRun,
+		preserveProofWhileChecking = false,
+	): Promise<boolean> {
 		const delivery = this.accepted(run),
 			accepted = run.humanDecisions?.at(-1);
 		if (
@@ -574,9 +577,20 @@ export class TicketDelivery {
 			throw new Error(
 				"Explicit acceptance of independently verified ticket state required",
 			);
-		delete delivery.finalCheck;
-		this.save(run);
-		const snapshot = await this.collect(run);
+		// Tracking runs in the background. Keep the completed graph's proof while
+		// reading, but invalidate it if the reread fails or finds material drift.
+		if (!preserveProofWhileChecking) {
+			delete delivery.finalCheck;
+			this.save(run);
+		}
+		let snapshot: ExternalSnapshot;
+		try {
+			snapshot = await this.collect(run);
+		} catch (error) {
+			delete delivery.finalCheck;
+			this.save(run);
+			throw error;
+		}
 		if (snapshot.digest !== accepted.externalDigest) {
 			delete delivery.finalCheck;
 			this.save(run);

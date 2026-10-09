@@ -41,6 +41,22 @@ describe("LinearActivitySink", () => {
 	});
 
 	describe("postActivity()", () => {
+		it("uses the mutation receipt without starting relationship fetches", async () => {
+			vi.mocked(mockIssueTracker.createAgentActivity).mockResolvedValue({
+				success: true,
+				agentActivityId: "activity-1",
+				get agentActivity() {
+					throw new Error("unnecessary relationship request");
+				},
+			} as any);
+			expect(
+				await sink.postActivity(mockSessionId, {
+					type: "response",
+					body: "Delivered PR",
+				}),
+			).toEqual({ activityId: "activity-1" });
+		});
+
 		it("should post a thought activity and return activityId", async () => {
 			const activity: AgentActivityContent = {
 				type: "thought",

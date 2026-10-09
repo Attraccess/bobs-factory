@@ -172,6 +172,7 @@ it("the real review gate parks a clean rejected attempt without approving it", a
 	const context = gateContext(fixture());
 	context.log = vi.fn();
 	context.run.outputs["code-review"] = {
+		status: "completed",
 		summary: "Blocked",
 		findings: [finding],
 	};

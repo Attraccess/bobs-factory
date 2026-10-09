@@ -8,6 +8,22 @@
  * @module issue-tracker/adapters/LinearIssueTrackerService
  */
 
+import { createHash } from "node:crypto";
+import { LinearDeliveryOutbox } from "./LinearDeliveryOutbox.js";
+import { LinearRequestBudget } from "./LinearRequestBudget.js";
+
+export interface LinearDeliveryOptions {
+	workspaceId?: string;
+	factoryHome?: string;
+	requestIntervalMs?: number;
+}
+
+type LinearRequestBinding = {
+	budget: LinearRequestBudget;
+	workspaceId: string;
+	intervalMs?: number;
+};
+
 import { IssueRelationType, type LinearClient } from "@linear/sdk";
 
 /**
@@ -75,10 +91,25 @@ import { LinearEventTransport } from "./LinearEventTransport.js";
  * ```
  */
 export class LinearIssueTrackerService implements IIssueTrackerService {
+	private static budgetedClients = new WeakMap<
+		LinearClient,
+		LinearRequestBinding
+	>();
 	private readonly linearClient: LinearClient;
 	private oauthConfig?: LinearOAuthConfig;
 	private logger: ILogger;
 	private refreshPromise: Promise<string> | null = null;
+	private requestBinding?: LinearRequestBinding;
+	private get requestBudget(): LinearRequestBudget | undefined {
+		return this.requestBinding?.budget;
+	}
+	private activityDelivery?: LinearDeliveryOutbox<AgentActivityCreateInput>;
+	private commentDelivery?: LinearDeliveryOutbox<{
+		id?: string;
+		issueId: string;
+		body: string;
+		parentId?: string;
+	}>;
 
 	/**
 	 * Static map for workspace-level coalescing of concurrent token refreshes.
@@ -103,11 +134,158 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 		linearClient: LinearClient,
 		oauthConfig?: LinearOAuthConfig,
 		logger?: ILogger,
+		deliveryOptions: LinearDeliveryOptions = {},
 	) {
 		this.linearClient = linearClient;
 		this.oauthConfig = oauthConfig;
 		this.logger =
 			logger ?? createLogger({ component: "LinearIssueTrackerService" });
+
+		if (linearClient.client) {
+			this.requestBinding =
+				LinearIssueTrackerService.budgetedClients.get(linearClient);
+			if (!this.requestBinding) {
+				const workspaceId =
+					deliveryOptions.workspaceId ?? oauthConfig?.workspaceId ?? "default";
+				this.requestBinding = {
+					budget: LinearRequestBudget.forClient(
+						linearClient,
+						workspaceId,
+						deliveryOptions.requestIntervalMs,
+					),
+					workspaceId,
+					intervalMs: deliveryOptions.requestIntervalMs,
+				};
+				LinearIssueTrackerService.budgetedClients.set(
+					linearClient,
+					this.requestBinding,
+				);
+				const binding = this.requestBinding;
+				const request = linearClient.client.request.bind(linearClient.client);
+				linearClient.client.request = (document, variables, headers) => {
+					const input = (
+						variables as
+							| { input?: { body?: string; content?: { type?: string } } }
+							| undefined
+					)?.input;
+					const priority =
+						input?.body !== undefined ||
+						["response", "elicitation", "error"].includes(
+							input?.content?.type ?? "",
+						)
+							? 10
+							: 0;
+					// The SDK reads default headers when the queued operation executes.
+					// Keep its credential paired with the budget selected at enqueue time.
+					const capturedHeaders = {
+						...headersRecord(linearClient.options?.headers),
+						...headersRecord(headers),
+					};
+					return binding.budget.run(
+						() => request(document, variables, capturedHeaders),
+						priority,
+					);
+				};
+			}
+		}
+
+		if (deliveryOptions.factoryHome)
+			this.activityDelivery = LinearDeliveryOutbox.open(
+				deliveryOptions.factoryHome,
+				deliveryOptions.workspaceId ?? oauthConfig?.workspaceId ?? "default",
+				this,
+				async (input: AgentActivityCreateInput) => {
+					const result = await this.linearClient.createAgentActivity(input);
+					return { success: result.success, id: result.agentActivityId };
+				},
+				this.logger,
+				async (input) => {
+					try {
+						const activity = await this.linearClient.agentActivity(input.id!);
+						if (
+							!activity ||
+							activity.id !== input.id ||
+							activity.agentSessionId !== input.agentSessionId ||
+							Object.entries(input.content).some(
+								([key, value]) =>
+									JSON.stringify(
+										(activity.content as unknown as Record<string, unknown>)[
+											key
+										],
+									) !== JSON.stringify(value),
+							)
+						) {
+							throw new Error(
+								"Ambiguous Linear activity could not be reconciled; retaining delivery identity",
+							);
+						}
+						return true;
+					} catch (error) {
+						const raw = error as {
+							status?: number;
+							raw?: {
+								response?: { errors?: { extensions?: { code?: string } }[] };
+							};
+						};
+						if (
+							raw.status === 404 ||
+							raw.raw?.response?.errors?.some((e) =>
+								["ENTITY_NOT_FOUND", "NOT_FOUND"].includes(
+									e.extensions?.code ?? "",
+								),
+							)
+						)
+							return false;
+						throw error; // Inconclusive lookup must never trigger another mutation.
+					}
+				},
+				() => this.requestBudget?.retryAt ?? 0,
+				"activity",
+				(input) =>
+					["response", "elicitation", "error"].includes(input.content?.type)
+						? 10
+						: 0,
+				(input) => ["thought", "action"].includes(input.content?.type),
+			);
+
+		if (deliveryOptions.factoryHome)
+			this.commentDelivery = LinearDeliveryOutbox.open(
+				deliveryOptions.factoryHome,
+				deliveryOptions.workspaceId ?? oauthConfig?.workspaceId ?? "default",
+				this,
+				async (input: {
+					id?: string;
+					issueId: string;
+					body: string;
+					parentId?: string;
+				}) => {
+					const result = await this.linearClient.createComment(input);
+					return { success: result.success, id: result.commentId };
+				},
+				this.logger,
+				async (input) => {
+					try {
+						const comment = await this.linearClient.comment({ id: input.id! });
+						if (
+							comment.id !== input.id ||
+							comment.issueId !== input.issueId ||
+							comment.body !== input.body ||
+							comment.parentId !== input.parentId
+						)
+							throw new Error(
+								"Ambiguous Linear comment could not be reconciled; retaining delivery identity",
+							);
+						return true;
+					} catch (error) {
+						if (confirmedMissingEntity(error)) return false;
+						throw error;
+					}
+				},
+				() => this.requestBudget?.retryAt ?? 0,
+				"comment",
+				() => 10,
+				() => false,
+			);
 
 		// Register initial refresh token in shared static map
 		if (oauthConfig?.refreshToken) {
@@ -160,7 +338,7 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 						// Clear cached promise so future token expirations trigger a fresh refresh.
 						// Workspace-level coalescing via pendingRefreshes still deduplicates concurrent calls.
 						this.refreshPromise = null;
-						client.setHeader("Authorization", `Bearer ${newToken}`);
+						this.setAccessToken(newToken);
 
 						// Retry the request with the new token (marked as retry to prevent loops)
 						return (await (client.request as any)(
@@ -297,6 +475,13 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 		// Guard for test mocks that may not have the .client property
 		if (this.linearClient.client) {
 			this.linearClient.client.setHeader("Authorization", `Bearer ${token}`);
+			if (this.requestBinding) {
+				this.requestBinding.budget = LinearRequestBudget.forClient(
+					this.linearClient,
+					this.requestBinding.workspaceId,
+					this.requestBinding.intervalMs,
+				);
+			}
 		}
 	}
 
@@ -717,6 +902,17 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 					: attachmentMarkdown;
 			}
 
+			if (this.commentDelivery) {
+				const id = documentationId(issueId, finalBody, input.parentId);
+				await this.commentDelivery.post({
+					id,
+					issueId,
+					body: finalBody,
+					...(input.parentId ? { parentId: input.parentId } : {}),
+				});
+				return this.fetchComment(id);
+			}
+
 			const createPayload = await this.linearClient.createComment({
 				issueId,
 				body: finalBody,
@@ -945,6 +1141,44 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 		return this.linearClient.agentSession(sessionId);
 	}
 
+	async findAgentSessionForExternalLink(
+		issueId: string,
+		externalLink: string,
+	): Promise<string | undefined> {
+		const matches: string[] = [];
+		const cursors = new Set<string>();
+		let after: string | undefined;
+		for (let pageNumber = 0; pageNumber < 100; pageNumber++) {
+			const page = await this.linearClient.agentSessions({
+				first: 100,
+				...(after ? { after } : {}),
+			});
+			matches.push(
+				...page.nodes
+					.filter(
+						(session) =>
+							session.issueId === issueId &&
+							session.externalLink === externalLink,
+					)
+					.map((session) => session.id),
+			);
+			if (matches.length > 1)
+				throw new Error(
+					"Multiple Linear transcript sessions match this run; reassess their binding before delivery",
+				);
+			if (!page.pageInfo.hasNextPage) return matches[0];
+			after = page.pageInfo.endCursor;
+			if (!after || cursors.has(after))
+				throw new Error(
+					"Linear transcript reconciliation pagination did not advance",
+				);
+			cursors.add(after);
+		}
+		throw new Error(
+			"Linear transcript reconciliation exceeded 100 pages; retain pending creation for operator review",
+		);
+	}
+
 	/**
 	 * Emit a stop signal webhook event.
 	 * No-op for Linear - stop signals come from Linear webhooks, not from us.
@@ -964,7 +1198,45 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 	async createAgentActivity(
 		input: AgentActivityCreateInput,
 	): Promise<AgentActivityPayload> {
-		return await this.linearClient.createAgentActivity(input);
+		if (!this.activityDelivery)
+			return this.linearClient.createAgentActivity(input);
+		const receipt = await this.activityDelivery.post(input);
+		return {
+			success: receipt.success,
+			agentActivityId: receipt.id,
+		} as AgentActivityPayload;
+	}
+
+	/** Delivery recovery never resumes development or replays a completed role. */
+	startDelivery(): void {
+		this.activityDelivery?.start(this);
+		this.commentDelivery?.start(this);
+	}
+	stopDelivery(): void {
+		this.activityDelivery?.stop(this);
+		this.commentDelivery?.stop(this);
+	}
+	flushActivityDelivery(): Promise<void> {
+		return Promise.all([
+			this.activityDelivery?.flush(),
+			this.commentDelivery?.flush(),
+		]).then(() => {});
+	}
+	getActivityDeliveryStatus() {
+		const statuses = [
+			this.activityDelivery?.status(),
+			this.commentDelivery?.status(),
+		].filter((value) => value !== undefined);
+		return {
+			pending: statuses.reduce((n, s) => n + s.pending, 0),
+			delivered: statuses.reduce((n, s) => n + s.delivered, 0),
+			superseded: statuses.reduce((n, s) => n + s.superseded, 0),
+			error: statuses.find((s) => s.error)?.error,
+			nextAttemptAt: statuses
+				.map((s) => s.nextAttemptAt)
+				.filter((at): at is number => at !== undefined)
+				.sort((a, b) => a - b)[0],
+		};
 	}
 
 	// ========================================================================
@@ -1068,4 +1340,43 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 		// Import from same package - no require() needed
 		return new LinearEventTransport(config);
 	}
+}
+
+function headersRecord(
+	headers?: RequestInit["headers"],
+): Record<string, string | readonly string[]> {
+	if (headers instanceof Headers) return Object.fromEntries(headers.entries());
+	if (Array.isArray(headers)) return Object.fromEntries(headers);
+	return { ...headers };
+}
+
+function confirmedMissingEntity(error: unknown): boolean {
+	const raw = error as {
+		status?: number;
+		raw?: { response?: { errors?: { extensions?: { code?: string } }[] } };
+	};
+	return (
+		raw.status === 404 ||
+		Boolean(
+			raw.raw?.response?.errors?.some((e) =>
+				["ENTITY_NOT_FOUND", "NOT_FOUND"].includes(e.extensions?.code ?? ""),
+			),
+		)
+	);
+}
+
+/** Repeated durable documentation retains one identity; markers distinguish separate workflow events. */
+function documentationId(
+	issueId: string,
+	body: string,
+	parentId?: string,
+): string {
+	const bytes = createHash("sha256")
+		.update(JSON.stringify([issueId, body, parentId ?? null]))
+		.digest()
+		.subarray(0, 16);
+	bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+	bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+	const hex = bytes.toString("hex");
+	return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

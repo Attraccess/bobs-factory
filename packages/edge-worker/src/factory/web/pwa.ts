@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { onConnectionLost } from "./auth-state";
 import { loadRestoration, preserveForUpdate } from "./restoration";
 
 declare const __FACTORY_BUILD__: string;
@@ -19,13 +20,24 @@ type State = {
 	error?: string;
 	updateError?: string;
 	warning?: string;
+	/** When the current outage began; cleared once current state is refreshed. */
+	offlineSince?: number;
+	/** Background reconnect attempts that failed during the current outage. */
+	failures: number;
+	retrying: boolean;
 };
 let state: State = {
 	status: "checking",
 	installed: false,
 	waiting: false,
 	updating: false,
+	failures: 0,
+	retrying: false,
 };
+/** Failed reconnects before the UI reports that Factory seems unreachable. */
+export const unreachableAfter = 3;
+const retryDelays = [1000, 2000, 4000];
+const retryInterval = 10000;
 const listeners = new Set<() => void>();
 export function pwaState() {
 	return state;
@@ -43,11 +55,23 @@ export function usePwa() {
 export function disconnected(
 	message = "The factory connection is unavailable.",
 ) {
-	if (state.status !== "mismatch")
-		change({ status: "offline", error: message });
+	if (state.status === "mismatch") return;
+	change({
+		status: "offline",
+		error: message,
+		offlineSince: state.offlineSince ?? Date.now(),
+	});
+	if (!reconnecting) scheduleRetry();
 }
+onConnectionLost(() => disconnected());
 export function versionMismatch(build?: string) {
-	change({ status: "mismatch", serverBuild: build, error: undefined });
+	change({
+		status: "mismatch",
+		serverBuild: build,
+		error: undefined,
+		offlineSince: undefined,
+		failures: 0,
+	});
 }
 let check: Promise<boolean> | undefined;
 export async function checkVersion(): Promise<boolean> {
@@ -86,7 +110,12 @@ export async function checkVersion(): Promise<boolean> {
 }
 export function authoritativeReady() {
 	if (state.status === "checking")
-		change({ status: "ready", error: undefined });
+		change({
+			status: "ready",
+			error: undefined,
+			offlineSince: undefined,
+			failures: 0,
+		});
 }
 export function assertWritable() {
 	if (state.updating || state.status !== "ready")
@@ -98,8 +127,30 @@ export function assertWritable() {
 }
 let registration: ServiceWorkerRegistration | undefined;
 let refresh: (() => Promise<void>) | undefined;
-export async function reconnect() {
+let reconnecting: Promise<void> | undefined;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleRetry() {
+	// Retries start with the running app; the UI stays mounted while they run.
+	if (!refresh || retryTimer || state.status !== "offline") return;
+	retryTimer = setTimeout(() => {
+		retryTimer = undefined;
+		void reconnect();
+	}, retryDelays[state.failures] ?? retryInterval);
+}
+export function reconnect() {
+	reconnecting ??= attemptReconnect().finally(() => {
+		reconnecting = undefined;
+		change({ retrying: false });
+		scheduleRetry();
+	});
+	return reconnecting;
+}
+async function attemptReconnect() {
 	if (state.updating) return;
+	clearTimeout(retryTimer);
+	retryTimer = undefined;
+	const outage = state.status === "offline";
+	change({ retrying: true });
 	if (await checkVersion()) {
 		try {
 			await refresh?.();
@@ -108,6 +159,8 @@ export async function reconnect() {
 			disconnected((error as Error).message);
 		}
 	}
+	if (outage && state.status === "offline")
+		change({ failures: state.failures + 1 });
 	void registration?.update().catch(() => {});
 }
 function workerMessage(

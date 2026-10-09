@@ -5,7 +5,10 @@ import { isPackagedExecutable } from "bobs-factory-core";
 if (isPackagedExecutable)
 	process.env.BOBS_FACTORY_INTERNAL_EXECUTABLE = process.execPath;
 else delete process.env.BOBS_FACTORY_INTERNAL_EXECUTABLE;
-if (process.argv[2] === "internal") {
+if (process.argv[2] === "git-credential") {
+	const { gitCredential } = await import("./github.js");
+	await gitCredential(process.argv[3]);
+} else if (process.argv[2] === "internal") {
 	const { runInternal } = await import("./internal.js");
 	await runInternal(process.argv.slice(3));
 } else {

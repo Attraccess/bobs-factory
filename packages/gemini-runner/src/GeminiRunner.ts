@@ -346,7 +346,7 @@ export class GeminiRunner extends EventEmitter implements IAgentRunner {
 			// Prepare environment variables for Gemini CLI
 			const geminiEnv: NodeJS.ProcessEnv = {
 				...(this.config.childEnvironment ?? process.env),
-				...(this.config.childEnvironment ? this.config.additionalEnv : {}),
+				...this.config.additionalEnv,
 			};
 
 			if (this.config.appendSystemPrompt) {

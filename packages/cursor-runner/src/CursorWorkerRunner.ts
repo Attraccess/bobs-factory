@@ -24,7 +24,12 @@ export class CursorWorkerRunner extends EventEmitter {
 		} = this.config;
 		// Functions and in-process SDK servers cannot cross the worker boundary.
 		const serialized = JSON.stringify(
-			{ ...options, cursorApiKey: childEnvironment?.CURSOR_API_KEY },
+			{
+				...options,
+				cursorApiKey: childEnvironment
+					? childEnvironment.CURSOR_API_KEY
+					: options.cursorApiKey,
+			},
 			(_key, value) => {
 				if (typeof value === "function")
 					throw new Error(
@@ -39,7 +44,7 @@ export class CursorWorkerRunner extends EventEmitter {
 				: new URL("./cursor-worker-entry.js", import.meta.url),
 			isPackagedExecutable ? ["cursor-worker"] : [],
 			{
-				env: { ...childEnvironment, ...additionalEnv },
+				env: { ...(childEnvironment ?? process.env), ...additionalEnv },
 				execArgv: [],
 				detached: process.platform !== "win32",
 				stdio: ["ignore", "ignore", "ignore", "ipc"],

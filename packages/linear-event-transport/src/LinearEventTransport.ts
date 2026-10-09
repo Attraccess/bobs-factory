@@ -141,11 +141,16 @@ export class LinearEventTransport
 			return;
 		}
 
+		const allowlist =
+			typeof this.config.ipAllowlist === "function"
+				? this.config.ipAllowlist()
+				: this.config.ipAllowlist;
+
 		// Validate source IP against Linear's known webhook IPs
 		if (
-			this.config.ipAllowlist &&
-			this.config.ipAllowlist.length > 0 &&
-			!ipMatchesAllowlist(request.ip, this.config.ipAllowlist)
+			allowlist &&
+			allowlist.length > 0 &&
+			!ipMatchesAllowlist(request.ip, allowlist)
 		) {
 			this.logger.warn(
 				`Rejected Linear webhook from unauthorized IP: ${request.ip}`,

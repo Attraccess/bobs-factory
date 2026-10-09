@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { IIssueTrackerService, McpServerConfig } from "bobs-factory-core";
 import { z } from "zod";
 import { externalCompletionProven } from "./Delivery.js";
@@ -40,7 +40,11 @@ export type TicketStage = "in_progress" | "in_review" | "done";
 export interface TicketMilestone {
 	key: string;
 	body: string;
+	purpose?: "documentation" | "operational";
+	deliveryId?: string;
 	stage?: TicketStage;
+	stageSuperseded?: boolean;
+	stageApplied?: boolean;
 	pr?: string;
 	merged?: boolean;
 	completion?: { mode: "external" | "mixed"; digest: string; reviewId: string };
@@ -54,6 +58,12 @@ export interface TicketSync {
 	receipts: TicketMilestone[];
 	lastStatus?: string;
 	error?: string;
+	transcript?: {
+		externalLink?: string;
+		sessionId?: string;
+		createAttempted?: boolean;
+		error?: string;
+	};
 }
 export interface TicketSnapshot {
 	comments: { body: string }[];
@@ -68,6 +78,7 @@ export interface TicketAdapter {
 		snapshot: TicketSnapshot,
 	): Promise<string | undefined>;
 	comment(body: string): Promise<void>;
+	publish?(receipt: TicketMilestone, documentationBody: string): Promise<void>;
 	link(url: string): Promise<void>;
 }
 
@@ -298,9 +309,106 @@ export function taskbotAdapter(
 	};
 }
 
+/** Reuse a verified binding; ambiguous provider creation is reconciled, never blindly repeated. */
+export async function ensureTicketTranscript(
+	run: FactoryRun,
+	tracker: IIssueTrackerService,
+	save: (run: FactoryRun) => void,
+	existingSessionId?: string,
+	externalLink?: string,
+): Promise<string> {
+	const ref = TicketReferenceSchema.parse(run.ticketReference);
+	if (ref.provider !== "native" || ref.platform !== "linear")
+		throw new Error(
+			"Linear transcript requires a verified native Linear ticket",
+		);
+	run.ticketSync ??= { receipts: [] };
+	run.ticketSync.transcript ??= {};
+	const binding = run.ticketSync.transcript;
+	if (binding.sessionId) return binding.sessionId;
+	if (existingSessionId) {
+		binding.sessionId = existingSessionId;
+		delete binding.error;
+		save(run);
+		return existingSessionId;
+	}
+	if (!externalLink || !tracker.findAgentSessionForExternalLink)
+		throw new Error(
+			"Manual Linear transcript needs a configured HTTPS Factory origin and session reconciliation; operational delivery retained",
+		);
+	const link = new URL(externalLink);
+	if (
+		link.protocol !== "https:" ||
+		link.username ||
+		link.password ||
+		link.pathname !== "/" ||
+		link.search ||
+		link.hash !== `#/runs/${encodeURIComponent(run.id)}`
+	)
+		throw new Error(
+			"Factory transcript link must identify this run on its configured HTTPS origin",
+		);
+	if (binding.externalLink && binding.externalLink !== externalLink)
+		throw new Error(
+			"Factory transcript origin changed during pending creation; reconcile the original binding first",
+		);
+	binding.externalLink = externalLink;
+	let creatingNow = false;
+	try {
+		const found = await tracker.findAgentSessionForExternalLink(
+			ref.id,
+			externalLink,
+		);
+		if (found) {
+			binding.sessionId = found;
+			delete binding.error;
+			save(run);
+			return found;
+		}
+		if (binding.createAttempted)
+			throw new Error(
+				"Manual Linear transcript creation remains unconfirmed; retain the original identity until the provider confirms it",
+			);
+		binding.createAttempted = true;
+		save(run);
+		creatingNow = true;
+		const result = await tracker.createAgentSessionOnIssue({
+			issueId: ref.id,
+			externalLink,
+		});
+		if (!result.success) {
+			binding.createAttempted = false;
+			throw new Error("Linear rejected transcript session creation");
+		}
+		const id = result.agentSessionId ?? (await result.agentSession)?.id;
+		if (!id)
+			throw new Error("Linear transcript creation returned no session receipt");
+		binding.sessionId = id;
+		delete binding.error;
+		save(run);
+		return id;
+	} catch (error) {
+		const type = (error as { type?: string }).type;
+		if (
+			creatingNow &&
+			[
+				"Ratelimited",
+				"InvalidInput",
+				"Forbidden",
+				"AuthenticationError",
+			].includes(type ?? "")
+		)
+			binding.createAttempted = false;
+		binding.error = error instanceof Error ? error.message : String(error);
+		save(run);
+		throw error;
+	}
+}
+
 export function nativeAdapter(
 	ref: Extract<TicketReference, { provider: "native" }>,
 	tracker: IIssueTrackerService,
+	options?: { getTranscriptSession: () => Promise<string> },
 ): TicketAdapter {
 	const selectedState = async (
 		stage: TicketStage,
@@ -381,6 +489,35 @@ export function nativeAdapter(
 		async comment(body) {
 			await tracker.createComment(ref.id, { body });
 		},
+		...(ref.platform === "linear"
+			? {
+					async publish(receipt: TicketMilestone, documentationBody: string) {
+						if (receipt.purpose === "documentation" || receipt.merged) {
+							await tracker.createComment(ref.id, { body: documentationBody });
+							return;
+						}
+						if (!options)
+							throw new Error(
+								"Linear transcript binding unavailable; operational delivery retained without an issue comment",
+							);
+						const sessionId = await options.getTranscriptSession();
+						if (!sessionId)
+							throw new Error("Verified Linear transcript session unavailable");
+						const result = await tracker.createAgentActivity({
+							id: receipt.deliveryId,
+							agentSessionId: sessionId,
+							content: {
+								type: receipt.key.startsWith("questions:")
+									? "elicitation"
+									: "thought",
+								body: receipt.body,
+							},
+						});
+						if (!result.success)
+							throw new Error("Linear transcript delivery was rejected");
+					},
+				}
+			: {}),
 		async link(url) {
 			if (!tracker.linkPullRequest)
 				throw new Error(
@@ -389,6 +526,41 @@ export function nativeAdapter(
 			await tracker.linkPullRequest(ref.id, url, "Factory pull request");
 		},
 	};
+}
+
+/** Persist first; newer status intent does not discard pending documentation or links. */
+export function recordTicketMilestone(
+	run: FactoryRun,
+	milestone: TicketMilestone,
+): void {
+	if (!run.ticketReference || run.workflow.id === "simple") return;
+	if (milestone.stage === "done") {
+		if (
+			run.delivery?.contract.mode === "external" ||
+			run.delivery?.contract.mode === "mixed"
+		) {
+			if (
+				!externalCompletionProven(run) ||
+				!milestone.completion ||
+				milestone.completion.digest !== run.delivery.verification?.digest ||
+				(run.delivery.contract.mode === "mixed" &&
+					(run.outputs.merge as { merged?: boolean } | undefined)?.merged !==
+						true)
+			)
+				throw new Error(
+					"Done requires the accepted external completion proof and all mixed repository merges",
+				);
+		} else if (!milestone.merged)
+			throw new Error("Done requires a confirmed merge receipt");
+	}
+	run.ticketSync ??= { receipts: [] };
+	if (run.ticketSync.receipts.some((receipt) => receipt.key === milestone.key))
+		return;
+	if (milestone.stage)
+		for (const receipt of run.ticketSync.receipts)
+			if (!receipt.delivered && receipt.stage && !receipt.merged)
+				receipt.stageSuperseded = true;
+	run.ticketSync.receipts.push({ ...milestone });
 }
 
 /** Durable outbox. Errors are visible but do not replay development or merge. */
@@ -409,34 +581,8 @@ export class TicketTracking {
 	) {}
 	async record(run: FactoryRun, milestone: TicketMilestone): Promise<void> {
 		if (!run.ticketReference || run.workflow.id === "simple") return;
-		if (milestone.stage === "done") {
-			if (
-				run.delivery?.contract.mode === "external" ||
-				run.delivery?.contract.mode === "mixed"
-			) {
-				if (
-					!externalCompletionProven(run) ||
-					!milestone.completion ||
-					milestone.completion.digest !== run.delivery.verification?.digest ||
-					(run.delivery.contract.mode === "mixed" &&
-						(run.outputs.merge as { merged?: boolean } | undefined)?.merged !==
-							true)
-				)
-					throw new Error(
-						"Done requires the accepted external completion proof and all mixed repository merges",
-					);
-			} else if (!milestone.merged)
-				throw new Error("Done requires a confirmed merge receipt");
-		}
-		run.ticketSync ??= { receipts: [] };
-		const sync = run.ticketSync;
-		if (!sync.receipts.some((r) => r.key === milestone.key)) {
-			if (milestone.stage)
-				for (const r of sync.receipts)
-					if (!r.delivered && r.stage && !r.merged) r.superseded = true;
-			sync.receipts.push({ ...milestone });
-			this.save(run);
-		}
+		recordTicketMilestone(run, milestone);
+		this.save(run);
 		await this.flush(run);
 	}
 	async flush(run: FactoryRun, reassess = false): Promise<void> {
@@ -482,6 +628,7 @@ export class TicketTracking {
 						const merged = sync.receipts.some((r) => r.merged && !r.superseded);
 						const applyStage =
 							receipt.stage &&
+							!receipt.stageSuperseded &&
 							(!merged || receipt.merged || receipt.completion);
 						const terminal =
 							["done", "cancelled"].includes(String(snapshot.status)) ||
@@ -527,16 +674,20 @@ export class TicketTracking {
 						}
 						const marker = `<!-- factory:${run.id}:${createHash("sha256").update(receipt.key).digest("hex").slice(0, 20)} -->`;
 						if (!snapshot.comments.some((c) => c.body.includes(marker))) {
-							receipt.limitation =
-								receipt.stage &&
-								(!merged || receipt.merged || receipt.completion)
-									? await adapter.stage(receipt.stage, snapshot)
-									: undefined;
+							if (applyStage && !receipt.stageApplied) {
+								receipt.limitation = await adapter.stage(
+									receipt.stage!,
+									snapshot,
+								);
+								receipt.stageApplied = true;
+							}
 							sync.lastStatus = statusOf(await adapter.read());
 							this.save(run);
-							await adapter.comment(
-								`${receipt.body}${receipt.limitation ? `\n\nTracking limitation: ${receipt.limitation}` : ""}\n\n${marker}`,
-							);
+							receipt.deliveryId ??= randomUUID();
+							this.save(run);
+							const body = `${receipt.body}${receipt.limitation ? `\n\nTracking limitation: ${receipt.limitation}` : ""}\n\n${marker}`;
+							if (adapter.publish) await adapter.publish(receipt, body);
+							else await adapter.comment(body);
 						}
 						receipt.delivered = true;
 						delete receipt.error;

@@ -21,6 +21,7 @@ import type {
 	RunTitleJob,
 } from "bobs-factory-core";
 import { resolvePath } from "bobs-factory-core";
+import { applyManagedGithubAgentEnvironment } from "./factory/GithubApi.js";
 import { titleMcpConfig } from "./factory/TitleMcpConfig.js";
 import { buildIntentToAddHook } from "./hooks/IntentToAddHook.js";
 import { buildPrMarkerHook } from "./hooks/PrMarkerHook.js";
@@ -91,6 +92,8 @@ export interface ChatRunnerConfigInput {
 	repository?: RepositoryConfig;
 	/** Repository paths the chat session can read */
 	repositoryPaths?: string[];
+	/** Live repository bindings for the chat-accessible paths. */
+	repositories?: RepositoryConfig[];
 	/** Operator-configured writable roots for external tool sockets/state. */
 	additionalWritableDirectories?: readonly string[];
 	/**
@@ -133,6 +136,10 @@ export interface IssueRunnerConfigInput {
 	auxiliary?: boolean;
 	session: CyrusAgentSession;
 	repository: RepositoryConfig;
+	/** Selected repository bindings for grouped issue worktrees. */
+	repositories?: RepositoryConfig[];
+	/** Skip host credential discovery when an accepted private profile will apply. */
+	nativeGithubCredentials?: boolean;
 	sessionId: string;
 	systemPrompt: string | undefined;
 	allowedTools: string[];
@@ -306,7 +313,7 @@ export class RunnerConfigBuilder {
 			`${input.platformName}-memory`,
 		);
 
-		return {
+		const config: AgentRunnerConfig = {
 			runnerType,
 			workingDirectory: input.workspacePath,
 			allowedTools,
@@ -350,6 +357,27 @@ export class RunnerConfigBuilder {
 			onMessage: input.onMessage,
 			onError: input.onError,
 		};
+		this.applyNativeGithubEnvironment(
+			config,
+			input.factoryHome,
+			input.repositories
+				? input.repositories
+						.filter(
+							(repo) => !repo.gitProvider || repo.gitProvider.type === "github",
+						)
+						.map((repo) => ({
+							directory: repo.repositoryPath,
+							repositoryUrl: repo.githubUrl,
+						}))
+				: repositoryPaths.map((directory) => ({
+						directory,
+						repositoryUrl:
+							directory === input.repository?.repositoryPath
+								? input.repository.githubUrl
+								: undefined,
+					})),
+		);
+		return config;
 	}
 
 	/**
@@ -588,7 +616,34 @@ export class RunnerConfigBuilder {
 			config.maxTurns = input.maxTurns;
 		}
 
+		if (input.nativeGithubCredentials !== false && !input.auxiliary) {
+			this.applyNativeGithubEnvironment(
+				config,
+				input.factoryHome,
+				(input.repositories ?? [input.repository])
+					.filter(
+						(repo) => !repo.gitProvider || repo.gitProvider.type === "github",
+					)
+					.map((repo) => ({
+						directory: input.session.workspace.repoPaths?.[repo.id] ?? cwd,
+						repositoryUrl: repo.githubUrl,
+					})),
+			);
+		}
+
 		return { config, runnerType };
+	}
+
+	private applyNativeGithubEnvironment(
+		config: AgentRunnerConfig,
+		factoryHome: string,
+		repositories: { directory: string; repositoryUrl?: string }[],
+	): void {
+		applyManagedGithubAgentEnvironment(config, {
+			factoryHome,
+			repositories,
+			environment: { ...process.env, ...config.additionalEnv },
+		});
 	}
 
 	buildTitleConfig(
