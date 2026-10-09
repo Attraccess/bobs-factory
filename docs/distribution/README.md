@@ -149,7 +149,12 @@ bobs-factory = import /path/to/bobs-factory/nix/package.nix {
 Keep the exact manifest bytes and detached signature together. The key ID must
 match an active public key in the reviewed release tooling. Historical beta
 manifests also require the signed inventory attestation described in
-[the public release contract](PUBLIC_RELEASES.md). The package fetches public versioned assets without GitHub credentials. An
+[the public release contract](PUBLIC_RELEASES.md). Before unpacking, Nix verifies
+both signatures, the attestation's exact manifest identity and bytes, every
+manifest-bound inventory record, and the required validation receipts for all
+four targets. Missing, duplicate, malformed or mismatched records fail the build.
+Keep `nix/validate-beta-attestation.jq` with `nix/package.nix` in reviewed tooling.
+The package fetches public versioned assets without GitHub credentials. An
 unavailable manifest fails evaluation clearly. Update the pinned manifest when
 upgrading; avoid fetching a mutable latest pointer during evaluation. Keep the
 service's home, environment and conversations separate from the immutable Nix

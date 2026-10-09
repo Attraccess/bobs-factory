@@ -45,9 +45,11 @@ else pkgs.stdenvNoCC.mkDerivation {
     openssl dgst -sha256 -verify ${publicKey} -signature ${releaseSignature} ${releaseManifest}
   '' + pkgs.lib.optionalString legacy ''
     openssl dgst -sha256 -verify ${attestationKey} -signature ${releaseAttestationSignature} ${releaseAttestation}
-    test "$(sha256sum ${releaseManifest} | cut -d ' ' -f1)" = "$(jq -r '.manifest.sha256' ${releaseAttestation})"
-    test "$(wc -c < ${releaseManifest} | tr -d ' ')" = "$(jq -r '.manifest.size' ${releaseAttestation})"
-    jq -e '.assets | map(.file) | contains(["release-evidence.json", "validation-receipts.tar.gz", "build-provenance.json"])' ${releaseAttestation}
+    jq -e --slurpfile release ${releaseManifest} \
+      --arg manifestHash "$(sha256sum ${releaseManifest} | cut -d ' ' -f1)" \
+      --argjson manifestSize "$(wc -c < ${releaseManifest} | tr -d ' ')" \
+      -f ${./validate-beta-attestation.jq} ${releaseAttestation} \
+      || { echo "Invalid or incomplete historical beta inventory attestation" >&2; exit 1; }
   '';
   postUnpack = ''
     test "$(jq -r '.version' "$sourceRoot/build.json")" = ${pkgs.lib.escapeShellArg release.version}
