@@ -12,6 +12,7 @@ import {
 	useParams,
 } from "react-router-dom";
 import { deliveryTargetLabel } from "../RunAttention";
+import { ArchitecturePanel } from "./architecture";
 import { ArtifactCard, Inspector } from "./artifacts";
 import { AccessBoundary } from "./auth";
 import {
@@ -916,6 +917,7 @@ function RunPage({
 					)}
 				</div>
 			</header>
+			<ArchitecturePanel key={run.id} run={run} />
 			<ExecutionDetails run={run} />
 			{run.deliveryCoordination?.phase === "queued" && (
 				<p role="status">

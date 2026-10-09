@@ -1,0 +1,238 @@
+# Architecture proposals before implementation
+
+Date: 2026-10-09. Taskbot #90. Tested the uncommitted implementation on
+`3e117128f77ecf256b1f7866f65906b33c83e9fb`; dashboard build
+`dc7ee62571c0d11f7a2dab3d`. Validation made no production changes.
+
+## Applicability and setup
+
+F1 applies because architecture discussion changes workflow waits, recovery and
+implementation handoff. The expected behavior was an exact-version acceptance
+boundary shared by Factory and Takeover, with discussion-driven revision and a
+recorded routine bypass.
+
+The embedded CLI-platform EdgeWorker used an isolated home, fresh local repository,
+local Git remote and temporary worktrees. The F1 `MockAgentRunner` supplied every
+role and background title response. It emitted actual runner events through
+EdgeWorker; no agent CLI or inference API was called. The real private
+factory-context stdio connection and output validation remained enabled. The
+fixture cleared the inherited packaged-executable flag so source-mode stdio could
+start correctly. The shared pipeline stopped after implementation, excluding
+publication and later delivery gates from this focused drive.
+
+The driver and complete receipts are retained in:
+
+```text
+/Users/jappy/.bobs-factory/factory/evidence/manual-ca2bb7eb-c67e-4b8b-ac2f-1e62bf6cad37/
+  architecture-f1-drive.ts
+  architecture-f1-drive.log
+  architecture-f1-results.json
+  architecture-f1-manual-*.json
+  architecture-browser-fixture.ts
+  architecture-browser-results.json
+```
+
+```sh
+F1_AGENT_MODE=mock bun /Users/jappy/.bobs-factory/factory/evidence/manual-ca2bb7eb-c67e-4b8b-ac2f-1e62bf6cad37/architecture-f1-drive.ts
+```
+
+## Executed results
+
+All four drives passed:
+
+| Workflow | Scenario | Result |
+| --- | --- | --- |
+| Factory | Meaningful architecture | Three reviewed versions; implementation ran once after acceptance |
+| Takeover | Meaningful architecture | Three reviewed versions; implementation ran once after acceptance |
+| Factory | Routine existing pattern | Completed without a human decision; bypass reason retained |
+| Takeover | Routine existing pattern | Completed without a human decision; bypass reason retained |
+
+Each meaningful drive asserted that implementation had not started during the
+initial wait. Explanation retained the same pending proposal and granted no
+acceptance. The runtime shut down and was reconstructed from its saved home while
+waiting; it restored the same proposal and still did not implement. Discussion
+created version 2, rejection created version 3, and acceptance of version 1 was
+rejected. Accepting version 3 advanced implementation exactly once.
+
+The implementation input contained its self-contained accepted plan and answers,
+without full ticket text or history. Takeover retained its existing tracker
+identity and synchronization receipts. The fixture plan's inherited PR/branch
+instructions survived handoff. Both Takeover worktrees retained the original
+fixture ticket branch `def-1-existing-architecture-fixture`. Forge inspection was
+simulated; this drive does not establish remote PR inspection or delivery.
+
+## Headless dashboard verification
+
+A separate real protected Factory server used a software passkey through the real
+registration verifier. An isolated headless `agent-browser` session displayed the
+built dashboard at desktop and 390×844 mobile widths. All images below were
+captured from the running application and inspected.
+
+The executed flow displayed pending version 1, requested an explanation without
+acceptance, submitted feedback to obtain reviewed version 2, then accepted version
+2 and completed the simulated implementation. The artifact inspector rendered the
+proposal and diagram. Acceptance submissions after completion returned HTTP 409.
+Focused API tests additionally reject stale versions while waiting and duplicate
+submissions. The owned browser and servers were closed after validation.
+
+![Pending proposal and separate acceptance actions on desktop](media/2026-10-09-architecture-proposals/architecture-pending-desktop.png)
+
+![Reviewed version 2 and readable diagram on mobile](media/2026-10-09-architecture-proposals/architecture-revised-mobile.png)
+
+![Accepted version 2 and completed simulated implementation](media/2026-10-09-architecture-proposals/architecture-accepted-desktop.png)
+
+![Architecture rendered in the artifact inspector](media/2026-10-09-architecture-proposals/architecture-inspector-desktop.png)
+
+## Other checks and limits
+
+- The six affected architecture, pipeline, runtime, server, web-client and chat
+  test files passed: 211 tests. The earlier four process-inspection failures were
+  resolved by rerunning with the corrected environment.
+- The 13 architecture checks cover malformed/fake approval, diagram references,
+  immutable assets, stale/duplicate decisions, candidate review failure, scoped
+  handoff, renamed roles, customization, frozen runs, stop/resume and recovery
+  before and immediately after acceptance.
+- EdgeWorker typecheck, build, changed-source Biome checks and `git diff --check`
+  passed. No dependency graph changed.
+- Simulated agents establish orchestration and input boundaries, not the quality
+  of architecture recommendations. Real-agent validation was not authorized.
+- This role did not publish a PR, merge changes or mutate the originating ticket.
+
+## Asset review fixes
+
+Validated the fix working tree based on `464c3a0bf9ef339213c377289d0c46df72abc641`.
+Local snapshot sources are restricted to the selected repository workspaces and source
+directories, run evidence and attachments. Both lexical paths and resolved symlink
+targets must be inside an authorized directory. Asset references in the complete
+implementation plan now point to snapshots; a source-to-snapshot map explicitly
+requires implementation to use frozen inputs.
+
+The three affected architecture, pipeline and runtime test files passed (179 tests),
+then the architecture file passed again with the added workflow-failure check
+(15 tests). Tests reject outside files, sibling-prefix paths, traversal and escaping
+symlinks, accept an internal symlink, and stop a restricted proposal before approval.
+They also confirm that changing the original file leaves the frozen specification
+and its plan reference intact, while changing snapshot bytes fails verification.
+EdgeWorker typecheck, changed-source Biome and `git diff --check` passed.
+
+The four simulated-agent F1 scenarios passed again with a real repository file
+asset in each architecture proposal. They exercise Factory and Takeover revision,
+rejection, exact-version acceptance, restart and routine bypass, and assert that
+implementation receives the frozen file and its snapshot reference. An original
+file is changed during the initial pending proposal. The driver uses only simulated
+agents and excludes remote delivery. No dashboard behavior changed in this fix;
+the earlier inspected screenshots remain historical evidence.
+
+```sh
+F1_AGENT_MODE=mock bun /Users/jappy/.bobs-factory/factory/evidence/manual-ca2bb7eb-c67e-4b8b-ac2f-1e62bf6cad37/architecture-assets-f1-drive.ts
+```
+
+The driver, log and receipts are retained beside the original evidence as
+`architecture-assets-f1-drive.ts`, `architecture-assets-f1-drive.log` and
+`architecture-assets-f1-results.json`. No real-agent validation was run.
+
+## Latest-main conflict resolution
+
+Validated the merge working tree combining architecture fix `1361514f` with
+main `01cdf241` for PR #74. The capability description preserves architecture
+acceptance and the newer guide-gap recovery instructions. The full routing
+prompt fixture now asserts both behaviors.
+
+All five affected test files passed (211 tests): architecture, pipeline, runtime,
+Git provider and full routing prompt. EdgeWorker type checking and Biome checks
+for the resolved source and prompt fixture passed. The diff against main has no
+whitespace errors. An initial incorrectly filtered test invocation started the
+broader suite and reported failures outside these files; it was interrupted.
+This validation does not claim a full-suite pass.
+
+The existing asset F1 driver passed all four simulated-agent scenarios again:
+Factory and Takeover revision, rejection, restart, exact-version acceptance,
+frozen asset handoff and routine bypass. The merge receipts and log are retained
+in the evidence directory as `architecture-merge-f1-results.json` and
+`architecture-merge-f1-drive.log`. No real-agent inference or remote delivery was
+exercised. Existing dashboard screenshots remain historical evidence.
+
+
+## QA fixes: empty HTTP assets and explanation notifications
+
+Validated the working tree based on `2bc8a0ab5e8f291b9732374ad4f9267b7f38401a`
+with the two QA corrections for PR #74. Empty HTTP 200 and HTTP 204 assets now
+stop before proposal approval or implementation. Explaining architecture retains
+the pending question batch and its ticket receipt; a revised proposal gets a new
+batch. Ordinary assistance-question batch behavior remains covered by the runtime
+tests.
+
+Commands:
+
+```sh
+cd packages/edge-worker
+pnpm exec vitest run test/Architecture.test.ts test/WorkflowRuntime.test.ts test/FactoryPush.test.ts test/TicketTracking.test.ts
+# 180 tests passed across four files.
+pnpm exec vitest run test/Architecture.test.ts
+# 17 tests passed after correcting the test ticket metadata.
+cd ../..
+pnpm --filter bobs-factory-edge-worker typecheck
+pnpm exec biome check packages/edge-worker/src/factory/Architecture.ts packages/edge-worker/src/factory/WorkflowRuntime.ts packages/edge-worker/test/Architecture.test.ts
+git diff --check
+F1_AGENT_MODE=mock bun /Users/jappy/.bobs-factory/factory/evidence/manual-ca2bb7eb-c67e-4b8b-ac2f-1e62bf6cad37/architecture-qa-fix-f1-drive.ts
+F1_AGENT_MODE=mock bun /Users/jappy/.bobs-factory/factory/evidence/manual-ca2bb7eb-c67e-4b8b-ac2f-1e62bf6cad37/qa-fix-targeted-boundaries.ts
+```
+
+All eight F1 scenarios passed through an isolated EdgeWorker and the F1
+`MockAgentRunner`: Factory and Takeover each rejected absent/empty HTTP assets,
+completed discussion/revision/restart/exact acceptance with frozen assets, and
+recorded a routine bypass. The ticket sink was simulated and retained persisted
+receipts. Explanation and restart kept one notification for the proposal; each
+new proposal version received one notification. Forge inspection and ticket
+preparation were isolated fixtures; no production ticket writes or delivery ran.
+
+All 13 targeted boundary checks passed under Bun 1.3.5, including HTTP success,
+503, absent content, empty content, exactly 25 MiB and over 25 MiB. The attention
+check retained 2 total ticket receipts before and after explanation. Simulated
+push remained deduplicated through restart and sent new attention on revision.
+The required `architecture-assets-http-boundary` and
+`architecture-attention-dedup` criteria were retested successfully.
+
+Complete evidence is in the run evidence directory:
+
+- `architecture-qa-fix-f1-drive.ts`, `.log`, and `architecture-qa-fix-f1-results.json`
+- `qa-fix-targeted-boundaries.ts`, `.log`, and `qa-fix-targeted-boundary-results.json`
+- `qa-fix-targeted-attention-detail.json`
+
+The broader `qa-fix-boundaries.ts` run recorded passing assertions but exited
+with Bun/Fastify `ERR_HTTP_HEADERS_SENT` from API injection. The same error exists
+in the original `qa-boundaries.log`; this is not claimed as a clean full-harness
+pass. Targeted retests omit those unrelated API-injection sections and exit
+successfully. Existing approved screenshots remain historical evidence; these
+fixes change no layout. Real-agent recommendation quality and physical-device
+push delivery remain unverified.
+
+## Integration with delivery coordination changes
+
+Validated the merge working tree combining architecture head
+`0b38368254ca2b73ccc2f95d48ff1af5d7df28d2` with main
+`4d0ffd783d1510edd796ec220688695e6fb17b6d` for PR #74. The resolution
+retains both architecture decisions and current delivery-readiness inspection,
+plus the architecture panel and delivery status display. The simulated ticket
+sink now marks runtime-recorded pending receipts delivered, matching the durable
+outbox introduced on main.
+
+Workspace build, EdgeWorker typecheck, repository-wide Biome and whitespace
+checks passed. All 280 tests across Architecture, WorkflowRuntime,
+FactoryPipeline, FactoryProvenance, DeliveryCoordination, TicketTracking,
+FactoryWebClient and FactoryPush passed. The first test run exposed the old
+simulated sink assumption; the updated fixture passed the full targeted rerun.
+
+`F1_AGENT_MODE=mock bun <evidence>/ci-merge3-f1-drive.ts` passed all eight
+Factory/Takeover scenarios: absent and empty HTTP assets reject before
+implementation, discussion and revision preserve frozen handoff, restart retains
+notification identity, exact acceptance starts implementation once, and routine
+work bypasses the decision. The harness uses isolated repositories, simulated
+forge inspection and ticket delivery, and stops after implementation. Real-agent
+quality and remote delivery remain untested. Existing screenshot evidence is
+historical; this merge adds no new layout behavior beyond the upstream display.
+
+Logs and structured results remain in the run evidence directory as
+`ci-merge3-build.log`, `ci-merge3-typecheck-retest.log`,
+`ci-merge3-biome.log`, `ci-merge3-tests-retest.log`, `ci-merge3-f1.log`
+and `ci-merge3-f1-results.json`. Prior evidence was retained.

@@ -1038,6 +1038,8 @@ export class FactoryTools {
 					await delay(context.signal);
 				}
 			}
+			case "architecture-decision":
+				return {}; // Runtime owns proposal identity and the passive wait.
 			case "ci-fix-readiness": {
 				const previous = run.outputs.ci as MergeReadiness | undefined;
 				const url = String(readPath(run.outputs, "draft-pr.url") ?? "");

@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Factory and Takeover architecture proposals with repository evidence, diagrams, discussion-driven revision and exact-version acceptance before implementation. Routine work records an approval bypass. Assets stay within authorized directories and accepted plans reference frozen snapshots. Empty remote specifications stop approval; explanations reuse the pending proposal’s ticket notification. ([Taskbot #90](https://taskbot.apps.janjaap.de/p/bobs-factory/t/90), [#74](https://github.com/jappyjan/bobs-factory/pull/74))
 - Prepare frozen stable and nightly binary candidates with signed channel discovery, exact-asset stable approval and recoverable publication. Check stable ordering against complete provider history, block nightly eligibility when the latest published nightly cannot be verified, authenticate efficient website discovery, and explain unavailable installer channels. Nightlies remain opt-in and publication stays disabled pending protected signing and rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117), [#70](https://github.com/jappyjan/bobs-factory/pull/70)).
 
 ### Fixed

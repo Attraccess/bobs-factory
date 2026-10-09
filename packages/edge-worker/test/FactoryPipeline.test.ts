@@ -879,6 +879,7 @@ it("waits on blocked implementation across restart and supplies the answer witho
 		tool,
 		script: async () => ({}),
 	});
+	runtime.updateWorkflows(legacyReviewWorkflows()); // Exercise the frozen legacy handoff contract.
 	const run = runtime.create({
 		triggerOrigin: {
 			type: "manual",

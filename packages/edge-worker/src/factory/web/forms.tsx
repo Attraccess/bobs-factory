@@ -937,6 +937,14 @@ export function Recipes() {
 									rows={8}
 								/>
 							</label>
+							{role.value.architectureContract && (
+								<p>
+									Architecture output: {role.value.architectureContract}. This
+									contract remains attached when the role is renamed or cloned.
+									Configure the decision tool's approval policy in Workflow
+									JSON: meaningful (default), always, or never.
+								</p>
+							)}
 							<label>
 								Output contract
 								<select

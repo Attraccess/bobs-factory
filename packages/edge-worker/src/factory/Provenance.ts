@@ -37,6 +37,7 @@ export interface StepAttempt {
 	contract: {
 		validator: string;
 		version: number | null;
+		architecture?: string | null;
 		review: string | null;
 		qa: string | null;
 		video: string | null;
@@ -89,6 +90,7 @@ export function beginStepAttempt(
 	const contract = {
 		validator: FACTORY_RESULT_CONTRACT_VERSION,
 		version: run.contractVersion ?? null,
+		architecture: step.architectureContract ?? null,
 		review: step.reviewContract ?? null,
 		qa: step.qaContract ?? null,
 		video: step.videoContract ?? null,
@@ -249,6 +251,7 @@ export function runProvenance(run: FactoryRun) {
 			contract: {
 				validator: attempt.contract.validator,
 				version: attempt.contract.version,
+				architecture: attempt.contract.architecture ?? null,
 				review: attempt.contract.review,
 				qa: attempt.contract.qa,
 				video: attempt.contract.video,
