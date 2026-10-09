@@ -61,10 +61,16 @@ export function useAccess() {
 	}, accessState);
 }
 let request = 0;
-export async function checkAccess(background = false) {
+let connectionLost = () => {};
+// A failed check proves only that Factory is unreachable, not that the session ended.
+export function onConnectionLost(handler: () => void) {
+	connectionLost = handler;
+}
+export async function checkAccess() {
 	const id = ++request,
 		epoch = generation;
-	if (!background || state.status !== "authenticated")
+	// Re-checks keep an authenticated UI mounted; only a definitive answer unloads it.
+	if (state.status !== "authenticated")
 		publish({ ...state, status: "checking" });
 	try {
 		const response = await fetch("/api/auth/status", {
@@ -72,6 +78,11 @@ export async function checkAccess(background = false) {
 			credentials: "same-origin",
 			signal: accessSignal(),
 		});
+		if (id !== request || epoch !== generation) return;
+		if (response.status === 401) {
+			accessRequired("Your session expired. Sign in again.");
+			return;
+		}
 		if (!response.ok) throw new Error("Factory access unavailable");
 		const result = await response.json();
 		if (id !== request || epoch !== generation) return;
@@ -87,7 +98,9 @@ export async function checkAccess(background = false) {
 			accessRequired("Sign in to continue");
 		}
 	} catch {
-		if (id === request && epoch === generation)
+		if (id !== request || epoch !== generation) return;
+		if (state.status === "authenticated") connectionLost();
+		else
 			accessRequired(
 				"Connect to Factory to sign in. Offline access is unavailable.",
 			);

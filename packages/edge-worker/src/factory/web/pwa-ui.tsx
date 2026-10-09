@@ -1,8 +1,14 @@
-import { useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 import { client } from "./client";
-import { installApp, reconnect, updateApp, usePwa } from "./pwa";
+import {
+	installApp,
+	reconnect,
+	unreachableAfter,
+	updateApp,
+	usePwa,
+} from "./pwa";
 import { restorationNotice } from "./restoration";
-import { Button, Modal } from "./ui";
+import { Bob, Button, Modal } from "./ui";
 export function InstallControl() {
 	const pwa = usePwa();
 	const [help, setHelp] = useState(false);
@@ -79,9 +85,13 @@ export function ConnectionNotice({
 		)
 			? pwa.error
 			: undefined;
+	// Once data is loaded, the header and the unreachable dialog report connection loss.
+	const banner =
+		pwa.status === "mismatch" ||
+		(pwa.status !== "ready" && (signedOut || !hasData));
 	return (
 		<>
-			{pwa.status !== "ready" && (
+			{banner && (
 				<div className="connection-error" role="status">
 					{pwa.status === "mismatch"
 						? signedOut
@@ -145,6 +155,81 @@ export function ConnectionNotice({
 						restorationNotice()}
 				</p>
 			)}
+		</>
+	);
+}
+// Short outages, such as returning to a background tab, only change Bob's face.
+const quietGrace = 1500;
+export function useConnectionIndicator() {
+	const pwa = usePwa(),
+		[, rerender] = useReducer((n: number) => n + 1, 0),
+		offline = pwa.status === "offline",
+		visibleAt = (pwa.offlineSince ?? 0) + quietGrace;
+	useEffect(() => {
+		if (!offline) return;
+		const wait = visibleAt - Date.now();
+		if (wait <= 0) return;
+		const timer = setTimeout(rerender, wait);
+		return () => clearTimeout(timer);
+	}, [offline, visibleAt]);
+	const unreachable = offline && pwa.failures >= unreachableAfter;
+	return {
+		mood: unreachable ? "oops" : offline ? "reconnecting" : undefined,
+		status: unreachable
+			? ("unreachable" as const)
+			: offline && Date.now() >= visibleAt
+				? ("reconnecting" as const)
+				: undefined,
+	};
+}
+export function ConnectionStatus({
+	status,
+}: {
+	status?: "reconnecting" | "unreachable";
+}) {
+	const pwa = usePwa(),
+		[dismissed, setDismissed] = useState(false);
+	useEffect(() => {
+		if (pwa.status !== "offline") setDismissed(false);
+	}, [pwa.status]);
+	return (
+		<>
+			<span className="connection-status" aria-live="polite">
+				{status === "unreachable" ? (
+					<button type="button" onClick={() => setDismissed(false)}>
+						Offline · details
+					</button>
+				) : status === "reconnecting" ? (
+					"Reconnecting…"
+				) : null}
+			</span>
+			<Modal
+				open={status === "unreachable" && !dismissed}
+				onOpenChange={(open) => setDismissed(!open)}
+				title="Can’t reach the factory"
+				description="Everything on this page is still here."
+			>
+				<div className="modal-body connection-modal">
+					<Bob mood="oops" size={72} />
+					<p>
+						Bob tried to reconnect {pwa.failures} times without luck. Unsent
+						edits and open panels stay as they are, and Bob keeps retrying in
+						the background. Actions resume once Factory is reachable again.
+					</p>
+					<p className="muted">
+						Already-loaded information may be stale. Active runs continue on the
+						server.
+					</p>
+					<div className="actions">
+						<Button busy={pwa.retrying} onClick={() => void reconnect()}>
+							Retry now
+						</Button>
+						<Button variant="secondary" onClick={() => setDismissed(true)}>
+							Keep working
+						</Button>
+					</div>
+				</div>
+			</Modal>
 		</>
 	);
 }

@@ -513,7 +513,7 @@ it("keeps credential management mounted during verified-session refresh, but cle
 				}),
 		),
 	);
-	const refreshed = checkAccess(true);
+	const refreshed = checkAccess();
 	expect(accessState().status).toBe("authenticated");
 	const expires = Date.now() + 120000;
 	respond(factoryResponse({ authenticated: true, expires }));
@@ -523,15 +523,39 @@ it("keeps credential management mounted during verified-session refresh, but cle
 		transcript: "private content",
 	});
 
-	const revoked = checkAccess(true);
+	const revoked = checkAccess();
 	respond(factoryResponse({ authenticated: false, setupRequired: false }));
 	await revoked;
 	expect(accessState().status).toBe("required");
 	expect(client.getQueryData(["run", "private"])).toBeUndefined();
 
-	const signedOut = checkAccess(true);
+	const signedOut = checkAccess();
 	expect(accessState().status).toBe("checking");
 	respond(factoryResponse({}, { status: 401 }));
 	await signedOut;
 	expect(accessState().status).toBe("required");
+});
+
+it("keeps the signed-in UI and its data through connection loss, unloading only on a definitive denial", async () => {
+	client.setQueryData(["run", "draft"], { input: "unsent" });
+	for (const failure of [
+		() => Promise.reject(new TypeError("Failed to fetch")),
+		() => Promise.resolve(factoryResponse({}, { status: 502 })),
+	]) {
+		vi.stubGlobal("fetch", vi.fn(failure));
+		const check = checkAccess();
+		expect(accessState().status).toBe("authenticated");
+		await check;
+		expect(accessState().status).toBe("authenticated");
+		expect(pwaState().status).toBe("offline");
+		expect(client.getQueryData(["run", "draft"])).toEqual({ input: "unsent" });
+	}
+
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => factoryResponse({ authenticated: false })),
+	);
+	await checkAccess();
+	expect(accessState().status).toBe("required");
+	expect(client.getQueryData(["run", "draft"])).toBeUndefined();
 });
