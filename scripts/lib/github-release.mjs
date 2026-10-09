@@ -7,7 +7,7 @@ import {
 	validatePublicRepository,
 	validateReleaseManifest,
 } from "./binary-release.mjs";
-import { validateCandidate } from "./release-candidate.mjs";
+import { releaseChannel, validateCandidate } from "./release-candidate.mjs";
 import { verifyManifestSignature } from "./release-signature.mjs";
 export function githubClient(token = process.env.GH_TOKEN, transport = fetch) {
 	const headers = {
@@ -285,4 +285,25 @@ export async function discoverReleases(
 		verified,
 		rejected,
 	};
+}
+
+// Eligibility needs the newest published source and clock, not a discovery
+// fallback. Include incomplete releases: missing assets cannot erase history.
+export function requireVerifiedNightlyHistory(state) {
+	const published = state.published.filter(
+		(r) => !r.draft && releaseChannel(r.tag_name?.slice(1)) === "nightly",
+	);
+	if (!published.length) return null;
+	const last = state.nightly;
+	const sequence = (r) => BigInt(r.tag_name.split(".").at(-1));
+	requireValue(
+		last &&
+			published.every(
+				(r) =>
+					sequence(r) < sequence(last.release) ||
+					(sequence(r) === sequence(last.release) && r.id === last.release.id),
+			),
+		"Nightly preparation/publication blocked: latest published nightly cannot be verified; refresh trusted release tooling or repair release evidence",
+	);
+	return last;
 }

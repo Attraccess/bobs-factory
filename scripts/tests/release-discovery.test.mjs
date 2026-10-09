@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { sha256 } from "../lib/binary-release.mjs";
-import { discoverReleases, githubClient } from "../lib/github-release.mjs";
+import {
+	discoverReleases,
+	githubClient,
+	requireVerifiedNightlyHistory,
+} from "../lib/github-release.mjs";
 import { preparedFixture } from "./prepared-fixture.mjs";
 import { keys } from "./release-fixtures.mjs";
 
@@ -85,6 +89,7 @@ test("discovery separates signed stable/nightly, excludes incomplete candidates 
 		let state = await discoverReleases(p.client, keys);
 		assert.equal(state.stable.manifest.channel, "stable");
 		assert.equal(state.nightly.manifest.channel, "nightly");
+		assert.equal(requireVerifiedNightlyHistory(state), state.nightly);
 		p.releaseList[0].draft = true;
 		state = await discoverReleases(p.client, keys);
 		assert.equal(state.stable.manifest.channel, "beta");
@@ -103,6 +108,10 @@ test("discovery separates signed stable/nightly, excludes incomplete candidates 
 		);
 		state = await discoverReleases(p.client, keys);
 		assert.equal(state.nightly, null);
+		assert.throws(
+			() => requireVerifiedNightlyHistory(state),
+			/latest published nightly cannot be verified/,
+		);
 		assert.equal(state.stable.manifest.channel, "beta");
 		assert.match(state.rejected[0].reason, /signature/);
 		p.releaseList[2].assets = p.releaseList[2].assets.filter(
@@ -118,6 +127,30 @@ test("discovery separates signed stable/nightly, excludes incomplete candidates 
 	} finally {
 		for (const f of [stable, nightly, beta]) f.cleanup();
 	}
+});
+
+test("nightly history uses global sequence even without manifests and tolerates unverified older history", () => {
+	const release = (id, version) => ({
+		id,
+		tag_name: `v${version}`,
+		draft: false,
+	});
+	const current = release(2, "1.0.0-nightly.20261009.10");
+	const nightly = { release: current };
+	const state = {
+		published: [release(1, "9.0.0-nightly.20261008.9"), current],
+		nightly,
+	};
+	assert.equal(requireVerifiedNightlyHistory(state), nightly);
+	assert.equal(
+		requireVerifiedNightlyHistory({ published: [], nightly: null }),
+		null,
+	);
+	state.published.push(release(3, "0.1.0-nightly.20261009.11"));
+	assert.throws(
+		() => requireVerifiedNightlyHistory(state),
+		/latest published nightly cannot be verified/,
+	);
 });
 
 test("channel-only discovery authenticates API calls and skips older verified history", async () => {

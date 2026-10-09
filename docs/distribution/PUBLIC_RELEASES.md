@@ -60,6 +60,11 @@ nightly, and at least six hours since successful publication. The first nightly
 has no cooldown. Failed preparation does not reset the clock. A frozen candidate
 that no longer matches main skips publication. Eligibility is checked inside the
 repository publication lock and again immediately before making a draft public.
+Preparation and publication block if the highest published nightly sequence
+cannot be verified, including after signing-key rotation or with incomplete
+assets. They never substitute an older verified nightly to establish source,
+cooldown or sequence eligibility. Refresh trusted release tooling or repair the
+release evidence before retrying.
 
 The four targets are `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`.
 Windows and musl are unsupported. Minimum OS/libc/CPU claims require observed

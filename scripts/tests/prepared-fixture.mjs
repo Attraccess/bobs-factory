@@ -28,7 +28,7 @@ import { keys, signBytes, testInstaller } from "./release-fixtures.mjs";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 export function preparedFixture(
 	channel = "nightly",
-	{ gitTooling = false, stableVersion = "1.0.0" } = {},
+	{ gitTooling = false, stableVersion = "1.0.0", sequence = 10 } = {},
 ) {
 	const work = mkdtempSync(join(tmpdir(), "factory-publication-fixture-"));
 	const scripts = join(work, "scripts");
@@ -74,7 +74,7 @@ export function preparedFixture(
 		commit: "a".repeat(40),
 		workflowSha,
 		committedVersion: "1.0.0-beta",
-		sequence: 10,
+		sequence,
 		date: "2026-10-09T00:00:00Z",
 		...(channel === "stable"
 			? {

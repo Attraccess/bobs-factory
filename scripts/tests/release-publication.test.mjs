@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -290,6 +296,100 @@ test("a newer stable signed by an unknown key blocks older tooling before any pu
 		newer.cleanup();
 	}
 });
+
+for (const fallback of [false, true])
+	test(`unverifiable latest nightly blocks preparation and publication${fallback ? " despite an older verified nightly" : ""}`, () => {
+		const f = setup(),
+			latest = preparedFixture("nightly", { sequence: 9 }),
+			older = preparedFixture("nightly", { sequence: 8 });
+		try {
+			verifyManifestSignature(
+				readFileSync(join(latest.assets, "release.json")),
+				readFileSync(join(latest.assets, "release.json.sig")),
+				"rotated",
+				{ rotated: keys.fixture },
+			);
+			const historical = (fixture, id, keyId = "fixture") => ({
+				id,
+				tag_name: fixture.manifest.tag,
+				commit: fixture.manifest.commit,
+				draft: false,
+				prerelease: true,
+				published_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+				assets: fixture.records.map((record) => {
+					const bytes =
+						record.file === "release.json.key-id"
+							? Buffer.from(`${keyId}\n`)
+							: readFileSync(join(fixture.assets, record.file));
+					return {
+						name: record.file,
+						state: "uploaded",
+						size: bytes.length,
+						digest: `sha256:${sha256(bytes)}`,
+						bytes: bytes.toString("base64"),
+						browser_download_url: `https://github.com/jappyjan/bobs-factory/releases/download/${fixture.manifest.tag}/${record.file}`,
+					};
+				}),
+			});
+			writeFileSync(
+				f.provider,
+				JSON.stringify({
+					...f.state(),
+					history: [
+						historical(latest, 100, "rotated"),
+						...(fallback ? [historical(older, 101)] : []),
+					],
+				}),
+			);
+			const publication = f.run();
+			assert.notEqual(publication.status, 0);
+			assert.match(
+				publication.stderr,
+				/latest published nightly cannot be verified/,
+			);
+			const output = join(f.work, "new-candidate.json");
+			const preparation = spawnSync(
+				process.execPath,
+				[
+					"--import",
+					transport,
+					join(f.work, "scripts/prepare-release-candidate.mjs"),
+					"--channel",
+					"nightly",
+					"--output",
+					output,
+					"--workflow-sha",
+					f.identity.workflowSha,
+					"--sequence",
+					"11",
+					"--date",
+					"2026-10-09T00:00:00Z",
+				],
+				{
+					encoding: "utf8",
+					env: {
+						...process.env,
+						GH_TOKEN: "synthetic",
+						BOBS_FACTORY_TEST_PROVIDER: f.provider,
+					},
+				},
+			);
+			assert.notEqual(preparation.status, 0);
+			assert.match(
+				preparation.stderr,
+				/latest published nightly cannot be verified/,
+			);
+			assert.equal(existsSync(output), false);
+			assert.deepEqual(
+				f.state().operations.filter((o) => o.method !== "GET"),
+				[],
+			);
+		} finally {
+			f.cleanup();
+			latest.cleanup();
+			older.cleanup();
+		}
+	});
 
 test("stale nightly candidate does not create a tag or draft", () => {
 	const f = setup("nightly", { mainSha: "f".repeat(40) });

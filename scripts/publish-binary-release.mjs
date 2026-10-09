@@ -31,7 +31,11 @@ import {
 	validatePublicRepository,
 	validateReleaseManifest,
 } from "./lib/binary-release.mjs";
-import { discoverReleases, githubClient } from "./lib/github-release.mjs";
+import {
+	discoverReleases,
+	githubClient,
+	requireVerifiedNightlyHistory,
+} from "./lib/github-release.mjs";
 import { validatePreparedRelease } from "./lib/prepared-release.mjs";
 import { withPublicationLock } from "./lib/publication-lock.mjs";
 import {
@@ -391,7 +395,7 @@ if (!values.publish) {
 				validateLatestVersion(identity.version, release);
 		} else {
 			const mainSha = (await api("git/ref/heads/main")).object.sha;
-			const last = state.nightly;
+			const last = requireVerifiedNightlyHistory(state);
 			const relation =
 				last && last.manifest.commit !== identity.commit
 					? await api(`compare/${last.manifest.commit}...${identity.commit}`)

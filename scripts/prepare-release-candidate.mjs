@@ -3,7 +3,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { jsonBytes, requireValue } from "./lib/binary-release.mjs";
-import { discoverReleases, githubClient } from "./lib/github-release.mjs";
+import {
+	discoverReleases,
+	githubClient,
+	requireVerifiedNightlyHistory,
+} from "./lib/github-release.mjs";
 import {
 	freezeCandidate,
 	nightlyEligibility,
@@ -58,7 +62,7 @@ if (values.channel === "stable") {
 		publishedAt: n.release.published_at,
 	};
 } else {
-	const last = state.nightly;
+	const last = requireVerifiedNightlyHistory(state);
 	const relation =
 		last && commit !== last.manifest.commit
 			? await client.api(`compare/${last.manifest.commit}...${commit}`)

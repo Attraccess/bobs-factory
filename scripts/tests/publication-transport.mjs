@@ -63,8 +63,14 @@ globalThis.fetch = async (url, options = {}) => {
 		return response({ object: { type: "commit", sha: s.mainSha } });
 	if (p.startsWith("/compare/"))
 		return response({ status: s.relation ?? "ahead" });
-	if (p.startsWith("/git/ref/tags/"))
+	if (p.startsWith("/git/ref/tags/")) {
+		const historical = s.history?.find(
+			(r) => r.tag_name === p.slice("/git/ref/tags/".length),
+		);
+		if (historical?.commit)
+			return response({ object: { type: "commit", sha: historical.commit } });
 		return response(s.tag ?? {}, s.tag ? 200 : 404);
+	}
 	if (p.startsWith("/git/tags/") && method === "GET")
 		return response(s.annotation);
 	if (p === "/git/tags" && method === "POST") {
