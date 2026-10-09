@@ -86,7 +86,7 @@ return structured `{ok: true, result: ...}` results or
 | `steer_run` | Send a message through enabled and currently available workflow chat |
 | `inspect_mcp_connections` | Actual runner, source provenance, endpoint, permission decision, authentication mechanism and configuration revision |
 | `update_mcp_connection` | Revision-checked HTTP/SSE connection plus explicit exact tool permissions |
-| `check_mcp_connection` | Read the originating Taskbot ticket through the run's actual transport |
+| `check_mcp_connection` | Read the originating Taskbot ticket, or select `server` for read-only tool discovery through the run's actual transport |
 
 Follow `nextOffset` until null to read all pages. Activity, error and question text
 is sanitized and bounded. Inspection does not expose snapshots, environments,
@@ -105,6 +105,22 @@ Completed, stopped, active and pending-human-review runs are not resumable merel
 because they have a checkpoint. Retry/resume retains completed outputs, publication
 receipts, evidence and decisions. Steering follows the accepted recipe and actual
 runner availability. Human review remains a dashboard/human decision.
+
+## Other connection checks
+
+Call `check_mcp_connection` with `{ "runId": "...", "server": "server-name" }`
+using a server returned by `inspect_mcp_connections`. This performs MCP `tools/list`
+through the run's effective transport, including native Codex authentication for
+HTTP connections. It invokes no provider tools and returns no catalog or provider
+contents. The check confirms connectivity and discovery, not permission to execute
+any particular tool. Effective allow/deny rules still govern every tool call.
+
+Without `server`, Taskbot runs keep reading their originating ticket. Other runs
+select their sole configured server, or return `ambiguous_transport` when a server
+must be selected. Checks have a 15-second deadline and close their transport.
+Local restarts persist the selected `--agent` and `--model` alongside retained
+connection repairs so later configuration reloads use the same launch settings.
+Omitting `--model` restores provider defaults.
 
 ## Taskbot recovery walkthrough
 

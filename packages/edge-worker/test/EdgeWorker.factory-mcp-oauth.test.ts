@@ -16,17 +16,21 @@ import {
 } from "../src/factory/OperatorTransport.js";
 import type { FactoryRun } from "../src/factory/WorkflowRuntime.js";
 
-const { nativeCall, directCall } = vi.hoisted(() => ({
+const { nativeCall, directCall, nativeList, directList } = vi.hoisted(() => ({
 	nativeCall: vi.fn(),
+	nativeList: vi.fn(),
 	directCall: vi.fn(),
+	directList: vi.fn(),
 }));
 vi.mock("bobs-factory-codex-runner", async (original) => ({
 	...(await original<object>()),
 	callCodexMcpTool: nativeCall,
+	listCodexMcpTools: nativeList,
 }));
 vi.mock("bobs-factory-mcp-tools", async (original) => ({
 	...(await original<object>()),
 	callConfiguredTool: directCall,
+	listConfiguredTools: directList,
 }));
 
 const homes: string[] = [];
@@ -250,4 +254,49 @@ it("operator diagnosis distinguishes missing, ambiguous and denied ticket transp
 		"restricted",
 	);
 	expect(nativeCall).not.toHaveBeenCalled();
+});
+
+it.each([
+	"codex",
+	"opencode",
+] as const)("checks other connections on manual runs with the %s transport", async (runner) => {
+	const f = fixture(runner);
+	f.run.ticketReference = undefined;
+	f.run.input = "ordinary manual request";
+	f.config.mcpConfig = {
+		other: {
+			type: "http",
+			url: "https://other.example/mcp",
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: configuration credential reference
+			headers: { Authorization: "${SELECTED_KEY}" },
+		},
+	};
+	f.config.childEnvironment = { SELECTED_KEY: "fixture-secret" };
+	const resolved = await f.edge.factoryMcpConfig(f.run);
+	expect(await checkOperatorTransport(f.run, resolved, "other")).toMatchObject({
+		connected: true,
+		operation: "tools/list",
+		server: "other",
+		runner,
+	});
+	const used = runner === "codex" ? nativeList : directList;
+	expect(used).toHaveBeenCalledOnce();
+	expect(JSON.stringify(used.mock.calls)).toContain("fixture-secret");
+	expect(runner === "codex" ? directList : nativeList).not.toHaveBeenCalled();
+	expect(nativeCall).not.toHaveBeenCalled();
+	expect(directCall).not.toHaveBeenCalled();
+	await expect(
+		checkOperatorTransport(f.run, resolved, "missing"),
+	).rejects.toMatchObject({ code: "missing_transport" });
+	used.mockRejectedValueOnce(new Error("401 Unauthorized"));
+	await expect(checkOperatorTransport(f.run, resolved)).rejects.toThrow(
+		"Unauthorized",
+	);
+	f.config.mcpConfig.duplicate = {
+		type: "http",
+		url: "https://duplicate.example/mcp",
+	};
+	await expect(
+		checkOperatorTransport(f.run, await f.edge.factoryMcpConfig(f.run)),
+	).rejects.toMatchObject({ code: "ambiguous_transport" });
 });

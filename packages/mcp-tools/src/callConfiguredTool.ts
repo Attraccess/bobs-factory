@@ -21,6 +21,64 @@ export async function callConfiguredTool(
 	cwd: string,
 	childEnvironment?: Record<string, string>,
 ): Promise<unknown> {
+	return withConfiguredClient(
+		config,
+		signal,
+		cwd,
+		childEnvironment,
+		async (client) => {
+			const result = await client.callTool(
+				{ name, arguments: args },
+				undefined,
+				{
+					signal,
+					timeout: 10 * 60 * 1000,
+				},
+			);
+			if (result.isError) {
+				const message = Array.isArray(result.content)
+					? result.content
+							.filter((block) => block.type === "text")
+							.map((block) =>
+								typeof block.text === "string" ? block.text.trim() : "",
+							)
+							.filter(Boolean)
+							.join("\n")
+					: "";
+				throw new Error(
+					`MCP tool failed: ${message || "Provider returned an error without a text message."}`,
+				);
+			}
+			return result.structuredContent ?? result;
+		},
+	);
+}
+
+/** Read only the first catalog page; no provider tools are invoked. */
+export async function listConfiguredTools(
+	config: ToolServerConfig,
+	signal: AbortSignal,
+	cwd: string,
+	childEnvironment?: Record<string, string>,
+): Promise<void> {
+	await withConfiguredClient(
+		config,
+		signal,
+		cwd,
+		childEnvironment,
+		async (client) => {
+			await client.listTools({}, { signal });
+		},
+	);
+}
+
+async function withConfiguredClient<T>(
+	config: ToolServerConfig,
+	signal: AbortSignal,
+	cwd: string,
+	childEnvironment: Record<string, string> | undefined,
+	operation: (client: Client) => Promise<T>,
+): Promise<T> {
 	const client = new Client({ name: "cyrus-factory", version: "1.0.0" });
 	const transport =
 		"command" in config
@@ -52,25 +110,7 @@ export async function callConfiguredTool(
 		signal.throwIfAborted();
 		await client.connect(transport);
 		signal.throwIfAborted();
-		const result = await client.callTool({ name, arguments: args }, undefined, {
-			signal,
-			timeout: 10 * 60 * 1000,
-		});
-		if (result.isError) {
-			const message = Array.isArray(result.content)
-				? result.content
-						.filter((block) => block.type === "text")
-						.map((block) =>
-							typeof block.text === "string" ? block.text.trim() : "",
-						)
-						.filter(Boolean)
-						.join("\n")
-				: "";
-			throw new Error(
-				`MCP tool failed: ${message || "Provider returned an error without a text message."}`,
-			);
-		}
-		return result.structuredContent ?? result;
+		return await operation(client);
 	} finally {
 		signal.removeEventListener("abort", stop);
 		await client.close();

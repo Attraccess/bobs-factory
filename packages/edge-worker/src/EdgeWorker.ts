@@ -17,7 +17,11 @@ import {
 	ClaudeRunner,
 	normalizeMcpHttpTransport,
 } from "bobs-factory-claude-runner";
-import { CodexRunner, callCodexMcpTool } from "bobs-factory-codex-runner";
+import {
+	CodexRunner,
+	callCodexMcpTool,
+	listCodexMcpTools,
+} from "bobs-factory-codex-runner";
 import { ConfigUpdater } from "bobs-factory-config-updater";
 import type {
 	AgentActivityCreateInput,
@@ -142,6 +146,7 @@ import {
 	createFetchFailureModesClient,
 	type FailureModesHttpClient,
 	factoryContextInstructions,
+	listConfiguredTools,
 	prepareFactoryContext,
 	type ResolvedSession,
 } from "bobs-factory-mcp-tools";
@@ -1118,11 +1123,12 @@ export class EdgeWorker extends EventEmitter {
 						...inspectOperatorTransport(run, resolved),
 					};
 				},
-				check: async (run) => ({
+				check: async (run, server) => ({
 					instance: grants.instance(),
 					...(await checkOperatorTransport(
 						run,
 						await this.factoryMcpConfig(run),
+						server,
 					)),
 				}),
 				sanitize: (text) => {
@@ -7605,84 +7611,114 @@ ${taskSection}`;
 				}
 			}
 		}
-		return {
-			built,
-			servers,
-			runnerType,
-			callTool: async (
-				serverName: string,
-				tool: string,
-				args: Record<string, unknown>,
-				signal: AbortSignal,
-			) => {
+		const request = async (
+			serverName: string,
+			tool: string | undefined,
+			args: Record<string, unknown>,
+			signal: AbortSignal,
+		) => {
+			if (tool !== undefined)
 				assertFactoryToolAllowed(
 					`mcp__${serverName}__${tool}`,
 					built.config.allowedTools,
 					built.config.disallowedTools,
 				);
-				const server = servers[serverName];
-				if (!server || server.type === "sdk")
-					throw new Error(
-						`MCP server ${serverName} is not configured as a process/HTTP transport`,
-					);
-				const transport =
-					"url" in server && server.headers
-						? {
-								...server,
-								headers: Object.fromEntries(
-									Object.entries(server.headers ?? {}).map(([key, value]) => [
-										key,
-										value.replace(
-											/\$\{([A-Z][A-Z0-9_]*)\}/g,
-											(_match, name: string) => {
-												const secret = built.config.childEnvironment
-													? built.config.childEnvironment[name]
-													: process.env[name];
-												if (!secret)
-													throw new OperatorError(
-														"missing_authentication",
-														"A configured header credential reference is unavailable in the accepted execution environment",
-													);
-												return secret;
-											},
-										),
-									]),
-								),
-							}
-						: server;
+			const server = servers[serverName];
+			if (!server || server.type === "sdk")
+				throw new Error(
+					`MCP server ${serverName} is not configured as a process/HTTP transport`,
+				);
+			const transport =
+				"url" in server && server.headers
+					? {
+							...server,
+							headers: Object.fromEntries(
+								Object.entries(server.headers ?? {}).map(([key, value]) => [
+									key,
+									value.replace(
+										/\$\{([A-Z][A-Z0-9_]*)\}/g,
+										(_match, name: string) => {
+											const secret = built.config.childEnvironment
+												? built.config.childEnvironment[name]
+												: process.env[name];
+											if (!secret)
+												throw new OperatorError(
+													"missing_authentication",
+													"A configured header credential reference is unavailable in the accepted execution environment",
+												);
+											return secret;
+										},
+									),
+								]),
+							),
+						}
+					: server;
 
-				try {
-					const result =
-						runnerType === "codex" && "url" in server
-							? await callCodexMcpTool(
-									{ ...built.config, workingDirectory: run.workspace },
-									serverName,
-									transport,
-									tool,
-									args,
-									signal,
-								)
-							: await callConfiguredTool(
-									"command" in server
-										? {
-												...server,
-												env: { ...server.env, ...executionEnvironment() },
-											}
-										: transport,
-									tool,
-									args,
-									signal,
-									run.workspace || repository.repositoryPath,
-									built.config.childEnvironment,
-								);
-					return execution
-						? JSON.parse(execution.redact(JSON.stringify(result)))
-						: result;
-				} catch (error) {
-					throw new Error(
-						execution ? execution.redact(String(error)) : String(error),
-					);
+			try {
+				const nativeConfig = {
+					...built.config,
+					workingDirectory: run.workspace || repository.repositoryPath,
+				};
+				const directConfig =
+					"command" in server
+						? { ...server, env: { ...server.env, ...executionEnvironment() } }
+						: transport;
+				if (tool === undefined) {
+					if (runnerType === "codex" && "url" in server)
+						await listCodexMcpTools(
+							nativeConfig,
+							serverName,
+							transport,
+							signal,
+						);
+					else
+						await listConfiguredTools(
+							directConfig,
+							signal,
+							run.workspace || repository.repositoryPath,
+							built.config.childEnvironment,
+						);
+					return;
 				}
+				const result =
+					runnerType === "codex" && "url" in server
+						? await callCodexMcpTool(
+								nativeConfig,
+								serverName,
+								transport,
+								tool,
+								args,
+								signal,
+							)
+						: await callConfiguredTool(
+								directConfig,
+								tool,
+								args,
+								signal,
+								run.workspace || repository.repositoryPath,
+								built.config.childEnvironment,
+							);
+				return execution
+					? JSON.parse(execution.redact(JSON.stringify(result)))
+					: result;
+			} catch (error) {
+				throw new Error(
+					execution ? execution.redact(String(error)) : String(error),
+				);
+			}
+		};
+		return {
+			built,
+			servers,
+			runnerType,
+			callTool: (
+				server: string,
+				tool: string,
+				args: Record<string, unknown>,
+				signal: AbortSignal,
+			) => request(server, tool, args, signal),
+			listTools: async (server: string, signal: AbortSignal) => {
+				await request(server, undefined, {}, signal);
 			},
 		};
 	}

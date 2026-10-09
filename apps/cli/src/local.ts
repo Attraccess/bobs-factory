@@ -1,8 +1,11 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
 	existsSync,
 	mkdirSync,
 	readFileSync,
+	renameSync,
+	rmSync,
 	statSync,
 	writeFileSync,
 } from "node:fs";
@@ -68,7 +71,7 @@ export async function launchLocal(values: {
 	if (values.origin) process.env.BOBS_FACTORY_FACTORY_ORIGIN = values.origin;
 	if (values.sessionHours !== undefined)
 		process.env.BOBS_FACTORY_FACTORY_SESSION_HOURS = values.sessionHours;
-	const config: EdgeWorkerConfig = {
+	let config: EdgeWorkerConfig = {
 		platform: "cli",
 		factoryHome: home,
 		serverPort: port + 1,
@@ -111,20 +114,32 @@ export async function launchLocal(values: {
 			throw new Error(
 				"This Factory home retains a different local repository. Select its repository or use a separate --home so saved operator repairs and runs keep their repository identity.",
 			);
-		if (repository)
-			config.repositories = [
-				{
-					...config.repositories[0]!,
-					mcpConfigPath: repository.mcpConfigPath,
-					allowedTools: repository.allowedTools,
-					disallowedTools: repository.disallowedTools,
-				},
-			];
-	} else
-		writeFileSync(configPath, JSON.stringify(config, null, 2), {
+		config = {
+			...saved,
+			...config,
+			// An omitted --model restores provider defaults, rather than an old override.
+			claudeDefaultModel: values.model,
+			codexDefaultModel: values.model,
+			geminiDefaultModel: values.model,
+			cursorDefaultModel: values.model,
+			opencodeDefaultModel: values.model,
+			linearAllowedTools: saved.linearAllowedTools ?? config.linearAllowedTools,
+			repositories: saved.repositories.map((entry) =>
+				entry.id === "local" ? { ...entry, ...config.repositories[0]! } : entry,
+			),
+		};
+	}
+	// Reload and startup must consume the same effective launch configuration.
+	const temporaryPath = `${configPath}.${randomUUID()}.tmp`;
+	try {
+		writeFileSync(temporaryPath, JSON.stringify(config, null, 2), {
 			mode: 0o600,
 			flag: "wx",
 		});
+		renameSync(temporaryPath, configPath);
+	} finally {
+		rmSync(temporaryPath, { force: true });
+	}
 	const worker = new EdgeWorker(config);
 	worker.setConfigPath(configPath);
 	await worker.start();

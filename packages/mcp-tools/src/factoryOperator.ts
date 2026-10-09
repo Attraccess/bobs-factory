@@ -133,8 +133,8 @@ export const operatorTools = [
 		name: "check_mcp_connection",
 		scope: "inspect",
 		description:
-			"Read the verified originating Taskbot ticket through this run's actual transport and runner authentication. No arbitrary tool execution.",
-		schema: z.object(run).strict(),
+			"Check the originating Taskbot ticket by default, or select a configured server for read-only tools/list discovery through this run's transport and authentication. No arbitrary tool execution.",
+		schema: z.object({ ...run, server: id.optional() }).strict(),
 		readOnly: true,
 	},
 	{

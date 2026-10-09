@@ -18,6 +18,7 @@ export interface OperatorTransport {
 	runnerType: RunnerType;
 	built: { config: AgentRunnerConfig };
 	servers: Record<string, McpServerConfig>;
+	listTools(server: string, signal: AbortSignal): Promise<void>;
 	callTool(
 		server: string,
 		tool: string,
@@ -122,13 +123,36 @@ export function inspectOperatorTransport(
 export async function checkOperatorTransport(
 	run: FactoryRun,
 	resolved: OperatorTransport,
+	selectedServer?: string,
 ) {
 	const target = operatorTaskbotSource(run);
-	if (!target)
-		throw new OperatorError(
-			"unsupported_probe",
-			"Read-only connection checks require a verified originating Taskbot ticket",
-		);
+	if (selectedServer !== undefined || !target) {
+		const names = Object.keys(resolved.servers);
+		if (!selectedServer && names.length !== 1)
+			throw new OperatorError(
+				names.length ? "ambiguous_transport" : "missing_transport",
+				"Select a configured server from inspect_mcp_connections",
+			);
+		const server = selectedServer ?? names[0]!;
+		if (!Object.hasOwn(resolved.servers, server))
+			throw new OperatorError(
+				"missing_transport",
+				"Selected MCP server is not configured for this run",
+			);
+		await resolved.listTools(server, AbortSignal.timeout(15000));
+		return {
+			runId: run.id,
+			server,
+			runner: resolved.runnerType,
+			authentication:
+				resolved.runnerType === "codex" && "url" in resolved.servers[server]!
+					? "codex_native"
+					: "configured_headers_or_environment",
+			connected: true,
+			operation: "tools/list",
+			checkedAt: new Date().toISOString(),
+		};
+	}
 	const server = taskbotServer(target.instance, resolved.servers);
 	if ("server" in target && server !== target.server)
 		throw new OperatorError(

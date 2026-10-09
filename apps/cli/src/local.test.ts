@@ -34,7 +34,13 @@ it("retains operator connection repairs across local restart and protects reposi
 			typeof EdgeWorker
 		>;
 	});
-	const options = { repo, home, port: "3457", agent: "codex" };
+	const options = {
+		repo,
+		home,
+		port: "3457",
+		agent: "opencode",
+		model: "old-model",
+	};
 	const signals = new Map(
 		["SIGINT", "SIGTERM"].map((signal) => [
 			signal,
@@ -51,8 +57,18 @@ it("retains operator connection repairs across local restart and protects reposi
 			allowedTools: ["mcp__taskbot__get_ticket"],
 			disallowedTools: ["mcp__taskbot__delete_ticket"],
 		});
+		saved.strictMcpConfig = true;
+		saved.repositories[0].githubUrl = "https://github.com/example/fixture";
 		writeFileSync(path, JSON.stringify(saved));
-		await launchLocal(options);
+		await launchLocal({ ...options, agent: "codex", model: "new-model" });
+		const effective = vi.mocked(EdgeWorker).mock.calls.at(-1)?.[0];
+		expect(effective).toMatchObject({
+			defaultRunner: "codex",
+			codexDefaultModel: "new-model",
+			strictMcpConfig: true,
+		});
+		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(effective);
+
 		expect(
 			vi.mocked(EdgeWorker).mock.calls.at(-1)?.[0].repositories[0],
 		).toMatchObject(saved.repositories[0]);
@@ -62,7 +78,11 @@ it("retains operator connection repairs across local restart and protects reposi
 		await expect(launchLocal({ ...options, repo: other })).rejects.toThrow(
 			"different local repository",
 		);
-		expect(start).toHaveBeenCalledTimes(2);
+		await launchLocal({ ...options, agent: "codex", model: undefined });
+		expect(
+			JSON.parse(readFileSync(path, "utf8")).codexDefaultModel,
+		).toBeUndefined();
+		expect(start).toHaveBeenCalledTimes(3);
 	} finally {
 		for (const [signal, before] of signals)
 			for (const listener of process.listeners(signal))

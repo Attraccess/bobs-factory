@@ -67,7 +67,7 @@ export interface OperatorHooks {
 	message?(id: string, text: string, messageId?: string): void | Promise<void>;
 	stop(id: string): void;
 	mcp?(run: FactoryRun): Promise<unknown>;
-	check?(run: FactoryRun): Promise<unknown>;
+	check?(run: FactoryRun, server?: string): Promise<unknown>;
 	update?(run: FactoryRun, input: any): Promise<unknown>;
 	sanitize?(text: string): string;
 }
@@ -284,7 +284,8 @@ export class OperatorService {
 			};
 		}
 		if (name === "inspect_mcp_connections") return this.hooks.mcp!(run);
-		if (name === "check_mcp_connection") return this.hooks.check!(run);
+		if (name === "check_mcp_connection")
+			return this.hooks.check!(run, args.server);
 		if (this.busy.has(run.id))
 			throw new OperatorError(
 				"stale_state",

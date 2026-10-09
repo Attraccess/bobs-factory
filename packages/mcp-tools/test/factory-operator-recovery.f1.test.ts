@@ -11,13 +11,15 @@ import { resolveLaunchRequest } from "../../edge-worker/src/factory/LaunchFields
 import { OperatorGrants } from "../../edge-worker/src/factory/OperatorGrants.js";
 import { validateWorkflows } from "../../edge-worker/src/factory/Workflow.js";
 
-const { direct, native } = vi.hoisted(() => ({
+const { direct, native, discovery } = vi.hoisted(() => ({
 	direct: vi.fn(),
 	native: vi.fn(),
+	discovery: vi.fn(),
 }));
 vi.mock("bobs-factory-mcp-tools", async (original) => ({
 	...(await original<object>()),
 	callConfiguredTool: direct,
+	listConfiguredTools: discovery,
 }));
 vi.mock("bobs-factory-codex-runner", async (original) => ({
 	...(await original<object>()),
@@ -198,6 +200,55 @@ it("F1: repairs missing Taskbot transport entirely through compiled stdio MCP, p
 		timeout: 15000,
 	});
 	expect(run.outputs.work.status).toBe("completed");
+	const manual = await edge.startManualFactoryRun(
+		resolveLaunchRequest(workflow, {
+			repositoryId: "repo",
+			workflow: workflow.id,
+			prompt: "Ordinary manual work",
+			runner: "opencode",
+		}),
+	);
+	await vi.waitFor(() => expect(manual.status).toBe("completed"), {
+		timeout: 15000,
+	});
+	discovery.mockResolvedValue(undefined);
+	const probe = await call("check_mcp_connection", {
+		runId: manual.id,
+		server: "taskbot",
+	});
+	expect(probe).toMatchObject({
+		ok: true,
+		result: {
+			connected: true,
+			operation: "tools/list",
+			runner: "opencode",
+			server: "taskbot",
+		},
+	});
+	expect(discovery).toHaveBeenCalledWith(
+		expect.objectContaining({ url: "https://taskbot.example/mcp" }),
+		expect.any(AbortSignal),
+		manual.workspace,
+		undefined,
+	);
+	expect(
+		(
+			await call("check_mcp_connection", {
+				runId: manual.id,
+				server: "missing",
+			})
+		).error.code,
+	).toBe("missing_transport");
+	expect(
+		(
+			await call("check_mcp_connection", {
+				runId: manual.id,
+				server: "taskbot",
+				tool: "delete_ticket",
+			})
+		).error.code,
+	).toBe("invalid_request");
+
 	expect(
 		JSON.parse(readFileSync(configPath, "utf8")).repositories[0].allowedTools,
 	).toContain("mcp__taskbot__get_ticket");

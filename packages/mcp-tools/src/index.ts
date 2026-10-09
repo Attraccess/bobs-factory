@@ -1,5 +1,6 @@
 export {
 	callConfiguredTool,
+	listConfiguredTools,
 	type ToolServerConfig,
 } from "./callConfiguredTool.js";
 export { serveFactoryContext } from "./factory-context-stdio.js";
