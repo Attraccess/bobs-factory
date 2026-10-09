@@ -121,7 +121,11 @@ async function fixture() {
 		getMessages: () => [{ type: "result", result: JSON.stringify(repaired) }],
 	};
 	const worker = Object.assign(Object.create(EdgeWorker.prototype), {
-		agentSessionManager: { getSession: () => ({}), addAgentRunner: vi.fn() },
+		agentSessionManager: {
+			getSession: () => ({}),
+			addAgentRunner: vi.fn(),
+			markFactoryMessage: vi.fn(),
+		},
 		repositories: new Map([
 			[
 				"repo",

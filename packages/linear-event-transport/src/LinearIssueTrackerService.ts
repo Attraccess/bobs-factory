@@ -1,3 +1,9 @@
+import {
+	cleanPublicMarkdown,
+	isInternalPublication,
+	isOperationalLinearComment,
+	presentLinearActivity,
+} from "bobs-factory-core";
 /**
  * Linear-specific implementation of IIssueTrackerService.
  *
@@ -246,6 +252,33 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 						? 10
 						: 0,
 				(input) => ["thought", "action"].includes(input.content?.type),
+				(input) => {
+					const content = presentLinearActivity(input.content);
+					return content
+						? {
+								...input,
+								content,
+								...(!["thought", "action"].includes(input.content.type)
+									? { ephemeral: undefined }
+									: {}),
+							}
+						: undefined;
+				},
+				(input) => {
+					const content = input.content;
+					if (
+						input.signal ||
+						!["thought", "error"].includes(content.type) ||
+						!("body" in content)
+					)
+						return undefined;
+					return /\b(?:CI|checks?|tests?|build)\b/i.test(content.body ?? "") &&
+						/\b(?:waiting|pending|queued|running|passed|failed|completed)\b/i.test(
+							content.body ?? "",
+						)
+						? `${input.agentSessionId}:checks`
+						: undefined;
+				},
 			);
 
 		if (deliveryOptions.factoryHome)
@@ -285,6 +318,17 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 				"comment",
 				() => 10,
 				() => false,
+				(input) => {
+					if (isOperationalLinearComment(input.body))
+						throw new Error(
+							"Operational Linear comment retained locally; restore its transcript binding before delivery",
+						);
+					if (isInternalPublication(input.body))
+						throw new Error(
+							"Internal Linear comment retained locally; requires a readable documentation replacement",
+						);
+					return { ...input, body: cleanPublicMarkdown(input.body) };
+				},
 			);
 
 		// Register initial refresh token in shared static map
@@ -794,6 +838,15 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 				return this.fetchComment(id);
 			}
 
+			if (isOperationalLinearComment(finalBody))
+				throw new Error(
+					"Operational updates require a Linear transcript destination",
+				);
+			if (isInternalPublication(finalBody))
+				throw new Error(
+					"Internal payload cannot be published as a Linear comment",
+				);
+			finalBody = cleanPublicMarkdown(finalBody);
 			const createPayload = await this.linearClient.createComment({
 				issueId,
 				body: finalBody,
@@ -1079,8 +1132,17 @@ export class LinearIssueTrackerService implements IIssueTrackerService {
 	async createAgentActivity(
 		input: AgentActivityCreateInput,
 	): Promise<AgentActivityPayload> {
-		if (!this.activityDelivery)
-			return this.linearClient.createAgentActivity(input);
+		if (!this.activityDelivery) {
+			const content = presentLinearActivity(input.content);
+			if (!content) return { success: true } as AgentActivityPayload;
+			return this.linearClient.createAgentActivity({
+				...input,
+				content,
+				...(!["thought", "action"].includes(input.content.type)
+					? { ephemeral: undefined }
+					: {}),
+			});
+		}
 		const receipt = await this.activityDelivery.post(input);
 		return {
 			success: receipt.success,

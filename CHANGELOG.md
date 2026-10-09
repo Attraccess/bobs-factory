@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Align the incremental-result fixture and complete routing prompt expectation with validated Linear publication. ([#73](https://github.com/jappyjan/bobs-factory/pull/73))
+
 - Route recorded QA product failures to the existing visual fixer even when a reviewer reports a failed or blocked review; require fresh QA and a completed review before approval. Clarify that review completion describes execution, not a passing product. ([#78](https://github.com/jappyjan/bobs-factory/pull/78), [F1 validation](apps/f1/test-drives/2026-10-09-qa-product-failure-routing.md))
 
 - Reject incomplete or mismatched signed beta inventories before Nix unpacks an archive. Require all four targets and their validation receipts, with unique valid records matching the signed manifest ([#70](https://github.com/jappyjan/bobs-factory/pull/70)).
@@ -29,6 +31,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Keep Factory role results and tool dumps out of Linear publication. Render decisions with rationale, route routine progress and role outcomes as transcript thoughts, preserve native session states and approval prompts with their required automatic threaded comments, extract diagnostics from failed build logs, suppress repeated check updates, and retain raw evidence and delivery recovery locally. ([Taskbot #101](https://taskbot.apps.janjaap.de/p/bobs-factory/t/101), [#73](https://github.com/jappyjan/bobs-factory/pull/73))
 - Default Codex execution to full host access so installed shell commands, process inspection and local browsers can run; preserve explicit `workspace-write` and `read-only` settings and managed tool-source conflict checks. ([#69](https://github.com/jappyjan/bobs-factory/pull/69))
 
 - Use mocked agent protocol checks for every release; live provider tests are manual-only and require explicit approval for the specific test. ([#61](https://github.com/jappyjan/bobs-factory/pull/61))

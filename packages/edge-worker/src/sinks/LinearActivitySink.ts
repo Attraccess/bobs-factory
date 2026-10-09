@@ -2,6 +2,7 @@ import {
 	type AgentActivityContent,
 	AgentActivitySignal,
 	type IIssueTrackerService,
+	presentLinearActivity,
 } from "bobs-factory-core";
 import type {
 	ActivityPostOptions,
@@ -87,10 +88,15 @@ export class LinearActivitySink implements IActivitySink {
 		activity: AgentActivityContent,
 		options?: ActivityPostOptions,
 	): Promise<ActivityPostResult> {
+		const presented = presentLinearActivity(activity);
+		if (!presented) return {};
 		const result = await this.issueTracker.createAgentActivity({
 			agentSessionId: sessionId,
-			content: activity,
-			...(options?.ephemeral !== undefined && { ephemeral: options.ephemeral }),
+			content: presented,
+			...(options?.ephemeral !== undefined &&
+				["thought", "action"].includes(activity.type) && {
+					ephemeral: options.ephemeral,
+				}),
 			...(options?.signal && { signal: this.mapSignal(options.signal) }),
 			...(options?.signalMetadata && {
 				signalMetadata: options.signalMetadata,

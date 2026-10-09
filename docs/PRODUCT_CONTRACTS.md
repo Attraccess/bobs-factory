@@ -10,6 +10,7 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | Owned packages | manifests, imports, filters, lockfile | `bobs-factory-*`, private | Build-time only |
 | Product environment | CLI, worker, runners, capacity, helpers | `BOBS_FACTORY_*` | Rename keys, refuse collisions; keep provider keys |
 | Home configuration | application, worker, config | `factoryHome`, `~/.bobs-factory` | Transform config field and owned paths only |
+| Linear publication | shared presenter, activity sinks, queued delivery | Routine progress and role outcomes use `thought`; native lifecycle/input activities retain their types and automatic threaded comments; explicit documentation uses comments | Present legacy queued records before sending; retain raw evidence locally |
 | Persistence | worker state, factory runs / chats / evidence | `<home>/state`, `<home>/factory` | Preserve versions, IDs, receipts, gates, accepted definitions |
 | Coordinator | MachineCapacity and execution scope | `<factoryHome>/machine-capacity`, one pool per instance | Stop old consumers and descendants before transfer; capacity-directory overrides block apply until explicitly reconciled |
 | Repo hooks | GitService setup / teardown | `bobs-factory-setup.sh`, `bobs-factory-teardown.sh` | Rename only explicitly approved repository files |

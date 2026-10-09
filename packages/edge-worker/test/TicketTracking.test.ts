@@ -974,3 +974,61 @@ it("keeps an ambiguous transcript creation identity when a later reconciliation 
 	).rejects.toThrow("unconfirmed");
 	expect(creates).toBe(1);
 });
+
+it("delivers confirmed merge documentation as one native completion response", async () => {
+	const tracker = new CLIIssueTrackerService();
+	tracker.seedDefaultData();
+	const issue = await tracker.createIssue({
+		teamId: "team-default",
+		title: "Delivered fixture",
+	});
+	const session = await (
+		await tracker.createAgentSessionOnIssue({ issueId: issue.id })
+	).agentSession;
+	const adapter = nativeAdapter(
+		{
+			provider: "native",
+			platform: "linear",
+			workspaceId: "fixture",
+			id: issue.id,
+			url: issue.url,
+		},
+		tracker,
+		{ getTranscriptSession: async () => session!.id },
+	);
+	const documentation =
+		"Delivered: https://github.com/example/repo/pull/1. Merge confirmed.\n\nVerification: simulated provider checks passed.";
+	await adapter.publish!(
+		{
+			key: "merged",
+			body: documentation,
+			merged: true,
+			deliveryId: "merge-doc",
+		},
+		documentation,
+	);
+	expect((await tracker.fetchComments(issue.id)).nodes).toEqual([]);
+	expect(
+		tracker
+			.listAgentActivities(session!.id)
+			.map((activity) => ({ type: activity.type, body: activity.content })),
+	).toEqual([{ type: "response", body: documentation }]);
+});
+
+it("applies status and PR attachments even when documentation already exists", async () => {
+	const f = fixture();
+	f.ticket.comments.push({ body: "Accepted decision" });
+	await f.service.record(f.run, {
+		key: "decision",
+		purpose: "documentation",
+		body: "Accepted decision",
+		stage: "in_progress",
+		pr: "https://github.com/example/repo/pull/1",
+	});
+	expect(f.ticket.status).toBe("in_progress");
+	expect(f.ticket.attachments).toEqual([
+		{ url: "https://github.com/example/repo/pull/1" },
+	]);
+	expect(f.ticket.comments).toEqual([{ body: "Accepted decision" }]);
+	expect(f.run.ticketSync?.receipts[0]?.delivered).toBe(true);
+});

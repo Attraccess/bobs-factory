@@ -15,7 +15,7 @@ it("keeps compact delivered receipts that still deduplicate and reject changed c
 		id: "fa46e14c-29a9-46e9-9a02-26276d10d34f",
 		agentSessionId: "session",
 		content: {
-			type: "response",
+			type: "thought",
 			body: "Distinct full delivery payload".repeat(1000),
 		},
 	};

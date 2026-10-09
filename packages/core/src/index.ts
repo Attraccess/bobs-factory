@@ -312,6 +312,18 @@ export {
 	executionScope,
 	spawnExecution,
 } from "./ExecutionScope.js";
+export type {
+	LinearPublication,
+	PublicationPresentation,
+} from "./LinearPublication.js";
+export {
+	cleanPublicMarkdown,
+	isInternalPublication,
+	isOperationalLinearComment,
+	presentLinearActivity,
+	presentLinearPublication,
+	publicFailure,
+} from "./LinearPublication.js";
 export { ProjectArtifactLease } from "./ProjectArtifactLease.js";
 export { preparedExecutable } from "./prepared-executable.js";
 export {

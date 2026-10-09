@@ -77,7 +77,7 @@ describe("LinearActivitySink", () => {
 			});
 		});
 
-		it("should post an action activity", async () => {
+		it("suppresses successful tool chatter", async () => {
 			const activity: AgentActivityContent = {
 				type: "action",
 				action: "read_file",
@@ -92,11 +92,8 @@ describe("LinearActivitySink", () => {
 
 			const result = await sink.postActivity(mockSessionId, activity);
 
-			expect(result).toEqual({ activityId: "activity-2" });
-			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledWith({
-				agentSessionId: mockSessionId,
-				content: activity,
-			});
+			expect(result).toEqual({});
+			expect(mockIssueTracker.createAgentActivity).not.toHaveBeenCalled();
 		});
 
 		it("should post a response activity", async () => {
@@ -113,6 +110,10 @@ describe("LinearActivitySink", () => {
 			const result = await sink.postActivity(mockSessionId, activity);
 
 			expect(result).toEqual({ activityId: "activity-3" });
+			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledWith({
+				agentSessionId: mockSessionId,
+				content: activity,
+			});
 		});
 
 		it("should post an error activity", async () => {
@@ -129,6 +130,10 @@ describe("LinearActivitySink", () => {
 			const result = await sink.postActivity(mockSessionId, activity);
 
 			expect(result).toEqual({ activityId: "activity-4" });
+			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledWith({
+				agentSessionId: mockSessionId,
+				content: activity,
+			});
 		});
 
 		it("should post an elicitation activity", async () => {
@@ -145,6 +150,10 @@ describe("LinearActivitySink", () => {
 			const result = await sink.postActivity(mockSessionId, activity);
 
 			expect(result).toEqual({ activityId: "activity-5" });
+			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledWith({
+				agentSessionId: mockSessionId,
+				content: activity,
+			});
 		});
 
 		it("should handle activity posting errors", async () => {
@@ -448,7 +457,7 @@ describe("LinearActivitySink", () => {
 				body: "Done",
 			});
 
-			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledTimes(3);
+			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledTimes(2);
 		});
 
 		it("should handle creating multiple sessions", async () => {
@@ -516,10 +525,7 @@ describe("LinearActivitySink", () => {
 
 			await sink.postActivity(mockSessionId, activity);
 
-			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledWith({
-				agentSessionId: mockSessionId,
-				content: activity,
-			});
+			expect(mockIssueTracker.createAgentActivity).not.toHaveBeenCalled();
 		});
 
 		it("should handle activity with minimal fields", async () => {
@@ -535,10 +541,7 @@ describe("LinearActivitySink", () => {
 
 			await sink.postActivity(mockSessionId, activity);
 
-			expect(mockIssueTracker.createAgentActivity).toHaveBeenCalledWith({
-				agentSessionId: mockSessionId,
-				content: activity,
-			});
+			expect(mockIssueTracker.createAgentActivity).not.toHaveBeenCalled();
 		});
 
 		it("should handle very long activity content", async () => {
