@@ -499,16 +499,19 @@ export function nativeAdapter(
 						const sessionId = await options.getTranscriptSession();
 						if (!sessionId)
 							throw new Error("Verified Linear transcript session unavailable");
-						const result = await tracker.createAgentActivity({
-							id: receipt.deliveryId,
-							agentSessionId: sessionId,
-							content: {
-								type: receipt.key.startsWith("questions:")
-									? "elicitation"
-									: "thought",
-								body: receipt.body,
+						const result = await tracker.createAgentActivity(
+							{
+								id: receipt.deliveryId,
+								agentSessionId: sessionId,
+								content: {
+									type: receipt.key.startsWith("questions:")
+										? "elicitation"
+										: "thought",
+									body: receipt.body,
+								},
 							},
-						});
+							{ operational: true },
+						);
 						if (!result.success)
 							throw new Error("Linear transcript delivery was rejected");
 					},
