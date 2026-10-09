@@ -47,7 +47,14 @@ export function ReviewPage({
 		);
 	const gate = run.reviewGate,
 		guide = run.outputs?.guide,
-		complete = ["complete", "completed"].includes(run.status);
+		complete = ["complete", "completed"].includes(run.status),
+		trackingPending = Boolean(
+			run.ticketSync?.error ||
+				run.ticketSync?.receipts?.some(
+					(receipt: { delivered?: boolean; superseded?: boolean }) =>
+						!receipt.delivered && !receipt.superseded,
+				),
+		);
 	return (
 		<div className="review-document">
 			<nav className="review-links" aria-label="Review navigation">
@@ -90,11 +97,20 @@ export function ReviewPage({
 					the refreshed evidence and accept it again.
 				</p>
 			)}
+			{trackingPending && (
+				<p className="notice" role={run.ticketSync?.error ? "alert" : "status"}>
+					Ticket synchronization pending.{" "}
+					{run.ticketSync?.error ??
+						"Saved updates are being delivered in the background."}
+				</p>
+			)}
 			{guide && gate?.status !== "pending" && (
 				<p className="notice" role="status">
 					{gate?.status === "approve"
 						? complete
-							? "This revision was approved. The run is complete."
+							? trackingPending
+								? "This work was approved. Ticket synchronization still needs attention."
+								: "This revision was approved. The run is complete."
 							: gate?.mode === "external"
 								? "You accepted the completed work. Bob is checking the current ticket state."
 								: "You approved this revision. Bob is checking merge criteria."
@@ -104,7 +120,9 @@ export function ReviewPage({
 								: "Changes were requested for this revision."
 							: "This guide remains available for reading."}{" "}
 					{complete
-						? "You can settle the run or send a follow-up."
+						? trackingPending
+							? "Open the run story for tracking details and recovery actions."
+							: "You can settle the run or send a follow-up."
 						: "Approval is available only while a matching review is pending."}
 				</p>
 			)}

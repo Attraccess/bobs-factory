@@ -75,7 +75,9 @@ limitations without inventing files, Git SHAs or screenshots.
 External completion requires independent verification, explicit acceptance and a
 fresh matching state check. Mixed delivery also requires provider-confirmed merges.
 Delayed Done synchronization rechecks external state without replaying mutations.
-Read failures and drift block closure. Requested changes preserve applied work and
+Read failures and drift block closure. Review guides show pending ticket synchronization
+and its error even after work is accepted; completion notices distinguish approved
+work from unfinished tracking. Requested changes preserve applied work and
 return through reviewed planning and reconciliation. Contract changes advance their
 version, preserve previous contracts/receipts and invalidate affected acceptance.
 Conflicted retries retain the reviewed baseline; observed intervening state never
