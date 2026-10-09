@@ -777,7 +777,7 @@ export class WorkflowRuntime {
 				await this.track(run, {
 					key: "started",
 					stage: "in_progress",
-					body: `Factory work started: ${run.workflow.name}. Run ${run.id}.\n\n${String(readPath(run.outputs, "ticket.title") ?? run.title)}\n${run.launchRequest?.prompt ?? ""}`,
+					body: `Factory work started: ${run.workflow.name}. ${String(readPath(run.outputs, "ticket.title") ?? run.title)}. Follow progress in Factory.`,
 				});
 			if (task) await task(controller.signal);
 			else if (run.workflow.id === "simple") {
@@ -1414,6 +1414,24 @@ export class WorkflowRuntime {
 						: step.tool === "draft-pr"
 							? `Draft PR created or continued: ${pr}. Review and validation are underway.`
 							: `${step.name}: ${String(readPath(output, "summary") ?? (step.id === "plan" ? "Implementation direction recorded in the accepted plan." : "Inspect the implementation receipts and checks in Factory."))}`;
+				if (merged) {
+					const summary = readPath(outputs, "implement.summary");
+					const checks = readPath(outputs, "implement.checks");
+					const risks = readPath(outputs, "guide.risks");
+					body = `Delivered: ${pr}. The Git provider confirmed merge.`;
+					if (typeof summary === "string") body += `\n\n${summary}`;
+					if (Array.isArray(checks) && checks.length)
+						body += `\n\nVerification:\n${checks
+							.filter((v) => typeof v === "string")
+							.map((v) => `- ${v}`)
+							.join("\n")}`;
+					if (Array.isArray(risks) && risks.length)
+						body += `\n\nLimitations:\n${risks
+							.filter((v) => typeof v === "string")
+							.map((v) => `- ${v}`)
+							.join("\n")}`;
+				}
+
 				const blockers = readPath(output, "blockers");
 				if (handoffFix && Array.isArray(blockers))
 					body += `\n\nBlockers:\n${blockers

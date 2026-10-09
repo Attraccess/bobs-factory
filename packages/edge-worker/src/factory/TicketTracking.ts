@@ -488,7 +488,10 @@ export function nativeAdapter(
 		...(ref.platform === "linear"
 			? {
 					async publish(receipt: TicketMilestone, documentationBody: string) {
-						if (receipt.purpose === "documentation" || receipt.merged) {
+						if (
+							receipt.purpose === "documentation" ||
+							(receipt.merged && !options)
+						) {
 							await tracker.createComment(ref.id, { body: documentationBody });
 							return;
 						}
@@ -503,10 +506,12 @@ export function nativeAdapter(
 							id: receipt.deliveryId,
 							agentSessionId: sessionId,
 							content: {
-								type: receipt.key.startsWith("questions:")
-									? "elicitation"
-									: "thought",
-								body: receipt.body,
+								type: receipt.merged
+									? "response"
+									: receipt.key.startsWith("questions:")
+										? "elicitation"
+										: "thought",
+								body: receipt.merged ? documentationBody : receipt.body,
 							},
 						});
 						if (!result.success)
@@ -621,14 +626,26 @@ export class TicketTracking {
 							await adapter.link(receipt.pr);
 							snapshot = await adapter.read();
 						}
+
+						receipt.limitation =
+							receipt.stage && (!merged || receipt.merged)
+								? await adapter.stage(receipt.stage, snapshot)
+								: undefined;
+						sync.lastStatus = statusOf(await adapter.read());
+						this.save(run);
 						const marker = `<!-- factory:${run.id}:${createHash("sha256").update(receipt.key).digest("hex").slice(0, 20)} -->`;
-						if (!snapshot.comments.some((c) => c.body.includes(marker))) {
-							receipt.limitation =
-								receipt.stage && (!merged || receipt.merged)
-									? await adapter.stage(receipt.stage, snapshot)
-									: undefined;
-							sync.lastStatus = statusOf(await adapter.read());
-							this.save(run);
+						const alreadyDocumented =
+							receipt.purpose === "documentation" &&
+							snapshot.comments.some(
+								(comment) =>
+									comment.body
+										.replace(/\n\n<!-- factory:[^\n]+ -->$/, "")
+										.trim() === receipt.body.trim(),
+							);
+						if (
+							!alreadyDocumented &&
+							!snapshot.comments.some((c) => c.body.includes(marker))
+						) {
 							receipt.deliveryId ??= randomUUID();
 							this.save(run);
 							const body = `${receipt.body}${receipt.limitation ? `\n\nTracking limitation: ${receipt.limitation}` : ""}\n\n${marker}`;

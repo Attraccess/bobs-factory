@@ -15,6 +15,9 @@ type Delivery<Input> = {
 	ambiguous?: boolean;
 	error?: string;
 	activityId?: string;
+	presentation?: { version: 1; input?: Input; reason?: string };
+	originalEvidence?: Input;
+	stateGroup?: string;
 };
 
 export class LinearDeliveryPendingError extends Error {
@@ -47,6 +50,8 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 		kind: "activity" | "comment",
 		priority: (input: Input) => number,
 		routine: (input: Input) => boolean,
+		present?: (input: Input) => Input | undefined,
+		stateGroup?: (input: Input) => string | undefined,
 	): LinearDeliveryOutbox<Input> {
 		const key = `${resolve(home)}\0${workspaceId}\0${kind}`;
 		let store = LinearDeliveryOutbox.stores.get(key) as
@@ -63,10 +68,14 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 				kind,
 				priority,
 				routine,
+				present,
+				stateGroup,
 			);
 			LinearDeliveryOutbox.stores.set(key, store);
 		}
 		store.send = send;
+		store.present = present;
+		store.stateGroup = stateGroup;
 		store.reconcile = reconcile;
 		store.retryAt = retryAt;
 		store.owners.add(owner);
@@ -83,6 +92,8 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 		kind: "activity" | "comment",
 		private priority: (input: Input) => number,
 		private routine: (input: Input) => boolean,
+		private present?: (input: Input) => Input | undefined,
+		private stateGroup?: (input: Input) => string | undefined,
 	) {
 		const directory = join(home, "state", `linear-${kind}-delivery`);
 		mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -120,10 +131,18 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 
 	async post(input: Input): Promise<{ success: boolean; id?: string }> {
 		const fingerprint = this.fingerprint(input);
+		const stateGroup = this.stateGroup?.(input);
 		let record = input.id
 			? this.records.find((entry) => entry.id === input.id)
 			: undefined;
-		if (!input.id && this.routine(input)) {
+		if (!record && !input.id && stateGroup) {
+			const previous = [...this.records]
+				.reverse()
+				.find((entry) => entry.stateGroup === stateGroup);
+			if (previous?.fingerprint === fingerprint) record = previous;
+		}
+
+		if (!record && !input.id && !stateGroup && this.routine(input)) {
 			record = [...this.records]
 				.reverse()
 				.find(
@@ -144,6 +163,7 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 				input: { ...input, id },
 				status: "pending",
 				fingerprint,
+				...(stateGroup ? { stateGroup } : {}),
 				createdAt: Date.now(),
 				attempts: 0,
 				nextAt: Math.max(0, this.retryAt()),
@@ -152,7 +172,7 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 			this.save(); // The identity exists before any mutation is sent.
 		}
 		await this.flush();
-		if (record.status !== "delivered")
+		if (record.status !== "delivered" && record.status !== "superseded")
 			throw new LinearDeliveryPendingError(
 				record.id,
 				record.error ?? "queued for retry",
@@ -229,23 +249,59 @@ export class LinearDeliveryOutbox<Input extends { id?: string | null }> {
 				.sort((a, b) => this.priority(b.input!) - this.priority(a.input!))[0];
 			if (!record) break;
 			try {
-				if (record.ambiguous && (await this.reconcile(record.input!))) {
+				if (record.ambiguous) {
+					record.originalEvidence ??= record.input;
+					this.save();
+				}
+				if (
+					record.ambiguous &&
+					(await this.reconcile(record.presentation?.input ?? record.input!))
+				) {
 					record.activityId = record.id;
 					record.status = "delivered";
 					delete record.input;
+					if (record.presentation) delete record.presentation.input;
 					delete record.error;
 					this.save();
 					continue;
 				}
+				// Only after resolving a prior ambiguous send using its original wire content.
+				if (!record.presentation && this.present) {
+					const presented = this.present(record.input!);
+					record.presentation = {
+						version: 1,
+						input: presented,
+						...(!presented
+							? {
+									reason:
+										"Internal or routine content suppressed; original retained",
+								}
+							: {}),
+					};
+					if (!presented || this.fingerprint(presented) !== record.fingerprint)
+						record.originalEvidence = record.input;
+					if (!presented) {
+						record.status = "superseded";
+						delete record.input;
+						delete record.error;
+						this.save();
+						continue;
+					}
+					this.save();
+				}
+
 				record.attempts++;
 				record.ambiguous = true; // A crash after send must reconcile before resending.
 				this.save();
-				const result = await this.send(record.input!);
+				const result = await this.send(
+					record.presentation?.input ?? record.input!,
+				);
 				if (!result.success)
 					throw new Error("Linear activity mutation returned success=false");
 				record.activityId = result.id ?? record.id;
 				record.status = "delivered";
 				delete record.input;
+				if (record.presentation) delete record.presentation.input;
 				delete record.error;
 				this.save();
 			} catch (error) {

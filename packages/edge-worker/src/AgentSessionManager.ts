@@ -20,13 +20,14 @@ import {
 	type IAgentRunner,
 	type ILogger,
 	type IssueMinimal,
+	isInternalPublication,
+	publicFailure,
 	type RepositoryContext,
 	type RunnerType,
 	type SerializedCyrusAgentSession,
 	type SerializedCyrusAgentSessionEntry,
 	type Workspace,
 } from "bobs-factory-core";
-
 import {
 	formatPendingWorkThought,
 	formatScheduleWakeupResponse,
@@ -37,6 +38,7 @@ import type {
 	ActivitySignal,
 	IActivitySink,
 } from "./sinks/index.js";
+import { LinearActivitySink } from "./sinks/LinearActivitySink.js";
 
 /**
  * Events emitted by AgentSessionManager
@@ -71,6 +73,15 @@ export class AgentSessionManager extends EventEmitter {
 	private logger: ILogger;
 	private activitySinks: Map<string, IActivitySink> = new Map(); // Per-session activity sinks
 	private sessions: Map<string, CyrusAgentSession> = new Map();
+	private factoryMessages = new WeakMap<object, string>();
+	markFactoryMessage(message: SDKMessage, stepKey = "factory"): void {
+		this.factoryMessages.set(message, stepKey);
+	}
+	private messageBufferKey(sessionId: string, message: SDKMessage): string {
+		const stepKey = this.factoryMessages.get(message);
+		return stepKey ? `${sessionId}:factory:${stepKey}` : sessionId;
+	}
+
 	private entries: Map<string, CyrusAgentSessionEntry[]> = new Map(); // Stores a list of session entries per each session by its id
 	private activeTasksBySession: Map<string, string> = new Map(); // Maps session ID to active Task tool use ID
 	private toolCallsByToolUseId: Map<string, { name: string; input: any }> =
@@ -566,6 +577,7 @@ export class AgentSessionManager extends EventEmitter {
 		message: SDKMessage,
 	): Promise<void> {
 		const log = this.sessionLog(sessionId);
+		const bufferKey = this.messageBufferKey(sessionId, message);
 		try {
 			switch (message.type) {
 				case "system":
@@ -594,6 +606,13 @@ export class AgentSessionManager extends EventEmitter {
 						sessionId,
 						message as SDKUserMessage,
 					);
+					if (this.factoryMessages.has(message))
+						userEntry.metadata = {
+							timestamp: Date.now(),
+							...userEntry.metadata,
+							factoryPublication: true,
+							factoryStepKey: this.factoryMessages.get(message),
+						};
 					await this.syncEntryToActivitySink(userEntry, sessionId);
 					break;
 				}
@@ -603,36 +622,43 @@ export class AgentSessionManager extends EventEmitter {
 						sessionId,
 						message as SDKAssistantMessage,
 					);
+					if (this.factoryMessages.has(message))
+						assistantEntry.metadata = {
+							timestamp: Date.now(),
+							...assistantEntry.metadata,
+							factoryPublication: true,
+							factoryStepKey: this.factoryMessages.get(message),
+						};
 					// Buffer the text content so addResultEntry can post it as the response.
 					// Track whether this body is a tool_use input (JSON) rather than real
 					// assistant prose, so addResultEntry never posts raw tool JSON as the
 					// final "response" when a turn ends on a tool call (CYPACK-1177).
 					if (assistantEntry.content) {
 						this.lastAssistantBodyBySession.set(
-							sessionId,
+							bufferKey,
 							assistantEntry.content,
 						);
 						this.lastAssistantBodyIsToolInputBySession.set(
-							sessionId,
+							bufferKey,
 							!!assistantEntry.metadata?.toolUseId,
 						);
 					}
 					if (assistantEntry.metadata?.toolUseId) {
 						// Tool-use message: flush any buffered text first (preserves ordering),
 						// then post immediately for real-time "in progress" display
-						await this.flushBufferedAssistant(sessionId);
+						await this.flushBufferedAssistant(sessionId, bufferKey);
 						await this.syncEntryToActivitySink(assistantEntry, sessionId);
 					} else {
 						// Text-only message: buffer it so the LAST one can be posted as "response"
 						// Flush any previous buffered text first (posts as thought)
-						await this.flushBufferedAssistant(sessionId);
+						await this.flushBufferedAssistant(sessionId, bufferKey);
 						// Skip empty/whitespace-only text turns — otherwise they post as
 						// blank thoughts in Linear, showing up as an extra blank line
 						// between activities (e.g. between "Using model: ..." and the
 						// first real assistant turn).
 						if (assistantEntry.content?.trim()) {
 							this.bufferedAssistantEntryBySession.set(
-								sessionId,
+								bufferKey,
 								assistantEntry,
 							);
 						}
@@ -643,7 +669,7 @@ export class AgentSessionManager extends EventEmitter {
 				case "result":
 					// Result arrived: discard buffered entry (addResultEntry uses lastAssistantBodyBySession
 					// to post the content as a response activity)
-					this.bufferedAssistantEntryBySession.delete(sessionId);
+					this.bufferedAssistantEntryBySession.delete(bufferKey);
 					await this.completeSession(sessionId, message as SDKResultMessage);
 					break;
 
@@ -666,10 +692,13 @@ export class AgentSessionManager extends EventEmitter {
 	 * Called when a new message arrives before result, to post the previous
 	 * assistant message as a thought/action activity.
 	 */
-	private async flushBufferedAssistant(sessionId: string): Promise<void> {
-		const buffered = this.bufferedAssistantEntryBySession.get(sessionId);
+	private async flushBufferedAssistant(
+		sessionId: string,
+		bufferKey = sessionId,
+	): Promise<void> {
+		const buffered = this.bufferedAssistantEntryBySession.get(bufferKey);
 		if (!buffered) return;
-		this.bufferedAssistantEntryBySession.delete(sessionId);
+		this.bufferedAssistantEntryBySession.delete(bufferKey);
 		// Defensive guard: never post a blank thought — it would appear as an
 		// empty line between real activities in Linear.
 		if (!buffered.content?.trim()) return;
@@ -732,6 +761,7 @@ export class AgentSessionManager extends EventEmitter {
 		sessionId: string,
 		resultMessage: SDKResultMessage,
 	): Promise<void> {
+		const bufferKey = this.messageBufferKey(sessionId, resultMessage);
 		// Determine which runner is being used
 		const session = this.sessions.get(sessionId);
 		const runner = session?.agentRunner;
@@ -759,11 +789,11 @@ export class AgentSessionManager extends EventEmitter {
 		// as the Linear "response" (CYPACK-1177 / CYHOST-905: sessions showed a
 		// "Finished" entry whose body was raw ScheduleWakeup / background-Bash
 		// JSON).
-		const bufferedAssistant = this.lastAssistantBodyBySession.get(sessionId);
+		const bufferedAssistant = this.lastAssistantBodyBySession.get(bufferKey);
 		const bufferedIsToolInput =
-			this.lastAssistantBodyIsToolInputBySession.get(sessionId) ?? false;
-		this.lastAssistantBodyBySession.delete(sessionId);
-		this.lastAssistantBodyIsToolInputBySession.delete(sessionId);
+			this.lastAssistantBodyIsToolInputBySession.get(bufferKey) ?? false;
+		this.lastAssistantBodyBySession.delete(bufferKey);
+		this.lastAssistantBodyIsToolInputBySession.delete(bufferKey);
 
 		let content: string;
 		if (resultMessage.is_error) {
@@ -817,6 +847,8 @@ export class AgentSessionManager extends EventEmitter {
 				timestamp: Date.now(),
 				durationMs: resultMessage.duration_ms,
 				isError: resultMessage.is_error,
+				factoryPublication: this.factoryMessages.has(resultMessage),
+				factoryStepKey: this.factoryMessages.get(resultMessage),
 			},
 		};
 
@@ -972,6 +1004,31 @@ export class AgentSessionManager extends EventEmitter {
 			entries.push(entry);
 			this.entries.set(sessionId, entries);
 			this.emit("sessionChanged", sessionId);
+
+			if (
+				entry.metadata?.factoryPublication &&
+				(entry.type === "result" ||
+					(!entry.metadata?.toolUseId &&
+						(/^\s*[[{]/.test(entry.content) ||
+							isInternalPublication(entry.content))))
+			)
+				return;
+
+			if (
+				entry.metadata?.toolResultError &&
+				(entry.metadata.factoryPublication ||
+					this.getActivitySink(sessionId) instanceof LinearActivitySink)
+			) {
+				await this.postActivity(
+					sessionId,
+					{ content: { type: "error", body: publicFailure(entry.content) } },
+					"tool error",
+				);
+				return;
+			}
+			if (entry.metadata?.factoryPublication && entry.metadata?.toolUseId) {
+				return;
+			}
 
 			// Build activity content based on entry type
 			let content: any;
@@ -1697,8 +1754,14 @@ export class AgentSessionManager extends EventEmitter {
 		this.activeTasksBySession.delete(sessionId);
 		this.activeStatusActivitiesBySession.delete(sessionId);
 		this.stopRequestedSessions.delete(sessionId);
-		this.lastAssistantBodyBySession.delete(sessionId);
-		this.bufferedAssistantEntryBySession.delete(sessionId);
+		for (const buffers of [
+			this.lastAssistantBodyBySession,
+			this.lastAssistantBodyIsToolInputBySession,
+			this.bufferedAssistantEntryBySession,
+		])
+			for (const key of buffers.keys())
+				if (key === sessionId || key.startsWith(`${sessionId}:factory:`))
+					buffers.delete(key);
 		this.messageProcessingQueues.delete(sessionId);
 		log.debug("Removed session");
 	}

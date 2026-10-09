@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Keep Factory role results and tool dumps out of Linear publication. Render decisions with rationale, suppress repeated check updates, and retain raw evidence and delivery recovery locally. ([Taskbot #101](https://taskbot.apps.janjaap.de/p/bobs-factory/t/101))
+
 - Include the pinned Bun production dependency notices and corresponding MPL source in beta release materials ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).
 
 - Prepare `1.0.0-beta` binary candidates, keep beta downloads distinct from stable releases, and verify installed native helpers before publication ([#57](https://github.com/jappyjan/bobs-factory/pull/57)).

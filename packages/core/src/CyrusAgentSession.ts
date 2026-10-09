@@ -167,6 +167,8 @@ export interface CyrusAgentSessionEntry {
 		toolName?: string;
 		toolInput?: any;
 		parentToolUseId?: string;
+		factoryStepKey?: string; // Isolates parallel role presentation buffers
+		factoryPublication?: boolean; // Raw Factory role evidence, not a public result
 		toolResultError?: boolean; // Error status from tool_result blocks
 		timestamp: number; // e.g. Date.now()
 		durationMs?: number;

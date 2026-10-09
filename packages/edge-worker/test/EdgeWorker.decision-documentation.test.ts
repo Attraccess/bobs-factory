@@ -117,8 +117,9 @@ it("publishes the actual record-decisions hook as one durable Linear comment whi
 	run.outputs.clarify = {
 		decisions: [
 			{
-				decision: "Use one server-wide default language",
-				rationale: "Readers share a consistent default",
+				question: "Which language default should we use?",
+				answer: "Use one server-wide default language",
+				reason: "Readers share a consistent default",
 			},
 		],
 		questions: [],
@@ -155,7 +156,8 @@ it("publishes the actual record-decisions hook as one durable Linear comment whi
 			),
 		);
 		expect(provider.comments).toHaveLength(1);
-		const expected = `## Factory decision records\n\n${JSON.stringify(run.outputs.clarify, null, 2)}\n\n### Questions and answers\n`;
+		const expected =
+			"**Which language default should we use?**\n\nUse one server-wide default language\n\nRationale: Readers share a consistent default";
 		const saved = new WorkflowRuntime(home, {}).get(run.id);
 		const receipt = saved.ticketSync!.receipts.find(
 			(entry) => entry.key === `comment:${expected}`,

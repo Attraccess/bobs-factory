@@ -1355,6 +1355,29 @@ of launching another workflow. Missing transcript configuration leaves delivery
 pending visibly, without substituting an operational issue comment. Taskbot retains
 its comment-based milestones.
 
+Factory runner messages and rejected results stay in local evidence. Only parsed,
+artifact-resolved and validated role outcomes reach the public transcript. The
+workflow owns clarification questions and recommendations; role results do not
+repeat them. Decision documentation contains the accepted answer and rationale,
+without appending requirement inventories or the complete question history.
+Repeated documentation is omitted when its content is already on the ticket.
+
+The shared Linear presenter strips terminal controls and suppresses internal
+result envelopes and routine successful tool actions. Tool failures remain
+visible with readable error details. Intentional Markdown code examples remain
+usable. Unchanged check-state messages are coalesced across delivery recovery;
+changed failures and resumed work are new events. Queued legacy content is
+presented before sending. Uncertain prior sends reconcile their original wire
+content first. Suppression retains a local disposition and original evidence;
+unsafe legacy documentation stays pending for an explicit readable replacement.
+Ticket status and PR attachments are processed independently of comment markers.
+
+Linear's provider may create threaded comments for elicitation/error/response
+activities ([provider guidance](https://linear.app/developers/agent-best-practices)).
+Factory operational role outcomes use thoughts. Clarifications retain elicitation
+and selection signals so native replies continue to work. Confirm rendering in an
+authorized Linear test session when changing this policy.
+
 Synchronization receipts live on the run as `ticketReference` and `ticketSync`.
 Failures appear in run activity and retain pending work across restart. Access
 failures retry every 30 seconds while the worker runs; Taskbot status conflicts
