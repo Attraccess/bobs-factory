@@ -23,6 +23,7 @@ const { StdioClientTransport } = requireMcp(
 	"@modelcontextprotocol/sdk/client/stdio.js",
 );
 assert.equal(process.env.F1_AGENT_MODE, "mock");
+const threadTimeouts = process.env.F1_CONTEXT_FAILURE === "thread-timeout";
 const root = mkdtempSync(join(tmpdir(), "f1-codex-context-"));
 const home = join(root, "home"),
 	repository = join(root, "repo");
@@ -164,6 +165,13 @@ class ScriptedClient extends EventEmitter {
 	async request(method: string, params: any) {
 		const threadId = params.threadId ?? `f1-${this.role}-${this.mode}`;
 		if (method === "thread/start" || method === "thread/resume") {
+			if (
+				threadTimeouts &&
+				((this.mode === "readiness" && this.attempt === 1) ||
+					(this.mode === "correction" && this.attempt === 2))
+			) {
+				throw new Error(`${method} timed out after 60000ms`);
+			}
 			assert.equal(params.config.mcp_servers["factory-context"].required, true);
 			assert.equal(
 				params.config.mcp_servers["factory-context"].startup_timeout_sec,
@@ -413,7 +421,10 @@ try {
 	attach();
 	await cli("ping");
 	let issue = 0;
-	for (const mode of ["dirty", "readiness", "correction", "exhausted"]) {
+	const scenarios = threadTimeouts
+		? ["readiness", "correction"]
+		: ["dirty", "readiness", "correction", "exhausted"];
+	for (const mode of scenarios) {
 		await cli(
 			"create-issue",
 			"--title",
@@ -450,12 +461,26 @@ try {
 			assert.equal(leaf.active.agent.sessionId, undefined);
 			assert.match(
 				leaf.active.agent.infrastructureFailure.reason,
-				/tool discovery is unavailable/,
+				threadTimeouts
+					? /thread\/start timed out after 60000ms/
+					: /tool discovery is unavailable/,
 			);
 			assert.equal(turns[mode] ?? 0, 0);
-			assert.match(before.error, /Required MCP server/);
+			assert.match(
+				before.error,
+				threadTimeouts
+					? /thread\/start timed out after 60000ms/
+					: /Required MCP server/,
+			);
 		}
 		if (mode === "correction") {
+			assert.equal(leaf.active.agent.sessionId, "f1-guide-correction");
+			if (threadTimeouts) {
+				assert.match(
+					leaf.active.agent.infrastructureFailure.reason,
+					/thread\/resume timed out after 60000ms/,
+				);
+			}
 			assert.equal(leaf.active.agent.rejected.attempts, 0);
 			assert.equal(leaf.active.agent.rejected.reserved, false);
 			assert.equal(turns[mode], 1);
