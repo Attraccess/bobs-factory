@@ -5,12 +5,14 @@ import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
 	copyFileSync,
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readdirSync,
 	readFileSync,
 	readlinkSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -190,6 +192,41 @@ try {
 	);
 	assert.notEqual(install(...exactArgs).status, 0);
 	assert.equal(readlinkSync(join(prefix, "bin/bobs-factory")), link);
+
+	const ownershipRecord = JSON.parse(
+		readFileSync(join(prefix, `lib/bobs-factory/records/${name}.json`), "utf8"),
+	);
+	assert.equal(ownershipRecord.owner, "bobs-factory-installer");
+	assert.equal(ownershipRecord.channel, channel);
+	assert.equal(ownershipRecord.commit, sidecar.commit);
+	assert.equal(ownershipRecord.target, target);
+	const state = join(env.HOME, "retained-state");
+	writeFileSync(state, "operator state");
+	const unknown = join(prefix, "lib/bobs-factory/operator-file");
+	writeFileSync(unknown, "retain");
+	const remove = () =>
+		spawnSync(
+			"sh",
+			[join(root, "scripts/uninstall-binary.sh"), prefix, "--stopped"],
+			{ env, encoding: "utf8" },
+		);
+	rmSync(join(prefix, "bin/bobs-factory"));
+	symlinkSync("/unrelated/bobs-factory", join(prefix, "bin/bobs-factory"));
+	assert.notEqual(remove().status, 0);
+	assert.equal(
+		readlinkSync(join(prefix, "bin/bobs-factory")),
+		"/unrelated/bobs-factory",
+	);
+	rmSync(join(prefix, "bin/bobs-factory"));
+	symlinkSync(link, join(prefix, "bin/bobs-factory"));
+	const removed = remove();
+	assert.equal(removed.status, 0, removed.stderr);
+	assert.equal(existsSync(join(prefix, `lib/bobs-factory/${name}`)), false);
+	assert.equal(readFileSync(state, "utf8"), "operator state");
+	assert.equal(readFileSync(unknown, "utf8"), "retain");
+	updateManifest();
+	const reinstalled = install(...exactArgs);
+	assert.equal(reinstalled.status, 0, reinstalled.stderr);
 	writeFileSync(
 		join(artifacts, "public-installer.json"),
 		jsonBytes({
@@ -205,6 +242,10 @@ try {
 			scope: "native-archive-controlled-downloads",
 			checks: {
 				badSignaturePreservesInstallation: "passed",
+				ownershipReceipt: "passed",
+				foreignRemovalRefused: "passed",
+				ownedRemovalRetainsState: "passed",
+				reinstallAfterRemoval: "passed",
 				channelResolution: "passed",
 				exactVersion: "passed",
 				repeatInstall: "passed",

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Add receipt-checked native runtime removal and explicit update-policy handoff, isolate reusable `npx` trials with browser/headless launch and cleanup, and prepare Homebrew/AUR/private npm entry points only from verified immutable signed releases. Downloads retain publication availability gates. ([Taskbot bobs-factory #118](https://taskbot.apps.janjaap.de/p/bobs-factory/t/118), [#123](https://taskbot.apps.janjaap.de/p/bobs-factory/t/123), [#84](https://github.com/jappyjan/bobs-factory/pull/84))
+
 ### Added
 
 - Add independently scoped desktop app updates using signed complete-app inventories, shared stable/nightly policy and exact Install consent, user-owned installation receipts, idle fencing and an external UI helper with retained-app health rollback. Shell upgrades preserve the existing local worker and leave selected remote hosts' policy alone; installers and recovery archives retain verified Electron/Chromium license files ([Taskbot #116](https://taskbot.apps.janjaap.de/p/bobs-factory/t/116), [#121](https://taskbot.apps.janjaap.de/p/bobs-factory/t/121), [#89](https://github.com/jappyjan/bobs-factory/pull/89)).
@@ -17,6 +21,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve explicit stable channel selection and generated package channel identity through the npx bootstrap; on cancellation, stop and confirm the installer-owned process group before removing its temporary runtime or lock. ([Taskbot bobs-factory #118](https://taskbot.apps.janjaap.de/p/bobs-factory/t/118), [#123](https://taskbot.apps.janjaap.de/p/bobs-factory/t/123), [#84](https://github.com/jappyjan/bobs-factory/pull/84))
 - Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 
 - Integrate external ticket delivery with main’s shared operator recovery and run-age scheduling, preserving conflict-safe retries and acceptance bindings ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).
