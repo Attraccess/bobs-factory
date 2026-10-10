@@ -74,5 +74,6 @@
 		},
 		"icon": "../../packages/edge-worker/src/factory/web/icons/icon-512.png"
 	},
-	"desktopName": "bobs-factory-desktop.desktop"
+	"desktopName": "bobs-factory-desktop.desktop",
+	"homepage": "https://jappyjan.github.io/bobs-factory/"
 }
