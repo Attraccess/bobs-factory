@@ -1124,6 +1124,37 @@ test("recipes require signed complete published desktop packages and immutable U
 			recipes["aur/bobs-factory-desktop-bin/PKGBUILD"],
 			/sha256sums_aarch64/,
 		);
+		const desktop = manifest.desktop;
+		delete manifest.desktop;
+		manifest.assets = manifest.assets.filter(
+			(a) => !a.file.startsWith("bobs-factory-desktop-"),
+		);
+		refresh();
+		const nativeOnly = await generateRecipes(
+			client,
+			manifest.version,
+			keys,
+			"npm",
+		);
+		assert.equal(JSON.parse(nativeOnly["npm/package.json"]).private, true);
+		await assert.rejects(
+			generateRecipes(client, manifest.version, keys),
+			/desktop targets/,
+		);
+		manifest.desktop = desktop;
+		manifest.assets.push(
+			...desktop.artifacts.flatMap((item) => [
+				item.archive,
+				item.updateMetadata,
+				item.validation,
+			]),
+		);
+		for (const arch of ["arm64", "x64"]) {
+			const file = `bobs-factory-desktop-${manifest.version}-linux-${arch}.deb`;
+			const bytes = contents.get(file);
+			manifest.assets.push({ file, size: bytes.length, sha256: sha256(bytes) });
+		}
+		refresh();
 		contents.set("release.json.sig", Buffer.from("invalid"));
 		await assert.rejects(
 			generateRecipes(client, manifest.version, keys),

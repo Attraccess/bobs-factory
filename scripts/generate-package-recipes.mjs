@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import { jsonBytes, REPOSITORY, requireValue } from "./lib/binary-release.mjs";
 import { githubClient, verifyPublishedRelease } from "./lib/github-release.mjs";
 
-export async function generateRecipes(client, version, keys) {
+export async function generateRecipes(client, version, keys, kind = "all") {
 	requireValue(
 		/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-nightly\.[0-9.]+)?$/.test(
 			version,
@@ -17,6 +17,47 @@ export async function generateRecipes(client, version, keys) {
 	const release = await client.api(`releases/tags/v${version}`);
 	const verified = await verifyPublishedRelease(client, release, keys);
 	const { manifest, manifestSha256, keyId } = verified;
+	const npmRoot = new URL(
+		"../distribution/npm/bobs-factory-trial/",
+		import.meta.url,
+	);
+	const npmPackage = JSON.parse(
+		readFileSync(new URL("package.json", npmRoot), "utf8"),
+	);
+	npmPackage.version = version;
+	npmPackage.factoryRelease = { version, channel: manifest.channel };
+	npmPackage.private = true; // operator must prove registry ownership before authorizing publication
+	const npmFiles = {
+		"npm/package.json": jsonBytes(npmPackage),
+		"verification.json": jsonBytes({
+			schemaVersion: 1,
+			version,
+			channel: manifest.channel,
+			commit: manifest.commit,
+			candidateDigest: manifest.candidateDigest,
+			manifestSha256,
+			publisherKeyId: keyId,
+			publication: "not-performed",
+		}),
+		"npm/bin/bobs-factory-trial.mjs": readFileSync(
+			new URL("bin/bobs-factory-trial.mjs", npmRoot),
+		),
+		"npm/LICENSE": readFileSync(new URL("LICENSE", npmRoot)),
+		"npm/README.md": readFileSync(new URL("README.md", npmRoot)),
+	};
+	requireValue(
+		["all", "npm", "desktop"].includes(kind),
+		"Unknown entry point kind",
+	);
+	if (kind === "npm") {
+		requireValue(
+			manifest.version === version &&
+				["stable", "nightly"].includes(manifest.channel),
+			"Recipe version/channel mismatch",
+		);
+		return npmFiles;
+	}
+
 	requireValue(
 		manifest.version === version &&
 			["stable", "nightly"].includes(manifest.channel),
@@ -124,23 +165,9 @@ ${["glibc>=2.35", "gtk3", "nss", "alsa-lib", "libxss", "libxtst", "xdg-utils"].m
 
 pkgname = ${aur}
 `;
-	const npmRoot = new URL(
-		"../distribution/npm/bobs-factory-trial/",
-		import.meta.url,
-	);
-	const npmPackage = JSON.parse(
-		readFileSync(new URL("package.json", npmRoot), "utf8"),
-	);
-	npmPackage.version = version;
-	npmPackage.factoryRelease = { version, channel: manifest.channel };
-	npmPackage.private = true; // operator must prove registry ownership before authorizing publication
+
 	return {
-		"npm/package.json": jsonBytes(npmPackage),
-		"npm/bin/bobs-factory-trial.mjs": readFileSync(
-			new URL("bin/bobs-factory-trial.mjs", npmRoot),
-		),
-		"npm/LICENSE": readFileSync(new URL("LICENSE", npmRoot)),
-		"npm/README.md": readFileSync(new URL("README.md", npmRoot)),
+		...(kind === "all" ? npmFiles : {}),
 		[`Casks/${cask}.rb`]: brew,
 		[`aur/${aur}/PKGBUILD`]: pkgbuild,
 		[`aur/${aur}/.SRCINFO`]: srcinfo,
@@ -160,13 +187,22 @@ pkgname = ${aur}
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
 	const { values } = parseArgs({
-		options: { version: { type: "string" }, output: { type: "string" } },
+		options: {
+			version: { type: "string" },
+			output: { type: "string" },
+			kind: { type: "string", default: "all" },
+		},
 	});
 	requireValue(
 		values.version && values.output,
-		"Usage: generate-package-recipes.mjs --version EXACT_VERSION --output NEW_DIRECTORY",
+		"Usage: generate-package-recipes.mjs --version EXACT_VERSION --output NEW_DIRECTORY [--kind all|npm|desktop]",
 	);
-	const recipes = await generateRecipes(githubClient(), values.version);
+	const recipes = await generateRecipes(
+		githubClient(),
+		values.version,
+		undefined,
+		values.kind,
+	);
 	const output = resolve(values.output);
 	mkdirSync(output); // refuse replacing an existing reviewed recipe set
 	for (const [file, bytes] of Object.entries(recipes)) {

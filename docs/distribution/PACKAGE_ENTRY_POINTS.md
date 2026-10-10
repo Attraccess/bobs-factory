@@ -16,7 +16,9 @@ node scripts/generate-package-recipes.mjs --version EXACT_VERSION --output /tmp/
 
 It uses the existing publisher signature, candidate, source tag and complete asset
 inventory verifier. It requires all four desktop targets and downloads/verifies the
-matching DMGs, AppImages and DEBs before emitting anything. URLs contain the exact
+matching DMGs, AppImages and DEBs before emitting desktop recipes. `--kind npm` prepares only the launcher from a
+complete verified native release, independently of desktop delivery; `--kind desktop`
+prepares only the desktop recipes. The default `all` requires both. URLs contain the exact
 version tag, never a mutable latest/nightly pointer. Missing, unsigned, partial or
 conflicting packages fail closed. `verification.json` binds generated recipes to
 the release manifest digest, publisher, candidate, commit and byte checksums.
