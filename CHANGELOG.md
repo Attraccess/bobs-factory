@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Bound signed-delivery harness shutdown and temporary-fixture cleanup; new native contention receipts now record their generating-script digest. Focused follow-up checks remain separate from the original 23/23 evidence ([Taskbot #116](https://taskbot.apps.janjaap.de/p/bobs-factory/t/116), [#87](https://github.com/jappyjan/bobs-factory/pull/87)).
+
 - Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 
 - Integrate external ticket delivery with main’s shared operator recovery and run-age scheduling, preserving conflict-safe retries and acceptance bindings ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).

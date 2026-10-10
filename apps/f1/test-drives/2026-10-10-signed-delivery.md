@@ -18,6 +18,38 @@ compiler HOME/environment. The passing driver hash is
 - [Passing original contention regression with journal preservation](assets/2026-10-10-signed-delivery/passed-aa0ad-startup-contention.json)
 - [Passing updater regression with a different previous installed view](assets/2026-10-10-signed-delivery/passed-aa0ad-maintained-startup-contention.json)
 - [Retained first attempt: harness confirmation error](assets/2026-10-10-signed-delivery/harness-error-aa0ad-first-attempt.json)
+- [Focused bounded-shutdown and temporary-fixture cleanup regressions](assets/2026-10-10-signed-delivery/passed-aa0ad-harness-regressions.json)
+- [Focused native startup-contention rerun with generator digest](assets/2026-10-10-signed-delivery/passed-aa0ad-focused-startup-contention.json)
+
+## Harness review follow-up — separate from the 23/23 drive
+
+The independent review of PR87 found three harness/evidence issues. All three are
+corrected here without changing product code or rewriting historical receipts:
+
+- Timed child processes now receive TERM, then KILL after a bounded grace period;
+  POSIX launches use an owned detached process group so descendants are stopped
+  with the child. The helper reports timeout, forced termination and close-timeout
+  state, and a timed-out command cannot report exit code zero as success.
+- New startup-contention receipts include the SHA-256 of the exact generating
+  script. The focused native rerun is bound to source `aa0ad1404aed147cf82fc259cf0c11f6bb18753b`,
+  darwin-arm64 executable SHA-256 `cb1b58234415bd445d776eedb8e6d804e186e9fe3fe767a94bef0b492a7458cd`,
+  and generator SHA-256 `ce0a421465f1c1b809265f1cf9297dcdccec4e363a287fea15847782f63fedcb`.
+- Signed-runtime and contention fixture trees are removed only after their
+  receipts are written. Cleanup verifies the harness-owned temporary path; an
+  explicit `--retain-fixture` keeps it, and a receipt stored within the fixture
+  prevents deletion. The focused isolated regression receipt exercises cleanup
+  after both passing and failing receipts, verifies that a TERM-ignoring child
+  and descendant are reaped within bounds, and confirms another process group is
+  left alive. Its recorded runtime-driver SHA-256 is
+  `8407c8fe53bc049323198a97fe56c8f1604fa4acb748c2ac66b14bf311e1209a`.
+
+These targeted checks do not rerun or change the original 23/23 result. That result
+remains bound to its original driver SHA-256
+`ca3784fb34f91837554788276a4336b41fa47c6a0f9dbe91f154364dbaabd085`. The two
+pre-existing contention receipts and all historical failures are retained as-is;
+only the new focused native receipt claims the new generator digest. No native
+rebuild, full-drive rerun, provider, signing key, production service or credential
+was used for this follow-up.
 
 The complete successful path uses real HTTPS and production verification,
 discovery, archive staging, extraction, native probes, signed bootstrap/native CLI,

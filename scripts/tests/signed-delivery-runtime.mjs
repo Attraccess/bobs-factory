@@ -38,12 +38,20 @@ import {
 } from "../../packages/edge-worker/dist/updates/UpdateManager.js";
 import { jsonBytes, sha256 } from "../lib/binary-release.mjs";
 import {
+	cleanupFixtureTreeAfterReceipt,
+	terminateOwnedProcessGroup,
+} from "./signed-delivery-harness-lifecycle.mjs";
+import {
 	command,
 	signedHttpsFixture,
 } from "./signed-release-https-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const [builds, output] = process.argv.slice(2).map((v) => resolve(v));
+const args = process.argv.slice(2);
+const retainFixture = args.includes("--retain-fixture");
+const [builds, output] = args
+	.filter((value) => value !== "--retain-fixture")
+	.map((value) => resolve(value));
 assert(
 	builds && output,
 	"Usage: node scripts/tests/signed-delivery-runtime.mjs BUILDS RECEIPT_DIRECTORY",
@@ -66,6 +74,7 @@ mkdirSync(process.env.HOME);
 const env = { ...process.env };
 const results = [];
 let completed = false;
+const cleanupErrors = [];
 const harnessSha256 = sha256(readFileSync(fileURLToPath(import.meta.url)));
 const buildsReceipt = [];
 const liveHomes = new Set();
@@ -1169,12 +1178,14 @@ try {
 			const trial = spawn(process.execPath, trialArgs, {
 				env: { ...env, ...f.env },
 				stdio: ["ignore", "pipe", "pipe"],
+				detached: process.platform !== "win32",
 			});
 			let trialOutput = "",
 				trialError = "";
 			trial.stdout.on("data", (b) => (trialOutput += b));
 			trial.stderr.on("data", (b) => (trialError += b));
 			const trialClosed = once(trial, "close");
+			let trialCleanup;
 			try {
 				for (let n = 0; n < 400; n++) {
 					if (trial.exitCode !== null)
@@ -1197,9 +1208,17 @@ try {
 				assert.match(duplicate.stderr, /Another trial/);
 				assert.equal(workerOwner(trialHome).pid, trialOwner.pid);
 			} finally {
-				trial.kill("SIGTERM");
-				await trialClosed;
+				trialCleanup = await terminateOwnedProcess(trial, trialClosed, {
+					detached: process.platform !== "win32",
+					termGraceMs: 2000,
+					killWaitMs: 3000,
+				});
 			}
+			assert.equal(
+				trialCleanup.closeTimedOut,
+				false,
+				"Trial launcher process group did not stop within its bounded cleanup period",
+			);
 			assert.match(trialOutput, /Removed the temporary runtime/);
 			assert.equal(workerOwner(trialHome), undefined);
 			assert.equal(existsSync(join(trialHome, ".launcher-lock")), false);
@@ -1237,25 +1256,57 @@ try {
 	for (const h of liveHomes) {
 		const owner = workerOwner(h);
 		if (owner && ownerAlive(owner)) {
-			process.kill(owner.pid, "SIGTERM");
-			await until(
-				() => !workerOwner(h),
-				"isolated worker did not release ownership",
-			);
+			try {
+				const expectedHome = realpathSync(h);
+				const current = workerOwner(h);
+				assert.equal(current?.pid, owner.pid);
+				assert.equal(current?.home, expectedHome);
+				let ownerChanged = false;
+				const stopped = await terminateOwnedProcessGroup(
+					owner.pid,
+					async () => {
+						const currentOwner = workerOwner(h);
+						if (!currentOwner) return false;
+						if (
+							currentOwner.pid !== owner.pid ||
+							currentOwner.home !== expectedHome
+						) {
+							ownerChanged = true;
+							return false;
+						}
+						return ownerAlive(currentOwner);
+					},
+					{ termGraceMs: 1000, killWaitMs: 4000 },
+				);
+				if (ownerChanged)
+					cleanupErrors.push("Temp HOME owner changed during cleanup");
+				if (stopped.closeTimedOut)
+					cleanupErrors.push(
+						`Owned worker group ${owner.pid} did not stop within 5 seconds`,
+					);
+			} catch (error) {
+				cleanupErrors.push(error.stack);
+			}
 		}
 	}
-	await f.close();
+	try {
+		await f.close();
+	} catch (error) {
+		cleanupErrors.push(error.stack);
+	}
 	const receipt = {
 		schemaVersion: 1,
 		purpose:
 			"TEST ONLY signed source/install/runtime integration; NOT release publication evidence",
-		passed: completed && results.every((r) => r.passed),
+		passed:
+			completed && results.every((r) => r.passed) && cleanupErrors.length === 0,
 		harnessSha256,
 		sourceCommit: buildsReceipt[0].commit,
 		target,
 		fixtureKeyFingerprint: f.keyFingerprint,
 		builds: buildsReceipt,
 		results,
+		cleanupErrors,
 		requests: f.requests,
 		limitations: [
 			"Other native targets are inventory fixtures with explicit not-run status.",
@@ -1267,4 +1318,32 @@ try {
 	};
 	writeFileSync(join(output, "signed-delivery.json"), jsonBytes(receipt));
 	console.log(`Receipt ${join(output, "signed-delivery.json")}`);
+	if (!retainFixture && cleanupErrors.length === 0) {
+		const cleanup = cleanupFixtureTreeAfterReceipt({
+			work,
+			receiptPath: join(output, "signed-delivery.json"),
+		});
+		receipt.fixtureCleanup = cleanup;
+		console.log(`Fixture cleanup: ${cleanup.reason}`);
+		if (!cleanup.removed && cleanup.reason !== "receipt-inside-fixture") {
+			cleanupErrors.push(
+				`Temporary fixture was not removed: ${cleanup.reason}`,
+			);
+			receipt.passed = false;
+			receipt.cleanupErrors = cleanupErrors;
+		}
+		writeFileSync(join(output, "signed-delivery.json"), jsonBytes(receipt));
+	} else {
+		receipt.fixtureCleanup = {
+			removed: false,
+			reason: retainFixture ? "retain-fixture" : "active-owner-retained",
+		};
+		if (!retainFixture) {
+			receipt.passed = false;
+			receipt.cleanupErrors = cleanupErrors;
+		}
+		writeFileSync(join(output, "signed-delivery.json"), jsonBytes(receipt));
+		console.log(`Retained fixture: ${work} (${receipt.fixtureCleanup.reason})`);
+	}
 }
+assert.equal(cleanupErrors.length, 0, cleanupErrors.join("\n"));

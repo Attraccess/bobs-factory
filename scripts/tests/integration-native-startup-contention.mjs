@@ -11,14 +11,21 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
 	ownerAlive,
 	workerOwner,
 } from "../../apps/cli/dist/src/services/InstanceLock.js";
 import { UpdateManager } from "../../packages/edge-worker/dist/updates/UpdateManager.js";
 import { jsonBytes, sha256 } from "../lib/binary-release.mjs";
+import { cleanupFixtureTreeAfterReceipt } from "./signed-delivery-harness-lifecycle.mjs";
+import { terminateOwnedProcess } from "./signed-release-https-fixture.mjs";
 
-const [executable, output] = process.argv.slice(2).map((v) => resolve(v));
+const args = process.argv.slice(2);
+const retainFixture = args.includes("--retain-fixture");
+const [executable, output] = args
+	.filter((value) => value !== "--retain-fixture")
+	.map((v) => resolve(v));
 assert(
 	executable && output,
 	"Usage: node native-update-startup-contention.mjs NATIVE_EXECUTABLE RECEIPT",
@@ -59,17 +66,24 @@ let stderr = "",
 const child = spawn(
 	executable,
 	["--home", home, "--port", "19691", "--no-open", "local"],
-	{ env, stdio: ["ignore", "pipe", "pipe"] },
+	{
+		env,
+		stdio: ["ignore", "pipe", "pipe"],
+		detached: process.platform !== "win32",
+	},
 );
 child.stdout.on("data", (b) => (stdout += b));
 child.stderr.on("data", (b) => (stderr += b));
-const close = new Promise((r) =>
-	child.once("close", (code, signal) => r({ code, signal })),
+const closeEvent = new Promise((resolve) =>
+	child.once("close", (code, signal) => resolve([code, signal])),
 );
+const close = closeEvent.then(([code, signal]) => ({ code, signal }));
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let healthy = false,
 	journalUnchanged = false,
-	exit;
+	exit,
+	passed = false;
+let receipt;
 try {
 	// Hold the exact live caller's lock across worker ownership and FactoryServer
 	// construction. Remove only our own unchanged record after the bounded hold.
@@ -98,13 +112,26 @@ try {
 		);
 	exit = { code: child.exitCode, signal: child.signalCode };
 } finally {
-	if (child.exitCode === null) child.kill("SIGTERM");
-	await close;
+	const processCleanup =
+		child.exitCode === null && child.signalCode === null
+			? await terminateOwnedProcess(child, closeEvent, {
+					detached: process.platform !== "win32",
+					termGraceMs: 1000,
+					killWaitMs: 2000,
+				})
+			: await close.then(({ code, signal }) => ({
+					code,
+					signal,
+					forcedKill: false,
+					closeTimedOut: false,
+				}));
 	const owner = workerOwner(home);
-	assert(
-		!owner || !ownerAlive(owner),
-		"No isolated worker may survive regression cleanup",
-	);
+	const ownerStopped = !owner || !ownerAlive(owner);
+	passed =
+		healthy &&
+		journalUnchanged &&
+		ownerStopped &&
+		!processCleanup.closeTimedOut;
 	// Retain diagnosis without enrollment codes or any credential material.
 	const error = stderr
 		.split("\n")
@@ -113,25 +140,47 @@ try {
 				l,
 			),
 		);
-	writeFileSync(
-		output,
-		jsonBytes({
-			sourceCommit: b.commit,
-			target: b.target,
-			executableSha256: b.executable.sha256,
-			home,
-			healthy,
-			journalUnchanged,
-			exit,
-			error,
-			passed: healthy && journalUnchanged,
-			purpose:
-				"native replacement startup under bounded live updater state-lock contention",
-		}),
-	);
+	receipt = {
+		sourceCommit: b.commit,
+		target: b.target,
+		executableSha256: b.executable.sha256,
+		harnessSha256: sha256(readFileSync(fileURLToPath(import.meta.url))),
+		home,
+		healthy,
+		journalUnchanged,
+		exit,
+		processCleanup,
+		ownerStopped,
+		error,
+		passed,
+		purpose:
+			"native replacement startup under bounded live updater state-lock contention",
+	};
+	writeFileSync(output, jsonBytes(receipt));
+	if (!retainFixture) {
+		try {
+			receipt.fixtureCleanup = cleanupFixtureTreeAfterReceipt({
+				work,
+				receiptPath: output,
+			});
+			if (
+				!receipt.fixtureCleanup.removed &&
+				receipt.fixtureCleanup.reason !== "receipt-inside-fixture"
+			)
+				passed = false;
+		} catch (error) {
+			receipt.fixtureCleanup = { removed: false, reason: "cleanup-error" };
+			receipt.cleanupError = error.stack;
+			passed = false;
+		}
+	} else {
+		receipt.fixtureCleanup = { removed: false, reason: "retain-fixture" };
+	}
+	receipt.passed = passed;
+	writeFileSync(output, jsonBytes(receipt));
 }
 assert.equal(
-	healthy,
+	receipt?.passed,
 	true,
-	"Native replacement startup failed during a valid transient updater write; inspect contention receipt",
+	"Native replacement startup or bounded cleanup failed; inspect contention receipt",
 );

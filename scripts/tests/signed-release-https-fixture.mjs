@@ -369,20 +369,96 @@ export async function signedHttpsFixture(root, work, builds) {
 export async function command(command, args, options = {}) {
 	const child = spawn(command, args, {
 		...options,
+		detached: process.platform !== "win32",
 		stdio: ["ignore", "pipe", "pipe"],
 	});
 	let stdout = "",
 		stderr = "";
 	child.stdout.on("data", (b) => (stdout += b));
 	child.stderr.on("data", (b) => (stderr += b));
-	const timer = setTimeout(
-		() => child.kill("SIGTERM"),
-		options.timeout ?? 60000,
-	);
+	const close = once(child, "close");
+	let timedOut = false;
+	let timer;
 	try {
-		const [code, signal] = await once(child, "close");
-		return { code, signal, stdout, stderr };
+		const exited = close.then(([code, signal]) => ({
+			code,
+			signal,
+			forcedKill: false,
+			closeTimedOut: false,
+		}));
+		const deadline = new Promise((resolve) => {
+			timer = setTimeout(() => resolve(null), options.timeout ?? 60000);
+		});
+		let result = await Promise.race([exited, deadline]);
+		if (!result) {
+			timedOut = true;
+			result = await terminateOwnedProcess(child, close, {
+				detached: process.platform !== "win32",
+				termGraceMs: options.termGraceMs ?? 1000,
+				killWaitMs: options.killWaitMs ?? 2000,
+			});
+		}
+		return {
+			...result,
+			code: timedOut && result.code === 0 ? 124 : result.code,
+			timedOut,
+			pid: child.pid,
+			stdout,
+			stderr,
+		};
 	} finally {
-		clearTimeout(timer);
+		if (timer) clearTimeout(timer);
 	}
+}
+
+export async function terminateOwnedProcess(
+	child,
+	close = once(child, "close"),
+	{
+		detached = process.platform !== "win32",
+		termGraceMs = 1000,
+		killWaitMs = 2000,
+	} = {},
+) {
+	const closed = close.then(([code, signal]) => ({
+		code,
+		signal,
+		forcedKill: false,
+		closeTimedOut: false,
+	}));
+	const waitForClose = async (timeoutMs) => {
+		let timer;
+		try {
+			return await Promise.race([
+				closed,
+				new Promise((resolve) => {
+					timer = setTimeout(() => resolve(null), timeoutMs);
+				}),
+			]);
+		} finally {
+			if (timer) clearTimeout(timer);
+		}
+	};
+	const signalOwned = (signal) => {
+		if (child.exitCode !== null || child.signalCode !== null) return false;
+		try {
+			if (detached && child.pid) process.kill(-child.pid, signal);
+			else child.kill(signal);
+			return true;
+		} catch (error) {
+			if (error.code === "ESRCH") return false;
+			throw error;
+		}
+	};
+
+	if (child.exitCode !== null || child.signalCode !== null) return closed;
+	signalOwned("SIGTERM");
+	const graceful = await waitForClose(termGraceMs);
+	if (graceful) return graceful;
+
+	const forcedKill = signalOwned("SIGKILL");
+	const final = await waitForClose(killWaitMs);
+	return final
+		? { ...final, forcedKill }
+		: { code: null, signal: null, forcedKill, closeTimedOut: true };
 }
