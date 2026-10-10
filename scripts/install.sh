@@ -9,14 +9,16 @@ version=
 channel=stable
 channel_explicit=false
 modify_path=true
+factory_home=
+update_policy=
 usage() {
-  echo 'Usage: install.sh [--prefix DIRECTORY] [--version VERSION] [--channel stable|nightly] [--no-modify-path]'
+  echo 'Usage: install.sh [--prefix DIRECTORY] [--version VERSION] [--channel stable|nightly] [--no-modify-path] [--home ABSOLUTE_HOME] [--update-policy manual|idle-auto]'
 }
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --prefix|--version|--channel)
+    --prefix|--version|--channel|--home|--update-policy)
       [ "$#" -ge 2 ] || { usage >&2; exit 1; }
-      case "$1" in --prefix) prefix=$2;; --version) version=$2;; --channel) channel=$2; channel_explicit=true;; esac
+      case "$1" in --prefix) prefix=$2;; --version) version=$2;; --channel) channel=$2; channel_explicit=true;; --home) factory_home=$2;; --update-policy) update_policy=$2;; esac
       shift 2;;
     --no-modify-path) modify_path=false; shift;;
     --help) usage; exit 0;;
@@ -29,6 +31,11 @@ case "$prefix" in *:*) fail 'Install prefix must not contain a PATH separator (:
 case "$prefix" in *'
 '*) fail 'Install prefix must not contain a newline.';; esac
 case "$channel" in stable|nightly) ;; *) fail 'Channel must be stable or nightly.';; esac
+if [ -n "$factory_home" ]; then
+  case "$factory_home" in /*) ;; *) fail 'Factory home must be absolute.';; esac
+fi
+case "$update_policy" in ''|manual|idle-auto) ;; *) fail 'Update policy must be manual or idle-auto.';; esac
+[ -z "$update_policy" ] || [ -n "$factory_home" ] || fail '--update-policy requires --home for the intended instance.'
 for tool in openssl curl tar sed awk grep cut wc uname mktemp diff find; do
   command -v "$tool" >/dev/null 2>&1 || fail "Required system tool is missing: $tool"
 done
@@ -165,7 +172,11 @@ verify "$work/$manifest" "$(field "$work/target.json" manifestSha256)" "$(number
 verify "$work/$verifier" "$(field "$work/verifier.json" sha256)" "$(number "$work/verifier.json" size)"
 [ "$(field "$work/$manifest" commit)" = "$commit" ] || fail 'Archive source does not match the release.'
 [ "$(field "$work/$manifest" version)" = "$release_version" ] || fail 'Archive version does not match the release.'
-sh "$work/$verifier" "$work/$archive" "$work/$manifest" "$prefix"
+key_id=$(cat "$work/release.json.key-id")
+BOBS_FACTORY_INSTALL_CHANNEL="$release_channel" \
+BOBS_FACTORY_INSTALL_SOURCE=bootstrap \
+BOBS_FACTORY_INSTALL_KEY_ID="$key_id" \
+  sh "$work/$verifier" "$work/$archive" "$work/$manifest" "$prefix"
 
 shell_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 bin=$(shell_quote "$prefix/bin")
@@ -199,3 +210,17 @@ echo
 printf 'Start Bob\047s Factory now: '
 shell_quote "$prefix/bin/bobs-factory"
 printf '\n'
+
+# Deliberate settings-only handoff. No policy/default/pause/pin reset is implicit.
+if [ -n "$factory_home" ]; then
+  set -- --home "$factory_home" update settings
+  if [ "$channel_explicit" = true ]; then set -- "$@" --channel "$release_channel"; fi
+  if [ -n "$update_policy" ]; then set -- "$@" --policy "$update_policy"; fi
+  if ! "$prefix/bin/bobs-factory" "$@"; then
+    echo 'Runtime installed, but update settings handoff failed. Inspect update status for the chosen home; no worker was launched.' >&2
+    exit 1
+  fi
+else
+  echo 'Configure this instance explicitly: bobs-factory --home ABSOLUTE_HOME update settings --channel CHANNEL'
+  echo 'Channel defaults apply only without saved overrides: stable manual; nightly automatic when idle.'
+fi

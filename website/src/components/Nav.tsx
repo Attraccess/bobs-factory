@@ -7,6 +7,7 @@ const links = [
 	["Reviews", "#review"],
 	["Recipes", "#recipes"],
 	["Features", "#features"],
+	["Downloads", `${import.meta.env.BASE_URL}downloads/`],
 ] as const;
 
 export function Nav() {
