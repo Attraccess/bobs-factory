@@ -10,7 +10,11 @@ import {
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { digest, packApp } from "../apps/desktop/src/app-archive.mjs";
+import {
+	digest,
+	packApp,
+	unpackApp,
+} from "../apps/desktop/src/app-archive.mjs";
 import { appFingerprint } from "../apps/desktop/src/app-source.mjs";
 import { validateCandidate } from "./lib/release-candidate.mjs";
 export function prepareDesktopUpdate({
@@ -76,6 +80,28 @@ export function prepareDesktopUpdate({
 			writeFileSync(join(output, archive.file), packApp(container), {
 				flag: "wx",
 			});
+			// Validate the deliverable itself, including OS assessment after the exact
+			// extraction used by clients. Never infer preserved notarization from the
+			// original bundle or relabel an unsigned recovery archive as signed.
+			const extracted = join(container, "roundtrip");
+			unpackApp(readFileSync(join(output, archive.file)), extracted);
+			const restored = join(extracted, "Bob's Factory.app");
+			if (appFingerprint(restored, target) !== appFingerprint(app, target))
+				throw Error("Recovered app differs from original signed bundle");
+			if (!unsigned) {
+				execFileSync("/usr/bin/codesign", [
+					"--verify",
+					"--deep",
+					"--strict",
+					restored,
+				]);
+				execFileSync("/usr/sbin/spctl", [
+					"--assess",
+					"--type",
+					"execute",
+					restored,
+				]);
+			}
 		} finally {
 			rmSync(container, { recursive: true, force: true });
 		}

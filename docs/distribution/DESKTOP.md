@@ -29,7 +29,8 @@ AppImage/user installation ownership differs from DEB/AUR/Homebrew/system packag
 System/external managers own their upgrades. DEB/AUR/system paths, Homebrew
 Caskroom/Cellar links and non-writable/non-user-owned apps show an owner handoff.
 A normal DMG app in Applications is eligible when its actual app and parent are
-user-owned/writable and its complete bytes match an authentic signed release.
+the app is user-owned, both app and parent are writable, and its complete bytes
+match an authentic signed release.
 An arbitrary writable executable or symlink is insufficient update authority.
 
 ## Complete app updates
