@@ -18,9 +18,15 @@ import {
 	validateEvidence,
 } from "../lib/binary-release.mjs";
 import {
+	candidateIdentity,
+	freezeCandidate,
+} from "../lib/release-candidate.mjs";
+import {
 	extractEvidenceArchive,
+	validateSourceArchive,
 	validateSourceMaterials,
 } from "../lib/release-material.mjs";
+import { sourceMaterialFixture } from "./source-material-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const commit = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -32,43 +38,25 @@ test("source packaging binds exact committed factory source and reviewed runtime
 	try {
 		const materials = join(work, "materials");
 		mkdirSync(materials);
-		const records = [
-			["bun", "bun-source.tar.gz"],
-			["webkit", "webkit-source.tar.gz"],
-			["dependency", "dependency-source.tar.gz"],
-		].map(([kind, file]) => {
-			writeFileSync(
-				join(materials, file),
-				`fixture ${kind} source, not release material`,
-			);
-			return {
-				kind,
-				source: "https://example.invalid/source",
-				revision: "fixture-only",
-				...fileRecord(join(materials, file), file),
-			};
-		});
-		const manifest = { schemaVersion: 1, commit, bunVersion: "1.4.2", records };
-		writeFileSync(
-			join(materials, "source-materials.json"),
-			jsonBytes(manifest),
-		);
-		writeFileSync(
-			join(materials, "README.md"),
-			"Fixture only. Not a release licensing approval.",
-		);
-		validateSourceMaterials(manifest, materials, commit);
-		validateSourceMaterials(
-			{
-				...manifest,
-				records: records.filter((record) => record.kind !== "dependency"),
-			},
-			materials,
+		const candidate = freezeCandidate({
+			channel: "nightly",
 			commit,
-		); // Other source obligations are determined by the licensing review.
+			workflowSha: commit,
+			committedVersion: "1.0.0",
+			sequence: 42,
+			date: "2026-10-10T00:00:00Z",
+		});
+		const identity = candidateIdentity(candidate);
+		const manifest = sourceMaterialFixture(materials, identity);
+		const records = manifest.records;
+		const candidateFile = join(work, "candidate.json");
+		writeFileSync(candidateFile, jsonBytes(candidate));
+		validateSourceMaterials(manifest, materials, identity);
 		const output = join(work, "output");
 		const args = [
 			join(root, "scripts/build-release-source.mjs"),
+			"--candidate",
+			candidateFile,
 			"--sha",
 			commit,
 			"--materials",
@@ -79,6 +67,7 @@ test("source packaging binds exact committed factory source and reviewed runtime
 		const result = spawnSync(process.execPath, args, { encoding: "utf8" });
 		assert.equal(result.status, 0, result.stderr);
 		const archive = join(output, "source-rebuild.tar.gz");
+		validateSourceArchive(archive, identity);
 		assert.equal(
 			execFileSync("tar", ["-xOzf", archive, "source-rebuild/commit.txt"], {
 				encoding: "utf8",
@@ -118,7 +107,11 @@ test("source packaging binds exact committed factory source and reviewed runtime
 			/Unresolved release validation/,
 		);
 		assert.throws(
-			() => validateSourceMaterials(manifest, materials, "f".repeat(40)),
+			() =>
+				validateSourceMaterials(manifest, materials, {
+					...identity,
+					commit: "f".repeat(40),
+				}),
 			/exact candidate/,
 		);
 		assert.throws(
@@ -129,13 +122,13 @@ test("source packaging binds exact committed factory source and reviewed runtime
 						records: records.filter((record) => record.kind !== "webkit"),
 					},
 					materials,
-					commit,
+					identity,
 				),
-			/WebKit/,
+			/required material: webkit/,
 		);
 		writeFileSync(join(materials, "bun-source.tar.gz"), "corrupt");
 		assert.throws(
-			() => validateSourceMaterials(manifest, materials, commit),
+			() => validateSourceMaterials(manifest, materials, identity),
 			/integrity failure/,
 		);
 	} finally {
@@ -234,6 +227,168 @@ test("evidence intake rejects a dirty version edit before retrieving build prove
 			/Exact release version must be committed at candidate/,
 		);
 		assert.doesNotMatch(result.stderr, /Unexpected network access/);
+	} finally {
+		rmSync(work, { recursive: true, force: true });
+	}
+});
+
+test("semantic intake rejects omitted, substituted and tampered rebuild materials even in a valid outer archive", () => {
+	const work = mkdtempSync(join(tmpdir(), "factory-source-negatives-"));
+	try {
+		const candidate = freezeCandidate({
+			channel: "nightly",
+			commit,
+			workflowSha: commit,
+			committedVersion: "1.0.0",
+			sequence: 43,
+			date: "2026-10-10T00:00:00Z",
+		});
+		const identity = candidateIdentity(candidate);
+		const stage = join(work, "source-rebuild");
+		const manifest = sourceMaterialFixture(stage, identity);
+		for (const [file, bytes] of Object.entries({
+			"candidate.json": jsonBytes(candidate),
+			"commit.txt": commit,
+			"pnpm-lock.yaml": "controlled lock",
+			"factory-source.tar.gz": "controlled source",
+			"release-tooling.tar.gz": "controlled tooling",
+		}))
+			writeFileSync(join(stage, file), bytes);
+		manifest.bundled = [
+			"candidate.json",
+			"commit.txt",
+			"pnpm-lock.yaml",
+			"factory-source.tar.gz",
+			"release-tooling.tar.gz",
+		].map((file) => fileRecord(join(stage, file), file));
+		const archive = join(work, "source.tar.gz");
+		const pack = (m) => {
+			writeFileSync(join(stage, "source-materials.json"), jsonBytes(m));
+			execFileSync("tar", ["-czf", archive, "-C", work, "source-rebuild"]);
+		};
+		pack(manifest);
+		validateSourceArchive(archive, identity);
+		for (const kind of [
+			"webkit",
+			"tinycc",
+			"objects",
+			"relink-log",
+			"build-config",
+			"instructions",
+			"tinycc-patch",
+		]) {
+			const bad = structuredClone(manifest);
+			bad.records = bad.records.filter((r) => r.kind !== kind);
+			pack(bad);
+			assert.throws(
+				() => validateSourceArchive(archive, identity),
+				/required material/,
+			);
+		}
+		const upstreamStage = join(work, "upstream");
+		const webkitPrefix = "WebKit-2e2aa2290fac856d6f451ceacb58f7f5b44dd057";
+		mkdirSync(upstreamStage);
+		execFileSync("tar", [
+			"-xzf",
+			join(stage, "webkit-source.tar.gz"),
+			"-C",
+			upstreamStage,
+		]);
+		symlinkSync(
+			"/etc/passwd",
+			join(upstreamStage, webkitPrefix, "external-link"),
+		);
+		execFileSync("tar", [
+			"-czf",
+			join(stage, "webkit-source.tar.gz"),
+			"-C",
+			upstreamStage,
+			webkitPrefix,
+		]);
+		const externalLink = structuredClone(manifest);
+		Object.assign(
+			externalLink.records.find((r) => r.kind === "webkit"),
+			fileRecord(join(stage, "webkit-source.tar.gz"), "webkit-source.tar.gz"),
+		);
+		pack(externalLink);
+		assert.throws(
+			() => validateSourceArchive(archive, identity),
+			/external link targets/,
+		);
+		rmSync(join(upstreamStage, webkitPrefix, "external-link"));
+		execFileSync("tar", [
+			"-czf",
+			join(stage, "webkit-source.tar.gz"),
+			"-C",
+			upstreamStage,
+			webkitPrefix,
+		]);
+		Object.assign(
+			manifest.records.find((r) => r.kind === "webkit"),
+			fileRecord(join(stage, "webkit-source.tar.gz"), "webkit-source.tar.gz"),
+		);
+		writeFileSync(
+			join(stage, "factory-source.tar.gz"),
+			"tampered generated source",
+		);
+		pack(manifest);
+		assert.throws(
+			() => validateSourceArchive(archive, identity),
+			/Generated source bundle integrity failure/,
+		);
+		writeFileSync(join(stage, "factory-source.tar.gz"), "controlled source");
+		const badRevision = structuredClone(manifest);
+		badRevision.records.find((r) => r.kind === "webkit").revision = "f".repeat(
+			40,
+		);
+		pack(badRevision);
+		assert.throws(
+			() => validateSourceArchive(archive, identity),
+			/Wrong pinned webkit/,
+		);
+		const badPath = structuredClone(manifest);
+		badPath.records[0].file = "../foreign.tar.gz";
+		pack(badPath);
+		assert.throws(
+			() => validateSourceArchive(archive, identity),
+			/Unsafe\/duplicate/,
+		);
+		const badConfig = structuredClone(manifest);
+		badConfig.builds[0].nativeFlags = [];
+		pack(badConfig);
+		assert.throws(
+			() => validateSourceArchive(archive, identity),
+			/compiler\/runtime\/native flags/,
+		);
+		const badObjects = structuredClone(manifest);
+		badObjects.builds[0].objectInventory = ["objects/absent.o"];
+		writeFileSync(
+			join(stage, "build-darwin-arm64.json"),
+			JSON.stringify(badObjects.builds[0]),
+		);
+		Object.assign(
+			badObjects.records.find((r) => r.file === "build-darwin-arm64.json"),
+			fileRecord(
+				join(stage, "build-darwin-arm64.json"),
+				"build-darwin-arm64.json",
+			),
+		);
+		pack(badObjects);
+		assert.throws(
+			() => validateSourceArchive(archive, identity),
+			/Object inventory/,
+		);
+		writeFileSync(
+			join(stage, "build-darwin-arm64.json"),
+			JSON.stringify(manifest.builds[0]),
+		);
+		pack(manifest);
+		writeFileSync(join(stage, "bun-source.tar.gz"), "substitution");
+		pack(manifest);
+		assert.throws(
+			() => validateSourceArchive(archive, identity),
+			/integrity failure/,
+		);
 	} finally {
 		rmSync(work, { recursive: true, force: true });
 	}

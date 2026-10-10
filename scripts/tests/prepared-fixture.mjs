@@ -26,6 +26,8 @@ import {
 } from "../lib/release-candidate.mjs";
 import { keys, signBytes, testInstaller } from "./release-fixtures.mjs";
 
+import { sourceMaterialFixture } from "./source-material-fixture.mjs";
+
 const root = fileURLToPath(new URL("../../", import.meta.url));
 export function preparedFixture(
 	channel = "nightly",
@@ -300,12 +302,19 @@ export function preparedFixture(
 		["candidate.json", jsonBytes(candidate)],
 		["README.md", "Fixture rebuild instructions"],
 		["pnpm-lock.yaml", "Fixture lock"],
-		["bun-source.tar.gz", "Fixture Bun source"],
 		["release-tooling.tar.gz", "Simulated frozen tooling"],
 		["factory-source.tar.gz", "Simulated committed source"],
-		["source-materials.json", '{"simulated":true}'],
 	])
 		writeFileSync(join(source, name), bytes);
+	const material = sourceMaterialFixture(source, identity);
+	material.bundled = [
+		"commit.txt",
+		"candidate.json",
+		"pnpm-lock.yaml",
+		"factory-source.tar.gz",
+		"release-tooling.tar.gz",
+	].map((file) => fileRecord(join(source, file), file));
+	writeFileSync(join(source, "source-materials.json"), jsonBytes(material));
 	execFileSync("tar", [
 		"-czf",
 		join(assets, "source-rebuild.tar.gz"),

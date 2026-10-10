@@ -13,6 +13,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { releaseChannel, validateCandidate } from "./release-candidate.mjs";
+import { validateSourceArchive } from "./release-material.mjs";
 
 export const REPOSITORY = "jappyjan/bobs-factory";
 export const TARGETS = [
@@ -729,6 +730,9 @@ export function validateEvidence(evidence, directory, identity) {
 			"Source recipe mismatch",
 		);
 	}
+	// Immutable schema-1 beta recovery keeps its historical material/receipt bytes.
+	// Every newly frozen candidate must pass semantic material intake.
+	if (identity.candidateDigest) validateSourceArchive(sourcePath, identity);
 	return evidence;
 }
 
