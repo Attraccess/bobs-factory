@@ -1,0 +1,30 @@
+{
+	"passed": true,
+	"purpose": "actual signed bootstrap to real native trial beside independent owned instance; provisional source2e47 only",
+	"sourceCommit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+	"selectedOwner": {
+		"schema": 1,
+		"pid": 45163,
+		"nonce": "5ffbd4dd-4931-4a17-a1c2-f912cfbdf682",
+		"home": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/signed-trial-coexistence-RoBnSj/selected",
+		"executable": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/signed-trial-coexistence-RoBnSj/selected/runtime/desktop-installed/lib/bobs-factory/bobs-factory-1.0.0-darwin-arm64/bobs-factory",
+		"owner": "desktop",
+		"startedAt": "2026-10-10T18:18:01.991Z",
+		"processStamp": "Sat Oct 10 20:18:00 2026",
+		"dashboardPort": 19701
+	},
+	"trialOwner": {
+		"schema": 1,
+		"pid": 45844,
+		"nonce": "ede63652-d330-499d-bc00-a77a8ca96d8b",
+		"home": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/signed-trial-coexistence-RoBnSj/test-host/.bobs-factory-trial",
+		"executable": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/signed-trial-coexistence-RoBnSj/bobs-factory-trial-SG8MBd/prefix/lib/bobs-factory/bobs-factory-1.0.0-darwin-arm64/bobs-factory",
+		"owner": "foreground",
+		"startedAt": "2026-10-10T18:18:05.084Z",
+		"processStamp": "Sat Oct 10 20:18:04 2026",
+		"dashboardPort": 19705
+	},
+	"fixtureKeyFingerprint": "b4b06fd9fa2f40972dffcd194c1a1d649ff1b588a18fb366ff4cd83fa627d393",
+	"requests": 7,
+	"trialCleaned": true
+}
