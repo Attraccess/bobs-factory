@@ -124,7 +124,9 @@ export async function checkOperatorTransport(
 	run: FactoryRun,
 	resolved: OperatorTransport,
 	selectedServer?: string,
+	signal: AbortSignal = AbortSignal.timeout(15000),
 ) {
+	signal.throwIfAborted();
 	const target = operatorTaskbotSource(run);
 	if (selectedServer !== undefined || !target) {
 		const names = Object.keys(resolved.servers);
@@ -139,7 +141,7 @@ export async function checkOperatorTransport(
 				"missing_transport",
 				"Selected MCP server is not configured for this run",
 			);
-		await resolved.listTools(server, AbortSignal.timeout(15000));
+		await resolved.listTools(server, signal);
 		return {
 			runId: run.id,
 			server,
@@ -159,7 +161,6 @@ export async function checkOperatorTransport(
 			"missing_transport",
 			"Restore the retained originating Taskbot server identity",
 		);
-	const signal = AbortSignal.timeout(15000);
 	const ref = { ...target, server };
 	await taskbotAdapter(ref, (tool, args) =>
 		resolved.callTool(server, tool, args, signal),
