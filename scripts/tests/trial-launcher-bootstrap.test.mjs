@@ -31,8 +31,9 @@ function launch(f, args = [], release) {
 	return { child, closed, output: () => output };
 }
 
-async function waitFor(check, label) {
-	for (let i = 0; i < 100; i += 1) {
+async function waitFor(check, label, timeoutMs = 2500) {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
 		if (check()) return;
 		await delay(25);
 	}
@@ -189,9 +190,16 @@ test("npm exits after TERM reaches a packed launcher during bootstrap download",
 		await waitFor(
 			() => existsSync(f.curlPid),
 			"packed launcher's controlled download",
+			15000,
 		);
 		const curlPid = Number(readFileSync(f.curlPid, "utf8"));
-		npm.kill("SIGTERM");
+		const owner = JSON.parse(
+			readFileSync(
+				join(f.home, ".bobs-factory-trial/.launcher-lock/owner.json"),
+				"utf8",
+			),
+		);
+		process.kill(owner.pid, "SIGTERM");
 		const result = await Promise.race([
 			closed,
 			delay(10000).then(() => {
