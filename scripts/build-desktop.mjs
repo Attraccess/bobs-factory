@@ -11,6 +11,10 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import {
+	prepareElectronLicenses,
+	verifyDesktopInstallerLicenses,
+} from "./lib/desktop-licenses.mjs";
 import { desktopRuntime } from "./lib/desktop-runtime.mjs";
 import { validateCandidate } from "./lib/release-candidate.mjs";
 import { prepareDesktopUpdate } from "./prepare-desktop-update.mjs";
@@ -62,6 +66,7 @@ cpSync(resolve(values.runtime), runtime, {
 	errorOnExist: true,
 });
 try {
+	const electronLicenses = prepareElectronLicenses(app);
 	execFileSync(
 		"bun",
 		[
@@ -122,6 +127,7 @@ try {
 		candidate,
 		target,
 		unsigned: true,
+		electronLicenses,
 	});
 	const assets = readdirSync(output)
 		.filter((name) => /\.(dmg|AppImage|deb)$/.test(name))
@@ -142,11 +148,24 @@ try {
 		if (!assets.some((asset) => asset.file === expected))
 			throw new Error(`Desktop asset contract mismatch: ${expected}`);
 	}
+	const licenseValidation = {
+		status: "passed",
+		electronLicenses,
+		installers: assets.map((asset) => ({
+			...asset,
+			electronLicenses: verifyDesktopInstallerLicenses(
+				join(output, asset.file),
+				electronLicenses,
+			),
+		})),
+		update: { ...update.archive, electronLicenses },
+	};
 	writeFileSync(
 		join(output, "desktop-build.json"),
-		`${JSON.stringify({ schemaVersion: 1, product: "bobs-factory-desktop", candidateDigest: candidate.digest, version: candidate.candidate.version, commit, target, runtime: identity, assets, update, signing: "unsigned preparation only", validation: "native install/auth/lifecycle receipts required", publication: false }, null, 2)}\n`,
+		`${JSON.stringify({ schemaVersion: 1, product: "bobs-factory-desktop", candidateDigest: candidate.digest, version: candidate.candidate.version, commit, target, runtime: identity, assets, update, licenseValidation, signing: "unsigned preparation only", validation: "native install/auth/lifecycle receipts required", publication: false }, null, 2)}\n`,
 	);
 } finally {
 	rmSync(runtime, { recursive: true, force: true });
 	rmSync(join(app, "desktop-identity.json"), { force: true });
+	rmSync(join(app, "electron-licenses"), { recursive: true, force: true });
 }

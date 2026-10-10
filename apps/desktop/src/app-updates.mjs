@@ -74,6 +74,7 @@ export async function appUpdates({
 			"app-lifecycle.mjs",
 			"app-source.mjs",
 			"app-archive.mjs",
+			"app-licenses.mjs",
 			"update-services.mjs",
 		])
 			cpSync(join(sourceDirectory, file), join(retained, file));

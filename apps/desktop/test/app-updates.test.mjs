@@ -29,6 +29,7 @@ import {
 } from "../src/app-source.mjs";
 import { appUpdates } from "../src/app-updates.mjs";
 import * as services from "../src/update-services.mjs";
+import { fixtureElectronLicenses } from "./shell-fixture.mjs";
 
 const work = () => mkdtempSync(join(tmpdir(), "bob-shell-test-"));
 const identity = {
@@ -138,6 +139,7 @@ test("signed app source binds exact payload, channel, target and full inventory;
 			format: "AppImage",
 			archive: item.updateArchive,
 			fingerprint: digest(bytes),
+			electronLicenses: fixtureElectronLicenses,
 		};
 		writeFileSync(join(f.assets, item.updateMetadata.file), jsonBytes(meta));
 		item.updateMetadata = fileRecord(
@@ -239,6 +241,7 @@ function signedProof(fingerprint, target = candidate.target) {
 			osSigning: "unsigned",
 			target,
 			fingerprint,
+			electronLicenses: fixtureElectronLicenses,
 			archive: item.archive,
 		};
 		const bytes = jsonBytes(metadata);

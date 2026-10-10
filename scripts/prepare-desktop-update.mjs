@@ -7,15 +7,20 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import {
 	digest,
 	packApp,
 	unpackApp,
 } from "../apps/desktop/src/app-archive.mjs";
+import { verifyElectronLicenses } from "../apps/desktop/src/app-licenses.mjs";
 import { appFingerprint } from "../apps/desktop/src/app-source.mjs";
+import {
+	prepareElectronLicenses,
+	verifyDesktopInstallerLicenses,
+} from "./lib/desktop-licenses.mjs";
 import { validateCandidate } from "./lib/release-candidate.mjs";
 export function prepareDesktopUpdate({
 	app,
@@ -23,6 +28,9 @@ export function prepareDesktopUpdate({
 	candidate,
 	target,
 	unsigned = false,
+	electronLicenses = prepareElectronLicenses(
+		resolve(dirname(fileURLToPath(import.meta.url)), "../apps/desktop"),
+	),
 }) {
 	candidate = validateCandidate(candidate);
 	app = resolve(app);
@@ -37,6 +45,10 @@ export function prepareDesktopUpdate({
 		format,
 		osSigning = "not-applicable";
 	if (target.startsWith("darwin")) {
+		verifyElectronLicenses(
+			join(app, "Contents", "Resources"),
+			electronLicenses,
+		);
 		const identity = JSON.parse(
 			readFileSync(join(app, "Contents", "Resources", "desktop-identity.json")),
 		);
@@ -86,6 +98,10 @@ export function prepareDesktopUpdate({
 			const extracted = join(container, "roundtrip");
 			unpackApp(readFileSync(join(output, archive.file)), extracted);
 			const restored = join(extracted, "Bob's Factory.app");
+			verifyElectronLicenses(
+				join(restored, "Contents", "Resources"),
+				electronLicenses,
+			);
 			if (appFingerprint(restored, target) !== appFingerprint(app, target))
 				throw Error("Recovered app differs from original signed bundle");
 			if (!unsigned) {
@@ -107,6 +123,7 @@ export function prepareDesktopUpdate({
 		}
 		format = "bobs-app-v1";
 	} else {
+		verifyDesktopInstallerLicenses(app, electronLicenses);
 		archive = {
 			file: `bobs-factory-desktop-${c.version}-linux-${target.split("-").at(-1)}.AppImage`,
 		};
@@ -132,6 +149,7 @@ export function prepareDesktopUpdate({
 		archive,
 		fingerprint: appFingerprint(app, target),
 		osSigning,
+		electronLicenses,
 	};
 	const file = `desktop-update-${target}.json`;
 	writeFileSync(join(output, file), JSON.stringify(metadata, null, 2));

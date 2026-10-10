@@ -7,6 +7,17 @@ import { preparedFixture } from "../../../scripts/tests/prepared-fixture.mjs";
 import { keys, signBytes } from "../../../scripts/tests/release-fixtures.mjs";
 
 export { keys };
+// Synthetic notices for scripted test payloads only, never native distribution evidence.
+export const fixtureElectronLicenses = {
+	schemaVersion: 1,
+	product: "electron",
+	version: "44.7.0",
+	files: ["LICENSE", "LICENSES.chromium.html"].map((file) => ({
+		file,
+		size: 1,
+		sha256: "a".repeat(64),
+	})),
+};
 export function appRelease(channel, appBytes, target, options = {}) {
 	const f = preparedFixture(channel, { desktop: true, ...options }),
 		item = f.manifest.desktop.artifacts[0];
@@ -23,6 +34,7 @@ export function appRelease(channel, appBytes, target, options = {}) {
 		osSigning: "not-applicable",
 		archive: item.updateArchive,
 		fingerprint: item.updateArchive.sha256,
+		electronLicenses: options.electronLicenses ?? fixtureElectronLicenses,
 	};
 	writeFileSync(join(f.assets, item.updateMetadata.file), jsonBytes(metadata));
 	item.updateMetadata = fileRecord(

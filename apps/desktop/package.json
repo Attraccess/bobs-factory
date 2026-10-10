@@ -42,6 +42,14 @@
 			{
 				"from": "desktop-identity.json",
 				"to": "desktop-identity.json"
+			},
+			{
+				"from": "electron-licenses",
+				"to": "electron-licenses",
+				"filter": [
+					"LICENSE",
+					"LICENSES.chromium.html"
+				]
 			}
 		],
 		"artifactName": "bobs-factory-desktop-${version}-${os}-${arch}.${ext}",

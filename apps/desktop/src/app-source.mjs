@@ -11,6 +11,10 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { digest, tree, unpackApp } from "./app-archive.mjs";
+import {
+	validateElectronLicenses,
+	verifyElectronLicenses,
+} from "./app-licenses.mjs";
 export function installationKind(path, target) {
 	try {
 		const actual = realpathSync(path),
@@ -90,6 +94,7 @@ export function verifyAppProof(proof, candidate, services) {
 			metadata.osSigning !== "developer-id-notarized")
 	)
 		throw Error("App receipt lacks authentic macOS signing/notarization");
+	validateElectronLicenses(metadata.electronLicenses);
 	return metadata;
 }
 export class DesktopAppSource {
@@ -180,6 +185,7 @@ export class DesktopAppSource {
 				JSON.stringify(item.updateArchive ?? item.archive)
 		)
 			throw Error("Invalid app delivery receipt");
+		validateElectronLicenses(metadata.electronLicenses);
 		mkdirSync(this.directory, { recursive: true, mode: 0o700 });
 		const work = mkdtempSync(join(this.directory, "stage-")),
 			bytes = await download(item.updateArchive ?? item.archive);
@@ -201,6 +207,10 @@ export class DesktopAppSource {
 				)
 			)
 				throw Error("Unexpected app archive root");
+			verifyElectronLicenses(
+				join(path, "Contents", "Resources"),
+				metadata.electronLicenses,
+			);
 			execFileSync("/usr/bin/codesign", [
 				"--verify",
 				"--deep",

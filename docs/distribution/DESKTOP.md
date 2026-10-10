@@ -28,8 +28,8 @@ not native-tested compatibility claims. Windows/musl are excluded. Artifact name
 AppImage/user installation ownership differs from DEB/AUR/Homebrew/system packages.
 System/external managers own their upgrades. DEB/AUR/system paths, Homebrew
 Caskroom/Cellar links and non-writable/non-user-owned apps show an owner handoff.
-A normal DMG app in Applications is eligible when its actual app and parent are
-the app is user-owned, both app and parent are writable, and its complete bytes
+A normal DMG app in Applications is eligible when the app is user-owned,
+both app and parent are writable, and its complete bytes
 match an authentic signed release.
 An arbitrary writable executable or symlink is insufficient update authority.
 
@@ -99,9 +99,18 @@ node scripts/build-desktop.mjs --candidate /private/candidate.json \
   --runtime /private/bobs-factory-VERSION-TARGET --output /private/desktop
 ```
 
-The packaged runtime includes native runtime/dependency notices and source/rebuild
-material; the Electron shell retains upstream attribution and Electron/Chromium
-license material. Actual release/license evidence must cover both.
+The build copies the exact pinned Electron distribution's `LICENSE` and
+`LICENSES.chromium.html` to `Resources/electron-licenses` on macOS and
+`resources/electron-licenses` on Linux. Desktop update metadata binds their
+version, sizes and SHA-256 digests to the candidate. Preparation inspects the
+actual read-only mounted DMG, extracted AppImage and DEB, and the extracted
+complete macOS recovery archive; missing or changed notice bytes fail the build.
+`desktop-build.json.licenseValidation` retains candidate-bound installer hashes
+and actual notice comparisons. These checks do not constitute source/relink or
+release licensing acceptance. The frozen ed7/58 packages predate this correction;
+their runtime notice files do not prove Electron/Chromium notice inclusion.
+Runtime source/rebuild material and reviewed licensing receipts remain separate
+release gates.
 
 Electron 44 Touch ID requires an approved code-signing keychain access group and
 matching entitlement. `BOBS_FACTORY_WEBAUTHN_ACCESS_GROUP` enables the configured

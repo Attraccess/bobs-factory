@@ -57,3 +57,5 @@ CLAUDE.local.md
 # Bundled shared desktop updater primitives (generated during packaging).
 /apps/desktop/src/update-services.mjs
 /apps/desktop/desktop-identity.json
+
+/apps/desktop/electron-licenses/

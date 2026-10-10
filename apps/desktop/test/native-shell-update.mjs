@@ -16,9 +16,11 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { defaultWorkflows } from "../../../packages/edge-worker/dist/factory/defaultWorkflows.js";
 import { validateWorkflows } from "../../../packages/edge-worker/dist/factory/Workflow.js";
 import { WorkflowRuntime } from "../../../packages/edge-worker/dist/factory/WorkflowRuntime.js";
 import { MachineCapacity } from "../../../packages/edge-worker/dist/MachineCapacity.js";
+import { prepareElectronLicenses } from "../../../scripts/lib/desktop-licenses.mjs";
 import { freezeCandidate } from "../../../scripts/lib/release-candidate.mjs";
 import { localRepository } from "../../cli/dist/src/onboarding.js";
 import {
@@ -54,7 +56,8 @@ mkdirSync(process.env.HOME);
 process.env.APPIMAGE_EXTRACT_AND_RUN = "1";
 cpSync(image, install);
 const app = resolve("apps/desktop"),
-	priorOutput = join(root, "prior");
+	priorOutput = join(root, "prior"),
+	electronLicenses = prepareElectronLicenses(app);
 // Build a distinct previous shell candidate from the same frozen source with an
 // older test version, retaining the same matching native runtime. Not a release.
 const prior = freezeCandidate({
@@ -74,6 +77,7 @@ const prior = freezeCandidate({
 	date: "2026-10-10T00:00:00Z",
 });
 function buildVariant(record, output, file) {
+	prepareElectronLicenses(app);
 	cpSync(native, join(app, "runtime"), { recursive: true });
 	writeFileSync(
 		join(app, "desktop-identity.json"),
@@ -127,15 +131,17 @@ buildVariant(failedCandidate, failedOutput, "failed.AppImage");
 cpSync(join(priorOutput, "previous.AppImage"), install);
 const old = appRelease("stable", readFileSync(install), target, {
 		frozenCandidate: prior,
+		electronLicenses,
 	}),
 	good = appRelease("nightly", readFileSync(image), target, {
 		frozenCandidate: frozen,
+		electronLicenses,
 	}),
 	bad = appRelease(
 		"nightly",
 		readFileSync(join(failedOutput, "failed.AppImage")),
 		target,
-		{ frozenCandidate: failedCandidate },
+		{ frozenCandidate: failedCandidate, electronLicenses },
 	);
 // Prepare a genuine configured repository and a completed mocked agent checkpoint
 // at a human review gate. Native startup must never execute a provider/title agent.
@@ -183,7 +189,8 @@ const seed = new WorkflowRuntime(home, {
 		url: "https://example.invalid/shell-review",
 	}),
 });
-const [workflow] = validateWorkflows([
+const workflow = validateWorkflows([
+	...defaultWorkflows,
 	{
 		id: "fixture",
 		name: "Fixture",
@@ -206,7 +213,7 @@ const [workflow] = validateWorkflows([
 			},
 		],
 	},
-]);
+]).at(-1);
 const run = seed.create({
 	id: "native-shell-wait",
 	title: "Retained shell checkpoint",
@@ -348,6 +355,7 @@ try {
 		"app-lifecycle.mjs",
 		"app-source.mjs",
 		"app-archive.mjs",
+		"app-licenses.mjs",
 	])
 		cpSync(join(app, "src", file), join(retained, file));
 	// Only this isolated test module supplies the generated public RSA key. The
