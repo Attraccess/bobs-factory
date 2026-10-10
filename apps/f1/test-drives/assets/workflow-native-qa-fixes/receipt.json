@@ -1,0 +1,101 @@
+{
+	"sourceHead": "5b7d7c5c1840499c4e4514994ade3ff67edd81e7",
+	"baseHead": "4324a9fe2b48cb7cabb8e2979c5adebef82f332d",
+	"mode": "mock",
+	"result": "passed",
+	"factoryWebVersion": "66174cf586ba7fd660e64a30",
+	"tests": {
+		"edgeWorker": 273,
+		"operator": 12,
+		"newRegressionCases": 16,
+		"isolation": "Factory/Cyrus environment removed; private temporary homes, repository and capacity state"
+	},
+	"nativeRecovery": {
+		"expectedThread": "f1-mock-b1d0dbde-d5cf-4f28-ab95-e39b0c0c9623",
+		"actualThread": "f1-mock-b1d0dbde-d5cf-4f28-ab95-e39b0c0c9623",
+		"savedPreferences": {},
+		"actualPreferences": {},
+		"pending": {
+			"body": "Retained native input with attachment metadata",
+			"attachmentManifest": "Non-sensitive QA fixture attachment: note.txt",
+			"commentAuthor": "Unknown",
+			"commentTimestamp": "2026-10-10T19:02:54.167Z"
+		},
+		"retainedAttachment": true
+	},
+	"missingRepository": {
+		"executed": true,
+		"expected": "Failed recovery restores the durable block",
+		"before": {
+			"workflowIds": ["simple"],
+			"at": "2026-10-10T19:02:54.389Z",
+			"priorStatus": "active",
+			"reason": "Workflow disabled: simple. Progress retained. Enable it, then Resume this session individually."
+		},
+		"actual": {
+			"status": 409,
+			"response": {
+				"error": "Session repository is unavailable"
+			},
+			"block": {
+				"workflowIds": ["simple"],
+				"at": "2026-10-10T19:02:54.389Z",
+				"priorStatus": "active",
+				"reason": "Workflow disabled: simple. Progress retained. Enable it, then Resume this session individually."
+			},
+			"phase": "recovery",
+			"running": false
+		},
+		"pending": {
+			"body": "Failure recovery pending turn",
+			"attachmentManifest": "",
+			"commentAuthor": "Unknown",
+			"commentTimestamp": "2026-10-10T19:02:54.331Z"
+		},
+		"sessionId": "session-1"
+	},
+	"pendingWork": {
+		"suite": "WorkflowPendingWorkAdmission.test.ts",
+		"cases": ["sessionCrons", "backgroundTasks"],
+		"observed": "Installed ClaudeRunner recorded SDK Stop-hook pending work and processed one controlled automatic callback. Disabling Simple aborted the query and released capacity; later callbacks and starts were blocked. Enabling retained the per-session block; provider query count remained one. Native ID retained. SDK execution was simulated."
+	},
+	"migrationCollisions": {
+		"suite": "WorkflowMigrationIdentity.test.ts",
+		"cases": [
+			"customized root",
+			"stock root calling customized dependency",
+			"private dependency copy"
+		],
+		"observed": "Each occupied generated target rejected migration twice across reconstruction and preserved original configuration bytes. Only the complete source-file digest was controlled to avoid a self-referential SHA preimage search; all other hashing, migration and persistence were real."
+	},
+	"f1": {
+		"mode": "mock",
+		"result": "passed",
+		"runId": "manual-8751aaf5-f33b-429f-92de-275523632367",
+		"nativeId": "session-1",
+		"home": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-9ITjlj/home",
+		"checks": [
+			"migration",
+			"forks",
+			"dependency gating",
+			"blocked restart",
+			"native queue interruption",
+			"native Resume",
+			"retained native attachment and live session identity",
+			"missing repository preserves block and pending input",
+			"operator manual Simple Resume",
+			"HTTP import/export"
+		]
+	},
+	"checks": {
+		"build": "passed (full monorepo pre-commit hook and targeted edge-worker build)",
+		"types": "passed (full monorepo hook and targeted edge-worker check)",
+		"lint": "passed, zero errors; 19 warnings in unchanged files",
+		"diff": "passed"
+	},
+	"limitations": [
+		"No real provider agents or external services were invoked.",
+		"No browser UI source changed; the previously accepted screenshots and clips remain historical evidence. No new visual check is claimed.",
+		"Reviewer reassessment, CI, subsequent QA and human approval remain pipeline responsibilities."
+	]
+}
