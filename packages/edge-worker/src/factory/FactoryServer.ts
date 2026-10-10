@@ -1,8 +1,7 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
 import { join } from "node:path";
-import { isDeepStrictEqual } from "node:util";
 import { factoryRuntimeIdentity } from "bobs-factory-core";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
@@ -24,6 +23,7 @@ import {
 	type ResolvedLaunchRequest,
 	resolveLaunchRequest,
 } from "./LaunchFields.js";
+import { OperatorService } from "./OperatorService.js";
 import { runProvenance } from "./Provenance.js";
 import {
 	readReviewManifest,
@@ -101,6 +101,7 @@ export class FactoryServer {
 			Number(process.env.BOBS_FACTORY_FACTORY_SESSION_HOURS ?? 12),
 		),
 	) {
+		const operator = new OperatorService(runtime, hooks, "dashboard");
 		const shell = factoryWebAssets();
 		this.auth = new FactoryAuth(runtime.directory, access);
 		this.app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
@@ -881,26 +882,13 @@ export class FactoryServer {
 				const { text } = z
 					.object({ text: z.string().trim().min(1).max(100000) })
 					.parse(request.body);
-				const state = hooks.chat?.(id);
-				if (!state?.enabled || !state.available || !hooks.message)
-					throw new Error(
-						state?.reason ?? "Chat is disabled for this workflow",
-					);
-				const messageId = randomUUID();
-				await hooks.message(id, text, messageId);
-				const message = runtime.recordChatMessage(
-					id,
-					text,
-					state.step ?? "simple",
-					messageId,
-				);
-				return reply.code(202).send({ message, mode: state.mode });
+				return reply.code(202).send(await operator.steer(id, text));
 			},
 		);
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/ticket-sync",
 			async (request, reply) => {
-				await runtime.retryTracking(request.params.id);
+				await operator.retryTracking(request.params.id);
 				return reply.send({
 					ticketSync: runtime.get(request.params.id).ticketSync,
 				});
@@ -968,7 +956,7 @@ export class FactoryServer {
 					!hooks.sessions().some((session) => session.id === request.params.id)
 				)
 					return reply.code(404).send({ error: "Run not found" });
-				hooks.stop(request.params.id);
+				operator.stop(request.params.id);
 				return { stopped: true };
 			},
 		);
@@ -986,7 +974,7 @@ export class FactoryServer {
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/retry",
 			(request, reply) =>
-				reply.code(202).send(runtime.retry(request.params.id)),
+				reply.code(202).send(operator.retry(request.params.id)),
 		);
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/answer",
@@ -1004,18 +992,7 @@ export class FactoryServer {
 							.optional(),
 					})
 					.parse(request.body);
-				const run = runtime.get(request.params.id);
-				if (
-					context &&
-					(context.step !== run.step ||
-						(context.questionBatchId !== undefined &&
-							context.questionBatchId !== run.questionBatchId) ||
-						!isDeepStrictEqual(context.questions, run.questions))
-				)
-					throw new Error(
-						"The question or step changed. Refresh before answering.",
-					);
-				runtime.answer(request.params.id, answer, kind);
+				operator.answer(request.params.id, answer, kind, context);
 				return { accepted: true };
 			},
 		);

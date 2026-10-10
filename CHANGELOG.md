@@ -12,6 +12,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Include instance/run context and recovery guidance in operator MCP errors, and report overlapping connection edits as configuration conflicts. ([#81](https://github.com/jappyjan/bobs-factory/pull/81))
+
+- Use the operating system's temporary directory for operator MCP test fixtures and allow the reload-failure check to finish its bounded wait, so recovery and integration checks run in CI on Linux as well as macOS. ([#81](https://github.com/jappyjan/bobs-factory/pull/81))
+
 - Keep Settings passkey enrollment mounted while verification rotates the browser session; reconnect the live stream with the new cookie and ignore late responses from the old session. ([#71](https://github.com/JappyJan/bobs-factory/pull/71))
 - Release Factory delivery ownership after publication instead of waiting on ticket synchronization or independent review/QA. Reserve affected repositories, protect shared QA resources, refresh queued fixers and revalidate merge attempts while preserving pending documentation and approval gates. ([Taskbot #126](https://taskbot.apps.janjaap.de/p/bobs-factory/t/126), [#77](https://github.com/jappyjan/bobs-factory/pull/77), [F1 validation](apps/f1/test-drives/2026-10-09-delivery-boundaries.md))
 - Route recorded QA product failures to the existing visual fixer even when a reviewer reports a failed or blocked review; require fresh QA and a completed review before approval. Clarify that review completion describes execution, not a passing product. ([#78](https://github.com/jappyjan/bobs-factory/pull/78), [F1 validation](apps/f1/test-drives/2026-10-09-qa-product-failure-routing.md))
@@ -55,6 +59,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Manage Factory run recovery and MCP connection repairs through a scoped operator MCP interface, with private local grants, stale-state protection, transport diagnosis and explicit reload receipts. Check other connections through read-only discovery and retain current local runner/model choices across repair reloads. Keep these settings in the shared configuration used by guided onboarding and multiple saved projects. Operator access remains separate from human review and dashboard passkeys. ([Taskbot #112](https://taskbot.apps.janjaap.de/p/bobs-factory/t/112), [#81](https://github.com/jappyjan/bobs-factory/pull/81))
 - Add `bobs-factory tui` for starting runs, following live activity, answering questions, reviewing, retrying and settling work from a fullscreen terminal inbox. Share the web palette and light/dark themes, with Ctrl-K run search and authenticated local-operator access. ([Taskbot #114](https://taskbot.apps.janjaap.de/p/bobs-factory/t/114), [#65](https://github.com/jappyjan/bobs-factory/pull/65))
 
 - Submit large structured role results as bounded, revision-bound artifacts with complete runtime-owned file coverage. Expose actual runtime build identity and secret-safe per-attempt workflow, contract and instruction provenance across recovery. ([Taskbot #102](https://taskbot.apps.janjaap.de/p/bobs-factory/t/102), [#56](https://github.com/jappyjan/bobs-factory/pull/56))

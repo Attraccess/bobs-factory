@@ -21,6 +21,7 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | Release discovery | installer, Pages, Nix, future updater | stable/default (authenticated beta fallback), explicit nightly, exact version; pinned RSA/SHA-256 keys | Preserve signed bytes; refresh trusted bootstrap for key rotation; no unsigned fallback |
 | Publication | release workflows, publisher | repository-wide lock; retained asset/approval digests and recovery receipts; ordering against complete published provider history | Publication disabled until protected key/rollout setup; stable approval binds exact signed bytes; unknown signing keys cannot hide newer stable releases or bypass nightly eligibility |
 | External wire protocol | upstream HTTP adapters / MCP contexts | `X-Cyrus-Team-Id`, `X-Cyrus-Config-Capabilities`, `x-cyrus-mcp-context-id` | Retain ASCII protocol names; no hosted enrollment |
+| Operator MCP | CLI, worker, operator grant store | `bobs-factory-operator`, `operator`, `operator-mcp`, `<home>/factory/operator` | Local owner grants; dashboard passkeys and accepted run profiles remain separate |
 | Dashboard access | CLI, FactoryServer, private authentication store; client clears private views on connection loss and rechecks sessions on reconnect | `factory-auth`, `--origin`, `--session-hours`, `BOBS_FACTORY_FACTORY_*`, `<home>/factory/auth` | Preserve authentication files; existing origin bindings require explicit recovery when changed |
 | Terminal dashboard | CLI, FactoryServer, private authentication store | `tui`, `--theme`, `--home`, `--port`, localhost-bound terminal sessions | Local operator filesystem authority; memory-only session hashes, no browser credential or native store migration |
 | Dashboard | FactoryWebAssets, build script, server | immutable shell inventory, existing PWA protocol | Rebuild shell; keep API/SSE and workflow IDs |
@@ -57,3 +58,10 @@ does not rewrite their fields or interpret them as native conversation records.
 The issued egress certificate keeps its existing `cyrus-egress-ca.pem` filename
 inside the new home. Migration preserves certificate/key bytes and system trust;
 this retained artifact name does not enable an old command or home fallback.
+
+Factory operator setup and recovery contracts are documented in
+[factory-operator-mcp.md](factory-operator-mcp.md). Operator grants do not approve
+review or merge; profile MCP repairs apply only to future accepted snapshots.
+Listener errors identify the instance and requested run (when
+supplied), with sanitized context and recovery guidance. Overlapping connection
+edits return `stale_configuration`; overlapping run actions return `stale_state`.

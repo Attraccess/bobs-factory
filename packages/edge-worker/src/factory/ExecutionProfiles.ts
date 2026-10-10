@@ -212,6 +212,7 @@ export const ToolProfileSchema = z
 		mcp: z.record(id, server).default({}),
 		remove: z.array(id).default([]),
 		denyTools: z.array(z.string().min(1)).default([]),
+		allowTools: z.array(z.string().min(1)).optional(),
 	})
 	.strict()
 	.superRefine((value, context) => {
