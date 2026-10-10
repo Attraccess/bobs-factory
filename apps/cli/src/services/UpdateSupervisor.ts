@@ -55,7 +55,7 @@ export async function runUpdateSupervisor(
 							transaction as typeof transaction & {
 								release?: { status: string };
 							}
-						).release?.status === "pending" ||
+						).release?.status !== "acknowledged" ||
 							!["succeeded", "rolled-back", "cancelled"].includes(
 								transaction.phase,
 							))
