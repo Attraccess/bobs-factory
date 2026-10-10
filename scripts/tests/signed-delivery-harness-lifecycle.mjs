@@ -1,4 +1,11 @@
-import { existsSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import {
+	existsSync,
+	realpathSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { jsonBytes } from "../lib/binary-release.mjs";
@@ -39,17 +46,44 @@ export function cleanupFixtureTreeAfterReceipt({
 	return { removed: !existsSync(root), reason: "receipt-written" };
 }
 
-// Finalize only this run's receipt. Persist before deletion, then record any
-// cleanup failure as failed evidence rather than leaving a provisional PASS.
+// Rename complete bytes in the same directory so a failed write cannot truncate
+// the pending receipt. No fallible operation follows the successful rename.
+function writeReceiptAtomically(path, bytes) {
+	const temporary = `${path}.${randomUUID()}.pending`;
+	try {
+		writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
+		renameSync(temporary, path);
+	} catch (error) {
+		try {
+			rmSync(temporary, { force: true });
+		} catch {}
+		throw error;
+	}
+}
+
+// Persist nonpassing evidence before deletion. Publish PASS only once cleanup
+// and the final atomic write succeed; a failed final write leaves pending bytes.
 export function finalizeFixtureReceipt({
 	work,
 	receiptPath,
 	receipt,
 	retainFixture = false,
 	cleanupTree = cleanupFixtureTreeAfterReceipt,
+	writeReceipt = writeReceiptAtomically,
 }) {
 	const errors = receipt.cleanupErrors;
-	writeFileSync(receiptPath, jsonBytes(receipt));
+	const runPassed = receipt.passed;
+	receipt.passed = false;
+	receipt.finalization = "pending";
+	try {
+		writeReceipt(receiptPath, jsonBytes(receipt));
+	} catch (error) {
+		receipt.finalization = "failed";
+		errors.push(
+			`Initial receipt write failed${error.code ? ` (${error.code})` : ""}: ${error.stack ?? error}`,
+		);
+		throw error;
+	}
 	if (retainFixture || errors.length) {
 		receipt.fixtureCleanup = {
 			removed: false,
@@ -72,8 +106,21 @@ export function finalizeFixtureReceipt({
 			);
 		}
 	}
-	if (errors.length) receipt.passed = false;
-	writeFileSync(receiptPath, jsonBytes(receipt));
+	const finalized = {
+		...receipt,
+		passed: runPassed && errors.length === 0,
+		finalization: "complete",
+	};
+	try {
+		writeReceipt(receiptPath, jsonBytes(finalized));
+	} catch (error) {
+		receipt.finalization = "failed";
+		errors.push(
+			`Final receipt write failed${error.code ? ` (${error.code})` : ""}: ${error.stack ?? error}`,
+		);
+		throw error;
+	}
+	Object.assign(receipt, finalized);
 	return receipt.fixtureCleanup;
 }
 

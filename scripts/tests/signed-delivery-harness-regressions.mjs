@@ -210,7 +210,8 @@ try {
 			finalizeFixtureReceipt({work, receiptPath, receipt,
 				cleanupTree: (options) => cleanupFixtureTreeAfterReceipt({...options,
 					removeTree: (path) => {
-						assert.equal(JSON.parse(readFileSync(receiptPath,'utf8')).passed, true);
+						assert.equal(JSON.parse(readFileSync(receiptPath,'utf8')).passed, false);
+						assert.equal(JSON.parse(readFileSync(receiptPath,'utf8')).finalization, 'pending');
 						assert.equal(path, realpathSync(work));
 						throw Object.assign(new Error('Injected EACCES removing owned fixture'), {code:'EACCES'});
 					}
@@ -253,6 +254,120 @@ try {
 		);
 	} finally {
 		rmSync(failedCleanupWork, { recursive: true, force: true });
+	}
+
+	for (const failure of [
+		"initial-write",
+		"final-write",
+		"cleanup-and-final-write",
+	]) {
+		const work = mkdtempSync(
+			join(tmpdir(), "bobs-signed-integration-write-failure-"),
+		);
+		const receiptPath = join(tempRoot, `${failure}.json`);
+		const memoryPath = join(tempRoot, `${failure}-memory.json`);
+		writeFileSync(
+			join(work, "fixture-marker"),
+			"retain diagnosis on cleanup failure\n",
+		);
+		try {
+			const failedProcess = await command(
+				process.execPath,
+				[
+					"--input-type=module",
+					"-e",
+					`
+				import assert from 'node:assert/strict';
+				import {chmodSync, readFileSync, statSync, writeFileSync} from 'node:fs';
+				import {cleanupFixtureTreeAfterReceipt, finalizeFixtureReceipt} from ${JSON.stringify(new URL("./signed-delivery-harness-lifecycle.mjs", import.meta.url).href)};
+				const failure = ${JSON.stringify(failure)};
+				const receiptPath = ${JSON.stringify(receiptPath)};
+				const receipt = {passed:true, cleanupErrors:[]};
+				let writes = 0;
+				try {
+					finalizeFixtureReceipt({work:${JSON.stringify(work)}, receiptPath, receipt,
+						writeReceipt: (path, bytes) => {
+							writes++;
+							if (writes === (failure === 'initial-write' ? 1 : 2)) {
+								// Inject at the real persistence boundary, including under Linux root
+								// where mode0400 alone would not cause EACCES.
+								if (failure === 'cleanup-and-final-write') assert.equal(statSync(path).mode & 0o222, 0);
+								throw Object.assign(new Error('Injected EACCES writing receipt'), {code:'EACCES'});
+							}
+							writeFileSync(path, bytes);
+						},
+						cleanupTree: (options) => cleanupFixtureTreeAfterReceipt({...options,
+							...(failure === 'cleanup-and-final-write' ? {removeTree: () => {
+								assert.equal(JSON.parse(readFileSync(receiptPath,'utf8')).passed, false);
+								chmodSync(receiptPath, 0o400);
+								throw Object.assign(new Error('Injected EACCES removing fixture'), {code:'EACCES'});
+							}} : {})
+						})
+					});
+					throw new Error('Finalization unexpectedly succeeded');
+				} catch (error) {
+					assert.equal(error.code, 'EACCES');
+					assert.equal(receipt.passed, false);
+					assert.equal(receipt.finalization, 'failed');
+					writeFileSync(${JSON.stringify(memoryPath)}, JSON.stringify(receipt));
+					throw error;
+				}
+			`,
+				],
+				{ timeout: 2000 },
+			);
+			assert.equal(failedProcess.code, 1);
+			assert.equal(failedProcess.timedOut, false);
+			const memory = JSON.parse(readFileSync(memoryPath, "utf8"));
+			assert.equal(memory.passed, false);
+			assert.equal(memory.finalization, "failed");
+			assert.match(memory.cleanupErrors.at(-1), /receipt write failed.*EACCES/);
+			const disk = existsSync(receiptPath)
+				? JSON.parse(readFileSync(receiptPath, "utf8"))
+				: null;
+			if (failure === "initial-write") assert.equal(disk, null);
+			else {
+				assert.equal(disk.passed, false);
+				assert.equal(disk.finalization, "pending");
+			}
+			assert.equal(existsSync(work), failure !== "final-write");
+			if (failure === "cleanup-and-final-write") {
+				assert.equal(memory.cleanupErrors.length, 2);
+				assert.match(memory.cleanupErrors[0], /EACCES removing fixture/);
+			}
+			assert.deepEqual(readFileSync(historicalReceiptPath), historicalBytes);
+			record(`${failure} cannot publish a passing receipt`, {
+				processExitCode: failedProcess.code,
+				memoryReceipt: memory,
+				diskReceipt: disk,
+				fixtureRetained: existsSync(work),
+				historicalReceiptUnchanged: true,
+			});
+		} finally {
+			rmSync(work, { recursive: true, force: true });
+		}
+	}
+
+	for (const passed of [true, false]) {
+		const work = mkdtempSync(
+			join(tmpdir(), "bobs-signed-integration-finalize-success-"),
+		);
+		const receiptPath = join(tempRoot, `finalized-${passed}.json`);
+		const receipt = { passed, cleanupErrors: [] };
+		finalizeFixtureReceipt({ work, receiptPath, receipt });
+		const disk = JSON.parse(readFileSync(receiptPath, "utf8"));
+		assert.deepEqual(disk, receipt);
+		assert.equal(disk.passed, passed);
+		assert.equal(disk.finalization, "complete");
+		assert.equal(existsSync(work), false);
+		record(
+			`atomic finalization preserves ${passed ? "passing" : "failing"} run outcome`,
+			{
+				fixtureReceiptPassed: disk.passed,
+				finalization: disk.finalization,
+				fixtureCleanup: disk.fixtureCleanup,
+			},
+		);
 	}
 
 	for (const reason of [

@@ -1,0 +1,185 @@
+{
+	"schemaVersion": 1,
+	"purpose": "TEST ONLY signed-delivery harness shutdown and fixture cleanup regressions",
+	"passed": true,
+	"harnesses": {
+		"regressionScriptSha256": "f9845fe0e65aa700822680973b2515bb40b52678b44a948a04914e83b88b6531",
+		"processFixtureSha256": "93fd1b5e3c09e85b8cb606c5ac0c94d9b567f7726e6a11190cc0c540e4aab2ca",
+		"runtimeDriverSha256": "20f984aa3680bee0cdb73f16e820c4eaac369efb0407d93feb7c109da4413dd8",
+		"lifecycleHelperSha256": "c3d4eb57065708c6648f6fcf6fa249af968c3c016ab261404a0f28af33e5abb1"
+	},
+	"results": [
+		{
+			"name": "TERM-ignoring child is escalated and reaped within a bound",
+			"passed": true,
+			"elapsedMs": 306,
+			"result": {
+				"code": null,
+				"signal": "SIGKILL",
+				"timedOut": true,
+				"forcedKill": true,
+				"closeTimedOut": false,
+				"descendantPid": 36584,
+				"unrelatedProcessPreserved": true
+			}
+		},
+		{
+			"name": "exited TERM-responsive leader still escalates its TERM-ignoring descendant",
+			"passed": true,
+			"elapsedMs": 763,
+			"result": {
+				"code": 124,
+				"signal": null,
+				"timedOut": true,
+				"forcedKill": true,
+				"closeTimedOut": false,
+				"descendantPid": 36640,
+				"unrelatedProcessPreserved": true
+			}
+		},
+		{
+			"name": "owned temp HOME is removed after success receipt",
+			"passed": true,
+			"fixtureReceiptPassed": true,
+			"receiptPath": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-harness-regressions-E1HJY4/success.json"
+		},
+		{
+			"name": "owned temp HOME is removed after failure receipt",
+			"passed": true,
+			"fixtureReceiptPassed": false,
+			"receiptPath": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-harness-regressions-E1HJY4/failure.json"
+		},
+		{
+			"name": "receipt inside fixture is retained instead of deleted",
+			"passed": true,
+			"removed": false,
+			"reason": "receipt-inside-fixture"
+		},
+		{
+			"name": "injected removal exception rewrites this run's receipt as failed and retains diagnosis",
+			"passed": true,
+			"processExitCode": 1,
+			"fixtureReceiptPassed": false,
+			"fixtureCleanup": {
+				"removed": false,
+				"reason": "cleanup-failed"
+			},
+			"cleanupError": "Temporary fixture cleanup failed (EACCES): Error: Injected EACCES removing owned fixture",
+			"historicalReceiptUnchanged": true,
+			"fixtureMarkerRetained": true
+		},
+		{
+			"name": "initial-write cannot publish a passing receipt",
+			"passed": true,
+			"processExitCode": 1,
+			"memoryReceipt": {
+				"passed": false,
+				"cleanupErrors": [
+					"Initial receipt write failed (EACCES): Error: Injected EACCES writing receipt\n    at writeReceipt (file:///private/tmp/bobs-factory-signed-evidence-116/[eval1]:17:29)\n    at finalizeFixtureReceipt (file:///private/tmp/bobs-factory-signed-evidence-116/scripts/tests/signed-delivery-harness-lifecycle.mjs:79:3)\n    at file:///private/tmp/bobs-factory-signed-evidence-116/[eval1]:10:6\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:249:26)\n    at async ModuleLoader.executeModuleJob (node:internal/modules/esm/loader:246:20)\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)"
+				],
+				"finalization": "failed"
+			},
+			"diskReceipt": null,
+			"fixtureRetained": true,
+			"historicalReceiptUnchanged": true
+		},
+		{
+			"name": "final-write cannot publish a passing receipt",
+			"passed": true,
+			"processExitCode": 1,
+			"memoryReceipt": {
+				"passed": false,
+				"cleanupErrors": [
+					"Final receipt write failed (EACCES): Error: Injected EACCES writing receipt\n    at writeReceipt (file:///private/tmp/bobs-factory-signed-evidence-116/[eval1]:17:29)\n    at finalizeFixtureReceipt (file:///private/tmp/bobs-factory-signed-evidence-116/scripts/tests/signed-delivery-harness-lifecycle.mjs:115:3)\n    at file:///private/tmp/bobs-factory-signed-evidence-116/[eval1]:10:6\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:249:26)\n    at async ModuleLoader.executeModuleJob (node:internal/modules/esm/loader:246:20)\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)"
+				],
+				"finalization": "failed",
+				"fixtureCleanup": {
+					"removed": true,
+					"reason": "receipt-written"
+				}
+			},
+			"diskReceipt": {
+				"passed": false,
+				"cleanupErrors": [],
+				"finalization": "pending"
+			},
+			"fixtureRetained": false,
+			"historicalReceiptUnchanged": true
+		},
+		{
+			"name": "cleanup-and-final-write cannot publish a passing receipt",
+			"passed": true,
+			"processExitCode": 1,
+			"memoryReceipt": {
+				"passed": false,
+				"cleanupErrors": [
+					"Temporary fixture cleanup failed (EACCES): Error: Injected EACCES removing fixture\n    at removeTree (file:///private/tmp/bobs-factory-signed-evidence-116/[eval1]:25:29)\n    at cleanupFixtureTreeAfterReceipt (file:///private/tmp/bobs-factory-signed-evidence-116/scripts/tests/signed-delivery-harness-lifecycle.mjs:45:2)\n    at cleanupTree (file:///private/tmp/bobs-factory-signed-evidence-116/[eval1]:21:33)\n    at finalizeFixtureReceipt (file:///private/tmp/bobs-factory-signed-evidence-116/scripts/tests/signed-delivery-harness-lifecycle.mjs:94:29)\n    at file:///private/tmp/bobs-factory-signed-evidence-116/[eval1]:10:6\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:249:26)\n    at async ModuleLoader.executeModuleJob (node:internal/modules/esm/loader:246:20)\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)",
+					"Final receipt write failed (EACCES): Error: Injected EACCES writing receipt\n    at writeReceipt (file:///private/tmp/bobs-factory-signed-evidence-116/[eval1]:17:29)\n    at finalizeFixtureReceipt (file:///private/tmp/bobs-factory-signed-evidence-116/scripts/tests/signed-delivery-harness-lifecycle.mjs:115:3)\n    at file:///private/tmp/bobs-factory-signed-evidence-116/[eval1]:10:6\n    at ModuleJob.run (node:internal/modules/esm/module_job:437:25)\n    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:249:26)\n    at async ModuleLoader.executeModuleJob (node:internal/modules/esm/loader:246:20)\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)"
+				],
+				"finalization": "failed",
+				"fixtureCleanup": {
+					"removed": false,
+					"reason": "cleanup-failed"
+				}
+			},
+			"diskReceipt": {
+				"passed": false,
+				"cleanupErrors": [],
+				"finalization": "pending"
+			},
+			"fixtureRetained": true,
+			"historicalReceiptUnchanged": true
+		},
+		{
+			"name": "atomic finalization preserves passing run outcome",
+			"passed": true,
+			"fixtureReceiptPassed": true,
+			"finalization": "complete",
+			"fixtureCleanup": {
+				"removed": true,
+				"reason": "receipt-written"
+			}
+		},
+		{
+			"name": "atomic finalization preserves failing run outcome",
+			"passed": true,
+			"fixtureReceiptPassed": false,
+			"finalization": "complete",
+			"fixtureCleanup": {
+				"removed": true,
+				"reason": "receipt-written"
+			}
+		},
+		{
+			"name": "receipt finalization preserves retain-fixture semantics",
+			"passed": true,
+			"fixtureReceiptPassed": true,
+			"fixtureCleanup": {
+				"removed": false,
+				"reason": "retain-fixture"
+			}
+		},
+		{
+			"name": "receipt finalization preserves receipt-inside-fixture semantics",
+			"passed": true,
+			"fixtureReceiptPassed": true,
+			"fixtureCleanup": {
+				"removed": false,
+				"reason": "receipt-inside-fixture"
+			}
+		},
+		{
+			"name": "receipt finalization preserves fixture-close-error semantics",
+			"passed": true,
+			"fixtureReceiptPassed": false,
+			"fixtureCleanup": {
+				"removed": false,
+				"reason": "active-owner-retained"
+			}
+		}
+	],
+	"limitations": [
+		"No production binary or service was started.",
+		"No provider, signing key, or native credential was used."
+	]
+}

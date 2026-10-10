@@ -99,6 +99,52 @@ credential, other-platform, OS-service, Electron or complete licensing/release
 acceptance is claimed. GitGuardian synthetic incidents38083768 and38084076 remain
 an operator gate; no bypass, publisher/signing key adoption or publication.
 
+### Round 3 — nonpassing provisional receipts and final-write failures
+
+Independent round-3 review cleared process-group ownership/descendant cleanup,
+but found that round-2 finalization could persist PASS before removal, then fail
+both cleanup and the final receipt rewrite. The round-3 helper now persists
+`passed: false`, `finalization: "pending"` before cleanup. It publishes the run's
+passing outcome only after cleanup and a successful final atomic write. The
+same-directory temporary-file/rename writer prevents a failed write from
+truncating the pending receipt. No fallible filesystem operation follows a
+successful rename. Initial/final write failures record EACCES/stack in memory,
+keep `passed: false`, set `finalization: "failed"`, and throw for nonzero exit.
+When persistence is unavailable the disk receipt stays explicitly pending and
+nonpassing; it cannot claim to contain diagnostics that could not be written.
+
+[Round-3 focused receipt](assets/2026-10-10-signed-delivery/passed-round3-harness-regressions.json)
+records **14 passing focused checks**: the previous nine plus initial-write
+failure, final-write failure alone, cleanup plus final-write failure, and atomic
+successful finalization of both passing and failing run outcomes. The combined
+failure makes the initially writable receipt read-only in the removal callback,
+then injects EACCES at the actual writer boundary (robust even under Linux root).
+All three write-failure subprocesses exit1. Memory is failed; disk is pending and
+nonpassing for final-write failures, or absent for initial-write failure. The
+combined failure retains both cleanup/write diagnostics and the fixture marker;
+a separate historical receipt remains byte-identical. Explicit retention,
+receipt-inside-fixture and recorded close-error semantics still pass. Previously
+cleared owned-process cleanup is unchanged.
+
+Current focused generator SHA-256 bindings:
+
+- Regression script: `f9845fe0e65aa700822680973b2515bb40b52678b44a948a04914e83b88b6531`.
+- Process fixture helper: `93fd1b5e3c09e85b8cb606c5ac0c94d9b567f7726e6a11190cc0c540e4aab2ca`.
+- Runtime driver: `20f984aa3680bee0cdb73f16e820c4eaac369efb0407d93feb7c109da4413dd8`.
+- Lifecycle/finalization helper: `c3d4eb57065708c6648f6fcf6fa249af968c3c016ab261404a0f28af33e5abb1`.
+
+Command: `node scripts/tests/signed-delivery-harness-regressions.mjs apps/f1/test-drives/assets/2026-10-10-signed-delivery/passed-round3-harness-regressions.json`.
+These hashes bind current focused checks only. The historical 23/23 native run
+remains source `aa0ad1404aed147cf82fc259cf0c11f6bb18753b`, driver
+`ca3784fb34f91837554788276a4336b41fa47c6a0f9dbe91f154364dbaabd085`;
+its receipt and every pre-round3 receipt are verified byte-identical to `c0808c1`.
+Round-2's nine-check receipt remains historical, not relabeled with current hashes.
+No full23 rerun, native rebuild or native contention rerun occurred. Only delivery
+evidence helpers changed; no issue-tracker/agent F1 drive applies. Physical
+providers/native credentials, other platforms, Electron, OS services, complete
+licensing/release material and public trust remain unverified separate gates.
+GitGuardian incidents38083768/38084076 remain for operator review without bypass.
+
 The complete successful path uses real HTTPS and production verification,
 discovery, archive staging, extraction, native probes, signed bootstrap/native CLI,
 authenticated native drain, the actual external owned supervisor, compatibility
