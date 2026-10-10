@@ -18,6 +18,7 @@ import {
 	fileRecord,
 	jsonBytes,
 	REPOSITORY,
+	releaseAssetRecords,
 	selectPublicRelease,
 	sha256,
 	TARGETS,
@@ -29,6 +30,8 @@ import {
 	validatePublicRepository,
 	validateReleaseManifest,
 } from "../lib/binary-release.mjs";
+import { freezeCandidate } from "../lib/release-candidate.mjs";
+import { keys, signBytes, testInstaller } from "./release-fixtures.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const native = `${process.platform}-${process.arch}`;
@@ -41,7 +44,7 @@ function fixture(version = "0.2.74") {
 	mkdirSync(bin);
 	writeFileSync(
 		join(bin, "curl"),
-		`#!/bin/sh\nset -eu\nurl=\noutput=\nwhile [ "$#" -gt 0 ]; do\n case "$1" in https://*) url=$1; shift;; --output) output=$2; shift 2;; *) shift;; esac\ndone\ncase "$url" in https://jappyjan.github.io/bobs-factory/releases/*.json) file=\${url##*/};; https://github.com/jappyjan/bobs-factory/releases/download/v*) file=\${url##*/};; *) echo "Untrusted download URL" >&2; exit 1;; esac\ncp "$BOBS_FACTORY_TEST_DOWNLOADS/$file" "$output"\n`,
+		`#!/bin/sh\nset -eu\nurl=\noutput=\nwhile [ "$#" -gt 0 ]; do\n case "$1" in https://*) url=$1; shift;; --output) output=$2; shift 2;; *) shift;; esac\ndone\ncase "$url" in https://jappyjan.github.io/bobs-factory/releases/latest.json) file=latest.json;; https://jappyjan.github.io/bobs-factory/releases/latest.json.sig) file=latest.json.sig;; https://jappyjan.github.io/bobs-factory/releases/latest.json.key-id) file=latest.json.key-id;; https://jappyjan.github.io/bobs-factory/releases/nightly.json*) file=\${url##*/};; https://github.com/jappyjan/bobs-factory/releases/download/v*) file=\${url##*/};; *) echo "Untrusted download URL" >&2; exit 1;; esac\ncp "$BOBS_FACTORY_TEST_DOWNLOADS/$file" "$output"\n`,
 		{ mode: 0o755 },
 	);
 	const prefix = join(work, "prefix with 'quote");
@@ -55,8 +58,13 @@ function fixture(version = "0.2.74") {
 		BOBS_FACTORY_INSTALL_PROFILE: profile,
 		SHELL: "/bin/bash",
 	};
+	const bootstrap = join(work, "install.sh");
+	writeFileSync(
+		bootstrap,
+		testInstaller(readFileSync(join(root, "scripts/install.sh"), "utf8")),
+	);
 	const install = (...args) =>
-		spawnSync("sh", [join(root, "scripts/install.sh"), ...args], {
+		spawnSync("sh", [bootstrap, ...args], {
 			env,
 			encoding: "utf8",
 		});
@@ -140,7 +148,7 @@ function fixture(version = "0.2.74") {
 			]),
 		);
 		const metadata = {
-			schemaVersion: 1,
+			schemaVersion: 2,
 			product: "bobs-factory",
 			repository: REPOSITORY,
 			status: "available",
@@ -148,6 +156,13 @@ function fixture(version = "0.2.74") {
 			tag: `v${nextVersion}`,
 			commit,
 			buildRunId: 123,
+			channel: nextVersion.includes("nightly")
+				? "nightly"
+				: nextVersion.includes("beta")
+					? "beta"
+					: "stable",
+			candidateDigest: "d".repeat(64),
+			workflowSha: commit,
 			installer: fileRecord(join(root, "scripts/install.sh"), "install.sh"),
 			verifier,
 			source: {
@@ -157,10 +172,61 @@ function fixture(version = "0.2.74") {
 			},
 			targets,
 		};
-		writeFileSync(join(downloads, "latest.json"), jsonBytes(metadata));
-		writeFileSync(join(downloads, "stable.json"), jsonBytes(metadata));
-		writeFileSync(join(downloads, "nightly.json"), jsonBytes(metadata));
-		writeFileSync(join(downloads, "release.json"), jsonBytes(metadata));
+
+		metadata.assets = [
+			...releaseAssetRecords(metadata, false),
+			...[
+				"candidate.json",
+				"release-evidence.json",
+				"validation-receipts.tar.gz",
+				"build-provenance.json",
+				...TARGETS.flatMap((t) => [
+					`runtime-smoke-${t}.txt`,
+					`native-helpers-${t}.json`,
+					`prepared-agent-boundaries-${t}.json`,
+				]),
+			].map((file) => ({ file, sha256: "e".repeat(64), size: 12 })),
+		];
+		const channel = metadata.channel;
+		const promotion =
+			channel === "stable"
+				? {
+						channel: "nightly",
+						version: "1.0.0-nightly.20261009.1",
+						tag: "v1.0.0-nightly.20261009.1",
+						commit,
+						manifestSha256: "a".repeat(64),
+						releaseId: 1,
+					}
+				: undefined;
+		const candidate = freezeCandidate({
+			channel,
+			version: nextVersion,
+			commit,
+			committedVersion: nextVersion.split("-")[0],
+			workflowSha: commit,
+			promotion,
+			sequence:
+				channel === "nightly"
+					? Number(nextVersion.split(".").at(-1))
+					: undefined,
+			date: channel === "nightly" ? "2026-10-09T00:00:00Z" : undefined,
+		});
+		metadata.candidateDigest = candidate.digest;
+		writeFileSync(join(downloads, "candidate.json"), jsonBytes(candidate));
+		metadata.assets.find((a) => a.file === "candidate.json").sha256 = sha256(
+			jsonBytes(candidate),
+		);
+		metadata.assets.find((a) => a.file === "candidate.json").size =
+			jsonBytes(candidate).length;
+		for (const file of ["latest.json", "release.json", "nightly.json"]) {
+			writeFileSync(join(downloads, file), jsonBytes(metadata));
+			writeFileSync(
+				join(downloads, `${file}.sig`),
+				signBytes(jsonBytes(metadata)),
+			);
+			writeFileSync(join(downloads, `${file}.key-id`), "fixture\n");
+		}
 		return {
 			metadata,
 			name,
@@ -232,11 +298,11 @@ test("anonymous install configures PATH once, retains old version, and safely re
 test("first public beta installs anonymously by default or exact version", () => {
 	const f = fixture("1.0.0-beta");
 	try {
-		validateReleaseManifest({ ...f.current.metadata, channel: "prerelease" });
+		validateReleaseManifest({ ...f.current.metadata, channel: "beta" });
 		for (const args of [[], ["--version", "1.0.0-beta"]]) {
 			const result = f.install(...args);
 			assert.equal(result.status, 0, result.stderr);
-			assert.match(result.stdout, /This is a prerelease/);
+			assert.match(result.stdout, /verified beta/);
 			assert.equal(
 				execFileSync(join(f.prefix, "bin/bobs-factory"), {
 					encoding: "utf8",
@@ -311,34 +377,26 @@ test("Pages synchronizes a verified beta manifest and preserves prior metadata o
 			"sync-release-metadata.mjs",
 			"install.sh",
 			"lib/binary-release.mjs",
-			"lib/release-channels.mjs",
-			"lib/release-discovery.mjs",
+			"lib/release-candidate.mjs",
+			"lib/release-signature.mjs",
+			"lib/github-release.mjs",
 		])
 			copyFileSync(
 				join(root, "scripts", file),
 				join(workspace, "scripts", file),
 			);
+		mkdirSync(join(workspace, "docs/distribution"), { recursive: true });
+		writeFileSync(
+			join(workspace, "docs/distribution/release-keys.json"),
+			JSON.stringify({ schemaVersion: 1, keys }),
+		);
 		const metadata = f.current.metadata;
 		const bytes = jsonBytes(metadata);
 		const assetURL = `https://github.com/${REPOSITORY}/releases/download/${metadata.tag}/release.json`;
-		const records = [
-			metadata.installer,
-			metadata.verifier,
-			metadata.source,
-			...Object.values(metadata.targets).flatMap((entry) => [
-				{
-					file: entry.archive,
-					sha256: entry.archiveSha256,
-					size: entry.archiveSize,
-				},
-				{
-					file: entry.manifest,
-					sha256: entry.manifestSha256,
-					size: entry.manifestSize,
-				},
-			]),
-		];
+		const records = metadata.assets;
 		const release = {
+			id: 123,
+			published_at: "2026-10-09T00:00:00Z",
 			draft: false,
 			prerelease: true,
 			tag_name: metadata.tag,
@@ -350,6 +408,7 @@ test("Pages synchronizes a verified beta manifest and preserves prior metadata o
 					digest: `sha256:${sha256(bytes)}`,
 				},
 				...records.map((entry) => ({
+					state: "uploaded",
 					name: entry.file,
 					size: entry.size,
 					digest: `sha256:${entry.sha256}`,
@@ -359,12 +418,56 @@ test("Pages synchronizes a verified beta manifest and preserves prior metadata o
 		const fixtureFile = join(workspace, "transport.json");
 		writeFileSync(
 			fixtureFile,
-			JSON.stringify({ release, content: bytes.toString("utf8") }),
+			JSON.stringify({
+				release,
+				content: bytes.toString("utf8"),
+				signature: signBytes(bytes).toString("base64"),
+				candidate: readFileSync(join(f.downloads, "candidate.json"), "utf8"),
+			}),
 		);
 		const preload = join(workspace, "transport.mjs");
+
+		release.assets.push(
+			...["release.json.sig", "release.json.key-id"].map((file) => ({
+				name: file,
+				state: "uploaded",
+				size: readFileSync(join(f.downloads, file)).length,
+				digest: `sha256:${sha256(readFileSync(join(f.downloads, file)))}`,
+				browser_download_url: assetURL.replace(/release.json$/, file),
+			})),
+		);
+		release.assets[0].state = "uploaded";
+		release.assets.find(
+			(a) => a.name === "candidate.json",
+		).browser_download_url = assetURL.replace(
+			/release.json$/,
+			"candidate.json",
+		);
+		writeFileSync(
+			fixtureFile,
+			JSON.stringify({
+				release,
+				content: bytes.toString("utf8"),
+				signature: signBytes(bytes).toString("base64"),
+				candidate: readFileSync(join(f.downloads, "candidate.json"), "utf8"),
+			}),
+		);
 		writeFileSync(
 			preload,
-			`import { readFileSync } from "node:fs"; const fixture = JSON.parse(readFileSync(${JSON.stringify(fixtureFile)}, "utf8")); globalThis.fetch = async (url) => { if (String(url) === ${JSON.stringify(`https://api.github.com/repos/${REPOSITORY}/releases?per_page=100&page=1`)}) return new Response(JSON.stringify([fixture.release])); if (String(url) === ${JSON.stringify(assetURL)}) return new Response(fixture.content); throw new Error("Unexpected network request: " + url); };`,
+			`import {readFileSync} from "node:fs";
+      const f=JSON.parse(readFileSync(${JSON.stringify(fixtureFile)},"utf8"));
+      globalThis.fetch=async url=>{
+        const path=String(url);
+        if(path.includes('/git/ref/tags/')) return new Response(JSON.stringify({object:{type:"commit",sha:${JSON.stringify(commit)}}}));
+        if(path.endsWith('/repos/jappyjan/bobs-factory')) return new Response(JSON.stringify({full_name:"jappyjan/bobs-factory",private:false,visibility:"public"}));
+        if(path.includes('/releases/123/assets?')) return new Response(JSON.stringify(f.release.assets));
+        if(path.includes('/releases?')) return new Response(JSON.stringify([f.release]));
+        if(path.endsWith('/release.json')) return new Response(f.content);
+        if(path.endsWith('/release.json.sig')) return new Response(Buffer.from(f.signature,"base64"));
+        if(path.endsWith('/release.json.key-id')) return new Response("fixture\\n");
+        if(path.endsWith('/candidate.json')) return new Response(f.candidate);
+        throw Error("Unexpected network request: "+url);
+      };`,
 		);
 		const args = [
 			"--import",
@@ -375,11 +478,16 @@ test("Pages synchronizes a verified beta manifest and preserves prior metadata o
 		assert.equal(result.status, 0, result.stderr);
 		const pointer = join(workspace, "website/public/releases/latest.json");
 		const previous = readFileSync(pointer, "utf8");
-		assert.equal(JSON.parse(previous).channel, "prerelease");
+		assert.equal(JSON.parse(previous).channel, "beta");
 		assert.equal(JSON.parse(previous).version, "1.0.0-beta");
 		writeFileSync(
 			fixtureFile,
-			JSON.stringify({ release, content: `${bytes.toString("utf8")} ` }),
+			JSON.stringify({
+				release,
+				content: `${bytes.toString("utf8")} `,
+				signature: signBytes(bytes).toString("base64"),
+				candidate: readFileSync(join(f.downloads, "candidate.json"), "utf8"),
+			}),
 		);
 		result = spawnSync(process.execPath, args, { encoding: "utf8" });
 		assert.notEqual(result.status, 0);
@@ -451,15 +559,19 @@ test("pending public release gives clear availability guidance", () => {
 		writeFileSync(
 			join(f.downloads, "latest.json"),
 			jsonBytes({
-				schemaVersion: 1,
+				schemaVersion: 2,
 				product: "bobs-factory",
 				repository: REPOSITORY,
 				status: "pending",
 			}),
 		);
+		rmSync(join(f.downloads, "latest.json.sig"));
+		rmSync(join(f.downloads, "latest.json.key-id"));
 		const result = f.install();
 		assert.notEqual(result.status, 0);
-		assert.match(result.stderr, /first public release is being prepared/);
+		assert.match(result.stderr, /No verified stable release is available/);
+		assert.doesNotMatch(result.stderr, /Download failed|cp:/);
+		assert.throws(() => readlinkSync(join(f.prefix, "bin/bobs-factory")));
 	} finally {
 		f.cleanup();
 	}
@@ -635,64 +747,142 @@ test("release/archive validation rejects target omissions, source mismatch and u
 	}
 });
 
-test("explicit channels reject beta fallback and default cannot install nightly", () => {
-	const beta = fixture("1.0.0-beta");
+test("signed manifests reject tampering, unknown keys and unsigned payloads before installation", () => {
+	const f = fixture();
 	try {
-		assert.match(
-			beta.install("--channel", "stable").stderr,
-			/Requested channel/,
-		);
-	} finally {
-		beta.cleanup();
-	}
-	const nightly = fixture("1.0.0-nightly.10");
-	try {
-		assert.match(
-			nightly.install().stderr,
-			/Default installation cannot select nightly/,
-		);
-		for (const args of [
-			["--channel", "nightly"],
-			["--channel", "nightly", "--version", "1.0.0-nightly.10"],
-			["--version", "1.0.0-nightly.10"],
+		assert.equal(f.install("--no-modify-path").status, 0);
+		const link = readlinkSync(join(f.prefix, "bin/bobs-factory"));
+		const profile = readFileSync(f.profile, "utf8");
+		const original = readFileSync(join(f.downloads, "latest.json"));
+		for (const [file, bytes] of [
+			["latest.json", Buffer.concat([original, Buffer.from(" ")])],
+			["latest.json.sig", Buffer.from("wrong")],
+			["latest.json.key-id", Buffer.from("unknown\n")],
 		]) {
-			const result = nightly.install(...args);
-			assert.equal(result.status, 0, result.stderr);
+			const before = readFileSync(join(f.downloads, file));
+			writeFileSync(join(f.downloads, file), bytes);
+			const result = f.install();
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, /signature|publisher/);
+			assert.equal(readlinkSync(join(f.prefix, "bin/bobs-factory")), link);
+			assert.equal(readFileSync(f.profile, "utf8"), profile);
+			writeFileSync(join(f.downloads, file), before);
 		}
-		assert.match(
-			nightly.install("--channel", "stable", "--version", "1.0.0-nightly.10")
-				.stderr,
-			/Requested channel/,
-		);
-		assert.match(
-			nightly.install("--channel", "edge").stderr,
-			/Invalid channel/,
-		);
+		rmSync(join(f.downloads, "latest.json.sig"));
+		assert.notEqual(f.install().status, 0);
+		assert.equal(readlinkSync(join(f.prefix, "bin/bobs-factory")), link);
 	} finally {
-		nightly.cleanup();
+		f.cleanup();
+	}
+});
+test("unsigned pending channels stop with availability guidance and preserve an existing installation", () => {
+	const f = fixture();
+	try {
+		assert.equal(f.install().status, 0);
+		const link = readlinkSync(join(f.prefix, "bin/bobs-factory"));
+		const profile = readFileSync(f.profile, "utf8");
+		for (const [channel, file] of [
+			["stable", "latest.json"],
+			["nightly", "nightly.json"],
+		]) {
+			writeFileSync(
+				join(f.downloads, file),
+				jsonBytes({
+					schemaVersion: 2,
+					product: "bobs-factory",
+					repository: REPOSITORY,
+					status: "pending",
+				}),
+			);
+			rmSync(join(f.downloads, `${file}.sig`));
+			rmSync(join(f.downloads, `${file}.key-id`));
+			const result = f.install("--channel", channel);
+			assert.notEqual(result.status, 0);
+			assert.match(
+				result.stderr,
+				new RegExp(`No verified ${channel} release is available`),
+			);
+			assert.doesNotMatch(result.stderr, /Download failed|cp:/);
+			assert.equal(readlinkSync(join(f.prefix, "bin/bobs-factory")), link);
+			assert.equal(readFileSync(f.profile, "utf8"), profile);
+		}
+	} finally {
+		f.cleanup();
 	}
 });
 
-test("stable promotion metadata reads root identity instead of the selected nightly's nested fields", () => {
-	const f = fixture("1.0.0");
+test("nightly installation is opt-in and exact versions must match the selected channel", () => {
+	const f = fixture("1.0.0-nightly.20261009.10");
 	try {
-		const metadata = {
-			...f.current.metadata,
-			schemaVersion: 2,
-			channel: "stable",
-			originatingSourceSha: "b".repeat(40),
-			createdAt: "2026-10-09T12:00:00Z",
-			promotedFrom: {
-				version: "1.0.0-nightly.10",
-				tag: "v1.0.0-nightly.10",
-				commit: "b".repeat(40),
-				manifestSha256: "c".repeat(64),
-			},
-		};
-		for (const file of ["latest.json", "stable.json", "release.json"])
-			writeFileSync(join(f.downloads, file), jsonBytes(metadata));
-		const result = f.install("--channel", "stable");
+		assert.notEqual(f.install().status, 0);
+		const result = f.install("--channel", "nightly");
 		assert.equal(result.status, 0, result.stderr);
+		assert.match(result.stdout, /opt-in prerelease/);
+		assert.notEqual(
+			f.install("--channel", "stable", "--version", "1.0.0-nightly.20261009.10")
+				.status,
+			0,
+		);
+		assert.notEqual(
+			f.install("--channel", "nightly", "--version", "1.0.1").status,
+			0,
+		);
+	} finally {
+		f.cleanup();
+	}
+});
+test("legacy beta requires signed inventory attestation without rewriting its manifest", () => {
+	const f = fixture("1.0.0-beta");
+	try {
+		const legacy = {
+			...f.current.metadata,
+			schemaVersion: 1,
+			channel: "prerelease",
+		};
+		delete legacy.assets;
+		delete legacy.candidateDigest;
+		delete legacy.workflowSha;
+		const bytes = jsonBytes(legacy);
+		for (const file of ["latest.json", "release.json"]) {
+			writeFileSync(join(f.downloads, file), bytes);
+			writeFileSync(join(f.downloads, `${file}.sig`), signBytes(bytes));
+		}
+		assert.notEqual(
+			f.install().status,
+			0,
+			"No attestation must block signed legacy beta",
+		);
+		const attestation = jsonBytes({
+			schemaVersion: 1,
+			product: "bobs-factory",
+			repository: REPOSITORY,
+			version: legacy.version,
+			tag: legacy.tag,
+			commit: legacy.commit,
+			manifest: {
+				file: "release.json",
+				size: bytes.length,
+				sha256: sha256(bytes),
+			},
+			assets: f.current.metadata.assets,
+		});
+		writeFileSync(join(f.downloads, "release-attestation.json"), attestation);
+		writeFileSync(
+			join(f.downloads, "release-attestation.json.sig"),
+			signBytes(attestation),
+		);
+		writeFileSync(
+			join(f.downloads, "release-attestation.json.key-id"),
+			"fixture\n",
+		);
+		const result = f.install();
+		assert.equal(result.status, 0, result.stderr);
+		assert.deepEqual(readFileSync(join(f.downloads, "release.json")), bytes);
+		writeFileSync(
+			join(f.downloads, "release-attestation.json"),
+			Buffer.concat([attestation, Buffer.from(" ")]),
+		);
+		assert.notEqual(f.install().status, 0);
 	} finally {
 		f.cleanup();
 	}

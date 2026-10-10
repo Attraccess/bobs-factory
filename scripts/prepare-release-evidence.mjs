@@ -25,12 +25,17 @@ import {
 	validateIdentity,
 } from "./lib/binary-release.mjs";
 import {
+	candidateIdentity,
+	validateCandidate,
+} from "./lib/release-candidate.mjs";
+import {
 	extractEvidenceArchive,
 	sourceFileSha256,
 } from "./lib/release-material.mjs";
 
 const { values } = parseArgs({
 	options: {
+		candidate: { type: "string" },
 		sha: { type: "string" },
 		version: { type: "string" },
 		"run-id": { type: "string" },
@@ -40,11 +45,18 @@ const { values } = parseArgs({
 		output: { type: "string" },
 	},
 });
-const identity = {
-	commit: values.sha,
-	version: values.version,
-	runId: Number(values["run-id"]),
-};
+const candidate = values.candidate
+	? validateCandidate(
+			JSON.parse(readFileSync(resolve(values.candidate), "utf8")),
+		)
+	: null;
+const identity = candidate
+	? candidateIdentity(candidate, Number(values["run-id"]))
+	: {
+			commit: values.sha,
+			version: values.version,
+			runId: Number(values["run-id"]),
+		};
 validateIdentity(identity.version, identity.commit, identity.runId);
 requireValue(
 	values.output &&
@@ -57,7 +69,7 @@ requireValue(
 	execFileSync("git", ["rev-parse", "HEAD"], {
 		cwd: root,
 		encoding: "utf8",
-	}).trim() === identity.commit,
+	}).trim() === (identity.workflowSha ?? identity.commit),
 	"Evidence workflow must execute exact candidate source",
 );
 requireValue(
@@ -66,7 +78,7 @@ requireValue(
 			cwd: root,
 			encoding: "utf8",
 		}),
-	).version === identity.version,
+	).version === (identity.committedVersion ?? identity.version),
 	"Exact release version must be committed at candidate",
 );
 const output = resolve(values.output);
@@ -137,6 +149,8 @@ validateEvidence(
 	output,
 	identity,
 );
+if (candidate)
+	writeFileSync(join(output, "candidate.json"), jsonBytes(candidate));
 unlinkSync(archive);
 writeFileSync(
 	join(output, "evidence-intake-provenance.json"),

@@ -1,202 +1,239 @@
 import {
+	createReadStream,
+	existsSync,
+	readFileSync,
+	renameSync,
+	writeFileSync,
+} from "node:fs";
+import { join } from "node:path";
+import {
 	jsonBytes,
 	requireValue,
-	sha256,
-	validateLatestVersion,
+	validatePublicRepository,
 } from "./binary-release.mjs";
-import { nightlyEligibility, releaseChannel } from "./release-channels.mjs";
+import { verifyAssetInventory } from "./github-release.mjs";
+import { PublicationSkip } from "./release-candidate.mjs";
 
-export function publicationMarker(identity, records) {
-	const digest = sha256(
-		jsonBytes({
-			version: identity.version,
-			commit: identity.commit,
-			runId: identity.runId,
-			assets: [...records].sort((a, b) => a.file.localeCompare(b.file)),
-		}),
-	);
-	return `<!-- bobs-factory-publication-v1:${digest} -->`;
-}
-export function validateAssetInventory(assets, records, complete = false) {
-	requireValue(Array.isArray(assets), "Invalid release asset list");
-	const expected = new Map(records.map((record) => [record.file, record]));
-	requireValue(
-		expected.size === records.length,
-		"Duplicate staged release assets",
-	);
-	const names = new Set();
-	for (const asset of assets) {
-		requireValue(
-			!names.has(asset.name),
-			`Duplicate immutable asset: ${asset.name}`,
-		);
-		names.add(asset.name);
-		const record = expected.get(asset.name);
-		requireValue(
-			record &&
-				asset.state === "uploaded" &&
-				asset.size === record.size &&
-				asset.digest === `sha256:${record.sha256}`,
-			`Immutable asset conflict: ${asset.name}; use a new candidate/version`,
-		);
-	}
-	if (complete)
-		requireValue(
-			names.size === expected.size,
-			"Incomplete release inventory; retaining draft",
-		);
-	return records.filter((record) => !names.has(record.file));
-}
-// The caller holds the repository-wide publication lock. All mutations are here;
-// staged artifacts and evidence are already validated by the publisher.
-export async function publishStagedRelease({
-	api,
-	upload,
-	identity,
+// Caller holds the repository-wide mutation lock. Provider state is authoritative.
+export async function publishPreparedRelease({
+	client,
 	manifest,
 	records,
-	lastNightly,
-	approvedStable = false,
-	receipt = () => {},
-	dryRun = true,
-	now = () => Date.now(),
+	assetsDirectory,
+	receiptPath,
+	recheck,
 }) {
-	const channel = releaseChannel(identity.version);
-	const marker = publicationMarker(identity, records);
-	const tagPath = `git/ref/tags/${manifest.tag}`;
-	const releasePath = `releases/tags/${manifest.tag}`;
-	async function state() {
-		const tag = await api(tagPath, { allow404: true });
-		const release = await api(releasePath, { allow404: true });
-		if (tag)
-			requireValue(
-				tag.object?.type === "commit" && tag.object.sha === identity.commit,
-				"Immutable tag conflict; use a new candidate/version",
-			);
-		if (release)
-			requireValue(
-				tag &&
-					release.tag_name === manifest.tag &&
-					release.body?.includes(marker) &&
-					release.prerelease === (channel !== "stable"),
-				"Release belongs to another immutable publication identity",
-			);
-		const assets = release
-			? await api(`releases/${release.id}/assets`, { paginate: true })
-			: [];
-		validateAssetInventory(assets, records, release && !release.draft);
-		return { tag, release, assets };
-	}
+	const marker = `<!-- bobs-factory-candidate:${manifest.candidateDigest} -->`;
+	const previous = existsSync(receiptPath)
+		? JSON.parse(readFileSync(receiptPath, "utf8"))
+		: null;
+	if (previous)
+		requireValue(
+			previous.candidateDigest === manifest.candidateDigest &&
+				previous.tag === manifest.tag &&
+				JSON.stringify(previous.assets) === JSON.stringify(records),
+			"Publication receipt conflicts with prepared bytes",
+		);
+	const receipt = previous ?? {
+		schemaVersion: 1,
+		candidateDigest: manifest.candidateDigest,
+		tag: manifest.tag,
+		assets: records,
+		stages: [],
+		synchronization: "pending",
+	};
+	const persist = () => {
+		writeFileSync(`${receiptPath}.tmp`, jsonBytes(receipt));
+		renameSync(`${receiptPath}.tmp`, receiptPath);
+	};
+	const stage = (name) => {
+		if (!receipt.stages.includes(name)) receipt.stages.push(name);
+		persist();
+	};
 	async function eligibility() {
-		if (channel === "nightly") {
-			const last = await lastNightly();
-			// Numeric ordering is independent of the base SemVer and UTC timestamps.
-			requireValue(
-				!last || manifest.nightlySequence > last.manifest.nightlySequence,
-				"Nightly sequence must move forwards",
-			);
-			const result = nightlyEligibility(
-				manifest.originatingSourceSha,
-				last,
-				now(),
-			);
-			requireValue(
-				result.eligible,
-				`Nightly publication blocked: ${result.reason}`,
-			);
-		} else {
-			validateLatestVersion(
-				identity.version,
-				await api("releases/latest", { allow404: true }),
-			);
-			if (channel === "stable" && !dryRun) {
-				requireValue(
-					approvedStable,
-					"Stable publication requires the protected stable-release approval environment",
-				);
-				const environment = await api("environments/stable-release");
-				requireValue(
-					environment.protection_rules?.some(
-						(rule) =>
-							rule.type === "required_reviewers" &&
-							rule.prevent_self_review === true &&
-							rule.reviewers?.length > 0,
-					),
-					"Configure stable-release with required reviewers and prevent self-review before stable publication",
-				);
+		try {
+			await recheck();
+		} catch (error) {
+			if (error instanceof PublicationSkip) {
+				receipt.outcome = "skipped";
+				receipt.eligibility = error.result;
+				persist();
 			}
+			throw error;
 		}
 	}
-	let current = await state();
-	if (current.release && !current.release.draft) {
-		receipt("already-published", { releaseId: current.release.id });
-		if (!dryRun)
-			await api("actions/workflows/website.yml/dispatches", {
-				method: "POST",
-				body: { ref: "main" },
-			});
-		return { alreadyPublished: true, release: current.release };
+	async function currentRelease() {
+		const releases = await client.pages("releases");
+		const matches = releases.filter((r) => r.tag_name === manifest.tag);
+		requireValue(matches.length <= 1, "Ambiguous release identity");
+		const r = matches[0];
+		if (r)
+			requireValue(
+				r.body?.includes(marker) &&
+					r.prerelease === (manifest.channel !== "stable"),
+				"Conflicting release candidate identity",
+			);
+		return r;
 	}
-	await eligibility();
-	if (dryRun)
-		return {
-			dryRun: true,
-			missing: validateAssetInventory(current.assets, records),
-			marker,
-		};
-	// Resolve identity and cooldown again immediately before the first write.
-	current = await state();
-	await eligibility();
-	if (!current.tag)
-		await api("git/refs", {
-			method: "POST",
-			body: { ref: `refs/tags/${manifest.tag}`, sha: identity.commit },
-		});
-	receipt("tag-verified", { tag: manifest.tag, commit: identity.commit });
-	let draft = current.release;
-	if (!draft)
-		draft = await api("releases", {
+	async function verifiedTag(allow404 = false) {
+		const ref = await client.api(`git/ref/tags/${manifest.tag}`, { allow404 });
+		if (!ref) return null;
+		requireValue(
+			ref.object?.type === "tag",
+			"Release tag lacks frozen candidate identity",
+		);
+		const annotated = await client.api(`git/tags/${ref.object.sha}`);
+		requireValue(
+			annotated.tag === manifest.tag &&
+				annotated.message?.trim() === marker &&
+				annotated.object?.type === "commit" &&
+				annotated.object.sha === manifest.commit,
+			"Conflicting immutable tag source/candidate",
+		);
+		receipt.tagId = ref.object.sha;
+		return ref;
+	}
+	validatePublicRepository(await client.api(""));
+	let release = await currentRelease();
+	let tag = await verifiedTag(true);
+	if (!release || release.draft) await eligibility();
+	if (!tag) {
+		const annotated = await client.api("git/tags", {
 			method: "POST",
 			body: {
-				tag_name: manifest.tag,
-				target_commitish: identity.commit,
-				name: `Bob's Factory ${identity.version}`,
-				draft: true,
-				prerelease: channel !== "stable",
-				make_latest: "false",
-				body: `Verified ${channel} candidate: ${identity.commit}\nBuild run: ${identity.runId}\n${marker}`,
+				tag: manifest.tag,
+				message: marker,
+				object: manifest.commit,
+				type: "commit",
 			},
 		});
-	receipt("draft-verified", { releaseId: draft.id });
-	for (const record of validateAssetInventory(current.assets, records)) {
-		const asset = await upload(draft.id, record);
-		validateAssetInventory([asset], [record], true);
-		receipt("asset-verified", { file: record.file, sha256: record.sha256 });
+		try {
+			await client.api("git/refs", {
+				method: "POST",
+				body: { ref: `refs/tags/${manifest.tag}`, sha: annotated.sha },
+			});
+		} catch (error) {
+			tag = await verifiedTag(true);
+			if (!tag) throw error;
+		}
+		tag = await verifiedTag();
 	}
-	current = await state();
+	stage("tag-verified");
+	if (!release) {
+		try {
+			release = await client.api("releases", {
+				method: "POST",
+				body: {
+					tag_name: manifest.tag,
+					target_commitish: manifest.commit,
+					name: `Bob’s Factory ${manifest.version}`,
+					draft: true,
+					prerelease: manifest.channel !== "stable",
+					make_latest: "false",
+					body: `Verified native binaries. Frozen source: ${manifest.commit}\n${marker}`,
+				},
+			});
+		} catch (error) {
+			release = await currentRelease();
+			if (!release) throw error;
+		}
+	}
+	receipt.releaseId = release.id;
+	stage("release-identified");
+	let remote = await client.pages(`releases/${release.id}/assets`);
 	requireValue(
-		current.release?.id === draft.id && current.release.draft,
-		"Release state changed during upload",
+		new Set(remote.map((a) => a.name)).size === remote.length,
+		"Duplicate immutable release assets",
 	);
-	validateAssetInventory(current.assets, records, true);
-	await eligibility();
-	const published = await api(`releases/${draft.id}`, {
-		method: "PATCH",
-		body: {
-			draft: false,
-			make_latest: channel === "stable" ? "true" : "false",
-		},
-	});
-	requireValue(published.draft === false, "GitHub did not confirm publication");
-	receipt("published", {
-		releaseId: draft.id,
-		publishedAt: published.published_at,
-	});
-	// A failure here is retried through the identical-publication path above.
-	await api("actions/workflows/website.yml/dispatches", {
-		method: "POST",
-		body: { ref: "main" },
-	});
-	receipt("discovery-dispatched", { releaseId: draft.id });
-	return { release: published };
+	for (const a of remote)
+		requireValue(
+			records.some((r) => r.file === a.name),
+			"Unexpected immutable release asset",
+		);
+	for (const record of records) {
+		const existing = remote.find((a) => a.name === record.file);
+		if (existing) {
+			verifyAssetInventory([existing], [record]);
+			continue;
+		}
+		requireValue(
+			release.draft,
+			"Public release is incomplete; never append automatically",
+		);
+		try {
+			const response = await client.transport(
+				`https://uploads.github.com/repos/jappyjan/bobs-factory/releases/${release.id}/assets?name=${encodeURIComponent(record.file)}`,
+				{
+					method: "POST",
+					headers: {
+						...client.headers,
+						"Content-Type": "application/octet-stream",
+						"Content-Length": String(record.size),
+					},
+					body: createReadStream(join(assetsDirectory, record.file)),
+					duplex: "half",
+				},
+			);
+			requireValue(
+				response.ok,
+				`Upload failed: ${record.file} (${response.status})`,
+			);
+			verifyAssetInventory([await response.json()], [record]);
+		} catch (error) {
+			remote = await client.pages(`releases/${release.id}/assets`);
+			const uploaded = remote.filter((a) => a.name === record.file);
+			if (!uploaded.length) throw error;
+			verifyAssetInventory(uploaded, [record], { complete: true });
+		}
+	}
+	remote = await client.pages(`releases/${release.id}/assets`);
+	verifyAssetInventory(remote, records, { complete: true });
+	stage("remote-inventory-verified");
+	tag = await verifiedTag();
+	release = await currentRelease();
+	if (release.draft) {
+		await eligibility();
+		validatePublicRepository(await client.api(""));
+		try {
+			await client.api(`releases/${release.id}`, {
+				method: "PATCH",
+				body: {
+					draft: false,
+					prerelease: manifest.channel !== "stable",
+					make_latest: manifest.channel === "stable" ? "true" : "false",
+				},
+			});
+		} catch (error) {
+			release = await currentRelease();
+			if (!release || release.draft) throw error;
+		}
+		release = await currentRelease();
+		requireValue(
+			!release.draft && release.published_at,
+			"Provider has not confirmed publication",
+		);
+	}
+	verifyAssetInventory(
+		await client.pages(`releases/${release.id}/assets`),
+		records,
+		{ complete: true },
+	);
+	stage("published");
+	if (receipt.synchronization === "dispatched") return receipt;
+	try {
+		await client.api("actions/workflows/website.yml/dispatches", {
+			method: "POST",
+			body: { ref: "main" },
+		});
+		receipt.synchronization = "dispatched";
+		stage("discovery-dispatched");
+	} catch (error) {
+		receipt.synchronization = "failed";
+		receipt.synchronizationError = error.message;
+		persist();
+		throw new Error(
+			"Publication succeeded; website synchronization failed. Retry this exact prepared inventory; do not rebuild or move the tag.",
+		);
+	}
+	return receipt;
 }

@@ -598,6 +598,10 @@ it.each([
 	{ failure: `thread/start failed: ${mcpHandshakeFailure}`, source: "result" },
 	{ failure: `thread/resume failed: ${mcpHandshakeFailure}`, source: "start" },
 	{ failure: `thread/resume failed: ${mcpHandshakeFailure}`, source: "result" },
+	{ failure: "thread/start timed out after 60000ms", source: "start" },
+	{ failure: "thread/start timed out after 60000ms", source: "result" },
+	{ failure: "thread/resume timed out after 60000ms", source: "start" },
+	{ failure: "thread/resume timed out after 60000ms", source: "result" },
 ])("preserves a correction through pre-turn $source failure ($failure) without spending its budget", async ({
 	failure,
 	source,

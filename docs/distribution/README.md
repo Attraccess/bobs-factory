@@ -2,19 +2,23 @@
 
 Install with the [two-command quick start](../../README.md#install-and-start).
 The public installer detects your OS/CPU and downloads a verified version without
-GitHub login, GitHub CLI, Node or Bun. First launch opens protected browser setup
+GitHub login, GitHub CLI, Node or Bun. System OpenSSL verifies publisher signatures. First launch opens protected browser setup
 for a project, prepared agent and GitHub connection. Agents may have their own
 runtime and login requirements.
 
 The shared [`release.json` contract](PUBLIC_RELEASES.md) drives the installer,
 homepage and Nix package. The installer selects verified stable releases, or the
-latest verified beta before the first stable release. When no reviewed release is
+latest authenticated beta before the first stable release. Nightly is explicit
+(`--channel nightly`) and never becomes the default. When no reviewed release is
 available, the homepage and installer report unavailable downloads. CI artifacts
 remain maintainer validation material.
 
 The artifact contract is `bobs-factory-VERSION-TARGET.tar.gz` with a matching
 `.manifest.json`: schema version, product, exact version, commit, target, byte size
 and SHA-256. `build.json` inside adds tooling, executable hash and resource digest.
+Release candidates also bind a digest, committed package version and frozen tooling
+revision. CI accepts a release-version override without editing the checkout;
+stable rebuilds receive their own byte-bound validation.
 The same verified commit, target and resource digest are embedded in the runtime
 identity returned by `/version` and `/api/version`, alongside the product
 version and dirty-build flag. Development runtimes report unknown source identity;
@@ -137,17 +141,21 @@ checksum from that manifest:
 bobs-factory = import /path/to/bobs-factory/nix/package.nix {
   inherit pkgs;
   releaseManifest = ./bobs-factory-release.json;
+  releaseSignature = ./bobs-factory-release.json.sig;
+  releaseKeyId = "reviewed-active-publisher-key-id";
 };
 ```
 
+Keep the exact manifest bytes and detached signature together. The key ID must
+match an active public key in the reviewed release tooling. Historical beta
+manifests also require the signed inventory attestation described in
+[the public release contract](PUBLIC_RELEASES.md). Before unpacking, Nix verifies
+both signatures, the attestation's exact manifest identity and bytes, every
+manifest-bound inventory record, and the required validation receipts for all
+four targets. Missing, duplicate, malformed or mismatched records fail the build.
+Keep `nix/validate-beta-attestation.jq` with `nix/package.nix` in reviewed tooling.
 The package fetches public versioned assets without GitHub credentials. An
 unavailable manifest fails evaluation clearly. Update the pinned manifest when
 upgrading; avoid fetching a mutable latest pointer during evaluation. Keep the
 service's home, environment and conversations separate from the immutable Nix
 package, and drain/stop the old worker before an intentional upgrade.
-
-Verified channel publication uses immutable candidates and separate stable/nightly
-metadata. Scheduled automation stays disabled until separately authorized rollout;
-stable promotion selects an explicit published nightly and requires protected release
-approval. See [the public release operations](PUBLIC_RELEASES.md) for preparation, real evidence,
-six-hour nightly eligibility, upload recovery and Pages-only retries.

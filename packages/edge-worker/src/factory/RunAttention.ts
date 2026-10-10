@@ -8,6 +8,7 @@ export interface RunSummary {
 	createdAt: string;
 	updatedAt?: string;
 	capacityLeaves?: Record<string, { phase: string }>;
+	deliveryCoordination?: { phase: string; reason?: string };
 	reviewGate?: { status?: string };
 	viewState?: { settledAt?: string; seenAt?: string; keptOpen?: boolean };
 	triggerOrigin?: { manual?: { sourceRunId?: string } };
@@ -40,7 +41,29 @@ export function capacityPhaseLabel(phase?: string): string {
 				? "Stopping"
 				: "Executing";
 }
+/** Persisted target keys stay stable; operational surfaces show their actual meaning. */
+export function deliveryTargetLabel(target: string): string {
+	try {
+		const parts: unknown = JSON.parse(target);
+		if (
+			Array.isArray(parts) &&
+			parts.length === 2 &&
+			parts.every((part) => typeof part === "string")
+		) {
+			if (parts[0] === "resource") return `Shared resource ${parts[1]}`;
+			if (parts[0] === "qa") return `QA environment for ${parts[1]}`;
+			return `${parts[0]} → ${parts[1]}`;
+		}
+	} catch {
+		/* Legacy keys remain readable without changing reservation identity. */
+	}
+	return target;
+}
 export function workingLabel(run: RunSummary): string {
+	if (run.deliveryCoordination?.phase === "queued")
+		return run.deliveryCoordination.reason === "Shared QA/environment resource"
+			? "Waiting for shared QA environment"
+			: "Waiting for delivery admission";
 	if (run.status === "capacity-waiting") return "Waiting for capacity";
 	if (run.status === "stopping") return "Stopping";
 	const leaves = Object.values(run.capacityLeaves ?? {}) as { phase: string }[];

@@ -33,10 +33,10 @@ jobs:
     - name: Install dependencies
       uses: ./.github/actions/install-dependencies
 
-    - name: Install video test tools
+    - name: Install video and release test tools
       run: |
         sudo apt-get update
-        sudo apt-get install --no-install-recommends -y ffmpeg
+        sudo apt-get install --no-install-recommends -y ffmpeg jq
         ffmpeg -version
         ffprobe -version
     

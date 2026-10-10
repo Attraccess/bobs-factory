@@ -73,6 +73,7 @@ const deliveryTools = new Set([
 	"draft-pr",
 	"review-after-fix",
 	"ci",
+	"ci-fix-readiness",
 	"human-review",
 	"handoff",
 	"merge",
@@ -132,45 +133,81 @@ export async function groupedTool(
 	if (!deliveryTools.has(context.step.tool ?? "")) return tool(context);
 	const scope = runRepositories(run);
 	let published = deliveryRevisions(run.outputs["draft-pr"]);
-	if (["ci", "review-after-fix"].includes(context.step.tool ?? "")) {
+	if (
+		["ci", "ci-fix-readiness", "review-after-fix"].includes(
+			context.step.tool ?? "",
+		)
+	) {
 		const deliveries = [
 			...(groupedOutput(run.outputs["draft-pr"])?.deliveries ?? []),
 		];
+		const candidates: typeof scope = [];
 		for (const repository of scope.filter(
 			(repo) =>
 				!published.some((delivery) => delivery.repositoryId === repo.id),
 		)) {
-			const projected = repositoryRun(run, repository);
-			const child = {
-				...context,
-				run: projected,
-				step: { ...context.step, id: "draft-pr", tool: "draft-pr" },
-				allowUnchangedRepository: true,
-			};
-			let output: Record<string, unknown>;
+			const child = { ...context, run: repositoryRun(run, repository) };
 			try {
-				output = (await tool(child)) as Record<string, unknown>;
-			} catch (error) {
-				throw new Error(
-					`${repository.name}: ${error instanceof Error ? error.message : String(error)}`,
-					{ cause: error },
-				);
-			} finally {
+				const dirty = (
+					await command(child, "git", ["status", "--porcelain"])
+				).trim();
+				const changed = (
+					await command(child, "git", [
+						"diff",
+						"--name-only",
+						`refs/remotes/origin/${repository.baseBranch}...HEAD`,
+					])
+				).trim();
+				if (
+					!dirty &&
+					!changed &&
+					!child.run.outputs.source &&
+					!child.run.outputs["draft-pr"]
+				)
+					continue;
+			} catch {
+				/* Uncertain context must be checked under publication admission. */
+			}
+			candidates.push(repository);
+		}
+		const publish = async () => {
+			for (const repository of candidates) {
+				const projected = repositoryRun(run, repository);
+				const child = {
+					...context,
+					run: projected,
+					step: { ...context.step, id: "draft-pr", tool: "draft-pr" },
+					allowUnchangedRepository: true,
+				};
+				let output: Record<string, unknown>;
+				try {
+					output = (await tool(child)) as Record<string, unknown>;
+				} catch (error) {
+					throw new Error(
+						`${repository.name}: ${error instanceof Error ? error.message : String(error)}`,
+						{ cause: error },
+					);
+				} finally {
+					repository.providerSnapshot = projected.gitProvider;
+					context.save?.();
+				}
+				if (output.unchanged === true) continue;
+				deliveries.push({
+					repositoryId: repository.id,
+					name: repository.name,
+					output,
+				});
 				repository.providerSnapshot = projected.gitProvider;
+				run.repositoryOutputs ??= {};
+				run.repositoryOutputs[repository.id] ??= {};
+				run.repositoryOutputs[repository.id]!["draft-pr"] = output;
+				run.outputs["draft-pr"] = aggregateDeliveries(deliveries);
 				context.save?.();
 			}
-			if (output.unchanged === true) continue;
-			deliveries.push({
-				repositoryId: repository.id,
-				name: repository.name,
-				output,
-			});
-			repository.providerSnapshot = projected.gitProvider;
-			run.repositoryOutputs ??= {};
-			run.repositoryOutputs[repository.id] ??= {};
-			run.repositoryOutputs[repository.id]!["draft-pr"] = output;
-			run.outputs["draft-pr"] = aggregateDeliveries(deliveries);
-			context.save?.();
+		};
+		if (candidates.length) {
+			if (context.coordinateDelivery) await context.coordinateDelivery(publish);
+			else await publish();
 		}
 		published = deliveryRevisions(run.outputs["draft-pr"]);
 	}
@@ -183,7 +220,7 @@ export async function groupedTool(
 	if (!repositories.length)
 		throw new Error("No published repositories to review or merge");
 	// Check the complete approved delivery set before the first merge mutation.
-	if (context.step.tool === "merge") {
+	const validateMergeScope = async () => {
 		const decision = run.humanDecisions?.at(-1);
 		if (
 			decision?.decision !== "approve" ||
@@ -263,6 +300,11 @@ export async function groupedTool(
 			context.save?.();
 			return output;
 		}
+		return undefined;
+	};
+	if (context.step.tool === "merge") {
+		const invalid = await validateMergeScope();
+		if (invalid) return invalid;
 	}
 	const deliveries: DeliveryResult[] = [];
 	for (const repository of repositories) {
@@ -272,6 +314,15 @@ export async function groupedTool(
 			run: projected,
 			outputs: projected.outputs,
 			allowUnchangedRepository: true,
+			validateDelivery:
+				context.step.tool === "merge"
+					? async () => {
+							const invalid = await validateMergeScope();
+							return groupedOutput(invalid)?.deliveries.find(
+								(delivery) => delivery.repositoryId === repository.id,
+							)?.output;
+						}
+					: undefined,
 			log: (message, source) =>
 				context.log(`${repository.name}: ${message}`, source),
 		};

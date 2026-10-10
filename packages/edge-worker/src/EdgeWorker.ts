@@ -9666,7 +9666,7 @@ ${taskSection}`;
 				return new CodexRunner({
 					...config,
 					configOverrides: { features: { multi_agent: false } },
-					sandbox: this.config.codexSandboxMode ?? "workspace-write",
+					sandbox: this.config.codexSandboxMode ?? "danger-full-access",
 				});
 			case "cursor":
 				return new CursorRunner(config);

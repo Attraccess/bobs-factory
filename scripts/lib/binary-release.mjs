@@ -12,11 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import {
-	releaseChannel,
-	requiredSupportingFiles,
-	validateCandidateMetadata,
-} from "./release-channels.mjs";
+import { releaseChannel, validateCandidate } from "./release-candidate.mjs";
 
 export const REPOSITORY = "jappyjan/bobs-factory";
 export const TARGETS = [
@@ -112,7 +108,7 @@ export function compareReleaseVersions(left, right) {
 	}
 	return 0;
 }
-export function selectPublicRelease(releases) {
+export function selectPublicRelease(releases, channel = "stable") {
 	requireValue(Array.isArray(releases), "Invalid public release list");
 	const candidates = releases.filter(
 		(release) =>
@@ -129,15 +125,19 @@ export function selectPublicRelease(releases) {
 	}
 	// Stable installations stay on stable. Before 1.0, the reviewed beta is usable.
 	const stable = candidates.filter((release) => !release.prerelease);
+	const beta = candidates.filter(
+		(r) => releaseChannel(r.tag_name.slice(1)) === "beta",
+	);
+	const nightly = candidates.filter(
+		(r) => releaseChannel(r.tag_name.slice(1)) === "nightly",
+	);
 	return (
-		(stable.length
-			? stable
-			: candidates.filter(
-					(release) =>
-						releaseChannel(release.tag_name.slice(1)) === "prerelease",
-				)
-		).sort((a, b) =>
-			compareReleaseVersions(b.tag_name.slice(1), a.tag_name.slice(1)),
+		(channel === "nightly" ? nightly : stable.length ? stable : beta).sort(
+			(a, b) =>
+				channel === "nightly"
+					? Number(b.tag_name.split(".").at(-1)) -
+						Number(a.tag_name.split(".").at(-1))
+					: compareReleaseVersions(b.tag_name.slice(1), a.tag_name.slice(1)),
 		)[0] ?? null
 	);
 }
@@ -194,37 +194,57 @@ export function validateReleaseManifest(value) {
 	requireValue(
 		value.channel === undefined ||
 			value.channel ===
-				(value.schemaVersion === 1
-					? value.version.includes("-")
+				(value.schemaVersion === 2
+					? releaseChannel(value.version)
+					: value.version.includes("-")
 						? "prerelease"
-						: "stable"
-					: releaseChannel(value.version)),
+						: "stable"),
 		"Release channel must match exact version",
 	);
 	requireValue(
 		value.tag === `v${value.version}`,
 		"Release tag must match exact version",
 	);
+	validateFile(value.installer, "install.sh");
+	validateFile(value.verifier, "install-binary.sh");
+	validateFile(value.source, "source-rebuild.tar.gz");
+	requireValue(
+		Object.keys(value.targets ?? {})
+			.sort()
+			.join() === [...TARGETS].sort().join(),
+		"All four release targets are required",
+	);
+	for (const target of TARGETS) {
+		const entry = value.targets[target];
+		const name = `bobs-factory-${value.version}-${target}`;
+		validateFile(
+			{
+				file: entry.archive,
+				sha256: entry.archiveSha256,
+				size: entry.archiveSize,
+			},
+			`${name}.tar.gz`,
+		);
+		validateFile(
+			{
+				file: entry.manifest,
+				sha256: entry.manifestSha256,
+				size: entry.manifestSize,
+			},
+			`${name}.manifest.json`,
+		);
+	}
 	if (value.schemaVersion === 2) {
-		validateCandidateMetadata(value, value.version);
 		requireValue(
-			value.channel === releaseChannel(value.version),
-			"Explicit release channel required",
+			releaseChannel(value.version) &&
+				value.channel === releaseChannel(value.version),
+			"Unsupported signed release channel",
 		);
 		requireValue(
-			Array.isArray(value.supportingAssets),
-			"Required evidence inventory missing",
+			/^[a-f0-9]{64}$/.test(value.candidateDigest) &&
+				/^[a-f0-9]{40}$/.test(value.workflowSha),
+			"Missing frozen candidate identity",
 		);
-		const expected = requiredSupportingFiles().sort();
-		requireValue(
-			value.supportingAssets
-				.map((record) => record.file)
-				.sort()
-				.join() === expected.join(),
-			"Incomplete or duplicate evidence inventory",
-		);
-		for (const record of value.supportingAssets)
-			validateFile(record, record.file);
 		if (value.desktop !== undefined) {
 			requireValue(
 				value.desktop.schemaVersion === 1 &&
@@ -258,37 +278,73 @@ export function validateReleaseManifest(value) {
 				}
 			}
 		}
-	}
-	validateFile(value.installer, "install.sh");
-	validateFile(value.verifier, "install-binary.sh");
-	validateFile(value.source, "source-rebuild.tar.gz");
-	requireValue(
-		Object.keys(value.targets ?? {})
-			.sort()
-			.join() === [...TARGETS].sort().join(),
-		"All four release targets are required",
-	);
-	for (const target of TARGETS) {
-		const entry = value.targets[target];
-		const name = `bobs-factory-${value.version}-${target}`;
-		validateFile(
-			{
-				file: entry.archive,
-				sha256: entry.archiveSha256,
-				size: entry.archiveSize,
-			},
-			`${name}.tar.gz`,
+		const required = [
+			"candidate.json",
+			"release-evidence.json",
+			"validation-receipts.tar.gz",
+			"build-provenance.json",
+			...TARGETS.flatMap((t) => [
+				`runtime-smoke-${t}.txt`,
+				`native-helpers-${t}.json`,
+				`prepared-agent-boundaries-${t}.json`,
+			]),
+		];
+		requireValue(
+			Array.isArray(value.assets) &&
+				new Set(value.assets.map((a) => a.file)).size === value.assets.length,
+			"Ambiguous signed inventory",
 		);
-		validateFile(
-			{
-				file: entry.manifest,
-				sha256: entry.manifestSha256,
-				size: entry.manifestSize,
-			},
-			`${name}.manifest.json`,
-		);
+		if (value.publicInstallerValidation !== undefined) {
+			requireValue(
+				value.publicInstallerValidation === 1,
+				"Unsupported public installer validation",
+			);
+			required.push(...TARGETS.map((t) => `public-installer-${t}.json`));
+		}
+		for (const file of required)
+			requireValue(
+				value.assets.some((a) => a.file === file),
+				`Missing signed asset: ${file}`,
+			);
+		for (const record of value.assets) {
+			requireValue(
+				/^[A-Za-z0-9.-]+$/.test(record.file) &&
+					!["release.json", "release.json.sig", "release.json.key-id"].includes(
+						record.file,
+					),
+				"Unsafe/circular signed inventory",
+			);
+			validateFile(record, record.file);
+		}
+		for (const record of releaseAssetRecords(value, false))
+			requireValue(
+				value.assets.some(
+					(a) =>
+						a.file === record.file &&
+						a.sha256 === record.sha256 &&
+						a.size === record.size,
+				),
+				`Signed inventory mismatch: ${record.file}`,
+			);
 	}
 	return value;
+}
+export function releaseAssetRecords(value, inventory = true) {
+	if (inventory && value.schemaVersion === 2) return value.assets;
+	return [
+		value.installer,
+		value.verifier,
+		value.source,
+		...Object.values(value.targets).flatMap((t) => [
+			{ file: t.archive, sha256: t.archiveSha256, size: t.archiveSize },
+			{ file: t.manifest, sha256: t.manifestSha256, size: t.manifestSize },
+		]),
+		...(value.desktop?.artifacts ?? []).flatMap((item) => [
+			item.archive,
+			item.updateMetadata,
+			item.validation,
+		]),
+	];
 }
 export function fileRecord(path, file) {
 	return { file, sha256: sha256File(path), size: statSync(path).size };
@@ -308,12 +364,15 @@ export function validateBuildProvenance(run, jobs, artifacts, identity) {
 		"Binary build must come from the canonical repository",
 	);
 	requireValue(
-		run.path === ".github/workflows/binary-build.yml" &&
-			run.event === "workflow_dispatch",
+		(run.path === ".github/workflows/binary-build.yml" &&
+			run.event === "workflow_dispatch") ||
+			(identity.candidateDigest &&
+				run.path === ".github/workflows/release-channel.yml" &&
+				["schedule", "workflow_dispatch"].includes(run.event)),
 		"Unexpected binary build workflow",
 	);
 	requireValue(
-		run.head_sha === commit,
+		run.head_sha === (identity.workflowSha ?? commit),
 		"Workflow source SHA must be the reviewed candidate SHA; dispatch from that candidate ref",
 	);
 	const selected = {};
@@ -326,7 +385,11 @@ export function validateBuildProvenance(run, jobs, artifacts, identity) {
 			`Missing successful native job: ${target}`,
 		);
 		const candidates = artifacts.filter(
-			(artifact) => artifact.name === `bobs-factory-${target}-${commit}`,
+			(artifact) =>
+				artifact.name ===
+				(identity.candidateDigest
+					? `bobs-factory-${target}-${identity.candidateDigest}-${run.run_attempt ?? 1}`
+					: `bobs-factory-${target}-${commit}`),
 		);
 		requireValue(
 			candidates.length === 1,
@@ -336,7 +399,7 @@ export function validateBuildProvenance(run, jobs, artifacts, identity) {
 		requireValue(
 			!artifact.expired &&
 				artifact.workflow_run?.id === runId &&
-				artifact.workflow_run?.head_sha === commit,
+				artifact.workflow_run?.head_sha === (identity.workflowSha ?? commit),
 			`Invalid artifact provenance: ${target}`,
 		);
 		requireValue(
@@ -410,6 +473,13 @@ export function validateArchive(archivePath, manifestPath, identity, target) {
 			manifest.dirty === false,
 		`Candidate manifest does not match reviewed source: ${target}`,
 	);
+	if (identity.candidateDigest)
+		requireValue(
+			manifest.candidateDigest === identity.candidateDigest &&
+				manifest.workflowSha === identity.workflowSha &&
+				manifest.committedVersion === identity.committedVersion,
+			`Candidate recipe mismatch: ${target}`,
+		);
 	validateFile(manifest, `${name}.tar.gz`);
 	requireValue(
 		statSync(archivePath).size === manifest.size &&
@@ -465,6 +535,13 @@ export function validateArchive(archivePath, manifestPath, identity, target) {
 				build.dirty === false,
 			`Embedded build identity mismatch: ${target}`,
 		);
+		if (identity.candidateDigest)
+			requireValue(
+				build.candidateDigest === identity.candidateDigest &&
+					build.workflowSha === identity.workflowSha &&
+					build.committedVersion === identity.committedVersion,
+				`Embedded recipe mismatch: ${target}`,
+			);
 		requireValue(
 			build.tooling?.bun === "1.4.2" &&
 				/^[a-f0-9]{64}$/.test(build.resourceDigest),
@@ -509,6 +586,12 @@ export function validateEvidence(evidence, directory, identity) {
 			evidence.buildRunId === identity.runId,
 		"Release evidence must match exact reviewed candidate and build run",
 	);
+	if (identity.candidateDigest)
+		requireValue(
+			evidence.candidateDigest === identity.candidateDigest &&
+				evidence.workflowSha === identity.workflowSha,
+			"Evidence candidate/recipe mismatch",
+		);
 	const receipt = (record, label, statuses = ["passed"]) => {
 		requireValue(
 			statuses.includes(record?.status),
@@ -529,7 +612,8 @@ export function validateEvidence(evidence, directory, identity) {
 		const receiptPath = realpathSync(resolve(directory, file));
 		requireValue(
 			receiptPath.startsWith(`${realpathSync(directory)}/`) &&
-				statSync(receiptPath).isFile(),
+				statSync(receiptPath).isFile() &&
+				statSync(receiptPath).size > 0,
 			`Receipt is outside evidence directory: ${label}`,
 		);
 		requireValue(
@@ -616,6 +700,33 @@ export function validateEvidence(evidence, directory, identity) {
 		commit === identity.commit,
 		"Source/rebuild archive commit mismatch",
 	);
+	if (identity.candidateDigest) {
+		for (const file of [
+			"candidate.json",
+			"release-tooling.tar.gz",
+			"factory-source.tar.gz",
+			"source-materials.json",
+		])
+			requireValue(
+				listing.includes(`source-rebuild/${file}`),
+				`Source/rebuild material missing: ${file}`,
+			);
+		const frozen = validateCandidate(
+			JSON.parse(
+				execFileSync(
+					"tar",
+					["-xOzf", sourcePath, "source-rebuild/candidate.json"],
+					{ encoding: "utf8" },
+				),
+			),
+		);
+		requireValue(
+			frozen.digest === identity.candidateDigest &&
+				frozen.candidate?.workflowSha === identity.workflowSha &&
+				frozen.candidate?.recipe?.versionOverride === identity.version,
+			"Source recipe mismatch",
+		);
+	}
 	return evidence;
 }
 
@@ -626,6 +737,12 @@ function validateNativeReceiptIdentity(
 	build,
 	validation,
 ) {
+	if (identity.candidateDigest)
+		requireValue(
+			receipt.candidateDigest === identity.candidateDigest &&
+				receipt.workflowSha === identity.workflowSha,
+			`Native receipt candidate/recipe mismatch: ${target}`,
+		);
 	requireValue(
 		receipt?.schemaVersion === 1 &&
 			receipt.product === "bobs-factory" &&
@@ -737,4 +854,43 @@ export function validatePreparedAgentBoundaries(
 	}
 	// Required release checks use mocks; authenticated live tests are manual-only.
 	return receipt;
+}
+
+export function validatePublicInstaller(receipt, identity, target) {
+	requireValue(
+		receipt?.schemaVersion === 1 &&
+			receipt.product === "bobs-factory" &&
+			receipt.validation === "public-installer" &&
+			receipt.status === "passed" &&
+			receipt.scope === "native-archive-controlled-downloads" &&
+			receipt.version === identity.version &&
+			receipt.commit === identity.commit &&
+			receipt.target === target &&
+			receipt.candidateDigest === identity.candidateDigest &&
+			receipt.workflowSha === identity.workflowSha &&
+			[
+				"channelResolution",
+				"exactVersion",
+				"repeatInstall",
+				"badHashPreservesInstallation",
+				"badSizePreservesInstallation",
+				"badSourcePreservesInstallation",
+				"unavailableTargetPreservesInstallation",
+				"badSignaturePreservesInstallation",
+			].every((check) => receipt.checks?.[check] === "passed"),
+		`Missing candidate-bound public installer validation: ${target}`,
+	);
+}
+export function validateDesktopReceipt(receipt, identity, target) {
+	requireValue(
+		receipt?.product === "bobs-factory" &&
+			receipt.status === "passed" &&
+			receipt.version === identity.version &&
+			receipt.commit === identity.commit &&
+			receipt.channel === identity.channel &&
+			receipt.target === target &&
+			receipt.candidateDigest === identity.candidateDigest &&
+			receipt.workflowSha === identity.workflowSha,
+		"Missing candidate-bound desktop validation; retain desktop delivery as blocked",
+	);
 }

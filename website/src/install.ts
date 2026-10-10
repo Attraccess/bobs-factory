@@ -1,29 +1,11 @@
-import metadata from "../public/releases/latest.json";
-import nightlyMetadata from "../public/releases/nightly.json";
-import stableMetadata from "../public/releases/stable.json";
-
+import stable from "../public/releases/latest.json";
+import nightly from "../public/releases/nightly.json";
 export const REPO = "https://github.com/jappyjan/bobs-factory";
 export const INSTALL_COMMAND =
 	"curl -fsSL https://jappyjan.github.io/bobs-factory/install.sh | sh";
-// This also works in the installing terminal, before its PATH is reloaded.
 export const LAUNCH_COMMAND = "~/.local/bin/bobs-factory";
-
-export const release: {
-	status: string;
-	message?: string;
-	version?: string;
-	channel?: "stable" | "nightly" | "prerelease";
-} = {
-	...metadata,
-	channel:
-		"channel" in metadata &&
-		["stable", "nightly", "prerelease"].includes(String(metadata.channel))
-			? (metadata.channel as "stable" | "nightly" | "prerelease")
-			: undefined,
-};
-export const releaseAvailable = release.status === "available";
-
-export type DownloadRelease = {
+export type InstallChannel = "stable" | "nightly";
+export type PublicRelease = {
 	status: string;
 	message?: string;
 	version?: string;
@@ -32,10 +14,15 @@ export type DownloadRelease = {
 	channel?: string;
 	targets?: Record<string, { archive: string }>;
 };
-export const channelDownloads: DownloadRelease[] = [
-	stableMetadata,
-	nightlyMetadata,
-];
-export function channelInstallCommand(channel: string, version?: string) {
-	return `${INSTALL_COMMAND} -s -- --channel ${channel}${version ? ` --version ${version}` : ""}`;
-}
+export const channels: Record<InstallChannel, PublicRelease> = {
+	stable,
+	nightly,
+};
+export const release = channels.stable;
+export const releaseAvailable = release.status === "available";
+export const installCommand = (channel: InstallChannel, version?: string) =>
+	version
+		? `${INSTALL_COMMAND} -s -- --channel ${channel} --version ${version}`
+		: channel === "stable"
+			? INSTALL_COMMAND
+			: `${INSTALL_COMMAND} -s -- --channel nightly`;

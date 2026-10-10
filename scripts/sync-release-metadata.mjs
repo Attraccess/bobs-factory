@@ -1,37 +1,55 @@
 #!/usr/bin/env node
-// Validate both channels completely before replacing any Pages metadata.
-import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+// Verify both channels fully before writing the website build's public pointers.
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { jsonBytes, REPOSITORY } from "./lib/binary-release.mjs";
-import { discoverChannels, githubClient } from "./lib/release-discovery.mjs";
+import { discoverReleases, githubClient } from "./lib/github-release.mjs";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const publicRoot = join(root, "website/public");
-// Discovery is public: never depend on a maintainer token for install availability.
-const { api } = githubClient(null);
-const channels = await discoverChannels(api);
-const pending = (channel) => ({
-	schemaVersion: 2,
-	product: "bobs-factory",
-	repository: REPOSITORY,
-	status: "pending",
-	channel,
-	message: `No verified ${channel} release is available yet.`,
+const root = fileURLToPath(new URL("../", import.meta.url));
+const state = await discoverReleases(githubClient(), undefined, {
+	selectedOnly: true,
 });
-const stable = channels.stable?.manifest ?? pending("stable");
-const nightly = channels.nightly?.manifest ?? pending("nightly");
-// The legacy endpoint preserves beta fallback but can never select nightly.
-const latest =
-	channels.stable?.manifest ??
-	channels.prerelease?.manifest ??
-	pending("stable");
-if (latest.status === "available" && !latest.channel)
-	latest.channel = channels.stable ? "stable" : "prerelease";
-mkdirSync(join(publicRoot, "releases"), { recursive: true });
-for (const [name, manifest] of Object.entries({ stable, nightly, latest }))
-	writeFileSync(join(publicRoot, `releases/${name}.json`), jsonBytes(manifest));
-copyFileSync(join(root, "scripts/install.sh"), join(publicRoot, "install.sh"));
+const directory = join(root, "website/public/releases");
+const outputs = [];
+for (const [channel, name] of [
+	["stable", "latest"],
+	["stable", "stable"],
+	["nightly", "nightly"],
+]) {
+	const selected = state[channel];
+	const pending = jsonBytes({
+		schemaVersion: 2,
+		product: "bobs-factory",
+		repository: REPOSITORY,
+		status: "pending",
+		message: `No verified ${channel} release is available. Publisher signing and complete validation are required.`,
+	});
+	outputs.push([`${name}.json`, selected?.bytes ?? pending]);
+	if (selected) {
+		outputs.push(
+			[`${name}.json.sig`, selected.signature],
+			[`${name}.json.key-id`, `${selected.keyId}\n`],
+		);
+	}
+}
+// The deploy workflow publishes this directory only if the complete website build succeeds.
+mkdirSync(directory, { recursive: true });
+for (const [file, bytes] of outputs)
+	writeFileSync(join(directory, file), bytes);
+for (const name of ["latest", "stable", "nightly"])
+	if (!outputs.some(([file]) => file === `${name}.json.sig`)) {
+		rmSync(join(directory, `${name}.json.sig`), { force: true });
+		rmSync(join(directory, `${name}.json.key-id`), { force: true });
+	}
+copyFileSync(
+	join(root, "scripts/install.sh"),
+	join(root, "website/public/install.sh"),
+);
 console.log(
-	`Prepared stable (${stable.status}) and nightly (${nightly.status}) discovery.`,
+	JSON.stringify({
+		stable: state.stable?.manifest.version ?? "unavailable",
+		nightly: state.nightly?.manifest.version ?? "unavailable",
+		rejected: state.rejected,
+	}),
 );

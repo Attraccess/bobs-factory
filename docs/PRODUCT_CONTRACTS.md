@@ -17,7 +17,9 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | Stock skills / plugin | deployer, runner configs, instructions | `bobs-factory-skills`, `bobs-factory-skills-plugin` | Preserve custom skills and prompts |
 | Certificates / sandbox | worker home, runner environment | `<home>/certs`, `BOBS_FACTORY_*` | Preserve keys, normalize path fields |
 | Prepared Cursor SDK | binary runner / external Node host | `BOBS_FACTORY_CURSOR_SDK_PATH`, `BOBS_FACTORY_CURSOR_NODE` | Keep SDK/native files external; preserve native IDs |
-| Distribution | build, CI, installer, metadata | versioned four-target archives + SHA-256 manifest | Stage replacement separately from mutable state |
+| Distribution | build, CI, installer, metadata | frozen stable/nightly candidates, four-target archives, signed schema-2 manifest + SHA-256 inventory | Stage replacement separately from mutable state; immutable schema-1 beta requires additive signed attestation |
+| Release discovery | installer, Pages, Nix, future updater | stable/default (authenticated beta fallback), explicit nightly, exact version; pinned RSA/SHA-256 keys | Preserve signed bytes; refresh trusted bootstrap for key rotation; no unsigned fallback |
+| Publication | release workflows, publisher | repository-wide lock; retained asset/approval digests and recovery receipts; ordering against complete published provider history | Publication disabled until protected key/rollout setup; stable approval binds exact signed bytes; unknown signing keys cannot hide newer stable releases or bypass nightly eligibility |
 | External wire protocol | upstream HTTP adapters / MCP contexts | `X-Cyrus-Team-Id`, `X-Cyrus-Config-Capabilities`, `x-cyrus-mcp-context-id` | Retain ASCII protocol names; no hosted enrollment |
 | Dashboard access | CLI, FactoryServer, private authentication store | `factory-auth`, `--origin`, `--session-hours`, `BOBS_FACTORY_FACTORY_*`, `<home>/factory/auth` | Preserve authentication files; existing origin bindings require explicit recovery when changed |
 | Terminal dashboard | CLI, FactoryServer, private authentication store | `tui`, `--theme`, `--home`, `--port`, localhost-bound terminal sessions | Local operator filesystem authority; memory-only session hashes, no browser credential or native store migration |
@@ -51,16 +53,8 @@ The issued egress certificate keeps its existing `cyrus-egress-ca.pem` filename
 inside the new home. Migration preserves certificate/key bytes and system trust;
 this retained artifact name does not enable an old command or home fallback.
 
-## Verified binary publication channels
-
-New CLI releases use schema-2 immutable manifests with explicit stable/nightly
-identity, originating source, candidate SHA and a complete four-target/evidence
-inventory. Schema-1 beta releases remain readable through the labelled compatibility
-endpoint. Stable discovery and GitHub latest never select nightly. Nightlies require
-changed main and a six-hour successful-publication cooldown, including manual runs.
-Stable candidates are freshly built from an explicitly selected verified published
-nightly, without newer main changes. Schedule activation requires separately authorized
-rollout; stable publication requires protected individual approval. Matching drafts
-resume uploads, immutable conflicts fail, and identical completed retries only
-synchronize discovery. These operations preserve factory state and native stores.
-See [public release operations](distribution/PUBLIC_RELEASES.md).
+Optional desktop artifacts must match the signed complete inventory, including
+candidate-bound validation receipts. New native builds also retain public installer
+validation against controlled downloads with synthetic signing keys. These receipts
+are tied to the frozen source, release version, tooling SHA and candidate digest;
+production signing and release approval remain separate gates.
