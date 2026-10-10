@@ -399,7 +399,9 @@ try {
 					?.agentRunner?.isRunning(),
 			"first native turn",
 		);
-		const native = internal.agentSessionManager.getSession(nativeId),
+		const currentNative = () =>
+			internal.agentSessionManager.getSession(nativeId);
+		const native = currentNative(),
 			thread = native.codexSessionId;
 		await until(
 			async () => (await internal.runnerSlots.snapshot()).active === 0,
@@ -414,6 +416,8 @@ try {
 			async () => (await internal.runnerSlots.snapshot()).queued > 0,
 			"queued native continuation",
 		);
+		currentNative().metadata.workflowPendingPrompt.attachmentManifest =
+			"Retained QA attachment: note.txt";
 		const impact = await disable("simple");
 		assert(impact.runs.includes(nativeId));
 		assert(runtime.catalog.getBlock(nativeId));
@@ -425,17 +429,26 @@ try {
 			"native queue cancelled",
 		);
 		await blocker.release();
-		assert.equal(native.codexSessionId, thread);
+		assert.equal(currentNative().codexSessionId, thread);
 		await enable("simple");
 		assert(runtime.catalog.getBlock(nativeId));
 		await api(`/api/runs/${nativeId}/resume`, "POST", {}, 202);
 		await until(
 			() =>
-				!native.agentRunner?.isRunning() && !runtime.catalog.getBlock(nativeId),
+				!currentNative().agentRunner?.isRunning() &&
+				!runtime.catalog.getBlock(nativeId),
 			"native individual resume",
 		);
-		assert.equal(native.codexSessionId, thread);
+		assert.equal(currentNative().codexSessionId, thread);
+		assert.strictEqual(currentNative(), native);
 		assert(observed.some((o) => o.resume === thread));
+		assert(
+			inputs.some(
+				(prompt) =>
+					prompt.includes("Continue the same conversation") &&
+					prompt.includes("Retained QA attachment: note.txt"),
+			),
+		);
 		assert(
 			inputs.some((prompt) =>
 				prompt.includes("Continue the same conversation"),
@@ -448,28 +461,77 @@ try {
 			message: "Active interrupted turn",
 		});
 		await until(
-			() => nativeStarted && native.agentRunner?.isRunning(),
+			() => nativeStarted && currentNative().agentRunner?.isRunning(),
 			"active native turn",
 		);
 		await disable("simple");
 		holdNative = false;
 		await until(
 			async () =>
-				!native.agentRunner?.isRunning() &&
+				!currentNative().agentRunner?.isRunning() &&
 				(await internal.runnerSlots.snapshot()).active === 0,
 			"active native stopped and capacity released",
 		);
-		assert.equal(native.codexSessionId, thread);
+		assert.equal(currentNative().codexSessionId, thread);
 		assert(runtime.catalog.getBlock(nativeId));
 		await enable("simple");
 		await api(`/api/runs/${nativeId}/resume`, "POST", {}, 202);
-		assert.equal(native.codexSessionId, thread);
+		assert.equal(currentNative().codexSessionId, thread);
 		assert(
 			inputs.filter((prompt) => prompt.includes("Active interrupted turn"))
 				.length >= 2,
 		);
 		console.log(
 			"PASS active native interruption, confirmed stop and same-conversation Resume",
+		);
+
+		// A failed recovery must retain the block and pending input, then permit
+		// explicit continuation when the saved repository becomes available.
+		holdNative = true;
+		nativeStarted = false;
+		await rpc("promptSession", {
+			sessionId: nativeId,
+			message: "Recover only in the saved repository",
+		});
+		await until(
+			() => nativeStarted && currentNative().agentRunner?.isRunning(),
+			"repository recovery turn started",
+		);
+		const pendingInput = structuredClone(
+			currentNative().metadata.workflowPendingPrompt,
+		);
+		await disable("simple");
+		holdNative = false;
+		await until(
+			async () =>
+				!currentNative().agentRunner?.isRunning() &&
+				(await internal.runnerSlots.snapshot()).active === 0,
+			"repository recovery stop",
+		);
+		await enable("simple");
+		const savedBlock = structuredClone(runtime.catalog.getBlock(nativeId));
+		const savedRepository = internal.repositories.get("repo");
+		internal.repositories.delete("repo");
+		const failure = await api(`/api/runs/${nativeId}/resume`, "POST", {}, 409);
+		assert.match(failure.error, /repository is unavailable/);
+		assert.deepEqual(runtime.catalog.getBlock(nativeId), savedBlock);
+		assert.deepEqual(
+			currentNative().metadata.workflowPendingPrompt,
+			pendingInput,
+		);
+		assert.equal(
+			internal
+				.getLaunchAdmission()
+				.values()
+				.find((r: any) => r.sessionId === nativeId).phase,
+			"recovery",
+		);
+		internal.repositories.set("repo", savedRepository);
+		await api(`/api/runs/${nativeId}/resume`, "POST", {}, 202);
+		assert.equal(currentNative().codexSessionId, thread);
+		assert(!runtime.catalog.getBlock(nativeId));
+		console.log(
+			"PASS retained attachment, current session identity, missing-repository rejection and explicit recovery",
 		);
 		const timeline = await rpc("viewSession", {
 			sessionId: nativeId,
@@ -565,6 +627,8 @@ try {
 						"blocked restart",
 						"native queue interruption",
 						"native Resume",
+						"retained native attachment and live session identity",
+						"missing repository preserves block and pending input",
 						"operator manual Simple Resume",
 						"HTTP import/export",
 					],

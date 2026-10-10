@@ -5447,6 +5447,18 @@ ${taskSection}`;
 		const receipt = this.launchAdmission
 			?.values()
 			.find((item) => item.sessionId === session.id);
+		// A recovery receipt also records interrupted continuation. Once native
+		// Simple has a conversation, resume it rather than rebuilding its startup.
+		if (
+			(receipt?.launch?.workflow.id ?? session.triggerOrigin?.workflowId) ===
+				"simple" &&
+			(session.claudeSessionId ||
+				session.codexSessionId ||
+				session.geminiSessionId ||
+				session.cursorSessionId ||
+				session.opencodeSessionId)
+		)
+			return false;
 		return (
 			receipt?.phase === "recovery" ||
 			Boolean(
@@ -5594,9 +5606,8 @@ ${taskSection}`;
 			if (
 				receipt.phase !== "settled" &&
 				!this.getFactoryRuntime().runs.has(receipt.sessionId) &&
-				(receipt.phase === "recovery" ||
-					(["starting", "started"].includes(receipt.phase) &&
-						(!session || this.ticketStartupIsIncomplete(session))))
+				["starting", "started", "recovery"].includes(receipt.phase) &&
+				(!session || this.ticketStartupIsIncomplete(session))
 			) {
 				this.getLaunchAdmission().update(receipt, { phase: "recovery" });
 				if (session) session.status = AgentSessionStatus.Error;
@@ -5777,12 +5788,16 @@ ${taskSection}`;
 	private async startAcceptedTicketLaunch(
 		receipt: TicketLaunchReceipt,
 		repos: RepositoryConfig[],
+		propagateFailure = false,
 	): Promise<void> {
 		if (
 			this.inFlightTicketStarts.has(receipt.key) ||
 			receipt.phase === "settled"
-		)
+		) {
+			if (propagateFailure)
+				throw new Error("Ticket startup is already running or was stopped");
 			return;
+		}
 		this.inFlightTicketStarts.add(receipt.key);
 		const { webhook } = receipt;
 		this.pendingTriggerOrigins.set(receipt.sessionId, receipt.origin);
@@ -5791,15 +5806,22 @@ ${taskSection}`;
 			if (
 				this.getLaunchAdmission().get(webhook.organizationId, receipt.sessionId)
 					?.phase === "settled"
-			)
+			) {
+				if (propagateFailure) throw new Error("Ticket launch was stopped");
 				return; // Stop during preflight.
-			await this.routeAcceptedTicketLaunch(webhook, repos);
+			}
+			await this.routeAcceptedTicketLaunch(webhook, repos, propagateFailure);
+			if (propagateFailure && receipt.phase !== "started")
+				throw new Error(
+					"Ticket startup did not complete; ownership is retained",
+				);
 		} catch (error) {
 			const phase =
 				this.getLaunchAdmission().get(webhook.organizationId, receipt.sessionId)
 					?.phase === "settled"
 					? "settled"
-					: receipt.phase === "starting" ||
+					: propagateFailure ||
+							receipt.phase === "starting" ||
 							this.agentSessionManager.getSession(receipt.sessionId)
 						? "recovery"
 						: "settled";
@@ -5808,6 +5830,7 @@ ${taskSection}`;
 				webhook,
 				`${error instanceof Error ? error.message : String(error)}${phase === "recovery" ? " Startup was interrupted; ownership is retained to prevent duplicate work. Inspect the existing session, or send stop before launching a new session." : " Check the workflow ID, labels, default and ticket-assignment permission in Recipes; no fallback was launched."}`,
 			);
+			if (propagateFailure) throw error;
 		} finally {
 			this.inFlightTicketStarts.delete(receipt.key);
 			await this.savePersistedState();
@@ -5833,6 +5856,7 @@ ${taskSection}`;
 	private async routeAcceptedTicketLaunch(
 		webhook: AgentSessionCreatedWebhook,
 		repos: RepositoryConfig[],
+		requireStartup = false,
 	): Promise<void> {
 		const issueId = webhook.agentSession?.issue?.id;
 
@@ -5860,6 +5884,8 @@ ${taskSection}`;
 				);
 
 			if (routingResult.type === "none") {
+				if (requireStartup)
+					throw new Error("Session repository is unavailable");
 				this.settleTicketLaunch(webhook.agentSession.id);
 				if (process.env.BOBS_FACTORY_WEBHOOK_DEBUG === "true") {
 					this.logger.info(
@@ -7447,10 +7473,18 @@ ${taskSection}`;
 			.find((r) => r.sessionId === id);
 		try {
 			if (receipt && (!session || this.ticketStartupIsIncomplete(session))) {
+				if (
+					session?.repositories.some(
+						(repo) => !this.repositories.has(repo.repositoryId),
+					)
+				)
+					throw new Error("Session repository is unavailable");
 				runtime.catalog.clearBlock(id);
-				await this.startAcceptedTicketLaunch(receipt, [
-					...this.repositories.values(),
-				]);
+				await this.startAcceptedTicketLaunch(
+					receipt,
+					[...this.repositories.values()],
+					true,
+				);
 				return;
 			}
 			if (!session) throw new Error("Saved native session not found");
