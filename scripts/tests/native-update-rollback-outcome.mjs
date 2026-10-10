@@ -83,14 +83,14 @@ async function run({ name, candidate, previous, expectedHealthy }) {
 	writeFileSync(join(home, "config.json"), jsonBytes({ repositories: [] }));
 	const before = readFileSync(stateFile, "utf8");
 	const port = await unusedPort();
-	let stdout = "";
 	let stderr = "";
 	const child = spawn(
 		executable,
 		["--home", home, "--port", String(port), "--no-open", "local"],
 		{ env, stdio: ["ignore", "pipe", "pipe"] },
 	);
-	child.stdout.on("data", (chunk) => (stdout += chunk));
+	// Startup logs can contain one-time local enrollment codes. Never retain them.
+	child.stdout.on("data", () => {});
 	child.stderr.on("data", (chunk) => (stderr += chunk));
 	const closed = new Promise((done) =>
 		child.once("close", (code, signal) => done({ code, signal })),
@@ -124,7 +124,6 @@ async function run({ name, candidate, previous, expectedHealthy }) {
 			startupError: stderr
 				.split("\n")
 				.filter((line) => /Fatal error|outcome rolled-back/.test(line)),
-			stdout: stdout.slice(-1000),
 		};
 	} finally {
 		if (child.exitCode === null) child.kill("SIGTERM");
