@@ -34,6 +34,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Prioritize eligible jobs from older workflow runs within instance capacity, preserving interactive positions, background turns and restart ordering ([#72](https://github.com/jappyjan/bobs-factory/pull/72), [Taskbot #89](https://taskbot.apps.janjaap.de/p/bobs-factory/t/89)).
 - Clear private dashboard content and unsent edits on connection loss, verify the session again after reconnecting, and document protected remote access, passkey management and mobile rollout checks. ([Taskbot #40](https://taskbot.apps.janjaap.de/p/bobs-factory/t/40), [#71](https://github.com/JappyJan/bobs-factory/pull/71))
 
 - Default Codex execution to full host access so installed shell commands, process inspection and local browsers can run; preserve explicit `workspace-write` and `read-only` settings and managed tool-source conflict checks. ([#69](https://github.com/jappyjan/bobs-factory/pull/69))

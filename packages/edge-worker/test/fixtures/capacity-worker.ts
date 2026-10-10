@@ -8,6 +8,15 @@ const work = async (kind: string, duration: number) => {
 	const lease = await capacity.acquireLease(undefined, {
 		identity: `${home}:${kind}`,
 		recoverable: true,
+		workflowRun: mode?.startsWith("workflow-")
+			? {
+					identity: home!,
+					createdAt:
+						mode === "workflow-old"
+							? "2026-10-08T00:00:00Z"
+							: "2026-10-09T00:00:00Z",
+				}
+			: undefined,
 		onChange: (request) =>
 			process.send?.({
 				phase: request?.phase,
@@ -31,7 +40,8 @@ const work = async (kind: string, duration: number) => {
 	await lease.release();
 };
 if (mode === "orphan") await work("orphan", 60000);
-else if (mode === "queued") await work("queued", 180);
+else if (mode === "queued" || mode?.startsWith("workflow-"))
+	await work(mode!, 180);
 else
 	await Promise.all([
 		work("agent", 180),
