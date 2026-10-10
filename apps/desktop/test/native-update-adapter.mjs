@@ -43,15 +43,17 @@ const receipts = [];
 const crashChild = process.env.FACTORY_NATIVE_CRASH_HOME;
 for (const mode of crashChild
 	? ["success"]
-	: ["success", "failed-health", "lost-release-ack"]) {
+	: ["success", "failed-health", "lost-release-ack", "lost-rollback-ack"]) {
 	if (
 		!crashChild &&
 		process.env.FACTORY_NATIVE_TEST_MODE &&
 		process.env.FACTORY_NATIVE_TEST_MODE !== mode
 	)
 		continue;
-	const failHealth = mode === "failed-health";
-	const failReleaseAck = mode === "lost-release-ack";
+	const failHealth = mode === "failed-health" || mode === "lost-rollback-ack";
+	const failReleaseAck =
+		mode === "lost-release-ack" || mode === "lost-rollback-ack";
+	const expectedOutcome = failHealth ? "rolled-back" : "succeeded";
 	const home = realpathSync(
 		crashChild ?? mkdtempSync(join(tmpdir(), "factory-native-update-")),
 	);
@@ -105,7 +107,8 @@ for (const mode of crashChild
 			if (
 				failReleaseAck &&
 				!releaseAckLost &&
-				realpathSync(link) === realpathSync(join(newDirectory, "bobs-factory"))
+				JSON.parse(readFileSync(join(home, "updates", "state.json"), "utf8"))
+					.transaction?.release?.outcome === expectedOutcome
 			) {
 				releaseAckLost = true;
 				throw Error(
@@ -223,7 +226,7 @@ for (const mode of crashChild
 		}
 		if (failReleaseAck) {
 			assert.equal(result.transaction.phase, "recovery-required");
-			assert.equal(result.transaction.release.outcome, "succeeded");
+			assert.equal(result.transaction.release.outcome, expectedOutcome);
 			assert.equal(result.transaction.release.status, "pending");
 			const activatedOwner = workerOwner(home);
 			const fresh = new UpdateManager(
