@@ -30,7 +30,7 @@ jobs:
         name: Freeze exact unsigned preparation source/tooling
         env:
           EVENT_NAME: ${{ github.event_name }}
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || fromJSON(inputs.candidate_json).candidate.workflowSha }}
           CANDIDATE_JSON: ${{ inputs.candidate_json }}
           PREPARATION_SEQUENCE: ${{ github.run_number }}
         run: |
