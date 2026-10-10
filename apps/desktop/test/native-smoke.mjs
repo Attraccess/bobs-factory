@@ -250,7 +250,15 @@ void (async () => {
 		);
 
 		reportedError = undefined;
-		dialog.showMessageBox = async () => ({ response: 1 });
+		let stopReported = false;
+		dialog.showMessageBox = async (options) => {
+			if (
+				options.message ===
+				"Factory stopped. Open local Factory to start it again."
+			)
+				stopReported = true;
+			return { response: 1 };
+		};
 		// Native menu confirms explicit Stop; UI close never did.
 		menu.items[0].submenu.items
 			.find((i) => i.label === "Stop local Factory…")
@@ -263,6 +271,7 @@ void (async () => {
 				return error.code === "ENOENT";
 			}
 		});
+		await until(() => stopReported);
 		workerPid = undefined;
 		await assert.rejects(lifecycle.start(), /Deliberate Stop/);
 		await lifecycle.restartCrashedDesktop();
