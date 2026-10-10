@@ -753,6 +753,7 @@ export class ChatSessionHandler<TEvent> {
 		this.deps.requireWorkflowAvailable?.(id);
 		const resume = this.getResumeInfo(session);
 		if (!resume) throw new Error("Native chat conversation is unavailable");
+		// Continue the saved turn with its accepted model and queued input.
 		await this.resumeSession(
 			undefined,
 			session,
@@ -761,6 +762,8 @@ export class ChatSessionHandler<TEvent> {
 			resume.runnerType,
 			session.metadata?.pendingExecution?.prompt ??
 				"Resume interrupted work using prior conversation and tool results.",
+			undefined,
+			true,
 		);
 	}
 	get platformName(): ChatPlatformName {

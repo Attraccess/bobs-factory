@@ -32,6 +32,7 @@ async function fixture(
 	const runners: any[] = [];
 	let configReads = 0;
 	let threadReads = 0;
+	let currentModel = "accepted-chat-model";
 	const notifyBusy = vi.fn(async () => {});
 	const onNewSession = vi.fn();
 	const persistence = new PersistenceManager(join(home, "state"));
@@ -84,7 +85,7 @@ async function fixture(
 				return {};
 			},
 			runnerConfigBuilder: {
-				buildChatConfig: (input: unknown) => input,
+				buildChatConfig: (input: object) => ({ ...input, model: currentModel }),
 			} as any,
 			createRunner: (config, _runnerType, signal) => {
 				const finished = deferred();
@@ -154,8 +155,43 @@ async function fixture(
 		persistMessage,
 		persistence,
 		worker,
+		setCurrentModel: (model: string) => {
+			currentModel = model;
+		},
 	};
 }
+
+it.each([
+	"slack",
+	"zulip",
+] as const)("restores the accepted model and pending dashboard input on explicit %s Resume", async (platform) => {
+	const f = await fixture(platform, "catchup");
+	f.gate.resolve();
+	await f.handler.sendMessage(f.session.id, "Interrupted dashboard turn");
+	await vi.waitFor(() => expect(f.starts).toHaveLength(2));
+	const pending = structuredClone(f.session.metadata?.pendingExecution);
+	f.runners[1].stop();
+	await vi.waitFor(() =>
+		expect(f.handler.isWorkflowStopping(f.session.id)).toBe(false),
+	);
+	const saved = f.handler.serializeState();
+	f.handler.restoreState(saved.sessions, saved.entries);
+	f.setCurrentModel("future-chat-model");
+
+	await f.handler.resumeBlockedSession(f.session.id);
+	const restored = f.handler.getAllChatSessions()[0]!;
+	expect(f.runners[2].config.model).toBe("accepted-chat-model");
+	expect(f.runners[2].config.resumeSessionId).toBe("native-chat");
+	expect(restored.codexSessionId).toBe("native-chat");
+	expect(restored.metadata?.pendingExecution).toEqual(pending);
+	expect(f.starts).toEqual([
+		"Initial task",
+		"Interrupted dashboard turn",
+		"Interrupted dashboard turn",
+	]);
+	await f.runners[2].finish();
+	expect(restored.status).toBe(AgentSessionStatus.Complete);
+});
 
 it.each([
 	"slack",
