@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve explicit stable channel selection and generated package channel identity through the npx bootstrap; on cancellation, stop and confirm the installer-owned process group before removing its temporary runtime or lock. ([Taskbot bobs-factory #118](https://taskbot.apps.janjaap.de/p/bobs-factory/t/118), [#123](https://taskbot.apps.janjaap.de/p/bobs-factory/t/123), [#84](https://github.com/jappyjan/bobs-factory/pull/84))
 - Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 
 - Integrate external ticket delivery with main’s shared operator recovery and run-age scheduling, preserving conflict-safe retries and acceptance bindings ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).

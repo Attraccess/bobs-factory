@@ -81,7 +81,7 @@ jobs:
         env:
           VERSION: ${{ fromJSON(inputs.candidate_json).candidate.version }}
           TARGET: ${{ matrix.target }}
-        run: BOBS_FACTORY_TRIAL_SMOKE_BINARY="$RUNNER_TEMP/factory-prefix/bin/bobs-factory" node --test tooling/scripts/tests/trial-launcher.test.mjs
+        run: BOBS_FACTORY_TRIAL_SMOKE_BINARY="$RUNNER_TEMP/factory-prefix/bin/bobs-factory" node --test tooling/scripts/tests/trial-launcher.test.mjs tooling/scripts/tests/trial-launcher-bootstrap.test.mjs
       - name: Publisher signature interoperability
         run: node --test tooling/scripts/tests/release-signature.test.mjs
       - uses: actions/upload-artifact@v6
