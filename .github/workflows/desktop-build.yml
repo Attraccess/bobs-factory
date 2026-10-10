@@ -1,0 +1,120 @@
+name: Prepare unsigned desktop candidate
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      candidate_json:
+        description: Frozen candidate.json bytes (preparation only, never signing/publication)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  freeze:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.ref == 'feat/desktop-service-121-122-124' && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-24.04
+    outputs:
+      candidate_json: ${{ steps.freeze.outputs.candidate_json }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || fromJSON(inputs.candidate_json).candidate.workflowSha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - id: freeze
+        name: Freeze exact unsigned preparation source/tooling
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || fromJSON(inputs.candidate_json).candidate.workflowSha }}
+          CANDIDATE_JSON: ${{ inputs.candidate_json }}
+          PREPARATION_SEQUENCE: ${{ github.run_number }}
+        run: |
+          node --input-type=module <<'JS'
+          import {appendFileSync, readFileSync} from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          import {freezeCandidate,validateCandidate} from './scripts/lib/release-candidate.mjs';
+          const head=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
+          if(head!==process.env.SOURCE_SHA)throw Error('Preparation must use exact event head, never synthetic PR merge');
+          const frozen=process.env.EVENT_NAME==='pull_request'
+            ? freezeCandidate({channel:'nightly',commit:head,workflowSha:head,committedVersion:JSON.parse(readFileSync('apps/cli/package.json')).version,sequence:Number(process.env.PREPARATION_SEQUENCE),date:new Date().toISOString()})
+            : validateCandidate(JSON.parse(process.env.CANDIDATE_JSON));
+          if(frozen.candidate.workflowSha!==head)throw Error('Frozen tooling differs from selected event head');
+          appendFileSync(process.env.GITHUB_OUTPUT,'candidate_json='+JSON.stringify(frozen)+'\n');
+          console.log(JSON.stringify({preparationOnly:true,publication:false,source:frozen.candidate.commit,tooling:head,digest:frozen.digest,version:frozen.candidate.version}));
+          JS
+  desktop:
+    needs: freeze
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ fromJSON(needs.freeze.outputs.candidate_json).candidate.workflowSha }}
+          path: tooling
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ fromJSON(needs.freeze.outputs.candidate_json).candidate.commit }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - name: Verify frozen preparation identity
+        env:
+          CANDIDATE_JSON: ${{ needs.freeze.outputs.candidate_json }}
+        run: |
+          node --input-type=module <<'JS'
+          import {writeFileSync} from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          import {validateCandidate} from './tooling/scripts/lib/release-candidate.mjs';
+          const c=validateCandidate(JSON.parse(process.env.CANDIDATE_JSON));
+          for(const [path,expected] of [['tooling',c.candidate.workflowSha],['source',c.candidate.commit]])if(execFileSync('git',['-C',path,'rev-parse','HEAD'],{encoding:'utf8'}).trim()!==expected)throw Error('Frozen checkout identity mismatch');
+          writeFileSync(process.env.RUNNER_TEMP+'/candidate.json',process.env.CANDIDATE_JSON);
+          JS
+          corepack enable
+          corepack prepare "$(node -p 'require("./source/package.json").packageManager')" --activate
+      - run: pnpm install --frozen-lockfile
+        working-directory: source
+      - run: pnpm --filter 'bobs-factory...' build
+        working-directory: source
+      - run: pnpm --filter bobs-factory-desktop test
+        working-directory: source
+      - name: Build matching native runtime and desktop installers
+        env:
+          VERSION: ${{ fromJSON(needs.freeze.outputs.candidate_json).candidate.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          bun run tooling/scripts/build-binary.ts --source-root source --candidate "$RUNNER_TEMP/candidate.json" --release-version "$VERSION" --target "$TARGET" --output "$RUNNER_TEMP/runtime"
+          node tooling/scripts/build-desktop.mjs --source-root source --candidate "$RUNNER_TEMP/candidate.json" --runtime "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" --output "$RUNNER_TEMP/desktop"
+      - name: Validate isolated native user-service ownership
+        env:
+          VERSION: ${{ fromJSON(needs.freeze.outputs.candidate_json).candidate.version }}
+          TARGET: ${{ matrix.target }}
+        run: node source/scripts/native-service-smoke.mjs "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" > "$RUNNER_TEMP/desktop/native-service-receipt.json"
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: desktop-${{ matrix.target }}-${{ fromJSON(needs.freeze.outputs.candidate_json).digest }}
+          path: ${{ runner.temp }}/desktop/
