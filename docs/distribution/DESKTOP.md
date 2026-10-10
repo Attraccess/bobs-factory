@@ -111,6 +111,8 @@ release licensing acceptance. The frozen ed7/58 packages predate this correction
 their runtime notice files do not prove Electron/Chromium notice inclusion.
 Runtime source/rebuild material and reviewed licensing receipts remain separate
 release gates.
+The [complete-shell validation report](../../apps/f1/test-drives/2026-10-10-desktop-shell-update.md)
+preserves exact candidate hashes, actual native notice receipts and their limits.
 
 Electron 44 Touch ID requires an approved code-signing keychain access group and
 matching entitlement. `BOBS_FACTORY_WEBAUTHN_ACCESS_GROUP` enables the configured

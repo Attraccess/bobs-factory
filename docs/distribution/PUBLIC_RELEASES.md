@@ -263,11 +263,16 @@ release so the exact approval and validation remain inspectable.
 To assemble reviewed material, use `scripts/build-release-source.mjs --sha
 FULL_SHA --candidate FILE --materials DIRECTORY --output EMPTY_DIRECTORY`. The input directory
 contains precise reviewed rebuild/relink instructions in `README.md`, regular
-source files/archives, and `source-materials.json` with `schemaVersion: 1`, exact
-`commit`, `bunVersion: "1.4.2"` and `records`. Each record names its `kind`, flat
+source files/archives, and `source-materials.json` with `schemaVersion: 2`, exact
+`commit`, `version`, `workflowSha`, `candidateDigest`, `bunVersion: "1.4.2"`,
+`records`, `patches` and per-target `builds`. Each record names its `kind`, flat
 `file`, HTTPS `source`, exact `revision`, byte `size` and `sha256`. Include a
 `bun` record named `bun-source.tar.gz`, the exact patched `webkit` source and
 any corresponding dependency/library source required by the licensing review.
+Native object, build-config and actual relink-log records bind the same frozen
+candidate and target. Follow the maintained
+[source-material assembly and bounded intake contract](source-materials/README.md);
+legacy beta source bytes and independent approval receipts remain unchanged.
 The tool adds `factory-source.tar.gz`
 from the exact committed Git tree, its lockfile, commit and material inventory,
 then emits `source-rebuild.tar.gz` and its `source-record.json`. These integrity

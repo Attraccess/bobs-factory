@@ -1,0 +1,33 @@
+{
+	"conclusion": "success",
+	"headSha": "b6917edb845ac482f3910cc98525d75e5cd67c05",
+	"jobs": [
+		{
+			"conclusion": "success",
+			"name": "freeze",
+			"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38082354282/job/114301698344"
+		},
+		{
+			"conclusion": "success",
+			"name": "desktop (linux-x64, ubuntu-24.04)",
+			"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38082354282/job/114301753671"
+		},
+		{
+			"conclusion": "success",
+			"name": "desktop (darwin-x64, macos-15-intel)",
+			"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38082354282/job/114301753678"
+		},
+		{
+			"conclusion": "success",
+			"name": "desktop (darwin-arm64, macos-15)",
+			"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38082354282/job/114301753688"
+		},
+		{
+			"conclusion": "success",
+			"name": "desktop (linux-arm64, ubuntu-24.04-arm)",
+			"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38082354282/job/114301753711"
+		}
+	],
+	"status": "completed",
+	"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38082354282"
+}
