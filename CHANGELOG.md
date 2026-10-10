@@ -14,6 +14,8 @@ All notable changes to this project will be documented in this file.
 
 - Prepare frozen stable and nightly binary candidates with signed channel discovery, exact-asset stable approval and recoverable publication. Check stable ordering against complete provider history, block nightly eligibility when the latest published nightly cannot be verified, authenticate efficient website discovery, and explain unavailable installer channels. Nightlies remain opt-in and publication stays disabled pending protected signing and rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117), [#70](https://github.com/jappyjan/bobs-factory/pull/70)).
 
+- Retain Taskbot #116’s controlled signed-delivery evidence, exact source and harness bindings, receipts, and reproduction scripts; the 23/23 result remains scoped to the tested darwin-arm64 source and preserves historical failures and limitations ([Taskbot #116](https://taskbot.apps.janjaap.de/p/bobs-factory/t/116), [#87](https://github.com/jappyjan/bobs-factory/pull/87)).
+
 ### Fixed
 
 - Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
