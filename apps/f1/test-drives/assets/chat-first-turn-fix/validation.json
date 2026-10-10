@@ -1,0 +1,41 @@
+{
+	"testedRevision": "ccc84e6bdd3faa7c27c3360840701f8b0f420ba9",
+	"mode": "mock",
+	"result": "passed",
+	"focusedTests": 90,
+	"testSuites": 8,
+	"sourceSha256": {
+		"packages/core/src/CyrusAgentSession.ts": "12b560498820b2a093880f741a66c5d10bed6033c6a1e9d02265eb1677bea132",
+		"packages/edge-worker/src/ChatSessionHandler.ts": "22c59177840bf4c27c1651839df60d30dc95d147e6f3fd0f4c1114a1a08e1241",
+		"packages/edge-worker/src/RunnerConcurrency.ts": "2ba5eae39eefac27ba91519a73258905509da3c525c79278a2b8db8289dae06e",
+		"packages/edge-worker/src/EdgeWorker.ts": "a4d23225579cb7030a21af096d273baf2467ec0c93b9fc11e4a8c60a4f25dfe6",
+		"packages/edge-worker/test/ChatSessionHandler.model-recovery.test.ts": "dc4810864b7ac8707961b2e1dd0809ec4cdfce7c0a2a94d0cbfe2c9fd809408e",
+		"packages/edge-worker/test/RunnerConcurrency.test.ts": "22ffc0c56ed63853d399af22c98176b493babb677016a901cb0ab116134cca82"
+	},
+	"fixtureSha256": {
+		"/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-first-turn-fix/queued-first-chat-f1.ts": "3b124efc8a14a6ad67d3c2efbb1256f899dbb77b5b63cd5dbba7d61bf59e6c44",
+		"/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-first-turn-fix/established-chat-f1.ts": "a939545790fcb433328858dcd49775f932a693bdeab7355426e7b99bc33ba379",
+		"/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-native-thread-fix/qa-clean-run.py": "f00a83a665bccd8c2687551db2d71aafdacb1ce0775a53adfaf5ec7899476088"
+	},
+	"checks": {
+		"queuedInitialChatF1": "passed for Slack and Zulip",
+		"establishedChatF1": "passed",
+		"workspaceBuild": "passed in commit hook",
+		"workspaceTypecheck": "passed in commit hook",
+		"workspaceLint": "passed with 19 existing warnings",
+		"diffCheck": "passed"
+	},
+	"logs": {
+		"tests.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-first-turn-fix/tests.log",
+		"f1.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-first-turn-fix/f1.log",
+		"established-f1.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-first-turn-fix/established-f1.log",
+		"commit-checks.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-first-turn-fix/commit-checks.log",
+		"lint.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-first-turn-fix/lint.log"
+	},
+	"limitations": [
+		"Provider execution, chat transports and title jobs are simulated.",
+		"Older chat records without saved startup history cannot prove that execution never started; missing conversation IDs remain recovery errors.",
+		"No UI changes; previously accepted visual evidence remains applicable.",
+		"External ticket synchronization remains unconfirmed."
+	]
+}
