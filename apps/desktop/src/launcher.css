@@ -1,1 +1,40 @@
-:root{font:16px system-ui;color-scheme:light dark}body{margin:0;background:#182225;color:#f4f4ed}main{max-width:520px;margin:64px auto;padding:24px}h1{font-size:36px}p{line-height:1.6;color:#becac8}input,button{display:block;box-sizing:border-box;width:100%;padding:12px;border-radius:8px;border:1px solid #8ca6a0;margin:12px 0;font:inherit}button{background:#cdeaa8;color:#182225;cursor:pointer}#status{color:#ffd0a8}
+:root {
+	font: 16px system-ui;
+	color-scheme: light dark;
+}
+body {
+	margin: 0;
+	background: #182225;
+	color: #f4f4ed;
+}
+main {
+	max-width: 520px;
+	margin: 64px auto;
+	padding: 24px;
+}
+h1 {
+	font-size: 36px;
+}
+p {
+	line-height: 1.6;
+	color: #becac8;
+}
+input,
+button {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	padding: 12px;
+	border-radius: 8px;
+	border: 1px solid #8ca6a0;
+	margin: 12px 0;
+	font: inherit;
+}
+button {
+	background: #cdeaa8;
+	color: #182225;
+	cursor: pointer;
+}
+#status {
+	color: #ffd0a8;
+}
