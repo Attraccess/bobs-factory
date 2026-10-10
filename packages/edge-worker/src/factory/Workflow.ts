@@ -33,6 +33,8 @@ export const AgentStepSchema = z.object({
 	reviewContract: z
 		.enum(["inventory-v1", "specialist-v1", "coverage-v1"])
 		.optional(),
+	/** Guide steps opt into the review brief; absent keeps the chapter guide. */
+	guideContract: z.literal("brief-v1").optional(),
 	computeIntensive: z.never().optional(),
 	prompt: z.string().min(1),
 	inputs: z.array(z.string()).optional(),
@@ -55,6 +57,7 @@ export interface WorkflowStep {
 	videoContract?: "video-v1";
 	review?: { inventory: string; fanout?: string };
 	reviewContract?: "inventory-v1" | "specialist-v1" | "coverage-v1";
+	guideContract?: "brief-v1";
 	prompt?: string;
 	inputs?: string[];
 	runner?: AgentStep["runner"];

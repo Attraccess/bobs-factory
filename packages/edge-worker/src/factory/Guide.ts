@@ -1,6 +1,14 @@
-import { defaultWorkflows } from "./defaultWorkflows.js";
 import { GeneratedGuideSchema, GuideSchema } from "./FactoryResults.js";
-import { OutputValidationError } from "./OutputValidation.js";
+import { legacyGuidePrompt } from "./legacyGuidePrompt.js";
+import {
+	OutputValidationError,
+	outputValidationError,
+} from "./OutputValidation.js";
+import {
+	GeneratedBriefSchema,
+	isReviewBrief,
+	validateBriefCoverage,
+} from "./ReviewBrief.js";
 import {
 	activeRequirements,
 	aggregateForContext,
@@ -14,6 +22,10 @@ export function validateGuideCoverage(
 	context: ExecutionContext,
 	value: unknown,
 ): void {
+	if (isReviewBrief(value)) {
+		validateBriefCoverage(context, value);
+		return;
+	}
 	const guide = GuideSchema.parse(value);
 	const aggregate = aggregateForContext(context);
 	if (aggregate) {
@@ -48,11 +60,10 @@ export function validateGuideCoverage(
 				);
 		}
 	}
-	const stock = defaultWorkflows
-		.find((w) => w.id === "factory-pipeline")!
-		.steps.find((s) => s.id === "guide")!;
+	// Chapter guides authored from any release of the stock chapter prompt.
+	const stockPrompt = context.step.prompt?.startsWith(legacyGuidePrompt);
 	if (!guide.chapters) {
-		if (context.step.prompt === stock.prompt)
+		if (stockPrompt)
 			throw new Error(
 				"The review guide needs feature chapters covering the whole PR",
 			);
@@ -150,7 +161,7 @@ export function validateGuideCoverage(
 					"The accepted QA scope contains nonvisual changes; classify as nonvisual and supply a system map",
 			},
 		]);
-	if (!scope && context.step.prompt === stock.prompt && !context.step.inputs)
+	if (!scope && stockPrompt && !context.step.inputs)
 		throw new Error(
 			"Whole-PR revision scope is unavailable; cannot produce a complete guide",
 		);
@@ -188,8 +199,55 @@ export function validateGuideCoverage(
 		);
 }
 
+/**
+ * Validate a newly authored guide. Briefs report authoring-rule and evidence
+ * problems together, so one correction round can fix them all.
+ */
+export function validateGuide(context: ExecutionContext, value: unknown): void {
+	if (!isReviewBrief(value)) {
+		GeneratedGuideSchema.parse(value);
+		validateGuideCoverage(context, value);
+		return;
+	}
+	const issues: OutputValidationError["issues"] = [];
+	const add = (error: unknown) => {
+		for (const issue of outputValidationError(value, error).issues)
+			if (
+				!issues.some(
+					(i) => i.path === issue.path && i.message === issue.message,
+				)
+			)
+				issues.push(issue);
+	};
+	const authored = GeneratedBriefSchema.safeParse(value);
+	if (!authored.success) add(authored.error);
+	try {
+		validateBriefCoverage(context, value);
+	} catch (error) {
+		add(error);
+	}
+	if (issues.length) throw new OutputValidationError(value, issues);
+}
+
 export function validateGuideGeneration(value: unknown): void {
-	GeneratedGuideSchema.parse(value);
+	if (isReviewBrief(value)) GeneratedBriefSchema.parse(value);
+	else GeneratedGuideSchema.parse(value);
+}
+
+/** Brief steps own their contract; agents never need to author it. */
+export function stampGuideContract(
+	step: { id: string; guideContract?: string },
+	value: unknown,
+): unknown {
+	if (
+		step.id !== "guide" ||
+		!step.guideContract ||
+		!value ||
+		typeof value !== "object" ||
+		Array.isArray(value)
+	)
+		return value;
+	return { ...value, contract: step.guideContract };
 }
 
 /** Attach authoritative coverage instead of trusting an agent-authored coverage table. */
@@ -199,7 +257,7 @@ export function attachRequirementCoverage(
 ): unknown {
 	const aggregate = aggregateForContext(context);
 	if (!aggregate) return value;
-	const guide = GuideSchema.parse(value);
+	const guide = isReviewBrief(value) ? value : GuideSchema.parse(value);
 	const inventory = aggregate.baseline.inventory;
 	return {
 		...guide,

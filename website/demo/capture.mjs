@@ -55,7 +55,7 @@ const scrollTo = (p, text) =>
 		.getByText(text, { exact: false })
 		.first()
 		.evaluate((el) => el.scrollIntoView({ block: "start" }));
-const next = async (p) => {
+const _next = async (p) => {
 	await p
 		.locator("button.primary")
 		.filter({ hasText: /^(Start|Next|Files|Decide) →/ })
@@ -74,24 +74,27 @@ for (const scheme of ["light", "dark"]) {
 
 if (want("review")) {
 	const p = await page({ height: 1000 });
+	const section = async (heading, offset = -16) => {
+		await scrollTo(p, heading);
+		await p.mouse.wheel(0, offset);
+		await p.settle();
+	};
 	await go(p, `/runs/${dark}/review`);
-	await p.mouse.wheel(0, 340);
+	await p.mouse.wheel(0, 200);
 	await p.settle();
-	await save(p, "review-overview");
-	await next(p);
-	await save(p, "review-chapter");
-	await next(p);
-	await p.getByRole("button", { name: "How it works" }).click();
-	await p.settle();
-	await save(p, "review-how");
-	await next(p);
+	await save(p, "review-verdict");
+	await section("Does it do that?");
+	await save(p, "review-proof");
+	await section("Your call");
+	await save(p, "review-call");
+	await p.getByText("Every changed file, by requirement").click();
+	await section("Every changed file, by requirement");
 	await p.settle(1500);
 	await save(p, "review-files");
 	await p
-		.getByText("A toggle that remembers the guest's choice")
-		.last()
+		.locator(".file-group summary", { hasText: "A header toggle" })
 		.click();
-	await p.settle(1500);
+	await p.settle(800);
 	await p.getByText("theme.js", { exact: true }).first().click();
 	await p.settle(1500);
 	await p
@@ -102,10 +105,23 @@ if (want("review")) {
 	await save(p, "review-diff");
 	await p.keyboard.press("Escape");
 	await p.settle(600);
-	await next(p).catch(() => {});
-	await p.settle(1000);
-	await p.mouse.wheel(0, 2000);
-	await p.settle(800);
+	// One objection: it becomes a precise comment in the feedback Bob receives.
+	await section("Your call");
+	await p.getByRole("button", { name: "✕ Change it" }).first().click();
+	await p.settle(600);
+	await p
+		.locator(".comment-popover textarea")
+		.fill("Add a short “Dark” / “Light” label next to the icon.");
+	await p.getByRole("button", { name: "Done" }).click();
+	await p
+		.locator(".collected-feedback summary")
+		.click()
+		.catch(() => {});
+	await p
+		.locator("#brief-decide")
+		.evaluate((el) => el.scrollIntoView({ block: "end" }));
+	await p.mouse.wheel(0, 120);
+	await p.settle();
 	await save(p, "review-decision");
 	await p.context().close();
 }
@@ -154,7 +170,11 @@ if (want("mobile")) {
 			scheme: name === "mobile-review" ? "dark" : "light",
 		});
 		await go(p, hash);
-		if (name === "mobile-review") await next(p);
+		if (name === "mobile-review") {
+			await scrollTo(p, "Does it do that?");
+			// Proof images load lazily once they approach the viewport.
+			await p.settle(2500);
+		}
 		await save(p, name);
 		await p.context().close();
 	}
