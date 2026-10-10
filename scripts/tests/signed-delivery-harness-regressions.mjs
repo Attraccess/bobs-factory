@@ -13,7 +13,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { jsonBytes, sha256 } from "../lib/binary-release.mjs";
-import { cleanupFixtureTreeAfterReceipt } from "./signed-delivery-harness-lifecycle.mjs";
+import {
+	cleanupFixtureTreeAfterReceipt,
+	finalizeFixtureReceipt,
+} from "./signed-delivery-harness-lifecycle.mjs";
 import { command } from "./signed-release-https-fixture.mjs";
 
 const [outputArg] = process.argv.slice(2);
@@ -89,6 +92,59 @@ try {
 		},
 	});
 
+	const leaderExitStartedAt = Date.now();
+	const leaderExit = await command(
+		process.execPath,
+		[
+			"-e",
+			`
+		const {spawn} = require('node:child_process');
+		process.on('SIGTERM', () => process.exit(0));
+		const descendant = spawn(process.execPath, ['-e',
+			"process.on('SIGTERM',()=>{});process.send('ready');setInterval(()=>{},1000);"
+		], {stdio:['ignore','ignore','ignore','ipc']});
+		descendant.once('message', () => console.log(descendant.pid));
+		setInterval(()=>{},1000);
+	`,
+		],
+		{ timeout: 500, termGraceMs: 150, killWaitMs: 2000 },
+	);
+	const leaderExitElapsedMs = Date.now() - leaderExitStartedAt;
+	const survivingPid = Number(leaderExit.stdout.trim());
+	assert(Number.isInteger(survivingPid) && survivingPid > 0);
+	assert.equal(leaderExit.timedOut, true);
+	assert.equal(
+		leaderExit.code,
+		124,
+		"TERM-responsive leader cannot make timeout successful",
+	);
+	assert.equal(leaderExit.signal, null);
+	assert.equal(
+		leaderExit.forcedKill,
+		true,
+		"Surviving descendant requires escalation after leader closes",
+	);
+	assert.equal(leaderExit.closeTimedOut, false);
+	assert(leaderExitElapsedMs < 5000);
+	assert.throws(() => process.kill(leaderExit.pid, 0), { code: "ESRCH" });
+	assert.throws(() => process.kill(survivingPid, 0), { code: "ESRCH" });
+	assert.doesNotThrow(() => process.kill(unrelated.pid, 0));
+	record(
+		"exited TERM-responsive leader still escalates its TERM-ignoring descendant",
+		{
+			elapsedMs: leaderExitElapsedMs,
+			result: {
+				code: leaderExit.code,
+				signal: leaderExit.signal,
+				timedOut: leaderExit.timedOut,
+				forcedKill: leaderExit.forcedKill,
+				closeTimedOut: leaderExit.closeTimedOut,
+				descendantPid: survivingPid,
+				unrelatedProcessPreserved: true,
+			},
+		},
+	);
+
 	for (const passed of [true, false]) {
 		const work = mkdtempSync(
 			join(tmpdir(), "bobs-signed-integration-cleanup-"),
@@ -128,6 +184,116 @@ try {
 	assert.equal(existsSync(receiptInside), true);
 	rmSync(work, { recursive: true, force: true });
 	record("receipt inside fixture is retained instead of deleted", retained);
+
+	const failedCleanupWork = mkdtempSync(
+		join(tmpdir(), "bobs-signed-integration-removal-failure-"),
+	);
+	const marker = join(failedCleanupWork, "fixture-marker");
+	writeFileSync(marker, "owned fixture retained after failed removal\n");
+	const failedReceiptPath = join(tempRoot, "removal-failure.json");
+	const historicalReceiptPath = join(tempRoot, "historical.json");
+	const historicalBytes = jsonBytes({ passed: true, historical: true });
+	writeFileSync(historicalReceiptPath, historicalBytes);
+	try {
+		const failedProcess = await command(
+			process.execPath,
+			[
+				"--input-type=module",
+				"-e",
+				`
+			import assert from 'node:assert/strict';
+			import { readFileSync, realpathSync } from 'node:fs';
+			import { cleanupFixtureTreeAfterReceipt, finalizeFixtureReceipt } from ${JSON.stringify(new URL("./signed-delivery-harness-lifecycle.mjs", import.meta.url).href)};
+			const work = ${JSON.stringify(failedCleanupWork)};
+			const receiptPath = ${JSON.stringify(failedReceiptPath)};
+			const receipt = {passed:true, cleanupErrors:[]};
+			finalizeFixtureReceipt({work, receiptPath, receipt,
+				cleanupTree: (options) => cleanupFixtureTreeAfterReceipt({...options,
+					removeTree: (path) => {
+						assert.equal(JSON.parse(readFileSync(receiptPath,'utf8')).passed, true);
+						assert.equal(path, realpathSync(work));
+						throw Object.assign(new Error('Injected EACCES removing owned fixture'), {code:'EACCES'});
+					}
+				})
+			});
+			// Same failure guard as the runtime driver, after finalization.
+			assert.equal(receipt.cleanupErrors.length, 0, receipt.cleanupErrors.join('\\n'));
+		`,
+			],
+			{ timeout: 2000 },
+		);
+		assert.equal(failedProcess.code, 1);
+		assert.equal(failedProcess.timedOut, false);
+		assert.match(
+			failedProcess.stderr,
+			/Injected EACCES removing owned fixture/,
+		);
+		const written = JSON.parse(readFileSync(failedReceiptPath, "utf8"));
+		assert.equal(written.passed, false);
+		assert.deepEqual(written.fixtureCleanup, {
+			removed: false,
+			reason: "cleanup-failed",
+		});
+		assert.match(
+			written.cleanupErrors[0],
+			/Injected EACCES removing owned fixture/,
+		);
+		assert.equal(existsSync(marker), true);
+		assert.deepEqual(readFileSync(historicalReceiptPath), historicalBytes);
+		record(
+			"injected removal exception rewrites this run's receipt as failed and retains diagnosis",
+			{
+				processExitCode: failedProcess.code,
+				fixtureReceiptPassed: written.passed,
+				fixtureCleanup: written.fixtureCleanup,
+				cleanupError: written.cleanupErrors[0].split("\n")[0],
+				historicalReceiptUnchanged: true,
+				fixtureMarkerRetained: true,
+			},
+		);
+	} finally {
+		rmSync(failedCleanupWork, { recursive: true, force: true });
+	}
+
+	for (const reason of [
+		"retain-fixture",
+		"receipt-inside-fixture",
+		"fixture-close-error",
+	]) {
+		const retainedWork = mkdtempSync(
+			join(tmpdir(), "bobs-signed-integration-finalize-retain-"),
+		);
+		const receiptPath =
+			reason === "receipt-inside-fixture"
+				? join(retainedWork, "receipt.json")
+				: join(tempRoot, `${reason}.json`);
+		const closeError = new Error("Injected fixture close failure");
+		const retainedReceipt = {
+			passed: true,
+			cleanupErrors: reason === "fixture-close-error" ? [closeError.stack] : [],
+		};
+		try {
+			finalizeFixtureReceipt({
+				work: retainedWork,
+				receiptPath,
+				receipt: retainedReceipt,
+				retainFixture: reason === "retain-fixture",
+			});
+			const written = JSON.parse(readFileSync(receiptPath, "utf8"));
+			assert.equal(existsSync(retainedWork), true);
+			assert.equal(written.passed, reason !== "fixture-close-error");
+			assert.equal(
+				written.fixtureCleanup.reason,
+				reason === "fixture-close-error" ? "active-owner-retained" : reason,
+			);
+			record(`receipt finalization preserves ${reason} semantics`, {
+				fixtureReceiptPassed: written.passed,
+				fixtureCleanup: written.fixtureCleanup,
+			});
+		} finally {
+			rmSync(retainedWork, { recursive: true, force: true });
+		}
+	}
 
 	const script = fileURLToPath(import.meta.url);
 	const fixtureHelper = new URL(

@@ -38,12 +38,13 @@ import {
 } from "../../packages/edge-worker/dist/updates/UpdateManager.js";
 import { jsonBytes, sha256 } from "../lib/binary-release.mjs";
 import {
-	cleanupFixtureTreeAfterReceipt,
+	finalizeFixtureReceipt,
 	terminateOwnedProcessGroup,
 } from "./signed-delivery-harness-lifecycle.mjs";
 import {
 	command,
 	signedHttpsFixture,
+	terminateOwnedProcess,
 } from "./signed-release-https-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -1316,34 +1317,13 @@ try {
 			"No OS service, actual Electron shell, package manager, login/reboot or publication exercised.",
 		],
 	};
-	writeFileSync(join(output, "signed-delivery.json"), jsonBytes(receipt));
+	const cleanup = finalizeFixtureReceipt({
+		work,
+		receiptPath: join(output, "signed-delivery.json"),
+		receipt,
+		retainFixture,
+	});
 	console.log(`Receipt ${join(output, "signed-delivery.json")}`);
-	if (!retainFixture && cleanupErrors.length === 0) {
-		const cleanup = cleanupFixtureTreeAfterReceipt({
-			work,
-			receiptPath: join(output, "signed-delivery.json"),
-		});
-		receipt.fixtureCleanup = cleanup;
-		console.log(`Fixture cleanup: ${cleanup.reason}`);
-		if (!cleanup.removed && cleanup.reason !== "receipt-inside-fixture") {
-			cleanupErrors.push(
-				`Temporary fixture was not removed: ${cleanup.reason}`,
-			);
-			receipt.passed = false;
-			receipt.cleanupErrors = cleanupErrors;
-		}
-		writeFileSync(join(output, "signed-delivery.json"), jsonBytes(receipt));
-	} else {
-		receipt.fixtureCleanup = {
-			removed: false,
-			reason: retainFixture ? "retain-fixture" : "active-owner-retained",
-		};
-		if (!retainFixture) {
-			receipt.passed = false;
-			receipt.cleanupErrors = cleanupErrors;
-		}
-		writeFileSync(join(output, "signed-delivery.json"), jsonBytes(receipt));
-		console.log(`Retained fixture: ${work} (${receipt.fixtureCleanup.reason})`);
-	}
+	console.log(`Fixture cleanup: ${cleanup.reason}`);
 }
 assert.equal(cleanupErrors.length, 0, cleanupErrors.join("\n"));

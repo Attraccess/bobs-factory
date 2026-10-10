@@ -1,5 +1,7 @@
-import { existsSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
+
+import { jsonBytes } from "../lib/binary-release.mjs";
 
 const temporaryPrefixes = [
 	"bobs-signed-integration-",
@@ -12,6 +14,7 @@ export function cleanupFixtureTreeAfterReceipt({
 	work,
 	receiptPath,
 	retainFixture = false,
+	removeTree = rmSync,
 }) {
 	const root = existsSync(work) ? realpathSync(work) : resolve(work);
 	const requestedReceipt = resolve(receiptPath);
@@ -32,8 +35,46 @@ export function cleanupFixtureTreeAfterReceipt({
 	) {
 		return { removed: false, reason: "receipt-inside-fixture" };
 	}
-	rmSync(root, { recursive: true, force: true });
+	removeTree(root, { recursive: true, force: true });
 	return { removed: !existsSync(root), reason: "receipt-written" };
+}
+
+// Finalize only this run's receipt. Persist before deletion, then record any
+// cleanup failure as failed evidence rather than leaving a provisional PASS.
+export function finalizeFixtureReceipt({
+	work,
+	receiptPath,
+	receipt,
+	retainFixture = false,
+	cleanupTree = cleanupFixtureTreeAfterReceipt,
+}) {
+	const errors = receipt.cleanupErrors;
+	writeFileSync(receiptPath, jsonBytes(receipt));
+	if (retainFixture || errors.length) {
+		receipt.fixtureCleanup = {
+			removed: false,
+			reason: retainFixture ? "retain-fixture" : "active-owner-retained",
+		};
+	} else {
+		try {
+			receipt.fixtureCleanup = cleanupTree({ work, receiptPath });
+			if (
+				!receipt.fixtureCleanup.removed &&
+				receipt.fixtureCleanup.reason !== "receipt-inside-fixture"
+			)
+				errors.push(
+					`Temporary fixture was not removed: ${receipt.fixtureCleanup.reason}`,
+				);
+		} catch (error) {
+			receipt.fixtureCleanup = { removed: false, reason: "cleanup-failed" };
+			errors.push(
+				`Temporary fixture cleanup failed${error.code ? ` (${error.code})` : ""}: ${error.stack ?? error}`,
+			);
+		}
+	}
+	if (errors.length) receipt.passed = false;
+	writeFileSync(receiptPath, jsonBytes(receipt));
+	return receipt.fixtureCleanup;
 }
 
 export async function terminateOwnedProcessGroup(

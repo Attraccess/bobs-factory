@@ -367,8 +367,15 @@ export async function signedHttpsFixture(root, work, builds) {
 }
 
 export async function command(command, args, options = {}) {
+	const {
+		timeout = 60000,
+		termGraceMs = 1000,
+		killWaitMs = 2000,
+		...spawnOptions
+	} = options;
+	// Own the deadline: spawn timeout would TERM the leader before ownership is captured.
 	const child = spawn(command, args, {
-		...options,
+		...spawnOptions,
 		detached: process.platform !== "win32",
 		stdio: ["ignore", "pipe", "pipe"],
 	});
@@ -387,15 +394,15 @@ export async function command(command, args, options = {}) {
 			closeTimedOut: false,
 		}));
 		const deadline = new Promise((resolve) => {
-			timer = setTimeout(() => resolve(null), options.timeout ?? 60000);
+			timer = setTimeout(() => resolve(null), timeout);
 		});
 		let result = await Promise.race([exited, deadline]);
 		if (!result) {
 			timedOut = true;
 			result = await terminateOwnedProcess(child, close, {
 				detached: process.platform !== "win32",
-				termGraceMs: options.termGraceMs ?? 1000,
-				killWaitMs: options.killWaitMs ?? 2000,
+				termGraceMs,
+				killWaitMs,
 			});
 		}
 		return {
@@ -420,45 +427,104 @@ export async function terminateOwnedProcess(
 		killWaitMs = 2000,
 	} = {},
 ) {
-	const closed = close.then(([code, signal]) => ({
-		code,
-		signal,
-		forcedKill: false,
-		closeTimedOut: false,
-	}));
-	const waitForClose = async (timeoutMs) => {
-		let timer;
-		try {
-			return await Promise.race([
-				closed,
-				new Promise((resolve) => {
-					timer = setTimeout(() => resolve(null), timeoutMs);
-				}),
-			]);
-		} finally {
-			if (timer) clearTimeout(timer);
+	let result;
+	let closeError;
+	// A close event only describes the leader and its stdio, not the group.
+	close.then(
+		([code, signal]) => {
+			result = { code, signal };
+		},
+		(error) => {
+			closeError = error;
+		},
+	);
+	const group = detached && process.platform !== "win32" && child.pid;
+	const members = () =>
+		execFileSync("ps", ["-axo", "pid=,pgid=,stat=,lstart="], {
+			encoding: "utf8",
+			timeout: 1000,
+		})
+			.split("\n")
+			.map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(\S+)\s+(.+)$/))
+			.filter(
+				(row) => row && Number(row[2]) === child.pid && !row[3].startsWith("Z"),
+			);
+	// Capture identities while the direct child still anchors this detached group.
+	// Never signal a stale numeric PGID after observing the group disappear.
+	const identities = new Map();
+	let groupGone = false;
+	if (group) {
+		const initial = members();
+		if (
+			initial.length &&
+			(child.exitCode !== null || child.signalCode !== null)
+		)
+			throw new Error(
+				"Cannot establish process-group ownership after leader exit",
+			);
+		if (initial.length && !initial.some((row) => Number(row[1]) === child.pid))
+			throw new Error(
+				"Detached child does not own the requested process group",
+			);
+		for (const row of initial) identities.set(Number(row[1]), row[4]);
+		groupGone = initial.length === 0;
+	}
+	const alive = () => {
+		if (!group) return child.exitCode === null && child.signalCode === null;
+		if (groupGone) return false;
+		const current = members();
+		if (!current.length) {
+			groupGone = true;
+			return false;
 		}
+		// At least one continuously owned member must survive. A replacement group
+		// (or reused leader PID) is not ours; fail closed instead of signaling it.
+		if (
+			!current.some((row) => identities.get(Number(row[1])) === row[4]) ||
+			current.some(
+				(row) =>
+					identities.has(Number(row[1])) &&
+					identities.get(Number(row[1])) !== row[4],
+			)
+		)
+			throw new Error("Process-group identity changed during cleanup");
+		for (const row of current) identities.set(Number(row[1]), row[4]);
+		return true;
+	};
+	const waitForStop = async (timeoutMs) => {
+		const deadline = Date.now() + timeoutMs;
+		do {
+			if (closeError) throw closeError;
+			const running = alive();
+			if (!running && result) return true;
+			await new Promise((resolve) => setTimeout(resolve, 25));
+		} while (Date.now() < deadline);
+		return !alive() && Boolean(result);
 	};
 	const signalOwned = (signal) => {
-		if (child.exitCode !== null || child.signalCode !== null) return false;
+		if (!alive()) return false;
 		try {
-			if (detached && child.pid) process.kill(-child.pid, signal);
+			if (group) process.kill(-child.pid, signal);
 			else child.kill(signal);
 			return true;
 		} catch (error) {
-			if (error.code === "ESRCH") return false;
+			if (error.code === "ESRCH") {
+				groupGone = true;
+				return false;
+			}
 			throw error;
 		}
 	};
 
-	if (child.exitCode !== null || child.signalCode !== null) return closed;
 	signalOwned("SIGTERM");
-	const graceful = await waitForClose(termGraceMs);
-	if (graceful) return graceful;
-
+	if (await waitForStop(termGraceMs))
+		return { ...result, forcedKill: false, closeTimedOut: false };
 	const forcedKill = signalOwned("SIGKILL");
-	const final = await waitForClose(killWaitMs);
-	return final
-		? { ...final, forcedKill }
-		: { code: null, signal: null, forcedKill, closeTimedOut: true };
+	const stopped = await waitForStop(killWaitMs);
+	return {
+		code: result?.code ?? null,
+		signal: result?.signal ?? null,
+		forcedKill,
+		closeTimedOut: !stopped,
+	};
 }

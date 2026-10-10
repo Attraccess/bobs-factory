@@ -23,8 +23,9 @@ compiler HOME/environment. The passing driver hash is
 
 ## Harness review follow-up — separate from the 23/23 drive
 
-The independent review of PR87 found three harness/evidence issues. All three are
-corrected here without changing product code or rewriting historical receipts:
+The first independent review of PR87 found three harness/evidence issues. The
+first follow-up at `c346f5aa0a0694c90b17be723d9349d5741f8b07` recorded the
+following fixes and checks, without changing product code or historical receipts:
 
 - Timed child processes now receive TERM, then KILL after a bounded grace period;
   POSIX launches use an owned detached process group so descendants are stopped
@@ -50,6 +51,53 @@ pre-existing contention receipts and all historical failures are retained as-is;
 only the new focused native receipt claims the new generator digest. No native
 rebuild, full-drive rerun, provider, signing key, production service or credential
 was used for this follow-up.
+
+### Round 2 — leader-exit cleanup and receipt finalization
+
+The second review found two remaining P2 harness failures: cleanup stopped when
+only the leader had closed, and a fixture-removal exception could leave a receipt
+with `passed: true` despite a failed process. Both are corrected separately from
+all earlier native evidence.
+
+The command wrapper now owns its timeout instead of also passing it to Node's
+`spawn` (which could TERM the leader before cleanup captured group ownership).
+Cleanup captures the detached group's PID/start-time identities while its leader
+is live, verifies a surviving known identity before signaling, stops using a PGID
+once the group is gone, and refuses changed or unestablished ownership. It waits
+for both the owned live group and leader close, escalating surviving descendants
+within the TERM/KILL bounds even after the leader exits. A real TERM-responsive
+leader plus TERM-ignoring descendant now reports `forcedKill: true`,
+`closeTimedOut: false` and timeout code124; both PIDs are gone while an unrelated
+process group remains alive. The existing both-ignore-TERM case also passes.
+
+Signed-runtime receipt finalization writes the run's receipt before tree removal,
+catches removal exceptions, records error code/stack, sets `passed: false`, then
+rewrites that same receipt. The driver subsequently fails its cleanup-error guard.
+A focused subprocess injects EACCES at the actual removal boundary, exits1, and
+leaves a failed diagnostic receipt and fixture marker; a separate historical
+receipt stays byte-for-byte unchanged. Checks also preserve explicit retention,
+receipt-inside-fixture retention, and failed/retained finalization after a recorded
+fixture-close error. The runtime driver's existing close-error catch still feeds
+its cleanup-error list; its trial cleanup helper import is now explicit.
+
+[Round-2 focused harness receipt](assets/2026-10-10-signed-delivery/passed-round2-harness-regressions.json)
+records **9 passing focused checks** and these exact generator bindings:
+
+- Regression script: `a1adeee5476293659b2160b7d1d9bbf8510627f256cbf67a0fc4cb7fc2748bf8`.
+- Process fixture helper: `93fd1b5e3c09e85b8cb606c5ac0c94d9b567f7726e6a11190cc0c540e4aab2ca`.
+- Runtime driver: `20f984aa3680bee0cdb73f16e820c4eaac369efb0407d93feb7c109da4413dd8`.
+- Lifecycle/finalization helper: `34910ad8dadc177007d348c356c93a618a49c05061f9ffba922603f8a814f29e`.
+
+Command: `node scripts/tests/signed-delivery-harness-regressions.mjs apps/f1/test-drives/assets/2026-10-10-signed-delivery/passed-round2-harness-regressions.json`.
+Focused Biome, JavaScript syntax and diff checks pass. This changes delivery test
+helpers rather than F1 product orchestration; no new issue-tracker/agent F1 drive
+is applicable. No 23-scenario rerun, native build or second native contention
+rerun occurred. The original23 driver hash, the first aa0 harness error, the 2e47
+product failure, both historical contention receipts and the one separately
+recorded native contention rerun remain unchanged. No real provider/native
+credential, other-platform, OS-service, Electron or complete licensing/release
+acceptance is claimed. GitGuardian synthetic incidents38083768 and38084076 remain
+an operator gate; no bypass, publisher/signing key adoption or publication.
 
 The complete successful path uses real HTTPS and production verification,
 discovery, archive staging, extraction, native probes, signed bootstrap/native CLI,
