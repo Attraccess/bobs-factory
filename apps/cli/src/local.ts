@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import { getAllTools } from "bobs-factory-claude-runner";
 import {
 	type EdgeWorkerConfig,
@@ -78,7 +79,21 @@ export async function launchLocal(values: {
 			: {}),
 		repositories: config.repositories,
 	};
-	savePrivateJson(configPath, effective);
+	// Zod parsing can reorder keys without changing settings. Keep the original
+	// bytes so restarting an identical owned runtime preserves the update receipt.
+	const unchanged =
+		existsSync(configPath) &&
+		isDeepStrictEqual(
+			JSON.parse(readFileSync(configPath, "utf8")),
+			JSON.parse(JSON.stringify(effective)),
+		);
+	if (!unchanged) {
+		if (existsSync(join(home, "updates", "maintenance.json")))
+			throw new Error(
+				"Local startup would change configuration during update maintenance",
+			);
+		savePrivateJson(configPath, effective);
+	}
 	let worker: EdgeWorker;
 	const onboarding = new LocalOnboarding(home, (repository, runner) =>
 		worker.configureLocalRepository(repository, runner),

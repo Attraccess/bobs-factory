@@ -329,6 +329,7 @@ export function useAction(scope?: string, context?: string) {
 			}
 			void cache.invalidateQueries({ queryKey: ["runs"] });
 			void cache.invalidateQueries({ queryKey: ["run"] });
+			void cache.invalidateQueries({ queryKey: ["updates"] });
 			// Keep edits pending while refreshing any other configuration changes.
 			await cache.invalidateQueries({ queryKey: ["config"] });
 		},

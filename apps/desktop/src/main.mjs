@@ -7,6 +7,8 @@ import {
 	readFileSync,
 	readlinkSync,
 	realpathSync,
+	rmSync,
+	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -205,6 +207,34 @@ async function local() {
 			).executable;
 		await waitForFactory();
 	}
+	rmSync(join(home, "runtime", "desktop-stopped.json"), { force: true });
+	const log = openSync(
+		join(home, "runtime", "desktop-updates.log"),
+		"a",
+		0o600,
+	);
+	const supervisor = spawn(
+		runtimeBinary,
+		[
+			"--home",
+			home,
+			"--port",
+			String(port),
+			"--no-open",
+			"service",
+			"updates-run",
+		],
+		{
+			detached: true,
+			stdio: ["ignore", log, log],
+			env: { ...process.env, BOBS_FACTORY_DESKTOP_OWNER: "1" },
+		},
+	);
+	supervisor.on("error", (error) =>
+		dialog.showErrorBox("Update supervisor failed", error.message),
+	);
+	supervisor.unref();
+	closeSync(log);
 	return `http://localhost:${port}`;
 }
 async function waitForFactory() {
@@ -281,6 +311,10 @@ async function stopLocal() {
 		throw new Error(
 			"Select a local desktop-owned Factory. Remote and independent services are stopped by their owner",
 		);
+	if (existsSync(join(home, "runtime", "update-owner.json")))
+		throw new Error(
+			"An update owns maintenance; wait for completion or recovery before Stop",
+		);
 	const o = owner();
 	if (
 		!o ||
@@ -319,6 +353,11 @@ async function stopLocal() {
 	});
 	if (response !== 1) return;
 	if (owner()?.nonce !== o.nonce) throw new Error("Worker identity changed");
+	writeFileSync(
+		join(home, "runtime", "desktop-stopped.json"),
+		JSON.stringify({ stoppedAt: new Date().toISOString() }),
+		{ mode: 0o600 },
+	);
 	process.kill(o.pid, "SIGTERM");
 	for (let n = 0; n < 300; n++) {
 		if (!owner()) {

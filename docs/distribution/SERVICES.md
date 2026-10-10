@@ -59,3 +59,13 @@ there, and keep the tunnel/reverse-proxy under its own owner. This service CLI a
 no unauthenticated control/update endpoint. Multiple-instance UI work belongs to
 Taskbot #84. Service/native reboot and logout receipts remain required before
 calling this a validated deployment.
+
+The owner installs a separate `.updates` companion user unit that runs
+`service updates-run`. It survives worker maintenance and owns update activation
+from outside the worker process. Deliberate Stop, disable and remove stop both
+units. The desktop similarly starts a detached companion and persists deliberate
+Stop suppression. Its crash restart is bounded to three attempts per companion
+lifetime; verified stale worker ownership and marked descendants are reconciled
+before replacement. Native launchd/systemd crash/startup validation remains a
+required platform receipt; generating definitions or mocked manager calls does
+not establish it.

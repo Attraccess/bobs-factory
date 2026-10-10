@@ -5,6 +5,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	readFileSync,
+	realpathSync,
 	renameSync,
 	writeFileSync,
 } from "node:fs";
@@ -40,6 +41,7 @@ export interface ServiceRecord {
 	desired: "running" | "stopped" | "maintenance" | "resume";
 	mode: "start" | "local";
 	path: string;
+	dashboardPort?: number;
 }
 export type ServiceExecutor = (
 	command: string,
@@ -71,20 +73,32 @@ const xml = (value: string) =>
 		.replaceAll("'", "&apos;");
 const systemd = (value: string) =>
 	`"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%").replaceAll("$", "$$")}"`;
+export function updateServiceRecord(record: ServiceRecord): ServiceRecord {
+	return {
+		...record,
+		id: `${record.id}.updates`,
+		definition: record.definition.replace(/\.(plist|service)$/, ".updates.$1"),
+	};
+}
 function safe(value: string): string {
 	if (/[\0\r\n]/.test(value))
 		throw new Error("Service values cannot contain control characters");
 	return value;
 }
 
-export function serviceDefinition(record: ServiceRecord): string {
+export function serviceDefinition(
+	record: ServiceRecord,
+	updater = false,
+): string {
 	const args = [
 		record.executable,
 		"--home",
 		record.home,
+		"--port",
+		String(record.dashboardPort ?? 3457),
 		"--no-open",
 		"service",
-		"run",
+		updater ? "updates-run" : "run",
 	];
 	for (const value of [...args, record.path]) safe(value);
 	if (record.platform === "darwin")
@@ -173,11 +187,11 @@ export class ServiceLifecycle {
 	private unit(r: ServiceRecord) {
 		return `${r.id}.service`;
 	}
-	private assertDefinition(r: ServiceRecord) {
+	private assertDefinition(r: ServiceRecord, updater = false) {
 		if (
 			!existsSync(r.definition) ||
 			lstatSync(r.definition).isSymbolicLink() ||
-			readFileSync(r.definition, "utf8") !== serviceDefinition(r)
+			readFileSync(r.definition, "utf8") !== serviceDefinition(r, updater)
 		)
 			throw new Error(
 				"Service definition missing or changed externally; refusing to manage it",
@@ -187,13 +201,29 @@ export class ServiceLifecycle {
 		executable: string,
 		mode: "start" | "local" = "start",
 		path = process.env.PATH ?? "/usr/bin:/bin",
+		dashboardPort = 3457,
 	) {
 		if (!["darwin", "linux"].includes(this.platform) || this.uid < 0)
 			throw new Error(
 				"Only macOS launchd/Linux systemd user services are supported",
 			);
-		if (this.record())
-			throw new Error("Service already installed; inspect status");
+		const previous = this.record();
+		if (previous) {
+			const updater = updateServiceRecord(previous);
+			if (existsSync(previous.definition) && existsSync(updater.definition))
+				throw new Error("Service already installed; inspect status");
+			if (
+				previous.desired !== "stopped" ||
+				previous.executable !== executable ||
+				previous.mode !== mode ||
+				previous.path !== path ||
+				(previous.dashboardPort ?? 3457) !== dashboardPort ||
+				workerOwner(this.home)
+			)
+				throw new Error("Interrupted setup ownership differs; inspect status");
+			this.completeInstall(previous);
+			return this.status();
+		}
 		const owner = workerOwner(this.home);
 		if (owner || existsSync(join(this.home, "runtime", "worker.lock")))
 			throw new Error(
@@ -205,6 +235,12 @@ export class ServiceLifecycle {
 			throw new Error(
 				"Nix owns this executable: manage its service through Nix, without installing a second owner",
 			);
+		if (
+			!Number.isInteger(dashboardPort) ||
+			dashboardPort < 1 ||
+			dashboardPort > 65534
+		)
+			throw new Error("Invalid service dashboard port");
 		const r: ServiceRecord = {
 			schema: 1,
 			id: this.id(),
@@ -216,18 +252,40 @@ export class ServiceLifecycle {
 			desired: "stopped",
 			mode,
 			path: safe(path),
+			dashboardPort,
 		};
-		mkdirSync(dirname(r.definition), { recursive: true, mode: 0o700 });
-		// Never overwrite a manual/external definition. Partial setup is retained for inspection.
-		writeFileSync(r.definition, serviceDefinition(r), {
-			flag: "wx",
-			mode: 0o600,
-		});
+		const updater = updateServiceRecord(r);
+		if (existsSync(r.definition) || existsSync(updater.definition))
+			throw new Error(
+				"Existing external service definition; refusing adoption",
+			);
+		// Persist stopped ownership before creating either unit. An interruption
+		// can resume only missing definitions for the exact same installation.
 		this.save(r);
-		if (r.platform === "linux")
-			this.checked("systemctl", ["--user", "daemon-reload"]);
+		this.completeInstall(r);
 		return this.status();
 	}
+	private completeInstall(r: ServiceRecord) {
+		const definitions = [
+			[r, false],
+			[updateServiceRecord(r), true],
+		] as const;
+		for (const [record, updater] of definitions) {
+			if (existsSync(record.definition)) this.assertDefinition(record, updater);
+		}
+		for (const [record, updater] of definitions) {
+			if (!existsSync(record.definition)) {
+				mkdirSync(dirname(record.definition), { recursive: true, mode: 0o700 });
+				writeFileSync(record.definition, serviceDefinition(record, updater), {
+					flag: "wx",
+					mode: 0o600,
+				});
+			}
+		}
+		if (r.platform === "linux")
+			this.checked("systemctl", ["--user", "daemon-reload"]);
+	}
+
 	status() {
 		const r = this.record();
 		if (!r)
@@ -236,6 +294,12 @@ export class ServiceLifecycle {
 				home: this.home,
 				owner: workerOwner(this.home) ?? null,
 			};
+		const updater = updateServiceRecord(r);
+		const updaterDefinitionMatches =
+			existsSync(updater.definition) &&
+			!lstatSync(updater.definition).isSymbolicLink() &&
+			readFileSync(updater.definition, "utf8") ===
+				serviceDefinition(updater, true);
 		const definitionMatches =
 			existsSync(r.definition) &&
 			!lstatSync(r.definition).isSymbolicLink() &&
@@ -253,6 +317,24 @@ export class ServiceLifecycle {
 			r.platform === "darwin"
 				? this.run("launchctl", ["print-disabled", `gui/${this.uid}`])
 				: this.run("systemctl", ["--user", "is-enabled", this.unit(r)]);
+		const updaterProbe =
+			r.platform === "darwin"
+				? this.run("launchctl", ["print", this.target(updater)])
+				: this.run("systemctl", [
+						"--user",
+						"show",
+						this.unit(updater),
+						"--property=LoadState,ActiveState,SubState,MainPID,UnitFileState,ExecMainStatus",
+					]);
+		const managerPid = Number(
+			r.platform === "darwin"
+				? probe.output.match(/\bpid = (\d+)/)?.[1]
+				: probe.output.match(/^MainPID=(\d+)$/m)?.[1],
+		);
+		const active =
+			r.platform === "darwin"
+				? /state = running/.test(probe.output)
+				: /^ActiveState=active$/m.test(probe.output);
 		const owner = workerOwner(this.home);
 		return {
 			installed: true,
@@ -260,6 +342,12 @@ export class ServiceLifecycle {
 			definitionMatches,
 			managerAvailable: probe.status === 0,
 			manager: probe.output,
+			managerPid: Number.isSafeInteger(managerPid) ? managerPid : null,
+			updater: {
+				definitionMatches: updaterDefinitionMatches,
+				managerAvailable: updaterProbe.status === 0,
+				manager: updaterProbe.output,
+			},
 			startupActual: enabled.output,
 			startupProbeSucceeded: enabled.status === 0,
 			healthy: Boolean(
@@ -267,6 +355,10 @@ export class ServiceLifecycle {
 					owner &&
 					ownerAlive(owner) &&
 					owner.owner === "service" &&
+					existsSync(r.executable) &&
+					owner.executable === realpathSync(r.executable) &&
+					managerPid === owner.pid &&
+					active &&
 					probe.status === 0,
 			),
 			owner: owner ?? null,
@@ -286,9 +378,18 @@ export class ServiceLifecycle {
 
 	private async perform(action: Exclude<ServiceAction, "install">) {
 		if (action === "status") return this.status();
+		if (
+			existsSync(join(this.home, "runtime", "update-owner.json")) &&
+			!["resume", "maintenance", "logs"].includes(action)
+		)
+			throw new Error(
+				"An update owns maintenance; wait for its exact outcome before changing service lifecycle",
+			);
 		const r = this.record();
 		if (!r) throw new Error("No service installed for this home");
 		this.assertDefinition(r);
+		const updater = updateServiceRecord(r);
+		this.assertDefinition(updater, true);
 		if (action === "resume") {
 			if (r.desired !== "maintenance")
 				throw new Error("Service is not in maintenance");
@@ -328,6 +429,14 @@ export class ServiceLifecycle {
 				if (loaded.status === 0)
 					this.checked("launchctl", ["bootout", this.target(r)]);
 			} else this.checked("systemctl", ["--user", "stop", this.unit(r)]);
+			if (action !== "maintenance") {
+				if (r.platform === "linux")
+					this.checked("systemctl", ["--user", "stop", this.unit(updater)]);
+				else if (
+					this.run("launchctl", ["print", this.target(updater)]).status === 0
+				)
+					this.checked("launchctl", ["bootout", this.target(updater)]);
+			}
 			// Do not transfer ownership until graceful shutdown completed.
 			for (let attempt = 0; workerOwner(this.home) && attempt < 100; attempt++)
 				await new Promise((resolve) => setTimeout(resolve, 100));
@@ -357,6 +466,26 @@ export class ServiceLifecycle {
 					this.target(r),
 				]);
 			}
+			if (r.platform === "linux")
+				this.checked("systemctl", [
+					"--user",
+					r.startup ? "enable" : "disable",
+					this.unit(updater),
+				]);
+			else {
+				if (this.run("launchctl", ["print", this.target(updater)]).status === 0)
+					throw new Error(
+						"Stop updater before changing macOS login enrollment",
+					);
+				updater.startup = r.startup;
+				writeFileSync(updater.definition, serviceDefinition(updater, true), {
+					mode: 0o600,
+				});
+				this.checked("launchctl", [
+					r.startup ? "enable" : "disable",
+					this.target(updater),
+				]);
+			}
 			this.save(r);
 		}
 		if (action === "start" || action === "restart") {
@@ -382,12 +511,31 @@ export class ServiceLifecycle {
 				]);
 				this.checked("launchctl", ["kickstart", this.target(r)]);
 			}
+			if (r.platform === "linux")
+				this.checked("systemctl", ["--user", "start", this.unit(updater)]);
+			else if (
+				this.run("launchctl", ["print", this.target(updater)]).status !== 0
+			) {
+				this.checked("launchctl", ["enable", this.target(updater)]);
+				this.checked("launchctl", [
+					"bootstrap",
+					`gui/${this.uid}`,
+					updater.definition,
+				]);
+				this.checked("launchctl", ["kickstart", this.target(updater)]);
+			}
 		}
 		if (action === "remove") {
 			if (r.platform === "linux")
 				this.checked("systemctl", ["--user", "disable", this.unit(r)]);
 			// Retain definitions, service record, logs and all mutable/native state.
 			const backup = `${r.definition}.removed-${Date.now()}`;
+			if (r.platform === "linux")
+				this.checked("systemctl", ["--user", "disable", this.unit(updater)]);
+			renameSync(
+				updater.definition,
+				`${updater.definition}.removed-${Date.now()}`,
+			);
 			renameSync(r.definition, backup);
 			renameSync(this.recordPath, `${this.recordPath}.removed-${Date.now()}`);
 			if (r.platform === "linux")

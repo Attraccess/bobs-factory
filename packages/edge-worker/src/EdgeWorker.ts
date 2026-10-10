@@ -370,6 +370,7 @@ import { LinearActivitySink } from "./sinks/LinearActivitySink.js";
 import { ToolPermissionResolver } from "./ToolPermissionResolver.js";
 import type { AgentSessionData, EdgeWorkerEvents } from "./types.js";
 import { UserAccessControl } from "./UserAccessControl.js";
+import { UpdateDrain } from "./updates/UpdateDrain.js";
 import { ZulipChatAdapter } from "./ZulipChatAdapter.js";
 
 export declare interface EdgeWorker {
@@ -442,6 +443,7 @@ export class EdgeWorker extends EventEmitter {
 	/** @internal - Exposed for testing only */
 	public repositoryRouter: RepositoryRouter; // Repository routing and selection
 	private gitService: GitService;
+	private updateDrain?: UpdateDrain;
 	private activeWebhookCount = 0; // Track number of webhooks currently being processed
 	// GitHub webhook handlers share a PR worktree, so only one may run per PR.
 	private activeGitHubPrSessions = new Set<string>();
@@ -827,8 +829,60 @@ export class EdgeWorker extends EventEmitter {
 	 * Start the edge worker
 	 */
 	async start(): Promise<void> {
-		await this.runnerSlots.ready();
 		const factory = this.getFactoryRuntime();
+		this.updateDrain = new UpdateDrain(
+			this.factoryHome,
+			factory,
+			this.runnerSlots,
+			() =>
+				this.computeStatus() === "busy" ||
+				Boolean(this.ticketTracking?.isBusy()) ||
+				this.inFlightTicketStarts.size > 0 ||
+				this.preparationStarts.size > 0,
+			() => this.recoverAfterUpdate(),
+			() =>
+				this.getAllKnownSessions()
+					.map((session) => ({
+						id: session.id,
+						workspace: session.workspace.path,
+						claude: session.claudeSessionId,
+						codex: session.codexSessionId,
+						cursor: session.cursorSessionId,
+						gemini: session.geminiSessionId,
+						opencode: session.opencodeSessionId,
+						executionSnapshot: session.metadata?.executionSnapshot,
+						pendingExecution: session.metadata?.pendingExecution,
+						pendingChatMessages: session.metadata?.pendingChatMessages,
+					}))
+					.sort((a, b) => a.id.localeCompare(b.id)),
+			(active) => this.getTicketTracking().setUpdateMaintenance(active),
+		);
+		const intake = (request: { method: string; url: string }) =>
+			!["GET", "HEAD"].includes(request.method) &&
+			(/^\/(?:linear|github|gitlab|slack|zulip)-webhook(?:\?|$)/.test(
+				request.url,
+			) ||
+				/^\/webhook(?:\?|$)/.test(request.url) ||
+				request.url.startsWith("/cli/") ||
+				request.url.startsWith("/api/update/"));
+		const application = this.sharedApplicationServer.getFastifyInstance();
+		application.addHook("onRequest", async (request, reply) => {
+			if (!intake(request)) return;
+			if (this.updateDrain?.active())
+				return reply
+					.code(503)
+					.header("Retry-After", "30")
+					.send({ error: "Factory update maintenance; retry after restart" });
+			this.updateDrain?.enter(request);
+		});
+		application.addHook("onResponse", async (request) => {
+			this.updateDrain?.leave(request);
+		});
+		application.addHook("onError", async (request) => {
+			this.updateDrain?.leave(request);
+		});
+
+		await this.runnerSlots.ready();
 		await this.runnerSlots.reconcileQueue((identity) => {
 			const prefix = `${factory.directory}:run:`;
 			if (!identity.startsWith(prefix)) return false;
@@ -1008,6 +1062,7 @@ export class EdgeWorker extends EventEmitter {
 			this.factoryPush ??= new FactoryPush(this.factoryHome);
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
 				onboarding: this.localSetup,
+				updateDrain: this.updateDrain,
 				push: this.factoryPush,
 				capacity: this.runnerSlots,
 				deliveryStatus: () =>
@@ -1251,6 +1306,7 @@ export class EdgeWorker extends EventEmitter {
 				},
 			},
 			grants.instance(),
+			this.updateDrain,
 		);
 		this.operatorServer = new OperatorServer(grants, service);
 		await this.operatorServer.start();
@@ -5537,7 +5593,14 @@ ${taskSection}`;
 			throw new Error("This ticket launch was stopped");
 	}
 
+	private recoverAfterUpdate(): void {
+		if (this.updateDrain?.active()) return;
+		this.recoverFactoryRuns();
+		this.recoverPendingTicketLaunches();
+	}
+
 	private recoverPendingTicketLaunches(): void {
+		if (this.updateDrain?.active()) return;
 		for (const receipt of this.getLaunchAdmission().values()) {
 			if (receipt.phase === "pending") {
 				void this.startAcceptedTicketLaunch(receipt, [
@@ -5734,11 +5797,14 @@ ${taskSection}`;
 		repos: RepositoryConfig[],
 	): Promise<void> {
 		if (
+			this.updateDrain?.active() ||
 			this.inFlightTicketStarts.has(receipt.key) ||
 			receipt.phase === "settled"
 		)
 			return;
 		this.inFlightTicketStarts.add(receipt.key);
+		const operation = {};
+		this.updateDrain?.enter(operation);
 		const { webhook } = receipt;
 		this.pendingTriggerOrigins.set(receipt.sessionId, receipt.origin);
 		try {
@@ -5764,8 +5830,12 @@ ${taskSection}`;
 				`${error instanceof Error ? error.message : String(error)}${phase === "recovery" ? " Startup was interrupted; ownership is retained to prevent duplicate work. Inspect the existing session, or send stop before launching a new session." : " Check the workflow ID, labels, default and ticket-assignment permission in Recipes; no fallback was launched."}`,
 			);
 		} finally {
-			this.inFlightTicketStarts.delete(receipt.key);
-			await this.savePersistedState();
+			try {
+				await this.savePersistedState();
+			} finally {
+				this.inFlightTicketStarts.delete(receipt.key);
+				this.updateDrain?.leave(operation);
+			}
 		}
 	}
 
@@ -9712,6 +9782,7 @@ ${taskSection}`;
 	}
 
 	private recoverFactoryRuns(): void {
+		if (this.updateDrain?.active()) return;
 		const runtime = this.getFactoryRuntime();
 		for (const run of runtime.runs.values()) {
 			void this.recoverFactoryTicketTracking(run);

@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import {
 	mkdir,
 	open,
@@ -11,7 +12,7 @@ import {
 	writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import {
@@ -293,6 +294,9 @@ export class MachineCapacity implements ExecutionCapacity {
 			const result = await update(state);
 			State.parse(state);
 			while (
+				!existsSync(
+					join(dirname(this.directory), "updates", "admission-paused"),
+				) &&
 				state.requests.filter((r) => r.phase !== "queued").length < state.limit
 			) {
 				const eligible: CapacityRequest[] = [];
@@ -392,6 +396,53 @@ export class MachineCapacity implements ExecutionCapacity {
 			state.requests = state.requests.filter(
 				(request) => request.phase !== "queued" || !inactive(request.identity),
 			);
+		});
+	}
+	async pauseAdmissionsForUpdate(
+		transactionId: string,
+	): Promise<CapacitySnapshot> {
+		await this.initialized;
+		await this.transaction(async (state) => {
+			// Observational barrier: never signal descendants to make an update idle.
+			for (const request of state.requests) {
+				if (
+					request.phase !== "queued" ||
+					(await descendants(request.token)).length
+				)
+					throw new Error(
+						"Active capacity leases/descendants still exist; update remains pending",
+					);
+			}
+			const marker = join(
+				dirname(this.directory),
+				"updates",
+				"admission-paused",
+			);
+			await mkdir(dirname(marker), { recursive: true, mode: 0o700 });
+			if (existsSync(marker)) {
+				if (readFileSync(marker, "utf8") !== transactionId)
+					throw new Error("Another update owns capacity maintenance");
+			} else
+				await writeFile(marker, transactionId, {
+					flag: "wx",
+					mode: 0o600,
+					flush: true,
+				});
+		});
+		return this.lastSnapshot!;
+	}
+	async resumeAdmissionsAfterUpdate(transactionId: string): Promise<void> {
+		await this.initialized;
+		await this.transaction(async () => {
+			const marker = join(
+				dirname(this.directory),
+				"updates",
+				"admission-paused",
+			);
+			if (!existsSync(marker)) return;
+			if (readFileSync(marker, "utf8") !== transactionId)
+				throw new Error("Capacity maintenance transaction mismatch");
+			await unlink(marker);
 		});
 	}
 	async setLimit(value: number): Promise<void> {

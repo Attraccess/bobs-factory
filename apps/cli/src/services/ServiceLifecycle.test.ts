@@ -2,6 +2,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
+	unlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,6 +13,7 @@ import {
 	type ServiceExecutor,
 	ServiceLifecycle,
 	serviceDefinition,
+	updateServiceRecord,
 } from "./ServiceLifecycle.js";
 
 function fixture(platform = "linux") {
@@ -65,6 +67,45 @@ describe("user service ownership", () => {
 		await restored.resume();
 		expect(restored.record()!.desired).toBe("running");
 	});
+	it("keeps the external updater alive during worker maintenance and stops both deliberately", async () => {
+		const { manager, executable, calls } = fixture();
+		manager.install(executable);
+		const updater = updateServiceRecord(manager.record()!);
+		expect(readFileSync(updater.definition, "utf8")).toContain('"updates-run"');
+		await manager.action("start");
+		expect(
+			calls.filter((c) => c.includes("start")).map((c) => c.at(-1)),
+		).toEqual([`${manager.record()!.id}.service`, `${updater.id}.service`]);
+		calls.length = 0;
+		await manager.action("maintenance");
+		expect(
+			calls.filter((c) => c.includes("stop")).map((c) => c.at(-1)),
+		).toEqual([`${manager.record()!.id}.service`]);
+		await manager.resume();
+		calls.length = 0;
+		await manager.action("stop");
+		expect(
+			calls.filter((c) => c.includes("stop")).map((c) => c.at(-1)),
+		).toEqual([`${manager.record()!.id}.service`, `${updater.id}.service`]);
+	});
+
+	it("resumes interrupted stopped setup without adopting externally changed definitions", () => {
+		const { manager, executable, calls } = fixture();
+		manager.install(executable);
+		const updater = updateServiceRecord(manager.record()!);
+		unlinkSync(updater.definition);
+		manager.install(executable);
+		expect(readFileSync(updater.definition, "utf8")).toBe(
+			serviceDefinition(updater, true),
+		);
+		expect(calls.some((c) => c.includes("start") || c.includes("enable"))).toBe(
+			false,
+		);
+		unlinkSync(updater.definition);
+		writeFileSync(manager.record()!.definition, "external");
+		expect(() => manager.install(executable)).toThrow("changed externally");
+	});
+
 	it("external changes prevent stop/remove from destroying unmanaged definitions", async () => {
 		const { manager, executable } = fixture();
 		manager.install(executable);

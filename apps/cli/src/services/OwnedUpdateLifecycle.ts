@@ -19,7 +19,11 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { requestFactoryTerminalSession } from "bobs-factory-edge-worker";
 import { FactoryClient } from "../tui/client.js";
-import { ownerAlive, workerOwner } from "./InstanceLock.js";
+import {
+	acquireInstanceLock,
+	ownerAlive,
+	workerOwner,
+} from "./InstanceLock.js";
 import { ServiceLifecycle } from "./ServiceLifecycle.js";
 
 const runFile = promisify(execFile);
@@ -99,6 +103,9 @@ export class OwnedUpdateLifecycle {
 				"Update supervisor must be outside the worker being replaced",
 			);
 	}
+	get runtimeLink() {
+		return this.owner.executable;
+	}
 	private fence() {
 		return join(this.home, "runtime", "update-owner.json");
 	}
@@ -119,6 +126,40 @@ export class OwnedUpdateLifecycle {
 		}
 		this.transactionId = transactionId;
 		this.save({ transactionId, preservation: this.preservation });
+		const current = workerOwner(this.home);
+		if (!current || !ownerAlive(current)) {
+			if (!this.preservation) {
+				const transaction = JSON.parse(
+					readFileSync(join(this.home, "updates", "state.json"), "utf8"),
+				).transaction;
+				if (
+					transaction?.id !== transactionId ||
+					transaction.switchStarted ||
+					realpathSync(this.owner.executable) !==
+						realpathSync(transaction.staged.previousExecutable)
+				)
+					throw new Error(
+						"Interrupted switch lacks a durable preservation receipt",
+					);
+			}
+			const marker = process.env.BOBS_FACTORY_WORKER_ID;
+			try {
+				const release = await acquireInstanceLock(this.home);
+				release();
+			} finally {
+				if (marker === undefined) delete process.env.BOBS_FACTORY_WORKER_ID;
+				else process.env.BOBS_FACTORY_WORKER_ID = marker;
+			}
+			if (this.preservation) return;
+			if (this.owner.kind === "desktop") await this.start();
+			else {
+				for (let attempt = 0; attempt < 150; attempt++) {
+					const live = workerOwner(this.home);
+					if (live && ownerAlive(live)) break;
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
+			}
+		}
 		await this.client.post("/api/updates/maintenance", {
 			transactionId,
 			action: "begin",
@@ -267,8 +308,23 @@ export class OwnedUpdateLifecycle {
 		this.switchLink(this.staged.executable);
 	}
 	async start() {
-		if (this.owner.kind === "service") await this.manager.resume();
-		else {
+		if (this.owner.kind === "service") {
+			await this.manager.resume();
+			for (let attempt = 0; attempt < 300; attempt++) {
+				const current = workerOwner(this.home);
+				if (
+					current &&
+					current.owner === "service" &&
+					current.executable === realpathSync(this.owner.executable) &&
+					ownerAlive(current)
+				)
+					return;
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			}
+			throw new Error(
+				"Managed replacement did not acquire its worker startup fence",
+			);
+		} else {
 			const { spawn } = await import("node:child_process");
 			const log = (await import("node:fs")).openSync(
 				join(this.home, "runtime", "desktop-worker.log"),
@@ -292,10 +348,52 @@ export class OwnedUpdateLifecycle {
 				},
 			);
 			(await import("node:fs")).closeSync(log);
+			let launchError: Error | undefined;
+			child.on("error", (error) => {
+				launchError = error;
+			});
 			child.unref();
+			// A spawned process has not necessarily claimed its durable worker
+			// fence yet. Never let immediate failure/rollback race that startup.
+			for (let attempt = 0; attempt < 300; attempt++) {
+				if (launchError) throw launchError;
+				if (child.exitCode !== null || child.signalCode !== null)
+					throw new Error("Owned worker exited before acquiring ownership");
+				const current = workerOwner(this.home);
+				if (current) {
+					if (current.pid !== child.pid)
+						throw new Error("Another worker acquired ownership during launch");
+					if (ownerAlive(current)) return;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			}
+			throw new Error(
+				"Owned worker did not acquire its startup fence; recovery must confirm its exit",
+			);
 		}
 	}
+	async restartCrashedDesktop() {
+		if (
+			this.owner.kind !== "desktop" ||
+			existsSync(this.fence()) ||
+			existsSync(join(this.home, "runtime", "desktop-stopped.json"))
+		)
+			return;
+		const current = workerOwner(this.home);
+		if (current && ownerAlive(current)) return;
+		const marker = process.env.BOBS_FACTORY_WORKER_ID;
+		try {
+			const release = await acquireInstanceLock(this.home);
+			release();
+		} finally {
+			if (marker === undefined) delete process.env.BOBS_FACTORY_WORKER_ID;
+			else process.env.BOBS_FACTORY_WORKER_ID = marker;
+		}
+		await this.start();
+	}
+
 	async health(candidate: LifecycleCandidate) {
+		let failure = "Runtime did not respond";
 		for (let attempt = 0; attempt < 100; attempt++) {
 			try {
 				const identity = await this.client.get<{ runtime: LifecycleCandidate }>(
@@ -313,11 +411,14 @@ export class OwnedUpdateLifecycle {
 						this.preservation?.preservedStateSha256
 				)
 					return;
-			} catch {}
+				failure = `Observed ${identity.runtime.version}/${identity.runtime.commit}/${identity.runtime.target}; liveOwner=${Boolean(owner && ownerAlive(owner))}; preservedState=${receipt.preservedStateSha256 === this.preservation?.preservedStateSha256}`;
+			} catch (error) {
+				failure = (error as Error).message;
+			}
 			await new Promise((resolve) => setTimeout(resolve, 200));
 		}
 		throw new Error(
-			"Replacement failed exact runtime/preserved-state health check",
+			`Replacement failed exact runtime/preserved-state health check: ${failure}`,
 		);
 	}
 	async rollback(transaction: LifecycleTransaction) {
@@ -383,12 +484,52 @@ export class OwnedUpdateLifecycle {
 		await this.health(old);
 	}
 	async releaseMaintenance(transactionId: string) {
+		if (!this.transactionId) {
+			const journal = JSON.parse(
+				readFileSync(join(this.home, "updates", "state.json"), "utf8"),
+			);
+			const transaction = journal.transaction;
+			if (
+				transaction?.id !== transactionId ||
+				(transaction.release &&
+					transaction.release.transactionId !== transactionId) ||
+				(!transaction.release &&
+					!["succeeded", "rolled-back", "cancelled"].includes(
+						transaction.phase,
+					))
+			)
+				throw new Error(
+					"Maintenance release lacks exact durable terminal outcome",
+				);
+			this.transactionId = transactionId;
+		}
 		if (transactionId !== this.transactionId)
 			throw new Error("Maintenance owner mismatch");
+		if (existsSync(this.fence())) {
+			const saved = JSON.parse(readFileSync(this.fence(), "utf8"));
+			if (saved.transactionId !== transactionId)
+				throw new Error("Another lifecycle owns maintenance");
+			this.preservation = saved.preservation;
+		} else if (!existsSync(join(this.home, "updates", "maintenance.json")))
+			return;
+		const current = workerOwner(this.home);
+		if (!current || !ownerAlive(current)) {
+			const journal = JSON.parse(
+				readFileSync(join(this.home, "updates", "state.json"), "utf8"),
+			);
+			const transaction = journal.transaction;
+			const expected =
+				(transaction.release?.outcome ?? transaction.phase) === "succeeded"
+					? transaction.candidate
+					: transaction.previous;
+			await this.acquireMaintenance(transactionId);
+			await this.start();
+			await this.health(expected);
+		}
 		await this.client.post("/api/updates/maintenance", {
 			transactionId,
 			action: "end",
 		});
-		rmSync(this.fence());
+		rmSync(this.fence(), { force: true });
 	}
 }
