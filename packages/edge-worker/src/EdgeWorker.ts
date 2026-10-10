@@ -1214,30 +1214,44 @@ export class EdgeWorker extends EventEmitter {
 				message: (id, text, messageId) =>
 					this.sendFactoryChat(id, text, messageId),
 				stop: (id) => this.stopFactoryOperatorRun(id),
-				mcp: async (run) => {
-					const resolved = await this.factoryMcpConfig(run);
-					let configRevision: string | undefined,
-						configurationError: string | undefined;
-					try {
-						configRevision = configuration.revision(run);
-					} catch {
-						configurationError = "unsupported_source";
-					}
-					return {
-						instance: grants.instance(),
-						configRevision,
-						configurationError,
-						...inspectOperatorTransport(run, resolved),
-					};
-				},
-				check: async (run, server) => ({
-					instance: grants.instance(),
-					...(await checkOperatorTransport(
-						run,
-						await this.factoryMcpConfig(run),
-						server,
-					)),
-				}),
+				mcp: (run) =>
+					this.runnerSlots.run(
+						async () => {
+							const resolved = await this.factoryMcpConfig(run);
+							let configRevision: string | undefined,
+								configurationError: string | undefined;
+							try {
+								configRevision = configuration.revision(run);
+							} catch {
+								configurationError = "unsupported_source";
+							}
+							return {
+								instance: grants.instance(),
+								configRevision,
+								configurationError,
+								...inspectOperatorTransport(run, resolved),
+							};
+						},
+						AbortSignal.timeout(15000),
+						{
+							identity: `${this.factoryHome}:operator-inspect:${run.id}:${randomUUID()}`,
+						},
+					),
+				check: (run, server) =>
+					this.runnerSlots.run(
+						async () => ({
+							instance: grants.instance(),
+							...(await checkOperatorTransport(
+								run,
+								await this.factoryMcpConfig(run),
+								server,
+							)),
+						}),
+						AbortSignal.timeout(15000),
+						{
+							identity: `${this.factoryHome}:operator-check:${run.id}:${randomUUID()}`,
+						},
+					),
 				sanitize: (text) => {
 					const sources: unknown[] = [
 						{
@@ -1437,6 +1451,10 @@ export class EdgeWorker extends EventEmitter {
 			this.sharedApplicationServer.getFastifyInstance(),
 			this.factoryHome,
 			() => process.env.BOBS_FACTORY_API_KEY || "",
+			(work) =>
+				this.runnerSlots.run(work, AbortSignal.timeout(30000), {
+					identity: `${this.factoryHome}:dashboard-mcp-check:${randomUUID()}`,
+				}),
 		);
 
 		// Register config update routes
@@ -7884,102 +7902,110 @@ ${taskSection}`;
 				}
 			}
 		}
-		const request = async (
+		const request = (
 			serverName: string,
 			tool: string | undefined,
 			args: Record<string, unknown>,
 			signal: AbortSignal,
-		) => {
-			if (tool !== undefined)
-				assertFactoryToolAllowed(
-					`mcp__${serverName}__${tool}`,
-					built.config.allowedTools,
-					built.config.disallowedTools,
-				);
-			const server = servers[serverName];
-			if (!server || server.type === "sdk")
-				throw new Error(
-					`MCP server ${serverName} is not configured as a process/HTTP transport`,
-				);
-			const transport =
-				"url" in server && server.headers
-					? {
-							...server,
-							headers: Object.fromEntries(
-								Object.entries(server.headers ?? {}).map(([key, value]) => [
-									key,
-									value.replace(
-										/\$\{([A-Z][A-Z0-9_]*)\}/g,
-										(_match, name: string) => {
-											const secret = built.config.childEnvironment
-												? built.config.childEnvironment[name]
-												: process.env[name];
-											if (!secret)
-												throw new OperatorError(
-													"missing_authentication",
-													"A configured header credential reference is unavailable in the accepted execution environment",
-												);
-											return secret;
-										},
+		) =>
+			this.runnerSlots.run(
+				async () => {
+					if (tool !== undefined)
+						assertFactoryToolAllowed(
+							`mcp__${serverName}__${tool}`,
+							built.config.allowedTools,
+							built.config.disallowedTools,
+						);
+					const server = servers[serverName];
+					if (!server || server.type === "sdk")
+						throw new Error(
+							`MCP server ${serverName} is not configured as a process/HTTP transport`,
+						);
+					const transport =
+						"url" in server && server.headers
+							? {
+									...server,
+									headers: Object.fromEntries(
+										Object.entries(server.headers ?? {}).map(([key, value]) => [
+											key,
+											value.replace(
+												/\$\{([A-Z][A-Z0-9_]*)\}/g,
+												(_match, name: string) => {
+													const secret = built.config.childEnvironment
+														? built.config.childEnvironment[name]
+														: process.env[name];
+													if (!secret)
+														throw new OperatorError(
+															"missing_authentication",
+															"A configured header credential reference is unavailable in the accepted execution environment",
+														);
+													return secret;
+												},
+											),
+										]),
 									),
-								]),
-							),
-						}
-					: server;
+								}
+							: server;
 
-			try {
-				const nativeConfig = {
-					...built.config,
-					workingDirectory: run.workspace || repository.repositoryPath,
-				};
-				const directConfig =
-					"command" in server
-						? { ...server, env: { ...server.env, ...executionEnvironment() } }
-						: transport;
-				if (tool === undefined) {
-					if (runnerType === "codex" && "url" in server)
-						await listCodexMcpTools(
-							nativeConfig,
-							serverName,
-							transport,
-							signal,
+					try {
+						const nativeConfig = {
+							...built.config,
+							workingDirectory: run.workspace || repository.repositoryPath,
+						};
+						const directConfig =
+							"command" in server
+								? {
+										...server,
+										env: { ...server.env, ...executionEnvironment() },
+									}
+								: transport;
+						if (tool === undefined) {
+							if (runnerType === "codex" && "url" in server)
+								await listCodexMcpTools(
+									nativeConfig,
+									serverName,
+									transport,
+									signal,
+								);
+							else
+								await listConfiguredTools(
+									directConfig,
+									signal,
+									run.workspace || repository.repositoryPath,
+									built.config.childEnvironment,
+								);
+							return;
+						}
+						const result =
+							runnerType === "codex" && "url" in server
+								? await callCodexMcpTool(
+										nativeConfig,
+										serverName,
+										transport,
+										tool,
+										args,
+										signal,
+									)
+								: await callConfiguredTool(
+										directConfig,
+										tool,
+										args,
+										signal,
+										run.workspace || repository.repositoryPath,
+										built.config.childEnvironment,
+									);
+						return execution
+							? JSON.parse(execution.redact(JSON.stringify(result)))
+							: result;
+					} catch (error) {
+						throw new Error(
+							execution ? execution.redact(String(error)) : String(error),
 						);
-					else
-						await listConfiguredTools(
-							directConfig,
-							signal,
-							run.workspace || repository.repositoryPath,
-							built.config.childEnvironment,
-						);
-					return;
-				}
-				const result =
-					runnerType === "codex" && "url" in server
-						? await callCodexMcpTool(
-								nativeConfig,
-								serverName,
-								transport,
-								tool,
-								args,
-								signal,
-							)
-						: await callConfiguredTool(
-								directConfig,
-								tool,
-								args,
-								signal,
-								run.workspace || repository.repositoryPath,
-								built.config.childEnvironment,
-							);
-				return execution
-					? JSON.parse(execution.redact(JSON.stringify(result)))
-					: result;
-			} catch (error) {
-				throw new Error(
-					execution ? execution.redact(String(error)) : String(error),
-				);
-			}
-		};
+					}
+				},
+				signal,
+				{ identity: `${this.factoryHome}:mcp:${run.id}:${randomUUID()}` },
+			);
 		return {
 			built,
 			servers,

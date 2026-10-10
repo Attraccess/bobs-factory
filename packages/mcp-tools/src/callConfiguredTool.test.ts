@@ -1,5 +1,11 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
-import { callConfiguredTool } from "./callConfiguredTool.js";
+import {
+	callConfiguredTool,
+	listConfiguredTools,
+} from "./callConfiguredTool.js";
 
 const server = `
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -70,6 +76,49 @@ it("does not spawn a configured tool after termination", async () => {
 			process.cwd(),
 		),
 	).rejects.toThrow("Run terminated");
+});
+it.each([
+	"initialization-cancel",
+	"catalog-cancel",
+	"catalog-timeout",
+	"catalog-error",
+])("awaits real stdio closure after %s", async (mode) => {
+	const home = mkdtempSync(join(tmpdir(), "mcp-close-regression-"));
+	const script = `import {createInterface} from 'node:readline';import {writeFileSync} from 'node:fs';
+const [home,mode]=process.argv.slice(1);writeFileSync(home+'/pid',String(process.pid));
+const input=createInterface({input:process.stdin});
+input.on('close',()=>setTimeout(()=>{writeFileSync(home+'/closed','natural');process.exit(0)},200));
+input.on('line',line=>{const m=JSON.parse(line);if(m.id===undefined)return;
+if(m.method==='initialize'&&mode!=='initialization-cancel')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:m.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}}})+'\\n');
+else {writeFileSync(home+'/entered','1');if(mode==='catalog-error')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,error:{code:-32603,message:'controlled failure'}})+'\\n');}});`;
+	const controller = new AbortController();
+	const signal =
+		mode === "catalog-timeout" ? AbortSignal.timeout(1000) : controller.signal;
+	const checking = listConfiguredTools(
+		{
+			command: process.execPath,
+			args: ["--input-type=module", "-e", script, home, mode],
+		},
+		signal,
+		home,
+		{ PATH: process.env.PATH ?? "", HOME: home },
+	);
+	const rejected = expect(checking).rejects.toThrow();
+	try {
+		await vi.waitFor(() =>
+			expect(existsSync(join(home, "entered"))).toBe(true),
+		);
+		if (mode.endsWith("cancel"))
+			controller.abort(new Error("controlled cancellation"));
+		await rejected;
+		expect(readFileSync(join(home, "closed"), "utf8")).toBe("natural");
+		const pid = Number(readFileSync(join(home, "pid"), "utf8"));
+		expect(() => process.kill(pid, 0)).toThrow();
+	} finally {
+		controller.abort();
+		await checking.catch(() => {});
+		rmSync(home, { recursive: true, force: true });
+	}
 });
 
 afterEach(() => vi.unstubAllEnvs());

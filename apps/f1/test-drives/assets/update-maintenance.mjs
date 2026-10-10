@@ -2,7 +2,14 @@
 // Actual EdgeWorker startup, OperatorServer/Service and UpdateDrain. Tracker
 // fetches and final ticket routing are controlled; no native/OS restart claim.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EdgeWorker } from "../../../../packages/edge-worker/dist/EdgeWorker.js";
@@ -14,6 +21,12 @@ import { f1AgentHandlers } from "../../dist/src/MockAgentRunner.js";
 
 assert.equal(process.env.F1_AGENT_MODE, "mock");
 const home = mkdtempSync(join(tmpdir(), "f1-update-maintenance-"));
+process.env.HOME = home;
+process.env.BOBS_FACTORY_MIGRATION_SOURCE_CAPACITY_DIRECTORY = join(
+	home,
+	"legacy-capacity",
+);
+process.env.BOBS_FACTORY_API_KEY = "synthetic-f1-mcp-check";
 const seedRuntime = new WorkflowRuntime(home, {
 	agent: async () => ({}),
 	script: async () => ({}),
@@ -53,6 +66,7 @@ waiting.checkpoint = {
 	step: "question",
 	agent: { runner: "codex", sessionId: "mock-retained-native-session" },
 };
+waiting.sessionSnapshot = { id: waiting.id };
 seedRuntime.save(waiting);
 await seedRuntime.shutdown();
 const manager = new UpdateManager(home);
@@ -193,6 +207,8 @@ try {
 		"steer_run",
 		"retry_ticket_sync",
 		"update_mcp_connection",
+		"check_mcp_connection",
+		"inspect_mcp_connections",
 	]) {
 		const response = await call(name, {
 			runId: waiting.id,
@@ -227,6 +243,220 @@ try {
 	receipts.push(
 		"exact successful release deliberately resumes production pending dispatcher/preflight once; mismatched release does not resume",
 	);
+	// Control only configuration/credentials. Production factoryMcpConfig,
+	// checkOperatorTransport, tools/list, stdio close and capacity all execute.
+	const controlled = join(home, "controlled-mcp.mjs");
+	writeFileSync(
+		controlled,
+		`import {createInterface} from 'node:readline';
+import {writeFileSync,existsSync} from 'node:fs';
+const [home]=process.argv.slice(2);
+writeFileSync(home+'/transport-owner.json',JSON.stringify({pid:process.pid,token:process.env.BOBS_FACTORY_EXECUTION_LEASE}));
+const lines=createInterface({input:process.stdin});
+lines.on('close',()=>{writeFileSync(home+'/transport-exit','stdin closed');process.exit(0);});
+lines.on('line',async line=>{const m=JSON.parse(line);if(m.id===undefined)return;
+let result;if(m.method==='initialize')result={protocolVersion:m.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'controlled',version:'1'}};
+else if(m.method==='tools/list'){writeFileSync(home+'/transport-entered','1');while(!existsSync(home+'/transport-finish'))await new Promise(r=>setTimeout(r,5));result={tools:[]};}
+else result={};process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`,
+	);
+	const originals = {
+		factoryRepositories: worker.factoryRepositories,
+		buildAgentRunnerConfig: worker.buildAgentRunnerConfig,
+		applyRunExecution: worker.applyRunExecution,
+	};
+	let releaseConfig;
+	let configEntered = false;
+	const configHold = new Promise((resolve) => {
+		releaseConfig = resolve;
+	});
+	worker.factoryRepositories = () => [{ id: "fixture", repositoryPath: home }];
+	worker.buildAgentRunnerConfig = async () => {
+		configEntered = true;
+		await configHold;
+		return {
+			runnerType: "claude",
+			config: {
+				workingDirectory: home,
+				childEnvironment: { PATH: process.env.PATH, HOME: home },
+				mcpConfig: {
+					controlled: { command: process.execPath, args: [controlled, home] },
+				},
+			},
+		};
+	};
+	worker.applyRunExecution = async () => undefined;
+	let checking;
+	const transportObservations = [];
+	try {
+		checking = call("check_mcp_connection", {
+			runId: waiting.id,
+			server: "controlled",
+		});
+		await until(() => configEntered);
+		transaction("transport-spanning-freeze");
+		await drain.begin("transport-spanning-freeze");
+		assert.equal((await drain.inspect()).idle, false);
+		assert.equal(existsSync(join(home, "transport-entered")), false);
+		const owned = await worker.runnerSlots.snapshot();
+		assert.equal(owned.active, 1);
+		const request = owned.requests.find((request) =>
+			request.identity.includes(":operator-check:"),
+		);
+		assert.equal(request.owner.pid, process.pid);
+		assert.equal(request.phase, "executing");
+		// Frozen live inspection never enters configuration/credential hooks.
+		for (const name of ["check_mcp_connection", "inspect_mcp_connections"])
+			assert.equal(
+				(await call(name, { runId: waiting.id })).json().error.code,
+				"update_maintenance",
+			);
+		const stored = (await call("inspect_run", { runId: waiting.id })).json();
+		assert.equal(stored.ok, true);
+		assert.equal(stored.result.mcp.error.code, "update_maintenance");
+		releaseConfig();
+		await until(() => existsSync(join(home, "transport-entered")));
+		const owner = JSON.parse(
+			readFileSync(join(home, "transport-owner.json"), "utf8"),
+		);
+		assert.equal(owner.token, request.token);
+		process.kill(owner.pid, 0);
+		assert.equal((await drain.inspect()).idle, false);
+		assert.equal((await worker.runnerSlots.snapshot()).active, 1);
+		transportObservations.push({
+			operation: request.identity,
+			token: request.token,
+			owner: request.owner,
+			descendant: owner.pid,
+			beforeCloseIdle: false,
+		});
+		writeFileSync(join(home, "transport-finish"), "1");
+		assert.equal((await checking).json().ok, true);
+		assert.equal(
+			readFileSync(join(home, "transport-exit"), "utf8"),
+			"stdin closed",
+		);
+		assert.throws(() => process.kill(owner.pid, 0), { code: "ESRCH" });
+		assert.equal((await drain.inspect()).idle, true);
+		assert.equal(
+			(await worker.runnerSlots.snapshot()).requests.some(
+				(r) => r.token === owner.token,
+			),
+			false,
+		);
+		// The completed snapshot barrier still refuses new transport execution.
+		rmSync(join(home, "transport-entered"));
+		assert.equal(
+			(
+				await call("check_mcp_connection", {
+					runId: waiting.id,
+					server: "controlled",
+				})
+			).json().error.code,
+			"update_maintenance",
+		);
+		assert.equal(existsSync(join(home, "transport-entered")), false);
+		finish();
+		await drain.end("transport-spanning-freeze");
+		receipts.push(
+			"pre-freeze awaited configuration and real tools/list descendant share one exact durable capacity owner; drain stays busy through natural stdin-close exit and lease release",
+		);
+		receipts.push(
+			"post-freeze transport checks/configuration inspection refuse before preparation or spawn; stored run inspection remains available before and after idle barrier",
+		);
+		for (const file of [
+			"transport-finish",
+			"transport-owner.json",
+			"transport-exit",
+		])
+			rmSync(join(home, file), { force: true });
+		const dashboard = () =>
+			worker.sharedApplicationServer.getFastifyInstance().inject({
+				method: "POST",
+				url: "/api/update/test-mcp",
+				headers: { authorization: "Bearer synthetic-f1-mcp-check" },
+				payload: {
+					transportType: "stdio",
+					command: process.execPath,
+					commandArgs: [
+						{ order: 0, value: controlled },
+						{ order: 1, value: home },
+					],
+				},
+			});
+		checking = dashboard();
+		await until(() => existsSync(join(home, "transport-entered")));
+		transaction("dashboard-transport-freeze");
+		await drain.begin("dashboard-transport-freeze");
+		assert.equal((await drain.inspect()).idle, false);
+		const dashboardOwner = JSON.parse(
+			readFileSync(join(home, "transport-owner.json"), "utf8"),
+		);
+		const dashboardRequest = (
+			await worker.runnerSlots.snapshot()
+		).requests.find((r) => r.token === dashboardOwner.token);
+		assert.ok(dashboardRequest.identity.includes(":dashboard-mcp-check:"));
+		assert.equal((await dashboard()).statusCode, 503);
+		writeFileSync(join(home, "transport-finish"), "1");
+		assert.equal((await checking).json().success, true);
+		assert.equal(
+			readFileSync(join(home, "transport-exit"), "utf8"),
+			"stdin closed",
+		);
+		assert.throws(() => process.kill(dashboardOwner.pid, 0), { code: "ESRCH" });
+		assert.equal((await drain.inspect()).idle, true);
+		finish();
+		await drain.end("dashboard-transport-freeze");
+		receipts.push(
+			"authenticated dashboard MCP check shares durable descendant ownership and accepted intake through natural exit; new dashboard checks refuse during freeze",
+		);
+		for (const file of [
+			"transport-entered",
+			"transport-finish",
+			"transport-owner.json",
+			"transport-exit",
+		])
+			rmSync(join(home, file), { force: true });
+		const transport = await worker.factoryMcpConfig(runtime.get(waiting.id));
+		const activeRole = await worker.runnerSlots.acquireLease(undefined, {
+			identity: "controlled-active-role-callback",
+		});
+		try {
+			transaction("active-callback-freeze");
+			await drain.begin("active-callback-freeze");
+			assert.equal((await drain.inspect()).idle, false);
+			checking = activeRole.run(() =>
+				transport.listTools("controlled", AbortSignal.timeout(15000)),
+			);
+			await until(() => existsSync(join(home, "transport-entered")));
+			const callbackOwner = JSON.parse(
+				readFileSync(join(home, "transport-owner.json"), "utf8"),
+			);
+			assert.equal(callbackOwner.token, activeRole.token);
+			assert.equal((await worker.runnerSlots.snapshot()).active, 1);
+			writeFileSync(join(home, "transport-finish"), "1");
+			await checking;
+			assert.equal(
+				readFileSync(join(home, "transport-exit"), "utf8"),
+				"stdin closed",
+			);
+			assert.equal((await drain.inspect()).idle, false);
+		} finally {
+			writeFileSync(join(home, "transport-finish"), "1");
+			if (checking) await checking;
+			await activeRole.release();
+		}
+		assert.equal((await drain.inspect()).idle, true);
+		finish();
+		await drain.end("active-callback-freeze");
+		receipts.push(
+			"active-role transport callback remains available during drain and reuses its exact lease without starting a second role",
+		);
+	} finally {
+		releaseConfig();
+		writeFileSync(join(home, "transport-finish"), "1");
+		if (checking) await checking;
+		Object.assign(worker, originals);
+	}
 
 	let done;
 	const hold = new Promise((resolve) => {
@@ -312,6 +542,7 @@ try {
 		receipts,
 		fetches,
 		routes,
+		transportObservations,
 		limitations: [
 			"Actual EdgeWorker startup/listeners; controlled tracker detail fetch and final route instead of agents/network",
 			"Synthetic operator grant and seeded waiting checkpoint; no native session execution",
