@@ -1086,7 +1086,8 @@ try {
 				new OwnedUpdateLifecycle(nativeHome, port),
 				previous,
 			);
-			r = await manager.recover("rollback release acknowledgment lost");
+			assert.equal(manager.status().operationOwner, undefined);
+			r = await manager.recover("operation owner stopped");
 			assert.equal(workerOwner(nativeHome).pid, rolledBackOwner.pid);
 			assert.equal(activations, count);
 			assert.equal(

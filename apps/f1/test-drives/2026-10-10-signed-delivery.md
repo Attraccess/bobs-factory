@@ -3,6 +3,78 @@
 Date: 2026-10-10. This is controlled runtime evidence, not production release,
 publisher trust, platform minimum, package catalog or publication evidence.
 
+## Current result — signed native flow passes
+
+The full controlled drive passes **23/23 scenarios** at exact native source/tooling
+`aa0ad1404aed147cf82fc259cf0c11f6bb18753b`, frozen on #116 comment1097 before
+preparation. This combines packaging `fecdda18379ebc1cd91b20f63839bb7820fb24b1`,
+lifecycle `84f2b98575357ebde3b094967ca0e1bfa72c5aa8` and updater outcome correction
+`815c4515ef7bffa09c18ebe7bb31bf197bb55a2e` (including startup967/evidence662).
+All six actual darwin-arm64 variants were built once with Bun1.4.2 in a separate
+compiler HOME/environment. The passing driver hash is
+`ca3784fb34f91837554788276a4336b41fa47c6a0f9dbe91f154364dbaabd085`.
+
+- [Passing signed source/install/native runtime receipt](assets/2026-10-10-signed-delivery/passed-aa0ad-signed-delivery.json)
+- [Passing original contention regression with journal preservation](assets/2026-10-10-signed-delivery/passed-aa0ad-startup-contention.json)
+- [Passing updater regression with a different previous installed view](assets/2026-10-10-signed-delivery/passed-aa0ad-maintained-startup-contention.json)
+- [Retained first attempt: harness confirmation error](assets/2026-10-10-signed-delivery/harness-error-aa0ad-first-attempt.json)
+
+The complete successful path uses real HTTPS and production verification,
+discovery, archive staging, extraction, native probes, signed bootstrap/native CLI,
+authenticated native drain, the actual external owned supervisor, compatibility
+preflight, exclusive stop/link/start/identity health and rollback. All375 release
+requests are credential-free. Tampered signature/bytes/inventory/candidate,
+missing signature/asset, unknown key and wrong channel are rejected. Explicit
+stable cannot silently select beta; only the documented unbound installer default
+may use authenticated beta compatibility.
+
+Actual installer provenance grants the new bound ownership capability; changing
+its record revokes it while executable bytes remain intact. Real shell reinstall
+preserves both overrides, pause and pin. Native CLI/API handoff retains those
+values and rejects stale CAS. A real shared-capacity lease and controlled native
+process descendant postpone update without being signaled; later release permits
+one idle replacement. Post-preflight pause, pin, manual and channel changes cancel
+before Stop. Later nightlies activate under the subscribed default, stable holds
+under manual default, and its saved idle-auto override permits a newer stable.
+Returning from nightly to stable requires exact explicit consent and passes native
+state compatibility. Waiting questions/definitions/checkpoint/output, worktree
+evidence and test auth/native-store boundary markers survive every replacement.
+
+Both real lost-release-ack paths finish without duplicate activation/PIDs. After
+succeeded, the previous native version exits1 before readiness; after rolled-back,
+the rejected candidate exits1. Both rejected cold starts preserve their copied
+journals byte-for-byte. Recovery retains the completed selected owner. Injected
+replacement-health failure rolls back, marks the candidate bad and prevents
+repeat activation. Actual signed-bootstrap trial workers coexist in another home,
+reject duplicate trials and remove only their temporary runtime on TERM.
+
+Firstaa0 attempt reached rollback recovery after20 passing scenarios, then the
+new harness passed explanatory prose to `recover` instead of its required literal
+`operation owner stopped`. Production correctly refused. The harness was corrected
+with an explicit absent-operation-owner assertion; the same native artifacts then
+passed the whole drive. This was a harness error, not a production defect or a
+second native build. Historical2e startup failure below remains unchanged.
+
+Updater final `16e60465ed36e18ac45d71db38226dd4b0ccd4e2` / source091 differs from815
+only in native test receipt sanitization and report/receipt evidence. Those later
+changes do not alter production runtime code. Native identities remainaa0; they
+are never relabeled as a later evidence/harness commit. Workspace build/typecheck,
+changed-harness Biome/syntax, combined ownership/service tests12/12 and updater
+manager/startup tests59/59 passed. No four-target native matrix was repeated here.
+
+This clears this lane's controlled signed-source/install-policy/native-adapter
+gap, not epic acceptance. Other targets remain explicit inventory fixtures/not-run.
+No actual Electron shell, OS service manager, Homebrew/DEB/AUR/Nix/AppImage,
+login/reboot, remote auth or physical native credential/provider continuation trial
+is claimed. The native checkpoint ID is mocked and no provider credits were used.
+Archive LICENSE/NOTICE/THIRD_PARTY_NOTICES bytes are retained, and the signed fixture
+contains exact Factory source. This does not establish complete Bun/WebKit/LGPL
+corresponding-source/relink release material. Authentic publisher pins, protected
+signing/public channels, eligible stable promotion/digest approval, platform/package
+receipts and the separate synthetic-fixture GitGuardian operator review remain
+release blockers. No production trust adoption, signing, publication, merge or
+ticket status change occurred.
+
 ## Applicability and exact inputs
 
 The combined changes affect persisted policy, maintenance admission, workflow
