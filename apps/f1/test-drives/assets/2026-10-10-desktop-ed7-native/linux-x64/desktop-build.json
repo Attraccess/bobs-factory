@@ -1,0 +1,45 @@
+{
+	"schemaVersion": 1,
+	"product": "bobs-factory-desktop",
+	"candidateDigest": "1c176a2d98cb18524a8f593eed73d335a747fa8b977ce4f4794e20a31084c791",
+	"version": "1.0.0-nightly.20261010.7",
+	"commit": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+	"target": "linux-x64",
+	"runtime": {
+		"schemaVersion": 1,
+		"product": "bobs-factory",
+		"version": "1.0.0-nightly.20261010.7",
+		"candidateDigest": "1c176a2d98cb18524a8f593eed73d335a747fa8b977ce4f4794e20a31084c791",
+		"workflowSha": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+		"committedVersion": "1.0.0-beta",
+		"commit": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+		"dirty": false,
+		"target": "linux-x64",
+		"tooling": {
+			"bun": "1.4.2"
+		},
+		"executable": {
+			"file": "bobs-factory",
+			"size": 120395232,
+			"sha256": "cd6f8428c5cb6e25c3caff5d255cb386d2cbac4105629bb007007ffb1588890e"
+		},
+		"resourceDigest": "4fc874433b46f5436701dc69cf06846a0203d82aa1a6d666e5c8d9a7653ebd60",
+		"validation": "pending runtime smoke",
+		"requirements": "glibc; native target smoke required"
+	},
+	"assets": [
+		{
+			"file": "bobs-factory-desktop-1.0.0-nightly.20261010.7-linux-x64.AppImage",
+			"size": 172626736,
+			"sha256": "aa295219fbaf2e91bd94029f81143d07746853616c6129604f159fd69407e2f1"
+		},
+		{
+			"file": "bobs-factory-desktop-1.0.0-nightly.20261010.7-linux-x64.deb",
+			"size": 136314040,
+			"sha256": "e4f3192bb986b3858be10728bcc47cdda9df289b51f61249b527480513488f40"
+		}
+	],
+	"signing": "unsigned preparation only",
+	"validation": "native install/auth/lifecycle receipts required",
+	"publication": false
+}
