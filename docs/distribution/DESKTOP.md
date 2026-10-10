@@ -31,7 +31,13 @@ shared per-instance updater; connecting to hosts must never update them together
 
 `desktop-build.yml` prepares unsigned four-target installers from frozen candidate
 bytes, with a hash-verified matching runtime, exact source/version/target and
-`desktop-build.json` inventory. It never signs, notarizes or publishes. Local build:
+`desktop-build.json` inventory. Its pull-request preparation route executes only
+for the same-repository desktop delivery branch; it freezes the exact PR head
+for both source and tooling, never the synthetic merge. One candidate is shared
+across all native jobs. This lets review obtain unsigned native evidence without
+merging the product to register a dispatch workflow. Read-only permissions and
+credential-free checkouts accompany builds with publication disabled; no signing
+or publication secrets are supplied. It never signs, notarizes or publishes. Local build:
 
 ```sh
 node scripts/build-desktop.mjs --candidate /private/candidate.json \

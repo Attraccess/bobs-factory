@@ -41,11 +41,27 @@ const candidate = {
 };
 const receipts = [];
 const crashChild = process.env.FACTORY_NATIVE_CRASH_HOME;
-for (const failHealth of crashChild ? [false] : [false, true]) {
+for (const mode of crashChild
+	? ["success"]
+	: ["success", "failed-health", "lost-release-ack"]) {
+	if (
+		!crashChild &&
+		process.env.FACTORY_NATIVE_TEST_MODE &&
+		process.env.FACTORY_NATIVE_TEST_MODE !== mode
+	)
+		continue;
+	const failHealth = mode === "failed-health";
+	const failReleaseAck = mode === "lost-release-ack";
 	const home = realpathSync(
 		crashChild ?? mkdtempSync(join(tmpdir(), "factory-native-update-")),
 	);
-	const port = crashChild ? 19465 : failHealth ? 19463 : 19461;
+	const port = crashChild
+		? 19465
+		: failReleaseAck
+			? 19467
+			: failHealth
+				? 19463
+				: 19461;
 	const link = desktopExecutable(home, oldDirectory);
 	const repo = join(home, "repo");
 	mkdirSync(repo);
@@ -76,10 +92,26 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 		{ mode: 0o600 },
 	);
 
+	let activations = 0;
+	let releaseAckLost = false;
 	class Lifecycle extends OwnedUpdateLifecycle {
 		async activate(staged) {
+			activations++;
 			await super.activate(staged);
 			if (crashChild) process.exit(73);
+		}
+		async releaseMaintenance(id, outcome) {
+			await super.releaseMaintenance(id, outcome);
+			if (
+				failReleaseAck &&
+				!releaseAckLost &&
+				realpathSync(link) === realpathSync(join(newDirectory, "bobs-factory"))
+			) {
+				releaseAckLost = true;
+				throw Error(
+					"Injected lost acknowledgment after real maintenance release",
+				);
+			}
 		}
 		async health(identity) {
 			if (failHealth && identity.version === next.version)
@@ -189,6 +221,22 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 			await new Promise((r) => setTimeout(r, 200));
 			result = await manager.reconcile();
 		}
+		if (failReleaseAck) {
+			assert.equal(result.transaction.phase, "recovery-required");
+			assert.equal(result.transaction.release.outcome, "succeeded");
+			assert.equal(result.transaction.release.status, "pending");
+			const activatedOwner = workerOwner(home);
+			const fresh = new UpdateManager(
+				home,
+				source,
+				new OwnedUpdateLifecycle(home, port),
+				previous,
+			);
+			result = await fresh.recover("operation owner stopped");
+			assert.equal(result.transaction.release.status, "acknowledged");
+			assert.equal(workerOwner(home).pid, activatedOwner.pid);
+			assert.equal(activations, 1);
+		}
 		assert.equal(
 			result.transaction.phase,
 			failHealth ? "rolled-back" : "succeeded",
@@ -247,6 +295,8 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 			home,
 			port,
 			phase: result.transaction.phase,
+			mode,
+			release: result.transaction.release,
 			preservedRunId: run.id,
 			mockedAgentCalls: mockCalls,
 			previous: previous.version,
@@ -265,7 +315,7 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 		}
 	}
 }
-if (!crashChild) {
+if (!crashChild && !process.env.FACTORY_NATIVE_TEST_MODE) {
 	const home = realpathSync(
 		mkdtempSync(join(tmpdir(), "factory-native-update-crash-")),
 	);
