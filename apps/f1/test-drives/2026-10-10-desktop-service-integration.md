@@ -45,14 +45,14 @@ native/mock evidence, not complete release or full-platform acceptance.
 | Updater/runtime | 63 tests pass across UpdateManager, UpdateOperationLock, UpdateMaintenance, PublishedUpdateSource and TicketTracking. |
 | Desktop/package safeguards | Origin/partition contract and mismatched/tampered runtime staging checks pass. |
 | Dependency security | pnpm audit reports zero known advisories. Electron44.7.0/electron-builder26.15.3 and scoped upstream transitive fix are locked. |
-| Biome | CI initially failed on launcher CSS formatting and two button types. Corrected; complete local biome ci exits0 (19 pre-existing warnings). Remote rerun is a separate receipt. |
+| Biome | CI initially failed on launcher CSS formatting and two button types. Corrected; complete local biome ci exits0 (19 pre-existing warnings). Remote Node22/24 CI and website build passed at ea1cd815 (runs38072947651/38072947642), before the later MCP correction. |
 | Mocked desktop F1 | One home/worker, disconnected client leaves human wait, graceful stop/reopen preserves run/checkpoint, accepted answer completes once, protected activities retained. |
 | Mocked updater F1 | Seven scenarios pass: busy/descendant deferral, manual-policy cancellation, preserved wait/gate/definitions/checkpoint, rollback and independent settings. Controlled worker counter peaks at1; not an OS service proof. |
 | Mocked real-worker maintenance F1 | Actual EdgeWorker/OperatorServer reboot dispatcher and authenticated mutation admission paths pass; production admission/state machinery, controlled agents only. See updater correction report. |
 | Actual native owner adapter | [Receipt](assets/2026-10-10-desktop-service-integration/native-update.json): unsigned real Bun executables, mocked release source. Successful cross-commit activation, immediate injected health failure rolls back, SIGKILL desktop-worker recovery, repeat exact release, supervisor exit immediately after link activation recovers without live worker API. Waiting question, workflow definitions/outputs/gates and mocked native checkpoint retained; each fixture's preparation hook runs once. Native credentials are represented by an isolated auth-boundary marker, not physical provider credentials. |
 | Actual Electron44.7 on Mac ARM64 | [Receipt](assets/2026-10-10-desktop-service-integration/native-electron.json): virtual CTAP2 enrollment/login/logout, shared protected onboarding UI, close keeps worker PID, reopen same PID, explicit Stop. [Screenshot](assets/2026-10-10-desktop-service-integration/onboarding.png). Physical Touch ID/security keys, remote HTTPS and a running provider role were not tested. |
 | Actual native packaging | Branded .app/DMG generated on macOS with bundled matching runtime and hash inventory; unsigned. This does not prove Applications drag/open, Gatekeeper trust or minimum OS support. |
-| Four-target/native user managers | Prepared workflow + disposable-runner-only native-service smoke. Dispatch rejected with GitHub404 because desktop-build.yml is absent from default branch. No run started or passed. |
+| Four-target/native user managers | Prepared workflow + disposable-runner-only native-service smoke. Initial dispatch rejected with GitHub404 because desktop-build.yml is absent from default branch. An exact same-repository PR85 head preparation trigger is now implemented with one frozen source/tooling candidate, read-only permissions and no signing/publication secrets. Final push/freeze waits for the focused MCP admission correction. No four-target desktop run passed yet. |
 
 Commands and receipts retained outside the checkout:
 
@@ -70,6 +70,23 @@ Use `env -u ELECTRON_RUN_AS_NODE` for the Electron native harness in T3.
 All fixtures use temporary homes and mocked agent preparation; no real-agent
 credits, host reboot, production PM2/service mutation, signing key creation or
 publication occurred.
+
+## Subsequent safety boundary and owner evidence
+
+Independent updater review #116 comment1020 found that live MCP inspection could
+spawn descendants during maintenance while drain reported idle. The updater lane
+is correcting this. All native binaries and receipts above predate that correction
+and remain provisional evidence; they cannot close final combined acceptance.
+
+The owner adapter's native lost-release-ack regression also passes with actual
+905→907 workers: acknowledgment is lost after healthy activation and actual
+maintenance release; the journal retains exact pending succeeded outcome. A fresh
+adapter acknowledges the same transaction, retaining the new installed version and
+same worker PID with one activation. Receipt:
+`/tmp/lifecycle-native-release-ack-provisional.json`. This too must be rerun on the
+corrected combined source. The first fixture injected its failure during an
+ordinary busy cancellation; injection now requires the selected new executable.
+The explicit stopped-operation-owner recovery confirmation is supplied.
 
 ## Acceptance mapping
 
