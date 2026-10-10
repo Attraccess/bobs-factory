@@ -233,3 +233,31 @@ Required hooks for the correction passed staged Biome, full workspace build and
 full workspace typecheck. Syntax/JSON/hash checks and `git diff --check` passed.
 The raw new receipt was formatted as repository JSON without changing its values;
 `cleanup-validation.json` retains both raw and committed receipt SHA-256 values.
+
+## Follow-up: reject stale receipt reuse
+
+The round-2 review found that `acceptanceRun` could start work while an old PASS
+receipt still occupied the requested path. A new run now atomically claims a
+fresh path with `passed: false` and `finalization: "pending"` before invoking
+work. Existing paths are rejected without modification. After cleanup, final
+JSON is written to a same-directory temporary file and atomically renamed over
+only the path reserved by this run. A partial write, cleanup error or failed
+rename therefore leaves the current receipt nonpassing; successful finalization
+marks it complete.
+
+The focused receipt-lifecycle evidence is separate from the native drive:
+[receipt validation](assets/2026-10-10-native-desktop-acceptance/receipt-validation.json)
+binds the current helper and regression-test hashes, and
+[test output](assets/2026-10-10-native-desktop-acceptance/receipt-regressions.txt)
+records 13/13 checks passing. It covers byte-preserving rejection of an existing
+PASS before work, an injected partial final write, cleanup failure with final
+rename failure, successful atomic publication, controller SIGTERM with a
+pending receipt visible during work, and the existing process/desktop boundary
+checks. The prior native receipt remains unchanged and bound to the helper used
+for that earlier run; this follow-up does not claim a new native execution.
+
+No full native rerun was needed for this receipt-only change. Physical passkeys
+or provider credentials, another physical machine, Linux/new minimum OS,
+reboot/logout, lingering services, public signing/install, licensing/release,
+and whole-app update remain outside the evidence. GitGuardian incidents
+38083768 and 38084076 remain operator gates.

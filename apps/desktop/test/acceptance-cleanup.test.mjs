@@ -3,17 +3,24 @@ import { execFileSync, spawn } from "node:child_process";
 import {
 	mkdirSync,
 	mkdtempSync,
+	readdirSync,
 	readFileSync,
 	readlinkSync,
 	realpathSync,
 	renameSync,
 	symlinkSync,
 	unlinkSync,
+	writeFileSync,
+	writeSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { AcceptanceCleanup, acceptanceRun } from "./acceptance-cleanup.mjs";
+import {
+	AcceptanceCleanup,
+	acceptanceRun,
+	createAcceptanceReceiptIO,
+} from "./acceptance-cleanup.mjs";
 
 const root = () =>
 	realpathSync(mkdtempSync(join(tmpdir(), "acceptance-cleanup-regression-")));
@@ -53,6 +60,86 @@ test("TERM-ignoring child escalates; PASS appears only after all child close eve
 	assert.equal(result.cleanup.children[0].signal, "SIGKILL");
 	assert.equal(alive(c.pid), false);
 	assert.equal(JSON.parse(readFileSync(path)).passed, true);
+	assert.equal(JSON.parse(readFileSync(path)).finalization, "complete");
+});
+
+test("existing PASS and FAIL receipts are rejected before work and preserved byte-for-byte", async () => {
+	for (const historical of [
+		Buffer.from('{"passed":true,"run":"historical"}\n'),
+		Buffer.from('{"passed":false,"error":"historical failure"}\n'),
+	]) {
+		const path = join(root(), "receipt.json");
+		writeFileSync(path, historical);
+		let workStarted = false;
+		await assert.rejects(
+			acceptanceRun({
+				ledger: ledger(),
+				receiptPath: path,
+				work: async () => {
+					workStarted = true;
+					return {};
+				},
+			}),
+			/Cannot start acceptance run: receipt path is unavailable/,
+		);
+		assert.equal(workStarted, false);
+		assert.deepEqual(readFileSync(path), historical);
+	}
+});
+
+test("partial final receipt write keeps the reserved pending FAIL and removes temp file", async () => {
+	const dir = root(),
+		path = join(dir, "receipt.json");
+	let writes = 0;
+	const receiptIO = createAcceptanceReceiptIO({
+		write(descriptor, contents) {
+			writes += 1;
+			if (writes === 1) return writeFileSync(descriptor, contents);
+			writeSync(descriptor, Buffer.from(contents).subarray(0, 20));
+			throw Error("Injected partial final receipt write failure");
+		},
+	});
+	await assert.rejects(
+		acceptanceRun({
+			ledger: ledger(),
+			receiptPath: path,
+			receiptIO,
+			work: async () => ({ scenario: "partial-write" }),
+		}),
+		/partial final receipt write failure/,
+	);
+	assert.deepEqual(JSON.parse(readFileSync(path)), {
+		passed: false,
+		finalization: "pending",
+	});
+	assert.deepEqual(readdirSync(dir), ["receipt.json"]);
+});
+
+test("cleanup failure plus final rename failure leaves only the current pending receipt", async () => {
+	const dir = root(),
+		path = join(dir, "receipt.json");
+	const receiptIO = createAcceptanceReceiptIO({
+		rename() {
+			throw Error("Injected final receipt rename failure");
+		},
+	});
+	await assert.rejects(
+		acceptanceRun({
+			ledger: {
+				cleanup: async () => {
+					throw Error("Injected cleanup failure");
+				},
+			},
+			receiptPath: path,
+			receiptIO,
+			work: async () => ({ scenario: "cleanup-and-rename-failure" }),
+		}),
+		/final receipt; pending FAIL receipt retained/,
+	);
+	const receipt = JSON.parse(readFileSync(path));
+	assert.equal(receipt.passed, false);
+	assert.equal(receipt.finalization, "pending");
+	assert.deepEqual(readdirSync(dir), ["receipt.json"]);
 });
 
 test("leader exits first; its TERM-ignoring descendant is still drained", async () => {
@@ -207,6 +294,9 @@ test("actual controller SIGTERM creates FAIL after cleanup, receipt outside fixt
 		}),
 	);
 	controller.kill("SIGTERM");
+	const pending = JSON.parse(readFileSync(path));
+	assert.equal(pending.passed, false);
+	assert.equal(pending.finalization, "pending");
 	const code = await new Promise((r) => controller.once("exit", r));
 	const receipt = JSON.parse(readFileSync(path));
 	assert.equal(code, 1);

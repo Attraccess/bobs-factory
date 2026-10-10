@@ -1,9 +1,16 @@
 // Test-only POSIX ownership ledger. Never discover owners outside explicit fixture homes.
 import { execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
+	closeSync,
+	fsyncSync,
+	linkSync,
 	lstatSync,
+	openSync,
 	readlinkSync,
 	realpathSync,
+	renameSync,
+	rmSync,
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
@@ -243,6 +250,57 @@ export class AcceptanceCleanup {
 	}
 }
 
+export function createAcceptanceReceiptIO(overrides = {}) {
+	const io = {
+		open: openSync,
+		write: writeFileSync,
+		fsync: fsyncSync,
+		close: closeSync,
+		link: linkSync,
+		rename: renameSync,
+		remove: rmSync,
+		...overrides,
+	};
+	const writeTemporary = (receiptPath, value) => {
+		const temporaryPath = `${receiptPath}.${process.pid}.${randomUUID()}.tmp`;
+		let descriptor;
+		try {
+			descriptor = io.open(temporaryPath, "wx", 0o600);
+			io.write(descriptor, `${JSON.stringify(value, null, 2)}\n`);
+			io.fsync(descriptor);
+			io.close(descriptor);
+			descriptor = undefined;
+			return temporaryPath;
+		} catch (error) {
+			if (descriptor !== undefined) io.close(descriptor);
+			io.remove(temporaryPath, { force: true });
+			throw error;
+		}
+	};
+	return {
+		reserve(receiptPath, pending) {
+			const temporaryPath = writeTemporary(receiptPath, pending);
+			try {
+				// link is atomic and fails with EEXIST; no previous run's evidence is replaced.
+				io.link(temporaryPath, receiptPath);
+			} finally {
+				io.remove(temporaryPath, { force: true });
+			}
+		},
+		publish(receiptPath, result) {
+			const temporaryPath = writeTemporary(receiptPath, result);
+			try {
+				// This target was exclusively reserved by this run before work started.
+				io.rename(temporaryPath, receiptPath);
+			} finally {
+				io.remove(temporaryPath, { force: true });
+			}
+		},
+	};
+}
+
+const defaultReceiptIO = createAcceptanceReceiptIO();
+
 // A receipt is committed only after all cleanup has completed, including cancellation.
 export async function acceptanceRun({
 	ledger,
@@ -250,7 +308,22 @@ export async function acceptanceRun({
 	bindings = {},
 	work,
 	close = async () => {},
+	receiptIO = defaultReceiptIO,
 }) {
+	const pending = {
+		...bindings,
+		passed: false,
+		finalization: "pending",
+	};
+	try {
+		receiptIO.reserve(receiptPath, pending);
+	} catch (error) {
+		clearInterval(ledger.timer);
+		throw new Error(
+			`Cannot start acceptance run: receipt path is unavailable (${receiptPath}): ${error.message}`,
+			{ cause: error },
+		);
+	}
 	let cancellation, rejectCancellation;
 	const cancelled = new Promise((_, reject) => {
 		rejectCancellation = reject;
@@ -292,10 +365,18 @@ export async function acceptanceRun({
 		...bindings,
 		...receipt,
 		passed: !failure && !cancellation && cleanup.passed,
+		finalization: "complete",
 		cancellation: cancellation ?? null,
 		error: failure?.message ?? null,
 		cleanup,
 	};
-	writeFileSync(receiptPath, JSON.stringify(result, null, 2));
+	try {
+		receiptIO.publish(receiptPath, result);
+	} catch (error) {
+		throw new Error(
+			`Acceptance run could not publish its final receipt; pending FAIL receipt retained at ${receiptPath}: ${error.message}`,
+			{ cause: error },
+		);
+	}
 	return result;
 }
