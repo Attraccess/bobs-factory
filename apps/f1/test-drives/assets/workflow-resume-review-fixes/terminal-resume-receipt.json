@@ -1,0 +1,16 @@
+{
+	"mode": "mock",
+	"result": "passed",
+	"runId": "manual-97a188ef-a1f0-4048-8b54-3bf51ff9a04f",
+	"requests": ["/api/runs/manual-97a188ef-a1f0-4048-8b54-3bf51ff9a04f/resume"],
+	"checks": [
+		"disabled reason rendered",
+		"disabled Resume sends no request",
+		"enable leaves run blocked",
+		"c posts Resume",
+		"saved question restored"
+	],
+	"capture": "Actual TodayApp Screen cells and styles rendered in a headless HTML viewer; no desktop terminal attached",
+	"sourceRevision": "4766bbc20566c459481ec961de8787553debf9ec",
+	"provenance": "Validated source was committed unchanged except formatting; subsequent commit adds evidence only."
+}
