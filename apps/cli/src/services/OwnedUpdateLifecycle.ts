@@ -128,10 +128,20 @@ export class OwnedUpdateLifecycle {
 		this.save({ transactionId, preservation: this.preservation });
 		const current = workerOwner(this.home);
 		if (!current || !ownerAlive(current)) {
-			if (!this.preservation)
-				throw new Error(
-					"Interrupted maintenance lacks a durable preservation receipt",
-				);
+			if (!this.preservation) {
+				const transaction = JSON.parse(
+					readFileSync(join(this.home, "updates", "state.json"), "utf8"),
+				).transaction;
+				if (
+					transaction?.id !== transactionId ||
+					transaction.switchStarted ||
+					realpathSync(this.owner.executable) !==
+						realpathSync(transaction.staged.previousExecutable)
+				)
+					throw new Error(
+						"Interrupted switch lacks a durable preservation receipt",
+					);
+			}
 			const marker = process.env.BOBS_FACTORY_WORKER_ID;
 			try {
 				const release = await acquireInstanceLock(this.home);
@@ -140,7 +150,15 @@ export class OwnedUpdateLifecycle {
 				if (marker === undefined) delete process.env.BOBS_FACTORY_WORKER_ID;
 				else process.env.BOBS_FACTORY_WORKER_ID = marker;
 			}
-			return;
+			if (this.preservation) return;
+			if (this.owner.kind === "desktop") await this.start();
+			else {
+				for (let attempt = 0; attempt < 150; attempt++) {
+					const live = workerOwner(this.home);
+					if (live && ownerAlive(live)) break;
+					await new Promise((resolve) => setTimeout(resolve, 100));
+				}
+			}
 		}
 		await this.client.post("/api/updates/maintenance", {
 			transactionId,
@@ -290,8 +308,23 @@ export class OwnedUpdateLifecycle {
 		this.switchLink(this.staged.executable);
 	}
 	async start() {
-		if (this.owner.kind === "service") await this.manager.resume();
-		else {
+		if (this.owner.kind === "service") {
+			await this.manager.resume();
+			for (let attempt = 0; attempt < 300; attempt++) {
+				const current = workerOwner(this.home);
+				if (
+					current &&
+					current.owner === "service" &&
+					current.executable === realpathSync(this.owner.executable) &&
+					ownerAlive(current)
+				)
+					return;
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			}
+			throw new Error(
+				"Managed replacement did not acquire its worker startup fence",
+			);
+		} else {
 			const { spawn } = await import("node:child_process");
 			const log = (await import("node:fs")).openSync(
 				join(this.home, "runtime", "desktop-worker.log"),
@@ -315,10 +348,28 @@ export class OwnedUpdateLifecycle {
 				},
 			);
 			(await import("node:fs")).closeSync(log);
-			child.on("error", (error) =>
-				console.error(`Owned worker launch: ${error.message}`),
-			);
+			let launchError: Error | undefined;
+			child.on("error", (error) => {
+				launchError = error;
+			});
 			child.unref();
+			// A spawned process has not necessarily claimed its durable worker
+			// fence yet. Never let immediate failure/rollback race that startup.
+			for (let attempt = 0; attempt < 300; attempt++) {
+				if (launchError) throw launchError;
+				if (child.exitCode !== null || child.signalCode !== null)
+					throw new Error("Owned worker exited before acquiring ownership");
+				const current = workerOwner(this.home);
+				if (current) {
+					if (current.pid !== child.pid)
+						throw new Error("Another worker acquired ownership during launch");
+					if (ownerAlive(current)) return;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			}
+			throw new Error(
+				"Owned worker did not acquire its startup fence; recovery must confirm its exit",
+			);
 		}
 	}
 	async restartCrashedDesktop() {
@@ -342,6 +393,7 @@ export class OwnedUpdateLifecycle {
 	}
 
 	async health(candidate: LifecycleCandidate) {
+		let failure = "Runtime did not respond";
 		for (let attempt = 0; attempt < 100; attempt++) {
 			try {
 				const identity = await this.client.get<{ runtime: LifecycleCandidate }>(
@@ -359,11 +411,14 @@ export class OwnedUpdateLifecycle {
 						this.preservation?.preservedStateSha256
 				)
 					return;
-			} catch {}
+				failure = `Observed ${identity.runtime.version}/${identity.runtime.commit}/${identity.runtime.target}; liveOwner=${Boolean(owner && ownerAlive(owner))}; preservedState=${receipt.preservedStateSha256 === this.preservation?.preservedStateSha256}`;
+			} catch (error) {
+				failure = (error as Error).message;
+			}
 			await new Promise((resolve) => setTimeout(resolve, 200));
 		}
 		throw new Error(
-			"Replacement failed exact runtime/preserved-state health check",
+			`Replacement failed exact runtime/preserved-state health check: ${failure}`,
 		);
 	}
 	async rollback(transaction: LifecycleTransaction) {
@@ -436,6 +491,8 @@ export class OwnedUpdateLifecycle {
 			const transaction = journal.transaction;
 			if (
 				transaction?.id !== transactionId ||
+				(transaction.release &&
+					transaction.release.transactionId !== transactionId) ||
 				(!transaction.release &&
 					!["succeeded", "rolled-back", "cancelled"].includes(
 						transaction.phase,
@@ -452,6 +509,22 @@ export class OwnedUpdateLifecycle {
 			const saved = JSON.parse(readFileSync(this.fence(), "utf8"));
 			if (saved.transactionId !== transactionId)
 				throw new Error("Another lifecycle owns maintenance");
+			this.preservation = saved.preservation;
+		} else if (!existsSync(join(this.home, "updates", "maintenance.json")))
+			return;
+		const current = workerOwner(this.home);
+		if (!current || !ownerAlive(current)) {
+			const journal = JSON.parse(
+				readFileSync(join(this.home, "updates", "state.json"), "utf8"),
+			);
+			const transaction = journal.transaction;
+			const expected =
+				(transaction.release?.outcome ?? transaction.phase) === "succeeded"
+					? transaction.candidate
+					: transaction.previous;
+			await this.acquireMaintenance(transactionId);
+			await this.start();
+			await this.health(expected);
 		}
 		await this.client.post("/api/updates/maintenance", {
 			transactionId,

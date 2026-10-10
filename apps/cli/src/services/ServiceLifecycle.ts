@@ -5,6 +5,7 @@ import {
 	lstatSync,
 	mkdirSync,
 	readFileSync,
+	realpathSync,
 	renameSync,
 	writeFileSync,
 } from "node:fs";
@@ -40,6 +41,7 @@ export interface ServiceRecord {
 	desired: "running" | "stopped" | "maintenance" | "resume";
 	mode: "start" | "local";
 	path: string;
+	dashboardPort?: number;
 }
 export type ServiceExecutor = (
 	command: string,
@@ -92,6 +94,8 @@ export function serviceDefinition(
 		record.executable,
 		"--home",
 		record.home,
+		"--port",
+		String(record.dashboardPort ?? 3457),
 		"--no-open",
 		"service",
 		updater ? "updates-run" : "run",
@@ -197,13 +201,29 @@ export class ServiceLifecycle {
 		executable: string,
 		mode: "start" | "local" = "start",
 		path = process.env.PATH ?? "/usr/bin:/bin",
+		dashboardPort = 3457,
 	) {
 		if (!["darwin", "linux"].includes(this.platform) || this.uid < 0)
 			throw new Error(
 				"Only macOS launchd/Linux systemd user services are supported",
 			);
-		if (this.record())
-			throw new Error("Service already installed; inspect status");
+		const previous = this.record();
+		if (previous) {
+			const updater = updateServiceRecord(previous);
+			if (existsSync(previous.definition) && existsSync(updater.definition))
+				throw new Error("Service already installed; inspect status");
+			if (
+				previous.desired !== "stopped" ||
+				previous.executable !== executable ||
+				previous.mode !== mode ||
+				previous.path !== path ||
+				(previous.dashboardPort ?? 3457) !== dashboardPort ||
+				workerOwner(this.home)
+			)
+				throw new Error("Interrupted setup ownership differs; inspect status");
+			this.completeInstall(previous);
+			return this.status();
+		}
 		const owner = workerOwner(this.home);
 		if (owner || existsSync(join(this.home, "runtime", "worker.lock")))
 			throw new Error(
@@ -215,6 +235,12 @@ export class ServiceLifecycle {
 			throw new Error(
 				"Nix owns this executable: manage its service through Nix, without installing a second owner",
 			);
+		if (
+			!Number.isInteger(dashboardPort) ||
+			dashboardPort < 1 ||
+			dashboardPort > 65534
+		)
+			throw new Error("Invalid service dashboard port");
 		const r: ServiceRecord = {
 			schema: 1,
 			id: this.id(),
@@ -226,23 +252,40 @@ export class ServiceLifecycle {
 			desired: "stopped",
 			mode,
 			path: safe(path),
+			dashboardPort,
 		};
-		mkdirSync(dirname(r.definition), { recursive: true, mode: 0o700 });
-		// Never overwrite a manual/external definition. Partial setup is retained for inspection.
-		writeFileSync(r.definition, serviceDefinition(r), {
-			flag: "wx",
-			mode: 0o600,
-		});
 		const updater = updateServiceRecord(r);
-		writeFileSync(updater.definition, serviceDefinition(updater, true), {
-			flag: "wx",
-			mode: 0o600,
-		});
+		if (existsSync(r.definition) || existsSync(updater.definition))
+			throw new Error(
+				"Existing external service definition; refusing adoption",
+			);
+		// Persist stopped ownership before creating either unit. An interruption
+		// can resume only missing definitions for the exact same installation.
 		this.save(r);
-		if (r.platform === "linux")
-			this.checked("systemctl", ["--user", "daemon-reload"]);
+		this.completeInstall(r);
 		return this.status();
 	}
+	private completeInstall(r: ServiceRecord) {
+		const definitions = [
+			[r, false],
+			[updateServiceRecord(r), true],
+		] as const;
+		for (const [record, updater] of definitions) {
+			if (existsSync(record.definition)) this.assertDefinition(record, updater);
+		}
+		for (const [record, updater] of definitions) {
+			if (!existsSync(record.definition)) {
+				mkdirSync(dirname(record.definition), { recursive: true, mode: 0o700 });
+				writeFileSync(record.definition, serviceDefinition(record, updater), {
+					flag: "wx",
+					mode: 0o600,
+				});
+			}
+		}
+		if (r.platform === "linux")
+			this.checked("systemctl", ["--user", "daemon-reload"]);
+	}
+
 	status() {
 		const r = this.record();
 		if (!r)
@@ -251,6 +294,12 @@ export class ServiceLifecycle {
 				home: this.home,
 				owner: workerOwner(this.home) ?? null,
 			};
+		const updater = updateServiceRecord(r);
+		const updaterDefinitionMatches =
+			existsSync(updater.definition) &&
+			!lstatSync(updater.definition).isSymbolicLink() &&
+			readFileSync(updater.definition, "utf8") ===
+				serviceDefinition(updater, true);
 		const definitionMatches =
 			existsSync(r.definition) &&
 			!lstatSync(r.definition).isSymbolicLink() &&
@@ -268,6 +317,24 @@ export class ServiceLifecycle {
 			r.platform === "darwin"
 				? this.run("launchctl", ["print-disabled", `gui/${this.uid}`])
 				: this.run("systemctl", ["--user", "is-enabled", this.unit(r)]);
+		const updaterProbe =
+			r.platform === "darwin"
+				? this.run("launchctl", ["print", this.target(updater)])
+				: this.run("systemctl", [
+						"--user",
+						"show",
+						this.unit(updater),
+						"--property=LoadState,ActiveState,SubState,MainPID,UnitFileState,ExecMainStatus",
+					]);
+		const managerPid = Number(
+			r.platform === "darwin"
+				? probe.output.match(/\bpid = (\d+)/)?.[1]
+				: probe.output.match(/^MainPID=(\d+)$/m)?.[1],
+		);
+		const active =
+			r.platform === "darwin"
+				? /state = running/.test(probe.output)
+				: /^ActiveState=active$/m.test(probe.output);
 		const owner = workerOwner(this.home);
 		return {
 			installed: true,
@@ -275,6 +342,12 @@ export class ServiceLifecycle {
 			definitionMatches,
 			managerAvailable: probe.status === 0,
 			manager: probe.output,
+			managerPid: Number.isSafeInteger(managerPid) ? managerPid : null,
+			updater: {
+				definitionMatches: updaterDefinitionMatches,
+				managerAvailable: updaterProbe.status === 0,
+				manager: updaterProbe.output,
+			},
 			startupActual: enabled.output,
 			startupProbeSucceeded: enabled.status === 0,
 			healthy: Boolean(
@@ -282,6 +355,10 @@ export class ServiceLifecycle {
 					owner &&
 					ownerAlive(owner) &&
 					owner.owner === "service" &&
+					existsSync(r.executable) &&
+					owner.executable === realpathSync(r.executable) &&
+					managerPid === owner.pid &&
+					active &&
 					probe.status === 0,
 			),
 			owner: owner ?? null,
@@ -301,6 +378,13 @@ export class ServiceLifecycle {
 
 	private async perform(action: Exclude<ServiceAction, "install">) {
 		if (action === "status") return this.status();
+		if (
+			existsSync(join(this.home, "runtime", "update-owner.json")) &&
+			!["resume", "maintenance", "logs"].includes(action)
+		)
+			throw new Error(
+				"An update owns maintenance; wait for its exact outcome before changing service lifecycle",
+			);
 		const r = this.record();
 		if (!r) throw new Error("No service installed for this home");
 		this.assertDefinition(r);

@@ -42,6 +42,8 @@ export function addServiceCommands(program: Command) {
 					lifecycle().install(
 						opts.executable ?? process.execPath,
 						opts.mode as "start" | "local",
+						undefined,
+						Number(program.opts().port ?? 3457),
 					),
 					null,
 					2,
@@ -88,6 +90,7 @@ export function addServiceCommands(program: Command) {
 	service.command("run", { hidden: true }).action(async () => {
 		const r = lifecycle().record();
 		if (!r || r.desired !== "running") return;
+		process.env.BOBS_FACTORY_FACTORY_PORT = String(r.dashboardPort ?? 3457);
 		if (process.env.BOBS_FACTORY_SERVICE_ID !== r.id)
 			throw new Error("service run is manager-only");
 		if (r.mode === "local")

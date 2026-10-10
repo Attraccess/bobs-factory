@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
@@ -12,7 +13,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defaultWorkflows } from "../../../packages/edge-worker/dist/factory/defaultWorkflows.js";
+import { validateWorkflows } from "../../../packages/edge-worker/dist/factory/Workflow.js";
+import { WorkflowRuntime } from "../../../packages/edge-worker/dist/factory/WorkflowRuntime.js";
 import { UpdateManager } from "../../../packages/edge-worker/dist/updates/UpdateManager.js";
+import { localRepository } from "../../cli/dist/src/onboarding.js";
 import { workerOwner } from "../../cli/dist/src/services/InstanceLock.js";
 import { OwnedUpdateLifecycle } from "../../cli/dist/src/services/OwnedUpdateLifecycle.js";
 import { runUpdateSupervisor } from "../../cli/dist/src/services/UpdateSupervisor.js";
@@ -42,6 +47,35 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 	);
 	const port = crashChild ? 19465 : failHealth ? 19463 : 19461;
 	const link = desktopExecutable(home, oldDirectory);
+	const repo = join(home, "repo");
+	mkdirSync(repo);
+	execFileSync("git", ["init", "-q", "-b", "main", repo]);
+	execFileSync("git", [
+		"-C",
+		repo,
+		"-c",
+		"user.name=Fixture",
+		"-c",
+		"user.email=fixture@example.invalid",
+		"commit",
+		"--allow-empty",
+		"-qm",
+		"Mock fixture",
+	]);
+	execFileSync("git", [
+		"-C",
+		repo,
+		"remote",
+		"add",
+		"origin",
+		"https://github.com/example/native-fixture.git",
+	]);
+	writeFileSync(
+		join(home, "config.json"),
+		JSON.stringify({ repositories: [localRepository(repo, home, "fixture")] }),
+		{ mode: 0o600 },
+	);
+
 	class Lifecycle extends OwnedUpdateLifecycle {
 		async activate(staged) {
 			await super.activate(staged);
@@ -53,12 +87,66 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 			return super.health(identity);
 		}
 	}
+	let mockCalls = 0;
+	const runtime = new WorkflowRuntime(home, {
+		agent: async (ctx) => {
+			mockCalls++;
+			ctx.checkpointAgent?.({
+				sessionId: "mock-native-update-conversation",
+				runner: "codex",
+				cwd: home,
+			});
+			return { questions: ["Choose a color"] };
+		},
+		script: async () => {
+			throw Error("Unexpected script");
+		},
+		tool: async () => {
+			throw Error("Unexpected tool");
+		},
+	});
+	const workflow = validateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "native-update-fixture",
+			name: "Native update fixture",
+			entry: "question",
+			steps: [
+				{
+					id: "question",
+					name: "Mock question",
+					type: "agent",
+					prompt: "Mock only",
+					askQuestions: true,
+				},
+			],
+		},
+	]).at(-1);
+	const run = runtime.create({
+		triggerOrigin: {
+			type: "manual",
+			workflowId: workflow.id,
+			at: new Date().toISOString(),
+		},
+		title: "Preserve waiting question",
+		repositoryId: "fixture",
+		workspace: repo,
+		input: "Mock only",
+		workflow,
+	});
+	void runtime.launch(run);
+	for (let n = 0; runtime.get(run.id).status !== "waiting" && n < 100; n++)
+		await new Promise((r) => setTimeout(r, 10));
+	assert.equal(runtime.get(run.id).status, "waiting");
+	assert.equal(mockCalls, 1);
+	let preserved = JSON.parse(JSON.stringify(runtime.get(run.id)));
+
 	const lifecycle = new Lifecycle(home, port);
 	const source = {
 		discover: async () => candidate,
 		stage: async () => ({
 			candidate,
-			executable: join(newDirectory, "bobs-factory"),
+			executable: realpathSync(join(newDirectory, "bobs-factory")),
 			previousExecutable: realpathSync(link),
 		}),
 	};
@@ -71,6 +159,11 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 			} catch {}
 			await new Promise((r) => setTimeout(r, 200));
 		}
+		await new Promise((r) => setTimeout(r, 500));
+		preserved = JSON.parse(
+			readFileSync(join(home, "factory", "runs", `${run.id}.json`), "utf8"),
+		);
+		assert.equal(preserved.status, "waiting");
 		assert(workerOwner(home));
 		const nativeMarker = join(
 			home,
@@ -85,7 +178,17 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 		);
 		await manager.check();
 		await manager.stage();
-		const result = await manager.reconcile();
+		let result = await manager.reconcile();
+		for (
+			let attempt = 0;
+			result.transaction.phase === "cancelled" &&
+			result.transaction.error?.startsWith("Waiting for active work") &&
+			attempt < 20;
+			attempt++
+		) {
+			await new Promise((r) => setTimeout(r, 200));
+			result = await manager.reconcile();
+		}
 		assert.equal(
 			result.transaction.phase,
 			failHealth ? "rolled-back" : "succeeded",
@@ -95,12 +198,36 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 			realpathSync(link),
 			failHealth
 				? result.transaction.staged.previousExecutable
-				: join(newDirectory, "bobs-factory"),
+				: realpathSync(join(newDirectory, "bobs-factory")),
 		);
 		assert.equal(
 			readFileSync(nativeMarker, "utf8"),
 			"mock credential boundary",
 		);
+		const restored = new WorkflowRuntime(home, {
+			agent: async () => {
+				throw Error("Real agent forbidden");
+			},
+			script: async () => {
+				throw Error("Unexpected script");
+			},
+			tool: async () => {
+				throw Error("Unexpected tool");
+			},
+		}).get(run.id);
+		for (const key of [
+			"status",
+			"workflow",
+			"workflowDefinitions",
+			"checkpoint",
+			"outputs",
+			"questions",
+			"questionBatchId",
+			"answers",
+			"reviewGate",
+		])
+			assert.deepEqual(restored[key], preserved[key], `Preserve ${key}`);
+
 		assert(workerOwner(home));
 		await new OwnedUpdateLifecycle(home, port).releaseMaintenance(
 			result.transaction.id,
@@ -120,6 +247,8 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 			home,
 			port,
 			phase: result.transaction.phase,
+			preservedRunId: run.id,
+			mockedAgentCalls: mockCalls,
 			previous: previous.version,
 			candidate: next.version,
 			installed: result.installed.version,

@@ -2,6 +2,7 @@ import {
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
+	unlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -86,6 +87,23 @@ describe("user service ownership", () => {
 		expect(
 			calls.filter((c) => c.includes("stop")).map((c) => c.at(-1)),
 		).toEqual([`${manager.record()!.id}.service`, `${updater.id}.service`]);
+	});
+
+	it("resumes interrupted stopped setup without adopting externally changed definitions", () => {
+		const { manager, executable, calls } = fixture();
+		manager.install(executable);
+		const updater = updateServiceRecord(manager.record()!);
+		unlinkSync(updater.definition);
+		manager.install(executable);
+		expect(readFileSync(updater.definition, "utf8")).toBe(
+			serviceDefinition(updater, true),
+		);
+		expect(calls.some((c) => c.includes("start") || c.includes("enable"))).toBe(
+			false,
+		);
+		unlinkSync(updater.definition);
+		writeFileSync(manager.record()!.definition, "external");
+		expect(() => manager.install(executable)).toThrow("changed externally");
 	});
 
 	it("external changes prevent stop/remove from destroying unmanaged definitions", async () => {
