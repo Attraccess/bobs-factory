@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { desktopRuntime } from "./lib/desktop-runtime.mjs";
 import { validateCandidate } from "./lib/release-candidate.mjs";
+import { prepareDesktopUpdate } from "./prepare-desktop-update.mjs";
 
 const { values } = parseArgs({
 	options: {
@@ -62,6 +63,24 @@ cpSync(resolve(values.runtime), runtime, {
 });
 try {
 	execFileSync(
+		"bun",
+		[
+			"build",
+			join(app, "src", "update-services.ts"),
+			"--target",
+			"node",
+			"--format",
+			"esm",
+			"--outfile",
+			join(app, "src", "update-services.mjs"),
+		],
+		{ cwd: root, stdio: "inherit" },
+	);
+	writeFileSync(
+		join(app, "desktop-identity.json"),
+		JSON.stringify({ version: candidate.candidate.version, commit, target }),
+	);
+	execFileSync(
 		"pnpm",
 		[
 			"exec",
@@ -80,6 +99,25 @@ try {
 			env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },
 		},
 	);
+
+	const installedApp =
+		process.platform === "darwin"
+			? join(
+					output,
+					process.arch === "arm64" ? "mac-arm64" : "mac",
+					"Bob's Factory.app",
+				)
+			: join(
+					output,
+					`bobs-factory-desktop-${candidate.candidate.version}-linux-${process.arch}.AppImage`,
+				);
+	const _update = prepareDesktopUpdate({
+		app: installedApp,
+		output,
+		candidate,
+		target,
+		unsigned: true,
+	});
 	const assets = readdirSync(output)
 		.filter((name) => /\.(dmg|AppImage|deb)$/.test(name))
 		.map((name) => {
@@ -105,4 +143,5 @@ try {
 	);
 } finally {
 	rmSync(runtime, { recursive: true, force: true });
+	rmSync(join(app, "desktop-identity.json"), { force: true });
 }

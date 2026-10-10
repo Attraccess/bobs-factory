@@ -306,6 +306,11 @@ Desktop packaging remains owned by its separate delivery. When evidence includes
 version, source commit and channel, a unique target and observed
 `platformRequirements`. Its `archive`, `updateMetadata` and `validation` records
 carry file, size and SHA-256. Preparation copies and validates all three assets;
+an optional `updateArchive` record separately inventories the complete recovery
+payload (macOS `.bobsapp.gz`, Linux AppImage). It is copied, signed and verified with
+the other assets, never resolved from a detached URL. `updateMetadata` binds that
+payload's format/full-app fingerprint and authentic macOS signing status to the
+same candidate. The unsigned preparation workflow cannot satisfy macOS activation.
 the validation JSON must report `product: "bobs-factory"`, `status: "passed"`,
 matching version/commit/channel/target, `candidateDigest` and `workflowSha`.
 All records must also match the signed `assets` inventory. Missing, duplicated or

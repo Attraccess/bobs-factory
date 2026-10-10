@@ -418,6 +418,15 @@ export class UpdateManager {
 					!this.downgrade(state.installed, candidate)))
 		);
 	}
+	/** Same policy gate for external product supervisors; consent is never inferred from exit. */
+	activationEligible() {
+		const state = this.read();
+		return Boolean(
+			terminal(state.transaction) &&
+				state.pending &&
+				this.authorized(state, state.pending.candidate),
+		);
+	}
 	async check() {
 		if (!this.source)
 			throw new Error("No verified update source is configured.");

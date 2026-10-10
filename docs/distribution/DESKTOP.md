@@ -5,8 +5,9 @@ opens the local Factory or an explicit remote HTTPS origin. Local launch offers
 the existing protected passkey/repository/provider onboarding, without installing
 agents or moving their native credentials. Each dashboard origin has a separate
 persistent Electron session. Factory web contents have sandboxing, context isolation,
-no Node integration and no privileged preload. Only the packaged launcher has a
-one-operation connection bridge; sender/frame/URL are checked by the main process.
+no Node integration. Its minimal preload can only open the local app settings
+window. The packaged launcher owns connection and shell-update actions;
+sender/frame/URL are checked by the main process for every bridge request.
 Cross-origin navigation is blocked, and external HTTP(S) links open in the browser.
 
 Closing the dashboard hides its window on macOS and Linux. Quit desktop UI leaves
@@ -25,9 +26,62 @@ not native-tested compatibility claims. Windows/musl are excluded. Artifact name
 - `bobs-factory-desktop-VERSION-linux-ARCH.deb`.
 
 AppImage/user installation ownership differs from DEB/AUR/Homebrew/system packages.
-System/external managers must own their upgrades; unattended replacement of an
-installed desktop app is not yet validated. Update policy/runtime belongs to the
-shared per-instance updater; connecting to hosts must never update them together.
+System/external managers own their upgrades. DEB/AUR/system paths, Homebrew
+Caskroom/Cellar links and non-writable/non-user-owned apps show an owner handoff.
+A normal DMG app in Applications is eligible when its actual app and parent are
+user-owned/writable and its complete bytes match an authentic signed release.
+An arbitrary writable executable or symlink is insufficient update authority.
+
+## Complete app updates
+
+**Factory → Desktop app updates** shows the local shell's exact version/commit,
+channel, effective policy, pending candidate, result and recovery state. The shared
+dashboard Updates page opens these local settings separately from the selected
+backend's settings. Shell settings live in `<factoryHome>/desktop/updates/state.json`
+and use the same `UpdateManager` policy, revisions, consent and candidate rules as
+runtime updates. Stable defaults to Notify/manual Install; nightly defaults to
+Automatic when idle. Both channel overrides persist, along with pause and exact pin.
+Verify installed app enrolls only a byte-matching signed release. Without that
+receipt the app checks/notifies but cannot activate. Missing production pins or
+unpublished inventories remain visible verification failures, never unsigned fallback.
+
+Install authorizes the displayed exact candidate at the displayed settings
+revision. Cancel pauses queued activation. The supervisor rechecks policy and idle
+state at its atomic stopping boundary. Once stopping/recovery begins, conflicting
+settings changes are rejected until completion; Quit/window close is never consent.
+An intentional older stable shell requires explicit Install even in automatic mode.
+Polling/backoff/coalescing use the existing shared manager. Changing the shell
+policy cannot change or activate any local/remote backend's policy.
+
+The signed desktop inventory binds the installer, `updateArchive`, update metadata
+and validation to channel/version/commit/target, candidate digest and tooling SHA.
+Linux updates replace the exact signed AppImage bytes. macOS additionally delivers
+a complete `.bobsapp.gz` recovery archive: a framed gzip inventory retaining file
+bytes, modes and internal framework links, rejecting traversal/link ancestry and
+special files. The DMG remains the drag/drop installer. `prepare-desktop-update.mjs`
+verifies an already signed/notarized app, never signs it. Its explicit `--unsigned`
+preparation produces metadata that the macOS updater refuses. Production staging
+requires real codesign verification and Gatekeeper assessment after extraction.
+
+Before replacement an external helper retained outside the app acquires the
+existing per-home lifecycle guard/update fence and the authenticated local drain.
+It admits no active work or descendant leases, captures the existing worker PID/
+nonce and waits for the precise Electron UI process to exit. It does not stop,
+start, replace or upgrade that worker. It replaces the whole app, retains previous
+bytes, launches the new UI, and verifies a transaction-bound health receipt and
+unchanged worker ownership. Failed candidates are suppressed and restore the
+verified previous UI with its own health check. Config, checkpoints, worktrees,
+native credentials and conversation stores are never copied or rewound. Interrupted
+switches retain the journal, old app and fence for explicit recovery. Ambiguous
+process ownership blocks recovery rather than signaling an unrelated process.
+
+An older runtime lacking `desktop-app-maintenance-v1` must be updated separately
+through its owner before shell activation with a live local worker. The backend
+serves its own versioned dashboard; same-protocol shell/runtime versions may differ.
+Unsupported protocol is refused with explicit owner guidance, while existing web
+build checks pause stale writes. No connection or shell update updates remote hosts.
+
+## Candidate preparation and validation
 
 `desktop-build.yml` prepares unsigned four-target installers from frozen candidate
 bytes, with a hash-verified matching runtime, exact source/version/target and

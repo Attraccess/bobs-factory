@@ -9,8 +9,8 @@
 	"license": "Apache-2.0",
 	"scripts": {
 		"start": "electron .",
-		"test": "node --test test/*.test.mjs",
-		"test:run": "node --test test/*.test.mjs",
+		"test": "pnpm --filter bobs-factory-core build && bun build src/update-services.ts --target node --format esm --outfile src/update-services.mjs && node --test test/*.test.mjs",
+		"test:run": "pnpm --filter bobs-factory-core build && bun build src/update-services.ts --target node --format esm --outfile src/update-services.mjs && node --test test/*.test.mjs",
 		"build": "node --check src/main.mjs",
 		"typecheck": "node --check src/main.mjs",
 		"package": "electron-builder --publish never"
@@ -38,6 +38,10 @@
 				"filter": [
 					"**/*"
 				]
+			},
+			{
+				"from": "desktop-identity.json",
+				"to": "desktop-identity.json"
 			}
 		],
 		"artifactName": "bobs-factory-desktop-${version}-${os}-${arch}.${ext}",

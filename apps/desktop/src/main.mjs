@@ -9,7 +9,7 @@ import {
 	realpathSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import {
@@ -21,6 +21,7 @@ import {
 	session,
 	shell,
 } from "electron";
+import { appUpdates } from "./app-updates.mjs";
 import {
 	allowedNavigation,
 	connectionOrigin,
@@ -31,7 +32,7 @@ import { desktopExecutable } from "./local-runtime.mjs";
 
 const source = dirname(fileURLToPath(import.meta.url));
 const launcherUrl = pathToFileURL(join(source, "launcher.html")).href;
-const home =
+let home =
 	process.env.BOBS_FACTORY_DESKTOP_HOME ?? join(homedir(), ".bobs-factory");
 const binary =
 	process.env.BOBS_FACTORY_DESKTOP_BINARY ??
@@ -42,6 +43,7 @@ let window,
 	selected,
 	quitting = false;
 let runtimeBinary = binary;
+let shellUpdates;
 const runRuntime = promisify(execFile);
 // One application process; the worker also independently locks its canonical home.
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -54,7 +56,7 @@ else {
 	app.on("activate", () => show());
 	app
 		.whenReady()
-		.then(() => {
+		.then(async () => {
 			if (
 				process.platform === "darwin" &&
 				process.env.BOBS_FACTORY_WEBAUTHN_ACCESS_GROUP
@@ -65,6 +67,42 @@ else {
 						promptReason: "sign in to $1",
 					},
 				});
+			const identityFile = join(process.resourcesPath, "desktop-identity.json");
+			if (app.isPackaged && existsSync(identityFile)) {
+				mkdirSync(home, { recursive: true, mode: 0o700 });
+				home = realpathSync(home);
+				const identity = JSON.parse(readFileSync(identityFile, "utf8"));
+				const installPath =
+					process.platform === "darwin"
+						? dirname(dirname(dirname(process.execPath)))
+						: (process.env.APPIMAGE ?? process.execPath);
+				const install = join(
+					realpathSync(dirname(installPath)),
+					basename(installPath),
+				);
+				shellUpdates = await appUpdates({
+					home,
+					install,
+					target: `${process.platform}-${process.arch}`,
+					identity,
+					port,
+					sourceDirectory: source,
+					services: await import("./update-services.mjs"),
+				});
+				setInterval(() => {
+					if (shellUpdates.quitRequested()) app.quit();
+				}, 100);
+				{
+					const tick = () =>
+						shellUpdates
+							.tick()
+							.catch((error) =>
+								console.error("Desktop update:", error.message),
+							);
+					void tick();
+					setInterval(tick, 60_000);
+				}
+			}
 			installMenu();
 			showLauncher();
 		})
@@ -139,7 +177,10 @@ function showLauncher() {
 	launcher.webContents.on("will-navigate", (event, url) => {
 		if (url !== launcherUrl) event.preventDefault();
 	});
-	void launcher.loadURL(launcherUrl);
+	void launcher.loadURL(launcherUrl).then(() => {
+		if (process.env.BOBS_FACTORY_DESKTOP_HEALTH)
+			shellUpdates?.health(process.env.BOBS_FACTORY_DESKTOP_HEALTH);
+	});
 }
 ipcMain.handle("launcher-connect", async (event, remote) => {
 	if (
@@ -155,6 +196,23 @@ ipcMain.handle("launcher-connect", async (event, remote) => {
 	selected = { origin, local: remote === null };
 	await openDashboard(origin);
 	launcher.hide();
+});
+ipcMain.handle("launcher-updates", async (event, action, input, revision) => {
+	if (
+		!launcher ||
+		event.sender !== launcher.webContents ||
+		event.senderFrame !== launcher.webContents.mainFrame ||
+		event.senderFrame.url !== launcherUrl
+	)
+		throw new Error("Unauthorized desktop settings request");
+	if (!shellUpdates)
+		return {
+			unavailable:
+				"App updates require an installed candidate; checkout UI is externally managed.",
+		};
+	return action === "status"
+		? shellUpdates.status()
+		: shellUpdates.action(action, input, revision);
 });
 async function local() {
 	if (!Number.isInteger(port) || port < 1 || port >= 65535)
@@ -266,6 +324,16 @@ async function waitForFactory() {
 		"Factory did not become ready. Inspect runtime/desktop-worker.log; existing services may use a different port",
 	);
 }
+ipcMain.handle("desktop-open-updates", (event) => {
+	if (
+		!window ||
+		event.sender !== window.webContents ||
+		event.senderFrame !== window.webContents.mainFrame ||
+		new URL(event.senderFrame.url).origin !== selected?.origin
+	)
+		throw Error("Unauthorized dashboard request");
+	showLauncher();
+});
 async function openDashboard(origin) {
 	if (window && !window.isDestroyed()) window.destroy();
 	const partition = connectionPartition(origin);
@@ -281,6 +349,7 @@ async function openDashboard(origin) {
 		title: "Bob's Factory",
 		webPreferences: {
 			partition,
+			preload: join(source, "dashboard-preload.cjs"),
 			contextIsolation: true,
 			nodeIntegration: false,
 			sandbox: true,
@@ -310,6 +379,20 @@ async function openDashboard(origin) {
 				fragment = `#setup=${encodeURIComponent(value.token)}`;
 		}
 	}
+	const versionResponse = await fetch(`${origin}/api/version`, {
+		signal: AbortSignal.timeout(5000),
+	});
+	if (!versionResponse.ok)
+		throw Error(
+			"Factory version protocol is unavailable. Upgrade through that host's owner, then reconnect.",
+		);
+	const version = await versionResponse.json();
+	if (version.protocol !== 1)
+		throw Error(
+			"This desktop cannot use that Factory dashboard protocol. Update the desktop app or the selected host explicitly.",
+		);
+	// The server supplies its own versioned dashboard, so same-protocol runtime and
+	// shell versions may differ safely. Never swap its runtime to match this app.
 	await window.loadURL(`${origin}/${fragment}`);
 }
 async function stopLocal() {
@@ -362,6 +445,7 @@ function installMenu() {
 				submenu: [
 					{ label: "Open Factory", click: show },
 					{ label: "Connect…", click: showLauncher },
+					{ label: "Desktop app updates…", click: showLauncher },
 					{
 						label: "Stop local Factory…",
 						click: () =>

@@ -509,6 +509,7 @@ export class FactoryServer {
 			build: shell.build,
 			protocol: shell.protocol,
 			runtime: factoryRuntimeIdentity,
+			capabilities: ["desktop-app-maintenance-v1"],
 		}));
 		this.app.get("/api/delivery-status", () => ({
 			workspaces: hooks.deliveryStatus?.() ?? [],
