@@ -97,8 +97,20 @@ it.each([
 		handler.restoreState(saved.sessions, saved.entries);
 		config.codexDefaultModel = "future-chat-model";
 		config.defaultRunner = "claude";
-		await handler.resumeBlockedSession(session.id);
 		const restored = handler.getAllChatSessions()[0]!;
+		const status = restored.status;
+		delete restored.codexSessionId;
+		await expect(handler.resumeBlockedSession(session.id)).rejects.toThrow(
+			"Restore the saved conversation ID before resuming",
+		);
+		expect(observed).toHaveLength(2);
+		expect(prompts).toEqual(["Initial task", "Retained pending turn"]);
+		expect(restored.codexSessionId).toBeUndefined();
+		expect(restored.status).toBe(status);
+		expect(restored.metadata?.pendingExecution).toEqual(pending);
+		// Restoring the missing prerequisite permits the same pending turn to resume.
+		restored.codexSessionId = "retained-thread";
+		await handler.resumeBlockedSession(session.id);
 		expect(observed[2]).toMatchObject({
 			runner: "codex",
 			model: "accepted-chat-model",

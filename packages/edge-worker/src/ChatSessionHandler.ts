@@ -752,7 +752,10 @@ export class ChatSessionHandler<TEvent> {
 		if (!session) throw new Error("Chat session not found");
 		this.deps.requireWorkflowAvailable?.(id);
 		const resume = this.getResumeInfo(session);
-		if (!resume) throw new Error("Native chat conversation is unavailable");
+		if (!resume?.sessionId)
+			throw new Error(
+				"Saved native chat conversation ID is missing. Restore the saved conversation ID before resuming.",
+			);
 		// Continue the saved turn with its accepted model and queued input.
 		await this.resumeSession(
 			undefined,
