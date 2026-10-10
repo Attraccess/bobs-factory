@@ -1,0 +1,125 @@
+{
+	"passed": true,
+	"sourceCommit": "e05c0dfa965d41faeb958ef44ca4bbfb4a070f50",
+	"runtime": {
+		"schemaVersion": 1,
+		"product": "bobs-factory",
+		"version": "1.0.0-nightly.20261010.7",
+		"candidateDigest": "1c176a2d98cb18524a8f593eed73d335a747fa8b977ce4f4794e20a31084c791",
+		"workflowSha": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+		"committedVersion": "1.0.0-beta",
+		"commit": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+		"dirty": false,
+		"target": "darwin-arm64",
+		"tooling": {
+			"bun": "1.4.2"
+		},
+		"executable": {
+			"file": "bobs-factory",
+			"size": 101608050,
+			"sha256": "2a6ff0c44776fca160b0fd1ca1b583c6e85664375f33857c87d2bca034435d1a"
+		},
+		"resourceDigest": "4fc874433b46f5436701dc69cf06846a0203d82aa1a6d666e5c8d9a7653ebd60",
+		"validation": "pending runtime smoke",
+		"requirements": "macOS; native target smoke required"
+	},
+	"target": "darwin-arm64",
+	"os": "26.5.2",
+	"fixture": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-acceptance-WZJneR",
+	"files": {
+		"apps/cli/src/onboarding.ts": "c7815293d69c56079fb7dc9a7227e8c8be41efb47378cab49abf798e07cdcb9a",
+		"packages/edge-worker/src/factory/FactoryServer.ts": "80ab65ab625d90310d9d7e472aa928c1d6461fe2f0dfb9cbd0757f128aa0f6c7",
+		"packages/edge-worker/src/factory/WorkflowRuntime.ts": "d12bfa2a6a565ddb9053272bdcf590bf56ac0e19dc3eb5f03eba3e32dc00512a",
+		"packages/edge-worker/dist/factory/FactoryServer.js": "a488332ad0636a622b1847a645cb402788e92fe56c11823d34998a8516a2dd51",
+		"packages/edge-worker/dist/factory/WorkflowRuntime.js": "1b5e472075fdf3e9e8164f3f90f20b054f975e77fb8ac2a84d36c98d294ac4c6",
+		"apps/cli/dist/src/onboarding.js": "d1a2064f13dc8444beb74a0a342796b5a78256ee99658ba6faf48ae45818ee5c",
+		"apps/desktop/test/acceptance-fixture.mjs": "80187e1a2ebdca4d2b71b0973cc2c20d83e02467288b87d05526c0b2e627ed87",
+		"apps/desktop/test/native-acceptance.mjs": "6296836e348ff92b7f568698925bf5679d426606443a59c3f9026513987717f8",
+		"apps/desktop/test/run-native-acceptance.mjs": "01b7ad5c9df9efdd8be188238fcdce629e39e176e019ff5d844c81b1aafefd6d"
+	},
+	"first": {
+		"passed": true,
+		"workerPid": 85442,
+		"workerNonce": "47c6bec7-c3c0-4060-bdf2-74ba379b49c3",
+		"jobPid": 85445,
+		"descendantPid": 85446,
+		"electron": "44.7.0",
+		"identity": {
+			"build": "27373e598982a39ec881e40e",
+			"protocol": 1,
+			"runtime": {
+				"version": "1.0.0-nightly.20261010.7",
+				"candidateDigest": "1c176a2d98cb18524a8f593eed73d335a747fa8b977ce4f4794e20a31084c791",
+				"workflowSha": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+				"committedVersion": "1.0.0-beta",
+				"commit": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+				"dirty": false,
+				"target": "darwin-arm64",
+				"resourceDigest": "4fc874433b46f5436701dc69cf06846a0203d82aa1a6d666e5c8d9a7653ebd60",
+				"packaged": true
+			}
+		},
+		"remoteOrigin": "https://localhost:19873",
+		"auth": "CDP virtual CTAP2 / separate persistent origin partitions",
+		"remoteStopRejected": true,
+		"sessionTransplantRejected": true,
+		"navigationRejected": true,
+		"staleWriteRejected": true,
+		"protocolAndBuildMismatchPaused": true,
+		"connectionLossAndSessionRecovery": true,
+		"mountedShellFiles": {
+			"main.mjs": "0edd44caff6305e975bf26afe64e942ff0e5e31c5cfdf6f2f80bafe1593d8ba3",
+			"contracts.mjs": "4903fe6152b4410ffbd37bbdf3ac8cfaaa0e63fb7f194837168978c40baa1838",
+			"local-runtime.mjs": "e13eb7f08c423a29a222c5fda49f67aa2ba5765c965b226a3638ee823a4c25d5",
+			"preload.cjs": "9f4e1a0fd269d199bb52364ef3f4a3a96d3a8faecbfe03ebbdc16b67e35d292c",
+			"launcher.html": "949782643e58e3fc6143a1aa2b69f0f03c2cf12d25709d9fe46807165cf91d7b",
+			"launcher.js": "fcb77b4f7df9555834693b370db6a410df9c6824313720b332c06d6a9c031721",
+			"launcher.css": "3306a1ddf32325dc2a4a0ca5adaf92ae8d169ffaed531b5331574a22120696d3"
+		},
+		"onboarding": "real validation / synthetic GitHub / prepared fake command",
+		"errors": [
+			{
+				"title": "Factory stop failed",
+				"message": "Select a local desktop-owned Factory. Remote and independent services are stopped by their owner"
+			}
+		]
+	},
+	"reopen": {
+		"passed": true,
+		"workerPid": 85442,
+		"sameNonce": true,
+		"jobCompletedOnce": true,
+		"answerCompleted": true,
+		"reviewStillWaiting": true,
+		"explicitStopLeftIndependentBackendAlive": true,
+		"errors": []
+	},
+	"restart": {
+		"passed": true,
+		"workerPid": 85817,
+		"reviewGatePreserved": true,
+		"completedWorkNotReplayed": true,
+		"syntheticNativeCheckpointRetained": true,
+		"independentBackendAlive": true
+	},
+	"independent": {
+		"passed": true,
+		"workerPid": 85927,
+		"owner": "foreground",
+		"localAttachSamePid": true,
+		"explicitDesktopStopRejected": true,
+		"uiCloseKeepsForegroundAlive": true,
+		"errors": [
+			{
+				"title": "Factory stop failed",
+				"message": "This worker is independently owned; use its service/foreground controls"
+			}
+		]
+	},
+	"limits": [
+		"Virtual CTAP2, no physical passkey",
+		"One Mac, isolated second backend through local HTTPS proxy; not a second physical machine",
+		"Onboarding production modules / synthetic GitHub / fake prepared coding CLI, no authenticated provider continuation",
+		"No release trust/signing/publication, OS reboot/logout/minimum-platform or whole-shell replacement proof"
+	]
+}

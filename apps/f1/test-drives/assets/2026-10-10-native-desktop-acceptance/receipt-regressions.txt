@@ -1,0 +1,21 @@
+✔ TERM-ignoring child escalates; PASS appears only after all child close events (502.554125ms)
+✔ existing PASS and FAIL receipts are rejected before work and preserved byte-for-byte (9.995916ms)
+✔ partial final receipt write keeps the reserved pending FAIL and removes temp file (209.025792ms)
+✔ cleanup failure plus final rename failure leaves only the current pending receipt (11.029042ms)
+✔ leader exits first; its TERM-ignoring descendant is still drained (606.529958ms)
+✔ failed owned lock removal fails receipt while unrelated foreground process survives (586.596459ms)
+✔ overwritten lock cannot authorize signaling or removal of unrelated PID (518.266084ms)
+✔ actual controller SIGTERM creates FAIL after cleanup, receipt outside fixture HOME (558.730334ms)
+✔ stale PID stamp never signals a reused unrelated process (261.768958ms)
+✔ cleanup exception produces a failed receipt and nonzero controller exit (66.23275ms)
+✔ replacement fixture home cannot authorize removing a copied lock (523.48575ms)
+✔ remote origins cannot become local filesystem or insecure bridge targets (1.034833ms)
+✔ installer staging rejects a different runtime and tampered executable (1.9185ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5440.082542

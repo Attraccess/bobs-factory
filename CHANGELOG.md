@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Prevent a prior native acceptance PASS from being reused by a later run: each run must atomically reserve a new nonpassing receipt before work starts, then atomically publish its result only after cleanup completes. PR #88 receipt lifecycle checks preserve prior evidence and leave pending FAIL evidence on write failures.
+
 - Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 
 - Integrate external ticket delivery with main’s shared operator recovery and run-age scheduling, preserving conflict-safe retries and acceptance bindings ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).
