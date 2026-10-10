@@ -1,7 +1,7 @@
 name: Prepare unsigned desktop candidate
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, reopened]
     branches: [main, feat/desktop-service-121-122-124]
     paths:
       - 'apps/desktop/**'
@@ -11,7 +11,19 @@ on:
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
-      - '.github/workflows/desktop-build.yml'
+  push:
+    branches:
+      - feat/desktop-service-121-122-124
+      - feat/desktop-shell-update-116
+      - delivery/taskbot-116-integration
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/cli/**'
+      - 'packages/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
   workflow_dispatch:
     inputs:
       candidate_json:
@@ -22,7 +34,7 @@ permissions:
   contents: read
 jobs:
   freeze:
-    if: github.event_name == 'workflow_dispatch' || ((github.event.pull_request.head.ref == 'feat/desktop-service-121-122-124' || github.event.pull_request.head.ref == 'feat/desktop-shell-update-116' || (github.event.pull_request.number == 91 && github.event.pull_request.head.ref == 'delivery/taskbot-116-integration')) && github.event.pull_request.head.repo.full_name == github.repository)
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && (github.event.pull_request.head.ref == 'feat/desktop-service-121-122-124' || github.event.pull_request.head.ref == 'feat/desktop-shell-update-116' || (github.event.pull_request.number == 91 && github.event.pull_request.head.ref == 'delivery/taskbot-116-integration')) && github.event.pull_request.head.repo.full_name == github.repository) || (github.event_name == 'push' && (github.ref_name == 'feat/desktop-service-121-122-124' || github.ref_name == 'feat/desktop-shell-update-116' || github.ref_name == 'delivery/taskbot-116-integration'))
     runs-on: ubuntu-24.04
     outputs:
       candidate_json: ${{ steps.freeze.outputs.candidate_json }}
@@ -39,9 +51,9 @@ jobs:
         name: Freeze exact unsigned preparation source/tooling
         env:
           EVENT_NAME: ${{ github.event_name }}
-          SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || fromJSON(inputs.candidate_json).candidate.workflowSha }}
+          SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || fromJSON(inputs.candidate_json).candidate.workflowSha }}
           CANDIDATE_JSON: ${{ inputs.candidate_json }}
-          INTEGRATION_CANDIDATE: ${{ github.event.pull_request.number == 91 && github.event.pull_request.head.ref == 'delivery/taskbot-116-integration' }}
+          INTEGRATION_CANDIDATE: ${{ github.event.pull_request.number == 91 && github.event.pull_request.head.ref == 'delivery/taskbot-116-integration' || github.event_name == 'push' && github.ref_name == 'delivery/taskbot-116-integration' }}
           PREPARATION_SEQUENCE: ${{ github.run_number }}
         run: |
           node --input-type=module <<'JS'
@@ -50,8 +62,8 @@ jobs:
           import {freezeCandidate,validateCandidate} from './scripts/lib/release-candidate.mjs';
           const head=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim();
           if(head!==process.env.SOURCE_SHA)throw Error('Preparation must use exact event head, never synthetic PR merge');
-          const frozen=process.env.EVENT_NAME==='pull_request'
-            ? freezeCandidate({channel:'nightly',commit:head,workflowSha:head,committedVersion:JSON.parse(readFileSync('apps/cli/package.json')).version,sequence:process.env.INTEGRATION_CANDIDATE==='true'?15:Number(process.env.PREPARATION_SEQUENCE),date:process.env.INTEGRATION_CANDIDATE==='true'?'2026-10-10T00:00:00Z':new Date().toISOString()})
+          const frozen=process.env.EVENT_NAME==='pull_request'||process.env.EVENT_NAME==='push'
+            ? freezeCandidate({channel:'nightly',commit:head,workflowSha:head,committedVersion:JSON.parse(readFileSync('apps/cli/package.json')).version,sequence:process.env.EVENT_NAME==='pull_request'&&process.env.INTEGRATION_CANDIDATE==='true'?15:Number(process.env.PREPARATION_SEQUENCE),date:process.env.EVENT_NAME==='pull_request'&&process.env.INTEGRATION_CANDIDATE==='true'?'2026-10-10T00:00:00Z':new Date().toISOString()})
             : validateCandidate(JSON.parse(process.env.CANDIDATE_JSON));
           if(frozen.candidate.workflowSha!==head)throw Error('Frozen tooling differs from selected event head');
           appendFileSync(process.env.GITHUB_OUTPUT,'candidate_json='+JSON.stringify(frozen)+'\n');
