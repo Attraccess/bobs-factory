@@ -60,6 +60,11 @@ jobs:
         run: |
           bun run tooling/scripts/build-binary.ts --source-root source --candidate "$RUNNER_TEMP/candidate.json" --release-version "$VERSION" --target "$TARGET" --output "$RUNNER_TEMP/runtime"
           node tooling/scripts/build-desktop.mjs --source-root source --candidate "$RUNNER_TEMP/candidate.json" --runtime "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" --output "$RUNNER_TEMP/desktop"
+      - name: Validate isolated native user-service ownership
+        env:
+          VERSION: ${{ fromJSON(inputs.candidate_json).candidate.version }}
+          TARGET: ${{ matrix.target }}
+        run: node source/scripts/native-service-smoke.mjs "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" > "$RUNNER_TEMP/desktop/native-service-receipt.json"
       - uses: actions/upload-artifact@v6
         with:
           name: desktop-${{ matrix.target }}-${{ fromJSON(inputs.candidate_json).digest }}
