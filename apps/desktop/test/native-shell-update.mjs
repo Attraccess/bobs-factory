@@ -283,15 +283,14 @@ const client = new services.FactoryClient({
 	port,
 	requestSession: services.requestFactoryTerminalSession,
 });
-await until(
-	async () =>
-		read(join(home, "factory", "runs", `${run.id}.json`)).status ===
-			"waiting" && (await client.get("/api/updates/drain")).idle,
-);
-// Startup normalization/recovery is its own lifecycle. Freeze the valid native
-// worker's waiting state before changing the app; it must then remain byte exact.
-const saved = readFileSync(join(home, "factory", "runs", `${run.id}.json`));
-assert.match(saved.toString(), /mock-native-shell-checkpoint/);
+await until(async () => {
+	try {
+		return (await client.get(`/api/runs/${run.id}`)).status === "waiting";
+	} catch (error) {
+		if (error.status === 404) return false;
+		throw error;
+	}
+});
 save(
 	join(directory, "installation.json"),
 	await source.enroll({ ...old.identity, target }),
@@ -346,6 +345,11 @@ try {
 	assert.equal(services.workerOwner(home).pid, owned.pid);
 	assert.equal(processStamp(uiIdentity.pid), life.uiStamp);
 	await lease.release();
+	// The first real maintenance admission inspected native drain under its
+	// fence and deferred for the capacity lease. Startup recovery has completed;
+	// freeze that waiting checkpoint before either app activation or rollback.
+	const saved = readFileSync(join(home, "factory", "runs", `${run.id}.json`));
+	assert.match(saved.toString(), /mock-native-shell-checkpoint/);
 	// The actual main.mjs reads its exact quit ticket, exits, and the production
 	// lifecycle launches/health-checks the replacement actual packaged Electron.
 	const retained = join(root, "external-helper");
