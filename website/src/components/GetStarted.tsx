@@ -202,7 +202,10 @@ export function GetStarted() {
 						</ul>
 					)}
 					<p className="mt-6 text-sm text-ink-2">
-						<a className="underline" href={`${import.meta.env.BASE_URL}downloads/`}>
+						<a
+							className="underline"
+							href={`${import.meta.env.BASE_URL}downloads/`}
+						>
 							See all installation options and their availability
 						</a>
 					</p>

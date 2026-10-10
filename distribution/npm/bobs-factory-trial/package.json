@@ -18,5 +18,6 @@
 	"homepage": "https://jappyjan.github.io/bobs-factory/downloads/",
 	"files": [
 		"bin/"
-	]
+	],
+	"private": true
 }

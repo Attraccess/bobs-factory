@@ -138,11 +138,10 @@ Bootstrap installs also keep an ownership record under
 target, source commit and trusted publisher key ID, separately from
 `~/.bobs-factory`. Reinstalling does not reset per-instance settings. Package
 managers and Nix retain ownership of their own paths; do not replace those
-executables with the bootstrap installer. To remove a bootstrap installation,
-stop its worker first, remove only the owned `PREFIX/bin/bobs-factory` link, and
-then remove the installer-owned version store if you no longer need rollback.
-Never remove `~/.bobs-factory` as part of executable removal unless state removal
-is explicitly intended.
+executables with the bootstrap installer. See
+[package entry points and safe removal](PACKAGE_ENTRY_POINTS.md) for updater handoff,
+receipt-checked uninstall, generated Homebrew/AUR recipes and npm operator gates.
+The trial retains separate state in `~/.bobs-factory-trial`.
 
 The binary CI workflow remains build/verification only, with immutable candidate
 input. The separate [public release workflow](PUBLIC_RELEASES.md) defaults to a

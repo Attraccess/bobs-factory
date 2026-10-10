@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Record signed release ownership for native bootstrap installs, add a temporary `npx` launcher for verified releases, and publish one downloads index that clearly marks desktop, package-manager and npm paths unavailable until assets and ownership are ready. ([Taskbot bobs-factory #118](https://taskbot.apps.janjaap.de/p/bobs-factory/t/118), [#123](https://taskbot.apps.janjaap.de/p/bobs-factory/t/123), [#84](https://github.com/jappyjan/bobs-factory/pull/84))
+- Add receipt-checked native runtime removal and explicit update-policy handoff, isolate reusable `npx` trials with browser/headless launch and cleanup, and prepare Homebrew/AUR/private npm entry points only from verified immutable signed releases. Downloads retain publication availability gates. ([Taskbot bobs-factory #118](https://taskbot.apps.janjaap.de/p/bobs-factory/t/118), [#123](https://taskbot.apps.janjaap.de/p/bobs-factory/t/123), [#84](https://github.com/jappyjan/bobs-factory/pull/84))
 
 ### Added
 

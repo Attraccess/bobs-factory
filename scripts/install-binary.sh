@@ -51,6 +51,10 @@ for required in bobs-factory LICENSE NOTICE build.json THIRD_PARTY_NOTICES.txt; 
 done
 tar -tvzf "$archive" | LC_ALL=C grep -Ev '^[-d]' > /dev/null && { echo 'Links or special files in archive' >&2; exit 1; }
 umask 077
+case "$prefix" in /*) ;; *) echo 'Install prefix must be absolute' >&2; exit 1;; esac
+for path in "$prefix" "$prefix/lib" "$prefix/lib/bobs-factory" "$prefix/lib/bobs-factory/records" "$prefix/bin"; do
+  [ ! -L "$path" ] || { echo 'Installer directories must not be symlinks' >&2; exit 1; }
+done
 mkdir -p "$prefix/lib/bobs-factory" "$prefix/bin"
 versions=$(cd "$prefix/lib/bobs-factory" && pwd)
 lock="$versions/.install-lock"
@@ -96,6 +100,7 @@ record="$versions/records/$name.json"
 record_stage="$stage/$name.install.json"
 printf '{\n  "schemaVersion": 1,\n  "product": "bobs-factory",\n  "owner": "bobs-factory-installer",\n  "source": "%s",\n  "channel": "%s",\n  "version": "%s",\n  "target": "%s",\n  "commit": "%s",\n  "publisherKeyId": "%s"\n}\n' \
   "$source" "$channel" "$version" "$target" "$commit" "$key_id" > "$record_stage"
+[ ! -L "$record" ] || { echo 'Ownership record must not be a symlink' >&2; exit 1; }
 if [ -e "$record" ]; then
   diff -q "$record_stage" "$record" >/dev/null || { echo 'Existing installer ownership record differs; refusing to replace it' >&2; exit 1; }
 else

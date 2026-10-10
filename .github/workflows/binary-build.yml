@@ -77,6 +77,11 @@ jobs:
         run: node tooling/scripts/smoke-native-helpers.mjs --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output "$RUNNER_TEMP/artifacts"
       - name: Prepared agent protocol boundaries without live inference
         run: node tooling/scripts/smoke-prepared-agent-boundaries.mjs --source-root source --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output "$RUNNER_TEMP/artifacts"
+      - name: Packed npm trial lifecycle with native runtime and controlled browser
+        env:
+          VERSION: ${{ fromJSON(inputs.candidate_json).candidate.version }}
+          TARGET: ${{ matrix.target }}
+        run: BOBS_FACTORY_TRIAL_SMOKE_BINARY="$RUNNER_TEMP/factory-prefix/bin/bobs-factory" node --test tooling/scripts/tests/trial-launcher.test.mjs
       - name: Publisher signature interoperability
         run: node --test tooling/scripts/tests/release-signature.test.mjs
       - uses: actions/upload-artifact@v6
