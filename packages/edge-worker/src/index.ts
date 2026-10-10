@@ -44,6 +44,10 @@ export {
 	readGithubAuth,
 } from "./factory/GithubApi.js";
 export {
+	OperatorGrants,
+	serveOperatorClient,
+} from "./factory/OperatorGrants.js";
+export {
 	type Recommendation,
 	resolveAnswers,
 	serializeAnswers,

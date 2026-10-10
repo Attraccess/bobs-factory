@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { callCodexMcpTool } from "../src/callMcpTool.js";
+import { callCodexMcpTool, listCodexMcpTools } from "../src/callMcpTool.js";
 
 const { client, launch } = vi.hoisted(() => ({
 	client: {
@@ -179,4 +179,48 @@ it("cancellation during startup prevents the ticket mutation and closes the conn
 		"mcpServerStatus/list",
 	]);
 	expect(client.close).toHaveBeenCalled();
+});
+
+it("native discovery checks the selected connection without invoking provider tools", async () => {
+	client.request.mockImplementation(async (method: string) => {
+		if (method === "thread/start") return { thread: { id: "mcp-thread" } };
+		if (method === "mcpServerStatus/list")
+			return {
+				data: [{ name: "other", runtimeStatus: "connected", tools: {} }],
+			};
+		return {};
+	});
+	await listCodexMcpTools(
+		config,
+		"other",
+		server,
+		new AbortController().signal,
+	);
+	expect(client.request.mock.calls.map(([method]) => method)).toEqual([
+		"initialize",
+		"thread/start",
+		"mcpServerStatus/list",
+	]);
+	expect(client.close).toHaveBeenCalledOnce();
+});
+it.each([
+	{},
+	{
+		data: [
+			{
+				name: "other",
+				runtimeStatus: "failed",
+				toolsError: "401 unauthorized",
+			},
+		],
+	},
+])("does not report unavailable native discovery as connected: %j", async (status) => {
+	client.request.mockImplementation(async (method: string) => {
+		if (method === "thread/start") return { thread: { id: "mcp-thread" } };
+		return method === "mcpServerStatus/list" ? status : {};
+	});
+	await expect(
+		listCodexMcpTools(config, "other", server, new AbortController().signal),
+	).rejects.toThrow("MCP discovery failed");
+	expect(client.close).toHaveBeenCalledOnce();
 });

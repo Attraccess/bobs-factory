@@ -1306,6 +1306,20 @@ it admits queued work; decreasing it lets existing execution drain. A deliberate
 configuration edit updates the policy, and removing the numeric setting restores
 four. Unrelated config reloads and stale startup settings do not reset it.
 
+Eligible jobs from older workflow runs take priority over newer workflow jobs.
+The original run creation time applies to agents, setup hooks and nested intensive
+work. Multiple leaves from the oldest run can fill the pool; newer jobs use any
+spare slots. Executing work is never interrupted. Interactive foreground jobs
+keep their admission positions. Background titles still receive a turn after at
+most eight foreground admissions while waiting.
+
+Workflow jobs exchange persisted admission positions, while their original queue
+sequence and timestamp remain unchanged. Recovery retains exchanged positions,
+so admitting one older job does not move a newer job ahead of an interactive job.
+Parked and otherwise ineligible jobs reserve no usable slot. All processes sharing
+a home must use compatible scheduler versions: older versions can strip scheduling
+fields or apply the earlier FIFO policy.
+
 The coordinator lives at `<factoryHome>/machine-capacity`. Separate `--home`
 directories have independent limits and queues, so temporary F1 instances do not
 compete with the instance running their parent QA step. Processes using the same
