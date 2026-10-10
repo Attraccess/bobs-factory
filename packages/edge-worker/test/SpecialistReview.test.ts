@@ -10,11 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CursorRunner } from "bobs-factory-cursor-runner";
 import { afterEach, expect, it, vi } from "vitest";
-import {
-	defaultWorkflows,
-	legacyReviewSteps,
-	upgradeWorkflows,
-} from "../src/factory/defaultWorkflows.js";
+import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { GuideSchema } from "../src/factory/FactoryResults.js";
 import { captureEvidence, FactoryTools } from "../src/factory/FactoryTools.js";
 import {
@@ -838,72 +834,6 @@ it("namespaces collisions, preserves observations and removed-role complaints, r
 		"stale",
 	);
 	expect(() => aggregateReview(b, [{ business }])).toThrow("missing");
-});
-it("requires coverage replacements and JSON contracts, migrates only untouched stock for new launches", () => {
-	const saved = structuredClone(defaultWorkflows);
-	const pipeline = saved.find((w) => w.id === "factory-pipeline")!;
-	const fanout = pipeline.steps.find((s) => s.type === "fanout")!;
-	fanout.groups!.pop();
-	expect(() => validateWorkflows(saved)).toThrow("coverage-v1");
-	fanout.groups!.push([
-		StepSchema.parse({
-			id: "replacement",
-			name: "Replacement",
-			type: "agent",
-			prompt: "Review business scope",
-			reviewContract: "coverage-v1",
-		}),
-	]);
-	expect(validateWorkflows(saved)).toHaveLength(4);
-	fanout.groups!.at(-1)![0]!.json = false;
-	expect(() => validateWorkflows(saved)).toThrow("structured JSON");
-	const old = structuredClone(defaultWorkflows);
-	old.find((w) => w.id === "factory-pipeline")!.steps = legacyReviewSteps.map(
-		(s) => StepSchema.parse(s),
-	);
-	const migrated = validateWorkflows(upgradeWorkflows(old));
-	expect(
-		migrated
-			.find((w) => w.id === "factory-pipeline")!
-			.steps.find((s) => s.type === "fanout")!.groups,
-	).toHaveLength(6);
-	expect(upgradeWorkflows(migrated)).toEqual(migrated);
-
-	expect(
-		migrated
-			.find((w) => w.id === "factory-pipeline")!
-			.steps.find((s) => s.id === "guide")!.prompt,
-	).toBe(
-		defaultWorkflows
-			.find((w) => w.id === "factory-pipeline")!
-			.steps.find((s) => s.id === "guide")!.prompt,
-	);
-	for (const change of ["custom-guide", "review-input", "gate-args"]) {
-		const customized = structuredClone(old);
-		const steps = customized.find((w) => w.id === "factory-pipeline")!.steps;
-		if (change === "custom-guide")
-			steps.find((s) => s.id === "guide")!.prompt =
-				"Keep my custom walkthrough";
-		if (change === "review-input")
-			steps.find((s) => s.id === "guide")!.inputs = ["outputs.code-review"];
-		if (change === "gate-args")
-			steps.find((s) => s.id === "review-gate")!.args = ["--custom-policy"];
-		const retained = validateWorkflows(upgradeWorkflows(customized)).find(
-			(w) => w.id === "factory-pipeline",
-		)!.steps;
-		expect(
-			retained.some((s) => s.id === "code-review"),
-			change,
-		).toBe(true);
-	}
-	old
-		.find((w) => w.id === "factory-pipeline")!
-		.steps.find((s) => s.id === "code-review")!.model = "custom-model";
-	expect(
-		validateWorkflows(upgradeWorkflows(old))
-			.find((w) => w.id === "factory-pipeline")!
-			.steps.some((s) => s.id === "code-review"),
-	).toBe(true);
 });
 function setup(hooks: Partial<RuntimeHooks> = {}) {
 	const home = mkdtempSync(join(tmpdir(), "specialist-review-"));

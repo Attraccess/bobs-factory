@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	existsSync,
 	mkdtempSync,
@@ -544,4 +545,64 @@ it("retains accepted admission preferences through setup and later upgrades", ()
 		factoryLaunch,
 	);
 	expect(frozen.workflowDefinitions).toEqual(factoryLaunch.workflowDefinitions);
+});
+
+it("removes disabled fork graphs with their metadata and preserves export/import", () => {
+	const { runtime } = fixture();
+	const fork = runtime.forkWorkflow("factory");
+	const privateIds = new Set([
+		fork.id,
+		...Object.values(runtime.catalog.read().provenance[fork.id]!.dependencies),
+	]);
+	runtime.setWorkflowEnabled(fork.id, false);
+	runtime.updateWorkflows(
+		runtime.listWorkflows().filter((w) => !privateIds.has(w.id)),
+	);
+	const exported = runtime.catalog.read();
+	expect(exported.enabled[fork.id]).toBeUndefined();
+	expect(exported.provenance[fork.id]).toBeUndefined();
+	runtime.importWorkflows(exported);
+	expect(runtime.listWorkflows().some((w) => privateIds.has(w.id))).toBe(false);
+});
+it.each([
+	"partial",
+	"staging",
+])("recovers migration after interruption at %s backup creation", (boundary) => {
+	const { home, runtime, path } = fixture();
+	const bytes = JSON.stringify({
+		workflows: legacy(),
+		defaultWorkflow: "factory",
+	});
+	writeFileSync(path, bytes);
+	const hash = createHash("sha256").update(bytes).digest("hex");
+	// Match the digest-named backup path used by the migration receipt.
+	const realBackup = `${path}.backup-${hash}`;
+	const name =
+		boundary === "partial" ? realBackup : `${realBackup}.abandoned.tmp`;
+	writeFileSync(name, bytes.slice(0, 101));
+	const recovered = new WorkflowRuntime(home, (runtime as any).hooks);
+	expect(readFileSync(recovered.catalog.read().migration!.backup, "utf8")).toBe(
+		bytes,
+	);
+	expect(recovered.catalog.read().locals).toEqual([]);
+	expect(
+		new WorkflowRuntime(home, (runtime as any).hooks).catalog.read(),
+	).toEqual(recovered.catalog.read());
+});
+
+it("preserves original config and a genuinely conflicting migration backup", () => {
+	const { home, runtime, path } = fixture();
+	const bytes = JSON.stringify({
+		workflows: legacy(),
+		defaultWorkflow: "factory",
+	});
+	writeFileSync(path, bytes);
+	const hash = createHash("sha256").update(bytes).digest("hex");
+	const backup = `${path}.backup-${hash}`;
+	writeFileSync(backup, "unrelated configuration");
+	expect(() => new WorkflowRuntime(home, (runtime as any).hooks)).toThrow(
+		"backup collision",
+	);
+	expect(readFileSync(path, "utf8")).toBe(bytes);
+	expect(readFileSync(backup, "utf8")).toBe("unrelated configuration");
 });

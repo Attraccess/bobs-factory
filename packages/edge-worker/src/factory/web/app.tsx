@@ -67,6 +67,7 @@ import { ReviewPage } from "./review-page";
 import {
 	readStored,
 	readTextStored,
+	ticketTrackingPending,
 	todayContext,
 	writeStored,
 	writeTextStored,
@@ -554,9 +555,10 @@ function Today({
 							?.click();
 					break;
 				case "e":
-					if (current && finished(current.status))
-						void settle.change(current, "settle");
-					else if (current?.reviewGate?.status === "pending")
+					if (current && finished(current.status)) {
+						if (!ticketTrackingPending(current))
+							void settle.change(current, "settle");
+					} else if (current?.reviewGate?.status === "pending")
 						document
 							.querySelector<HTMLButtonElement>(".focus-card .rainbow")
 							?.click();
@@ -907,7 +909,8 @@ function RunPage({
 							↩ Bring back
 						</Button>
 					) : (
-						finished(run.status) && (
+						finished(run.status) &&
+						!ticketTrackingPending(run) && (
 							<Button
 								variant="ghost"
 								onClick={() => void settle.change(run, "settle")}

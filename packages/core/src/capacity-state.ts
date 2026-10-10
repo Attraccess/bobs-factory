@@ -6,11 +6,18 @@ export const CapacityOwnerSchema = z.object({
 	start: z.string().min(1),
 	incarnation: z.string().min(1),
 });
+export const CapacityWorkflowSchema = z.object({
+	identity: z.string().min(1),
+	createdAt: z.iso.datetime({ offset: true }),
+});
+export type CapacityWorkflow = z.infer<typeof CapacityWorkflowSchema>;
 const Request = z.object({
 	id: z.string(),
 	token: z.string(),
 	owner: CapacityOwnerSchema,
 	sequence: z.number().int().positive(),
+	admissionPosition: z.number().int().positive().optional(),
+	workflowRun: CapacityWorkflowSchema.optional(),
 	queuedAt: z.string(),
 	phase: z.enum(["queued", "executing", "stopping"]),
 	background: z.boolean(),
@@ -37,6 +44,29 @@ export const CapacityStateSchema = z
 					code: "custom",
 					message: `Duplicate capacity ${field}`,
 				});
+		}
+		const positions = state.requests.map(
+			(r) => r.admissionPosition ?? r.sequence,
+		);
+		if (
+			new Set(positions).size !== positions.length ||
+			positions.some((p) => p > state.sequence)
+		)
+			ctx.addIssue({
+				code: "custom",
+				message: "Invalid capacity admission positions",
+			});
+		const ages = new Map<string, number>();
+		for (const request of state.requests) {
+			if (!request.workflowRun) continue;
+			const age = Date.parse(request.workflowRun.createdAt);
+			const previous = ages.get(request.workflowRun.identity);
+			if (previous !== undefined && previous !== age)
+				ctx.addIssue({
+					code: "custom",
+					message: "Conflicting capacity workflow age",
+				});
+			ages.set(request.workflowRun.identity, age);
 		}
 		if (
 			state.requests.some(

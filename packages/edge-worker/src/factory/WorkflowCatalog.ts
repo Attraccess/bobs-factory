@@ -3,10 +3,12 @@ import {
 	closeSync,
 	existsSync,
 	fsyncSync,
+	linkSync,
 	mkdirSync,
 	openSync,
 	readFileSync,
 	renameSync,
+	unlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -287,11 +289,35 @@ export class WorkflowCatalog {
 		const result = this.migrate(source, bytes);
 		// Original bytes and the deterministic receipt are durable before replacement.
 		const backup = result.migration!.backup;
-		if (existsSync(backup) && readFileSync(backup, "utf8") !== bytes)
+		const existing = existsSync(backup)
+			? readFileSync(backup, "utf8")
+			: undefined;
+		// Older versions wrote directly to the backup. Only an exact, incomplete
+		// prefix is recoverable; unrelated bytes remain a genuine collision.
+		if (
+			existing !== undefined &&
+			existing !== bytes &&
+			!bytes.startsWith(existing)
+		)
 			throw new Error(
 				"Workflow migration backup collision; original configuration retained",
 			);
-		if (!existsSync(backup)) durableWrite(backup, bytes, true);
+		if (existing !== bytes) {
+			const staging = `${backup}.${randomUUID()}.tmp`;
+			try {
+				durableWrite(staging, bytes, true);
+				if (existing === undefined) linkSync(staging, backup);
+				else renameSync(staging, backup);
+				const fd = openSync(directory, "r");
+				try {
+					fsyncSync(fd);
+				} finally {
+					closeSync(fd);
+				}
+			} finally {
+				if (existsSync(staging)) unlinkSync(staging);
+			}
+		}
 		this.validate(result);
 		atomic(
 			join(directory, `workflow-migration-${result.migration!.digest}.json`),
@@ -684,6 +710,23 @@ export class WorkflowCatalog {
 					allowedTriggers: w.allowedTriggers,
 				};
 			} else next.locals.push(w);
+		}
+		const retained = new Set([
+			...reserved.keys(),
+			...next.locals.map((w) => w.id),
+		]);
+		for (const metadata of [
+			next.preferences,
+			next.launch,
+			next.enabled,
+			next.provenance,
+		])
+			for (const id of Object.keys(metadata))
+				if (!retained.has(id)) delete metadata[id];
+		next.inactive = next.inactive.filter((item) => retained.has(item.workflow));
+		if (next.migration) {
+			for (const [source, target] of Object.entries(next.migration.mappings))
+				if (!retained.has(target)) delete next.migration.mappings[source];
 		}
 		this.commit(next);
 		return this.list();

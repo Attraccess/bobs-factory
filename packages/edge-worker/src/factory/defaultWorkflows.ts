@@ -5,8 +5,6 @@ import {
 	briefVideoInstructions,
 } from "./GuideAuthoring.js";
 import { takeoverLaunchFields } from "./LaunchFields.js";
-import { legacyGuidePrompt } from "./legacyGuidePrompt.js";
-import { legacyScreenshotSteps } from "./legacyScreenshotSteps.js";
 import { QA_CONTRACT } from "./Qa.js";
 import { reviewFixInstructions } from "./ReviewRecovery.js";
 import {
@@ -61,7 +59,7 @@ const definitions = [
 		icon: "🏭",
 		name: "Software factory",
 		description:
-			"Clarify → plan → implement → draft PR → requirements → specialist review → CI → QA and screenshot review → human guide.",
+			"Clarify and plan, then deliver repository, external ticket or mixed work with independent evidence and explicit human acceptance.",
 		labels: ["workflow:factory", "factory"],
 		steps: [
 			agent(
@@ -187,7 +185,6 @@ Open the actual selected screenshots. Return acceptedScreenshots:[{area,state,im
 ];
 
 const pipeline = definitions[1]!;
-const previousVideoPrompts = new Map<string, string>();
 for (const step of pipeline.steps) {
 	if (
 		![
@@ -202,7 +199,6 @@ for (const step of pipeline.steps) {
 		continue;
 	Object.assign(step, { videoContract: "video-v1" });
 	if ("prompt" in step) {
-		previousVideoPrompts.set(step.id, step.prompt);
 		step.prompt +=
 			"guideContract" in step
 				? briefVideoInstructions
@@ -212,7 +208,6 @@ for (const step of pipeline.steps) {
 
 const planStep = pipeline.steps.find((step) => step.id === "plan")!;
 if (!("prompt" in planStep)) throw new Error("Stock planner unavailable");
-const previousPlanPrompt = planStep.prompt;
 const ticketPlanInstructions =
 	" Include the verified originating ticket reference, tracker instance/workspace/project and URL, runtime tracking ownership, coding Done-after-confirmed-merge rule, and any synchronization gaps in the self-contained plan. Roles supply summaries and blockers; the tracking service owns lifecycle comments, status and PR links.";
 planStep.prompt += ticketPlanInstructions;
@@ -254,6 +249,132 @@ function installSpecialists(steps: Record<string, any>[]) {
 	}
 }
 installSpecialists(pipeline.steps);
+// Install only in newly accepted stock definitions; saved run snapshots are never rewritten.
+const deliveryInstructions = ` Delivery mode comes from accepted requirements: repository (including repository docs/config), external (ticket content/relationships), or mixed. Never infer it from an empty diff. No repository changes may authorize external edits; execution deferral remains separate. Runtime owns lifecycle status/comments and PR links. External review follows authorized application and independent verification. Missing integration access blocks execution.`;
+for (const step of pipeline.steps) {
+	if (["clarify", "plan", "plan-review"].includes(step.id) && "prompt" in step)
+		step.prompt += deliveryInstructions;
+	if (step.id === "clarify" && "prompt" in step)
+		step.prompt +=
+			' Include deliveryMode:"repository"|"external"|"mixed". Do not ask to authorize unrelated repository implementation for external tasks.';
+	if (step.id === "plan" && "prompt" in step)
+		step.prompt += ` Include deliveryContract:{format:"delivery-v1",version:1,mode:"repository"|"external"|"mixed",authorization:{status:"authorized"|"deferred",reference:"actual instruction/answer reference"},executionReference:"digest supplied in deliveryExecutionReference",targets:[{key:"stable target ID",resource:{provider:"linear",instance:"https://linear.app",workspaceId:"configured workspace",project:"immutable project or team ID",id:"immutable UUID",url:"verified URL"} OR {provider:"taskbot",server:"configured server",instance:"exact HTTPS origin",project:"project slug",id:"numeric ID as string",url:"exact URL"},capabilities:["read","content","relationships"],baseline:{fields:{title:"observed title",description:"complete observed content"},relationships:[{type:"blocks"|"related",from:"immutable ID",to:"immutable ID"}]},operations:[{id:"stable operation ID",kind:"content",fields:{description:"full desired content"}} OR {id:"stable ID",kind:"add"|"remove",relationship:{type:"blocks"|"related",from:"ID",to:"ID"}}],criteria:[{id:"stable criterion",requirementRef:"accepted requirement reference",description:"observable acceptance criterion",fields:{description:"full expected content"},relationships:[],absentRelationships:[]}],preservedRelationships:[]}]}. Repository mode uses targets:[]; external/mixed need complete targets. Fetch complete before-state and verify coordinates through configured integrations. Do not mutate. Store no credentials. Include full expected fields and preserved relationships. On correction increment version and use new operation IDs for changed intents; retain already-applied history.`;
+	if (step.id === "plan-review" && "prompt" in step)
+		step.prompt +=
+			" Confirm delivery mode, target identities, authorization, complete baseline, allowed operations and every criterion. Return deliveryContractDigest using the supplied deliveryCandidateDigest only when approving that exact contract. Incomplete or contradictory contracts cannot be approved.";
+
+	if (step.id === "merge")
+		Object.assign(step, {
+			branches: [
+				...("branches" in step ? (step.branches as any[]) : []),
+				{
+					when: { path: "externalPending", equals: true },
+					next: "external-final",
+				},
+			],
+		});
+}
+// Mixed feedback renews the external contract before repository work resumes.
+const initialHumanReview = pipeline.steps.find((s) => s.id === "human-review")!;
+for (const branch of (initialHumanReview as Record<string, any>).branches)
+	if (branch.when.path === "decision" && branch.when.equals === "reject")
+		branch.next = "delivery-feedback-route";
+const planReview = pipeline.steps.find((s) => s.id === "plan-review")!;
+Object.assign(planReview, { next: "delivery-route" });
+(pipeline.steps as Record<string, any>[]).push(
+	tool(
+		"delivery-feedback-route",
+		"Route requested delivery corrections",
+		"delivery-mode",
+		{
+			branches: [
+				{
+					when: { path: "mode", equals: "mixed" },
+					next: "external-correction",
+				},
+			],
+			next: "human-fix",
+		},
+	),
+	tool(
+		"delivery-route",
+		"Validate accepted delivery contract",
+		"delivery-route",
+		{
+			branches: [
+				{ when: { path: "deferred", equals: true }, next: "delivery-deferred" },
+				{ when: { path: "mode", equals: "external" }, next: "external-apply" },
+				{ when: { path: "mode", equals: "mixed" }, next: "external-apply" },
+			],
+			next: "implement",
+		},
+	),
+	agent(
+		"delivery-deferred",
+		"Resolve execution deferral",
+		"The accepted delivery contract defers execution. Do not mutate tickets or files. Ask whether the named external/repository task should remain deferred or may proceed. Return questions while the deferral remains. Read answers; only explicit authorization may return questions:[], then the planner and plan reviewer renew the contract. Never infer execution permission from scope answers.",
+		{ askQuestions: true, next: "plan" },
+	),
+	tool("external-apply", "Apply authorized ticket changes", "external-apply", {
+		next: "external-verify",
+	}),
+	tool(
+		"external-verify",
+		"Independently verify ticket state",
+		"external-verify",
+		{ next: "external-after-verify" },
+	),
+	tool(
+		"external-after-verify",
+		"Route verified deliverables",
+		"delivery-mode",
+		{
+			branches: [
+				{
+					when: { path: "repositoryComplete", equals: true },
+					next: "external-guide",
+				},
+				{ when: { path: "mode", equals: "mixed" }, next: "implement" },
+			],
+			next: "external-guide",
+		},
+	),
+	tool("external-guide", "Prepare external review", "external-guide", {
+		next: "external-human-review",
+	}),
+	tool(
+		"external-human-review",
+		"Accept completed external work",
+		"human-review",
+		{
+			branches: [
+				{
+					when: { path: "decision", equals: "reject" },
+					next: "external-correction",
+				},
+			],
+			next: "external-final",
+		},
+	),
+	agent(
+		"external-correction",
+		"Plan requested ticket corrections",
+		"Read humanDecisions, the accepted delivery contract, operation receipts and verified state. Applied changes remain; rejection does not roll them back. Preserve feedback and before/after history. Do not mutate tickets or repository files, commit or push. Before repository merge, summarize both ticket and repository feedback for the revised plan; preserve existing repository work and let implementation apply the reviewed corrections. After repository merge, corrections on this path concern external deliverables only. Confirmed repository merges remain retained. Repository changes requested after merge need a separate follow-up, never replay publication or merge. Summarize the requested corrections for a revised plan and independent plan review.",
+		{ next: "plan" },
+	),
+	tool("external-final", "Check accepted external state", "external-final", {
+		branches: [
+			{ when: { path: "drift", equals: true }, next: "external-reverify" },
+		],
+		next: "end",
+	}),
+	tool(
+		"external-reverify",
+		"Verify changed external state",
+		"external-verify",
+		{ next: "external-guide" },
+	),
+);
 export const defaultWorkflows = validateWorkflows([
 	definitions[0],
 	{
@@ -304,350 +425,6 @@ export const defaultWorkflows = validateWorkflows([
 		labels: [],
 	},
 ]);
-
-/** Upgrade the original flat Factory definition without losing customized roles. */
-const legacyVisualPrompts: Record<string, string[]> = {
-	guide: [
-		// Chapter-guide stock prompts, as saved by each earlier release.
-		legacyGuidePrompt + videoPrompts.guide + inventoryGuideInstructions,
-		legacyGuidePrompt + videoPrompts.guide,
-		legacyGuidePrompt + inventoryGuideInstructions,
-		legacyGuidePrompt,
-		// The QA stock guide saved before compact content was required.
-		legacyGuidePrompt.split("\nEvery new guide MUST")[0]!,
-		`Write a complete, guided human review of the WHOLE PR at the current revision, including work that existed before takeover and every accepted iteration. This is a product walkthrough, not a recap of the last fix. First read /progress/reviewScope, the clarified requirements, decisions, accepted plan and cumulative capture inventory through factory-context. Inspect the actual base-to-head PR diff, grouping changes by feature/purpose rather than file or review iteration. The first guide always covers the entire feature. Put the core behavior first, consequences next, and supporting changes last.
-Return {"goal":"user goal, at most 30 words","summary":"whole-PR outcome, at most 30 words","decision":{"status":"ready or needs-attention or blocked","summary":"at most 30 words"},"chapters":[{"id":"stable-feature-id","title":"short feature name","summary":"what changed and why, at most 40 words","before":"short original behavior","after":"short new behavior","requirementIndexes":[0],"files":["exact changed repository-relative file"],"screenshots":[{"area":"exact capture area","state":"exact capture state","caption":"what the human should notice"}],"diagrams":[{"title":"how this feature works","steps":[{"label":"short stage","detail":"one short sentence"}]}],"reviewChecks":["specific, short thing to verify"],"risks":["material limitation of this feature"],"evidence":["technical references/test receipts for expandable details"]}],"requirements":[{"criterion":"complete original acceptance criterion","status":"supported or gap or unverified or waived","evidence":["actual evidence"]}],"behavior":[{"scenario":"...","before":"...","after":"..."}],"checks":["actual checks, distinguish current-head CI from earlier local test receipts"],"risks":["material limitations and retained disagreements"],"reviewInstructions":["short final decision checks"]}.
-Produce a small set of cohesive chapters (usually 4-10), one changed thing per chapter. Each requirement must be assigned to at least one chapter using zero-based requirementIndexes. Account for all changed files in chapter files, including tests/migrations/docs and inherited takeover work; supporting files may share a chapter. Use exact relative paths, no globs. Use real cumulative screenshots attached to their relevant chapter, not arbitrary first images or local Markdown image URLs. Keep the whole accepted inventory discoverable, but choose only the useful captures for each chapter. Explain nonvisual processing with a short flow diagram where it helps (e.g. input -> captured terms -> billing -> receipt); diagrams describe the product, not the factory pipeline. No decorative diagrams or invented evidence. Use everyday words; IDs, SHAs, long code descriptions and raw receipts belong in expandable evidence. Disclose fixture/hardware limitations and rejected scope complaints clearly.
-On repeats, update affected chapters and retain unchanged feature chapters, requirements and evidence. A short revision summary may supplement a complete previous guide ONLY when a previous guide was actually human-reviewed and the actual change is a verified typo/documentation-only correction of at most 10 lines with no behavior, visual, dependency or configuration change. Never replace full feature coverage with the revision delta. Set revisionSummary=true and previousHeadSha only for that case, and put its short delta in revisionNote while summary still describes the entire feature. Require fresh explicit human approval of the current revision. Do not modify product code, recapture screenshots, rerun implementation or merge. Human-only merge blockers are remaining human actions, not unsupported implementation requirements.`,
-		'Write a Rocky-inspired review recap for the exact current PR revision, grounded in the supplied results/evidence. Return {"goal":"short user goal","summary":"short outcome","decision":{"status":"ready or needs-attention or blocked","summary":"..."},"requirements":[{"criterion":"...","status":"supported or gap or unverified","evidence":["..."]}],"behavior":[{"scenario":"...","before":"...","after":"..."}],"checks":["actual checks and CI results"],"risks":["actual limitations"],"reviewInstructions":["where to look and what to verify"]}. Include decisions, accepted/rejected review complaints, real screenshots where UI changed and remaining human actions. Never invent successful checks, screenshots or coverage. Use plain language. The PR stays draft for the human.',
-		'Write a Rocky-inspired review recap for the exact current PR revision, grounded in the supplied results/evidence. Return {"goal":"short user goal","summary":"short outcome","decision":{"status":"ready or needs-attention or blocked","summary":"..."},"requirements":[{"criterion":"...","status":"supported or gap or unverified","evidence":["..."]}],"behavior":[{"scenario":"...","before":"...","after":"..."}],"checks":["actual checks and CI results"],"risks":["actual limitations"],"reviewInstructions":["where to look and what to verify"]}. Include decisions, accepted/rejected review complaints, real screenshots where UI changed and remaining human actions. Never invent successful checks, screenshots or coverage. Use plain language. The PR stays draft until explicit human approval. If this is a new review after a human request or merge-readiness correction, inspect the actual diff since the last human-reviewed SHA in humanDecisions. For a verified typo/documentation-only correction of at most 10 changed lines, with no behavior, visual, dependency or configuration changes, retain the previous guide requirements/evidence and provide a concise revision summary in summary with reviewInstructions describing exactly what changed. Set revisionSummary=true and include previousHeadSha. Still include the current revision checks and unresolved human actions, and require fresh explicit approval. For any uncertainty or other change, prepare the complete guide again. Human-only merge blockers (draft status or missing external reviewer approval) are remaining human actions, not unsupported implementation requirements; a complete implementation may be ready for the guide while these approvals wait.',
-	],
-	"visual-scope": [
-		'Inspect the exact PR diff and decide whether application visuals changed. Return {"changed":false,"areas":[]} for no visual changes, otherwise {"changed":true,"areas":[{"name":"region or element","url":"path/URL or application view","states":["desktop, mobile, relevant interaction states"],"instructions":"how to access and what changed"}]}. Be precise and exhaustive. Do not change code or take screenshots.',
-	],
-	capture: [
-		'Start the dev application as needed. Use available browser/screenshot tools to capture EVERY area and relevant state in visual-scope. When subagent tools are available and multiple areas can be captured independently, use up to 3 subagents in parallel to speed up capture. Set up the application once, then give each subagent a disjoint area/state assignment, the exact revision, application URL/access instructions, required assets and evidence directory. Share the dev server; use separate browser pages/contexts where supported. If browser control is shared, serialize interactions to avoid interfering with each other\'s captures. Each subagent must capture and inspect its assigned areas, use unique filenames, report real image paths and any unavailable states, and leave shared server cleanup to you. If delegation or independent capture is unsupported, capture sequentially yourself. Wait for all subagents, inspect their results, and merge them into one complete inventory without duplicates or missing states. Save image files under the provided evidence directory, with a fresh filename for each revision. Inspect the captures for readability. Return {"screenshots":[{"path":"absolute path","caption":"area/state","area":"name","state":"exact state from the area inventory"}],"unavailable":[{"area":"name","reason":"concrete reason"}]}. Never claim captures that do not exist. Stop any dev server you started only after all captures finish. Do not change product code. Missing capture tooling must be reported in unavailable.',
-		'Start the dev application as needed. Use available browser/screenshot tools to capture EVERY area and relevant state in visual-scope. Save image files under the provided evidence directory, with a fresh filename for each revision. Inspect the captures for readability. Return {"screenshots":[{"path":"absolute path","caption":"area/state","area":"name","state":"exact state from the area inventory"}],"unavailable":[{"area":"name","reason":"concrete reason"}]}. Never claim captures that do not exist. Stop any dev server you started before finishing. Do not change product code. Missing capture tooling must be reported in unavailable.',
-	],
-	"visual-review": [
-		'Review the current diff against the accepted plan. You receive ALL historical review rounds and fixer responses. Use stable finding IDs; do not reopen resolved findings without fresh evidence. A fixer may reject a complaint with evidence; assess that evidence and either accept or reject the rejection with reasoning. Return {"findings":[{"id":"stable-id","rating":2,"summary":"...","evidence":"file:line and concrete failure","status":"open"}],"summary":"..."}. Ratings: 1 nitpick, 2 should fix, 3 must fix. Include unresolved rating 2/3 findings from earlier rounds. Return no findings only when all consequential complaints are resolved or their rejections accepted. Do not modify code.\nThis is a VISUAL review: open and inspect the actual screenshots, checking each requested area/state against the plan. Include areas with missing/unavailable capture evidence as rating 3 findings. Never approve missing screenshots.',
-	],
-};
-
-export function upgradeWorkflows(value: unknown): unknown {
-	if (!Array.isArray(value)) return value;
-	const definitions = structuredClone(value) as Record<string, unknown>[];
-	const factory = definitions.find((item) => item.id === "factory");
-	if (!definitions.some((item) => item.id === "factory-pipeline")) {
-		const shared = structuredClone(
-			defaultWorkflows.find((item) => item.id === "factory-pipeline")!,
-		);
-		if (
-			factory &&
-			Array.isArray(factory.steps) &&
-			!factory.steps.some((step) => step.type === "workflow")
-		) {
-			shared.steps = factory.steps;
-			factory.steps = structuredClone(
-				defaultWorkflows.find((item) => item.id === "factory")!.steps,
-			);
-		}
-		definitions.push({ ...shared });
-	}
-	if (!definitions.some((item) => item.id === "takeover"))
-		definitions.push(
-			structuredClone(defaultWorkflows.find((item) => item.id === "takeover")!),
-		);
-	for (const definition of definitions) {
-		if (definition.id === "simple" && definition.chat === undefined)
-			definition.chat = true;
-		if (Array.isArray(definition.launchFields))
-			definition.launchFields = definition.launchFields.filter(
-				(field: { name?: string }) => field.name !== "title",
-			);
-
-		if (!Array.isArray(definition.steps)) continue;
-		const steps = definition.steps as Record<string, unknown>[];
-		// Handoff became a passive poller. Normalize formerly valid saved recipe
-		// classifications before validation, including custom fanout branches.
-		// This upgrade is not applied to immutable accepted run definitions.
-		const upgradeHandoffCapacity = (items: Record<string, unknown>[]): void => {
-			for (const step of items) {
-				if (
-					step.type === "tool" &&
-					step.tool === "handoff" &&
-					step.computeIntensive === true
-				)
-					step.computeIntensive = false;
-				if (Array.isArray(step.groups))
-					for (const group of step.groups)
-						if (Array.isArray(group)) upgradeHandoffCapacity(group);
-			}
-		};
-		upgradeHandoffCapacity(steps);
-		if (!["factory-pipeline", "factory"].includes(String(definition.id)))
-			continue;
-		const stockQa = defaultWorkflows.find(
-			(w) => w.id === "factory-pipeline",
-		)!.steps;
-		const affected = legacyScreenshotSteps.map((s) => s.id);
-		const coherentStock = affected.every((id) => {
-			const step = steps.find((s) => s.id === id);
-			const old = legacyScreenshotSteps.find((s) => s.id === id)!;
-			const current = stockQa.find((s) => s.id === id)!;
-			if (
-				!step ||
-				step.type !== old.type ||
-				(step.type === "agent" &&
-					((step.json ?? true) !== (old.json ?? true) ||
-						(step.askQuestions ?? false) !== (old.askQuestions ?? false))) ||
-				(step.inputs !== undefined &&
-					JSON.stringify(step.inputs) !== JSON.stringify(old.inputs))
-			)
-				return false;
-			const promptMatches =
-				step.type === "tool"
-					? step.tool === old.tool
-					: step.prompt === old.prompt ||
-						step.prompt === current.prompt ||
-						step.prompt ===
-							current.prompt?.replace(videoPrompts[id] ?? "", "") ||
-						step.prompt === previousVideoPrompts.get(id) ||
-						step.prompt ===
-							(
-								legacyReviewSteps.find((s) => s.id === id) as
-									| { prompt?: string }
-									| undefined
-							)?.prompt ||
-						(legacyVisualPrompts[id] ?? []).includes(String(step.prompt));
-			const routeMatches =
-				(step.next === old.next ||
-					step.next === current.next ||
-					(id === "handoff" && step.next === "end")) &&
-				[
-					JSON.stringify(old.branches),
-					...(step.qaContract || id === "handoff"
-						? [JSON.stringify(current.branches)]
-						: []),
-				].includes(JSON.stringify(step.branches ?? []));
-			return (
-				promptMatches &&
-				routeMatches &&
-				(!step.qaContract || step.qaContract === QA_CONTRACT)
-			);
-		});
-		if (coherentStock)
-			for (const step of steps) {
-				if (!affected.includes(String(step.id) as (typeof affected)[number]))
-					continue;
-				const stock = stockQa.find((s) => s.id === step.id)!;
-				Object.assign(step, {
-					name: stock.name,
-					qaContract: stock.qaContract,
-					...(stock.videoContract
-						? { videoContract: stock.videoContract }
-						: {}),
-					...(stock.guideContract
-						? { guideContract: stock.guideContract }
-						: {}),
-					branches: structuredClone(
-						step.id === "handoff" ? (step.branches ?? []) : stock.branches,
-					),
-					...(stock.prompt ? { prompt: stock.prompt } : {}),
-					...(stock.next
-						? {
-								next:
-									stock.next === "extract-requirements" &&
-									steps.some((s) => s.id === "code-review")
-										? "code-review"
-										: stock.next,
-							}
-						: {}),
-				});
-				if (!stock.next) delete step.next;
-				if (
-					step.id === "handoff" &&
-					!steps.some((s) => s.id === "human-review")
-				)
-					step.next = "end";
-			}
-		for (const step of steps) {
-			if (step.id === "plan" && step.prompt === previousPlanPrompt)
-				step.prompt = previousPlanPrompt + ticketPlanInstructions;
-			const stock = defaultWorkflows
-				.find((item) => item.id === "factory-pipeline")!
-				.steps.find((item) => item.id === step.id);
-			if (
-				step.id === "clarify" &&
-				(step.prompt ===
-					stock!.prompt!.replace(
-						'"questionRecommendations":[{"questionIndex":0,"answer":"recommended answer","reason":"evidence-based explanation"}],',
-						"",
-					) ||
-					step.prompt ===
-						`Read the input, all comments, metadata, assets and previous answers. Determine whether you fully understand the requirements. Ask only questions that materially affect implementation. Do not assume answers or implement anything. Return {"questions":["..."],"decisions":[{"question":"...","answer":"...","reason":"..."}],"requirements":["..."]}. Empty questions means everything is understood. Preserve all answered decisions across rounds.`)
-			)
-				step.prompt = stock!.prompt;
-			if (
-				step.id === "implement" &&
-				step.prompt ===
-					`Implement the provided plan and use its assets. Follow repository conventions and appropriate verification. Return {"summary":"...","checks":["commands and outcomes"]}. Do not create or publish a PR; the next step handles delivery.`
-			) {
-				step.prompt = stock!.prompt;
-				step.askQuestions = true;
-			}
-			if (
-				step.type === "tool" &&
-				step.maxVisits === 8 &&
-				stock?.type === "tool" &&
-				step.tool === stock.tool &&
-				(step.name === stock.name ||
-					step.name === legacyReviewSteps.find((s) => s.id === step.id)?.name ||
-					(step.id === "ci" && step.name === "Watch pull request CI"))
-			)
-				step.maxVisits = stock.maxVisits;
-		}
-		const stockFix = steps.find(
-			(step) =>
-				step.id === "ci-fix" &&
-				step.prompt ===
-					`Diagnose and fix the CI failures in the supplied receipts and full past review history. Run relevant checks, commit and push to the same draft PR. Return {"summary":"...","checks":["..."]}. Do not merge or mark ready.`,
-		);
-		if (stockFix)
-			stockFix.prompt = defaultWorkflows
-				.find((item) => item.id === "factory-pipeline")!
-				.steps.find((step) => step.id === "ci-fix")!.prompt;
-		const ciFix = steps.find((step) => step.id === "ci-fix");
-		const currentFixPrompt = defaultWorkflows
-			.find((item) => item.id === "factory-pipeline")!
-			.steps.find((step) => step.id === "ci-fix")!.prompt!;
-		if (
-			ciFix?.prompt === currentFixPrompt.replace(ciAssessmentInstructions, "")
-		)
-			ciFix.prompt = currentFixPrompt;
-		if (
-			ciFix?.next === "code-review" &&
-			!steps.some((step) => step.id === "after-ci-fix") &&
-			ciFix.prompt ===
-				defaultWorkflows
-					.find((item) => item.id === "factory-pipeline")!
-					.steps.find((step) => step.id === "ci-fix")!.prompt
-		) {
-			ciFix.next = "after-ci-fix";
-			steps.push({
-				...structuredClone(
-					defaultWorkflows
-						.find((item) => item.id === "factory-pipeline")!
-						.steps.find((step) => step.id === "after-ci-fix")!,
-				),
-				next: "code-review",
-			} as unknown as Record<string, unknown>);
-		}
-		const ci = steps.find((step) => step.tool === "ci");
-		if (ci && Array.isArray(ci.branches))
-			ci.branches = ci.branches.map((branch) =>
-				branch.next === "ci-fix" &&
-				branch.when?.path === "approved" &&
-				branch.when?.equals === false
-					? { ...branch, when: { path: "fix", equals: true } }
-					: branch,
-			);
-		const handoff = steps.find((step) => step.tool === "handoff");
-		upgradeHandoffReadiness(steps as unknown as WorkflowStep[]);
-		if (
-			!handoff ||
-			steps.some((step) => step.id === "human-review") ||
-			(handoff.next && handoff.next !== "end")
-		)
-			continue;
-		handoff.next = "human-review";
-		const shared = defaultWorkflows.find(
-			(item) => item.id === "factory-pipeline",
-		)!;
-		steps.push(
-			...structuredClone(
-				shared.steps.filter((step) =>
-					["human-review", "human-fix", "merge"].includes(step.id),
-				),
-			).map((step) => ({ ...step })),
-		);
-	}
-	for (const definition of definitions) {
-		if (
-			!["factory-pipeline", "factory"].includes(String(definition.id)) ||
-			!Array.isArray(definition.steps)
-		)
-			continue;
-		const steps = definition.steps as Record<string, any>[];
-		const reviewer = steps.find((s) => s.id === "code-review");
-		const gate = steps.find((s) => s.id === "review-gate");
-		const old = legacyReviewSteps.find((s) => s.id === "code-review")!;
-		// Do not overwrite a customized reviewer, source restriction, output setting or graph.
-		const stockReviewer =
-			reviewer &&
-			reviewer.prompt === review &&
-			reviewer.name === old.name &&
-			reviewer.type === "agent" &&
-			![
-				"runner",
-				"model",
-				"reasoningEffort",
-				"modelVariant",
-				"serviceTier",
-				"inputs",
-				"chat",
-				"reviewContract",
-				"review",
-			].some((k) => reviewer[k] !== undefined) &&
-			reviewer.json !== false &&
-			!reviewer.askQuestions &&
-			!reviewer.next &&
-			!reviewer.branches?.length &&
-			(reviewer.maxVisits ?? 8) === 8;
-		const stockGate =
-			gate &&
-			gate.tool === "review-gate" &&
-			!gate.args?.length &&
-			!gate.arguments &&
-			!gate.review &&
-			!gate.next &&
-			JSON.stringify(gate.branches ?? []) ===
-				JSON.stringify([
-					{ when: { path: "approved", equals: false }, next: "code-fix" },
-				]);
-		const compatibleConsumers =
-			steps.every(
-				(s) =>
-					!(s.inputs ?? []).some((path: string) =>
-						path.includes("code-review"),
-					),
-			) &&
-			["visual-scope", "guide"].every((id) => {
-				const step = steps.find((s) => s.id === id);
-				const previous = legacyReviewSteps.find((s) => s.id === id);
-				const current = defaultWorkflows
-					.find((w) => w.id === "factory-pipeline")!
-					.steps.find((s) => s.id === id);
-				return (
-					!step ||
-					(previous &&
-						"prompt" in previous &&
-						step.prompt === previous.prompt) ||
-					step.prompt === current?.prompt
-				);
-			});
-		if (
-			stockReviewer &&
-			stockGate &&
-			compatibleConsumers &&
-			!steps.some((s) =>
-				["extract-requirements", "specialist-review"].includes(s.id),
-			)
-		)
-			installSpecialists(steps);
-	}
-	return definitions;
-}
 
 /** Extend only the stock handoff route to reuse its already-authorized CI fixer. */
 export function upgradeHandoffReadiness(steps: WorkflowStep[]): boolean {

@@ -634,3 +634,54 @@ it("resolves process homes without exposing environment secrets and blocks ambig
 		"A worker or agent may still be running; disable intake, drain and verify descendants before apply",
 	);
 });
+
+it("relocates capacity run ownership while retaining exchanged positions and original age", () => {
+	const source = "/migration-old",
+		destination = "/migration-new";
+	const request = {
+		id: "leaf",
+		token: "token",
+		owner: { pid: 1, start: "start", incarnation: "incarnation" },
+		identity: `${source}/factory:run:run:leaf:1`,
+		sequence: 1,
+		admissionPosition: 3,
+		queuedAt: "2026-10-09T00:00:00Z",
+		workflowRun: {
+			identity: `${source}/factory:run:run`,
+			createdAt: "2026-10-01T00:00:00Z",
+		},
+		phase: "queued",
+		background: false,
+		parked: true,
+		recoverable: true,
+		remote: false,
+	};
+	const expected = {
+		...request,
+		identity: `${destination}/factory:run:run:leaf:1`,
+		workflowRun: {
+			...request.workflowRun,
+			identity: `${destination}/factory:run:run`,
+		},
+	};
+	const state = {
+		version: 1,
+		limit: 1,
+		sequence: 3,
+		bypass: 0,
+		requests: [request],
+	};
+	expect(transformState(state, source, destination)).toEqual({
+		...state,
+		requests: [expected],
+	});
+	expect(
+		transformRun(
+			{ capacityLeaves: { leaf: { phase: "queued", request } } },
+			source,
+			destination,
+		),
+	).toEqual({
+		capacityLeaves: { leaf: { phase: "queued", request: expected } },
+	});
+});

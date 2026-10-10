@@ -882,13 +882,14 @@ it("waits on blocked implementation across restart and supplies the answer witho
 	const run = runtime.create({
 		triggerOrigin: {
 			type: "manual",
-			workflowId: "factory",
+			workflowId: "fixture-factory",
 			at: new Date().toISOString(),
 		},
 		title: "Backlog installation",
 		repositoryId: "repo",
 		workspace: directory,
-		workflow: defaultWorkflows[1]!,
+		workflow: localReviewWorkflows().find((w) => w.id === "fixture-factory")!,
+		workflowDefinitions: localReviewWorkflows(),
 		input: "Private ticket and metadata",
 	});
 	const first = runtime.launch(run);

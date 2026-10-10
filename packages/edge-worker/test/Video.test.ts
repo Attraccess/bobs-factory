@@ -12,10 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import {
-	defaultWorkflows,
-	upgradeWorkflows,
-} from "../src/factory/defaultWorkflows.js";
+import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { qaDigest } from "../src/factory/EvidenceDigest.js";
 import { validateFactoryResult } from "../src/factory/FactoryResults.js";
 import { CaptureSchema } from "../src/factory/FactoryTools.js";
@@ -31,8 +28,6 @@ import {
 	videoLimits,
 	videoScopeIssues,
 } from "../src/factory/Video.js";
-import { videoPrompts } from "../src/factory/videoPrompts.js";
-import { validateWorkflows } from "../src/factory/Workflow.js";
 import {
 	type ExecutionContext,
 	WorkflowRuntime,
@@ -712,29 +707,6 @@ it("makes progress across cleanup passes without deleted or missing assets consu
 		expect(existsSync(run.outputs.capture.videos[0].path)).toBe(false);
 		expect(existsSync(run.outputs.capture.videos[0].posterPath)).toBe(false);
 	}
-});
-it("upgrades previous coherent stock prompts idempotently and leaves custom recipes unchanged", () => {
-	const saved = structuredClone(defaultWorkflows),
-		pipeline = saved.find((w) => w.id === "factory-pipeline")!;
-	for (const s of pipeline.steps) {
-		delete s.videoContract;
-		if (s.prompt && videoPrompts[s.id])
-			s.prompt = s.prompt.replace(videoPrompts[s.id], "");
-	}
-	pipeline.steps.find((s) => s.id === "capture")!.model = "kept-model";
-	const upgraded = validateWorkflows(upgradeWorkflows(saved));
-	expect(
-		upgraded
-			.find((w) => w.id === "factory-pipeline")!
-			.steps.find((s) => s.id === "capture"),
-	).toMatchObject({ videoContract: "video-v1", model: "kept-model" });
-	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
-	pipeline.steps.find((s) => s.id === "capture")!.prompt = "Custom recorder";
-	expect(
-		validateWorkflows(upgradeWorkflows(saved))
-			.find((w) => w.id === "factory-pipeline")!
-			.steps.find((s) => s.id === "visual-scope")!.videoContract,
-	).toBeUndefined();
 });
 it("rejects invalid ranges at numeric boundaries", () => {
 	expect(() => byteRange("bytes=9007199254740992-", 20)).toThrow();

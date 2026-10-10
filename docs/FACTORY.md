@@ -715,8 +715,9 @@ and OpenCode provider variants remain configurable through **Model variant**.
 Gemini CLI does not expose a separate service-tier switch here. Existing runs
 keep their saved settings.
 
-**Recipes** also exposes an agent and model field for each agent role, plus the
-JSON definition for editing prompts, scripts, tools and graph edges. Empty role
+**Recipes** exposes execution preferences for each bundled agent role and a
+read-only JSON definition. Fork Factory or Takeover to edit prompts, scripts,
+tools and graph edges in a local workflow. Empty role
 fields inherit the run settings. Changing agent provider without specifying a
 model uses that provider's default model. Saved definitions apply to new runs;
 an active run retains its original definition.
@@ -1305,6 +1306,20 @@ it admits queued work; decreasing it lets existing execution drain. A deliberate
 configuration edit updates the policy, and removing the numeric setting restores
 four. Unrelated config reloads and stale startup settings do not reset it.
 
+Eligible jobs from older workflow runs take priority over newer workflow jobs.
+The original run creation time applies to agents, setup hooks and nested intensive
+work. Multiple leaves from the oldest run can fill the pool; newer jobs use any
+spare slots. Executing work is never interrupted. Interactive foreground jobs
+keep their admission positions. Background titles still receive a turn after at
+most eight foreground admissions while waiting.
+
+Workflow jobs exchange persisted admission positions, while their original queue
+sequence and timestamp remain unchanged. Recovery retains exchanged positions,
+so admitting one older job does not move a newer job ahead of an interactive job.
+Parked and otherwise ineligible jobs reserve no usable slot. All processes sharing
+a home must use compatible scheduler versions: older versions can strip scheduling
+fields or apply the earlier FIFO policy.
+
 The coordinator lives at `<factoryHome>/machine-capacity`. Separate `--home`
 directories have independent limits and queues, so temporary F1 instances do not
 compete with the instance running their parent QA step. Processes using the same
@@ -1509,6 +1524,11 @@ stable run/milestone markers; attachments deduplicate by PR URL. Ambiguous write
 are reread before retrying; providers without idempotency cannot guarantee
 exactly-once delivery. Terminal tickets are retained for ownership review.
 
+Completed runs stay in attention while ticket synchronization has an error or
+undelivered, nonsuperseded receipts. Review and Run story settlement controls,
+including Today’s `e` shortcut, wait until tracking succeeds. The run list exposes
+compact tracking state so Today uses the same check as the detailed views.
+
 Native Linear requests, including lazy SDK relationship fetches, share a budget per
 credential/workspace. Provider rate-limit/reset responses delay subsequent requests.
 Activity and documentation-comment outboxes under
@@ -1599,4 +1619,7 @@ Legacy arrays and `{workflows, defaultWorkflow}` documents migrate atomically. E
 
 **Disable** previews affected unfinished runs and warns that executing work will be interrupted. Configuration and the preview are checked again when applying. Progress, checkpoints, completed branches, evidence, approvals and native conversation identities are retained. Actions already performed cannot be undone. Disabled roots and dependencies reject explicit, label and default selection without falling through. The composer excludes unavailable workflows.
 
-Disabling also blocks queued work, retries, replies, chat continuation and automatic recovery. The durable block journal is `<factoryHome>/factory/workflow-blocks.json`. **Enable** permits eligible new launches. It never resumes blocked work automatically, including after restart. Use **Resume** on each run after enabling its accepted dependencies and waiting for its previous executor to stop. Pending question and review waits return to their original checkpoint; completed work is not replayed. Blocked work stays visible in Today and retains ticket ownership.
+Disabling also blocks queued work, retries, replies, chat continuation and automatic recovery. The durable block journal is `<factoryHome>/factory/workflow-blocks.json`. **Enable** permits eligible new launches. It never resumes blocked work automatically, including after restart. Use **Resume** on each run after enabling its accepted dependencies and waiting for its previous executor to stop. Pending question and review waits return to their original checkpoint; completed work is not replayed. Blocked work stays visible in Today and retains ticket ownership. Operator MCP
+uses the same availability policy: inspect the run for the blocked reason,
+re-enable its dependencies in Recipes, then call `resume_run` for that run.
+`retry_run` cannot bypass the individual Resume requirement.

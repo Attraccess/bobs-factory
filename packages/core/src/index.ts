@@ -301,6 +301,8 @@ export {
 	CapacityOwnerSchema,
 	type CapacityRequest,
 	CapacityStateSchema,
+	type CapacityWorkflow,
+	CapacityWorkflowSchema,
 } from "./capacity-state.js";
 export type { JsonObject } from "./config-schemas.js";
 export {

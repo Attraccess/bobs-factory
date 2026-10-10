@@ -18,10 +18,18 @@ export function useApproval(run: any, controller: FeedbackController) {
 				body: {
 					reviewId: gate.id,
 					headSha: gate.headSha,
+					externalDigest: gate.externalDigest,
 					decision: "approve",
 				},
 			})
-			.then(() => toast({ text: "Approved — Bob is checking merge criteria" }))
+			.then(() =>
+				toast({
+					text:
+						gate.mode === "external"
+							? "Accepted — Bob is checking the current ticket state"
+							: "Approved — Bob is checking merge criteria",
+				}),
+			)
 			.catch(() => {})
 			.finally(() => controller.unlock());
 	};

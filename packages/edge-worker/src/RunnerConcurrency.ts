@@ -10,7 +10,12 @@
  * kernel OOM killer).
  */
 
-import type { IAgentRunner } from "bobs-factory-core";
+import {
+	type CapacityWorkflow,
+	CapacityWorkflowSchema,
+	type IAgentRunner,
+} from "bobs-factory-core";
+import { orderWorkflowPositions } from "./CapacityOrdering.js";
 import type {
 	CapacityLease,
 	CapacityOptions,
@@ -19,7 +24,7 @@ import type {
 } from "./MachineCapacity.js";
 
 /**
- * Counting semaphore with FIFO waiters and a live-adjustable limit.
+ * Counting semaphore with workflow age priority and a live-adjustable limit.
  *
  * `Number.POSITIVE_INFINITY` means uncapped — `acquire()` resolves
  * immediately. Lowering the limit never interrupts running sessions; it
@@ -27,11 +32,36 @@ import type {
  */
 export class SessionSemaphore implements ExecutionCapacity {
 	private bypass = 0;
+	private workflowAges = new Map<string, { age: number; count: number }>();
 	async acquireLease(
 		signal?: AbortSignal,
 		options: CapacityOptions = {},
 	): Promise<CapacityLease> {
-		await this.acquire(signal, options.background);
+		const workflow =
+			options.workflowRun === undefined
+				? undefined
+				: CapacityWorkflowSchema.parse(options.workflowRun);
+		const forget = () => {
+			if (!workflow) return;
+			const entry = this.workflowAges.get(workflow.identity)!;
+			if (--entry.count === 0) this.workflowAges.delete(workflow.identity);
+		};
+		if (workflow) {
+			const age = Date.parse(workflow.createdAt);
+			const entry = this.workflowAges.get(workflow.identity);
+			if (entry && entry.age !== age)
+				throw new Error("Conflicting capacity workflow age");
+			this.workflowAges.set(workflow.identity, {
+				age,
+				count: (entry?.count ?? 0) + 1,
+			});
+		}
+		try {
+			await this.acquireScheduled(signal, options.background, workflow);
+		} catch (error) {
+			forget();
+			throw error;
+		}
 		let released = false;
 		return {
 			token: "memory",
@@ -39,13 +69,21 @@ export class SessionSemaphore implements ExecutionCapacity {
 			release: async () => {
 				if (!released) {
 					released = true;
+					forget();
 					this.release();
 				}
 			},
 		};
 	}
 	private activeCount = 0;
-	private waiters: Array<{ resolve: () => void; background: boolean }> = [];
+	private sequence = 0;
+	private waiters: Array<{
+		resolve: () => void;
+		background: boolean;
+		workflowRun?: CapacityWorkflow;
+		sequence: number;
+		admissionPosition: number;
+	}> = [];
 
 	constructor(
 		private limit: number,
@@ -71,6 +109,13 @@ export class SessionSemaphore implements ExecutionCapacity {
 	}
 
 	acquire(signal?: AbortSignal, background = false): Promise<void> {
+		return this.acquireScheduled(signal, background);
+	}
+	private acquireScheduled(
+		signal?: AbortSignal,
+		background = false,
+		workflow?: CapacityWorkflow,
+	): Promise<void> {
 		signal?.throwIfAborted();
 		if (this.activeCount < this.limit && !this.waiters.length) {
 			this.activeCount++;
@@ -79,6 +124,9 @@ export class SessionSemaphore implements ExecutionCapacity {
 		return new Promise<void>((resolve, reject) => {
 			const waiter = {
 				background,
+				workflowRun: workflow,
+				sequence: ++this.sequence,
+				admissionPosition: this.sequence,
 				resolve: () => {
 					signal?.removeEventListener("abort", abort);
 					resolve();
@@ -122,6 +170,7 @@ export class SessionSemaphore implements ExecutionCapacity {
 
 	private admitWaiters(): void {
 		while (this.waiters.length > 0 && this.activeCount < this.limit) {
+			orderWorkflowPositions(this.waiters);
 			this.activeCount++;
 			const primary = this.waiters.findIndex((waiter) => !waiter.background);
 			const background = this.waiters.findIndex((waiter) => waiter.background);

@@ -2,7 +2,13 @@
 // Unknown behavior remains a local migration; never classify by IDs alone.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -49,8 +55,10 @@ const revs = execFileSync(
 	"git",
 	[
 		"log",
-		"-30",
+		"-50",
 		"--format=%H",
+		"HEAD",
+		...process.argv.slice(2),
 		"--",
 		"packages/edge-worker/src/factory/defaultWorkflows.ts",
 	],
@@ -74,7 +82,11 @@ await esbuildSchema.build({
 	logLevel: "silent",
 });
 const { WorkflowSchema } = await import(pathToFileURL(schemaBundle));
-const map = {};
+const historyPath = join(
+	cwd,
+	"packages/edge-worker/src/factory/historicalWorkflowDigests.json",
+);
+const map = JSON.parse(readFileSync(historyPath, "utf8"));
 try {
 	for (const revision of revs) {
 		try {

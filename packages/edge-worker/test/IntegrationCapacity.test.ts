@@ -28,7 +28,16 @@ it("gates constructor-unconfigured GitService hooks using the launch scope", asy
 	writeFileSync(script, `touch '${marker}'\n`, { mode: 0o755 });
 	const service = new GitService({ factoryHome: home });
 	const pending = setupExecutionScope.run(
-		{ signal: new AbortController().signal, service: slots },
+		{
+			signal: new AbortController().signal,
+			service: slots,
+			capacity: {
+				workflowRun: {
+					identity: "setup-run",
+					createdAt: "2026-10-09T00:00:00Z",
+				},
+			},
+		},
 		() =>
 			service.createGitWorktree(
 				{ id: "issue", identifier: "ISSUE-1", title: "Test" } as any,
@@ -38,6 +47,10 @@ it("gates constructor-unconfigured GitService hooks using the launch scope", asy
 	);
 	await vi.waitFor(async () => expect((await slots.snapshot()).queued).toBe(1));
 	expect(existsSync(marker)).toBe(false);
+	expect(
+		(await slots.snapshot()).requests.find((r) => r.phase === "queued")
+			?.workflowRun,
+	).toEqual({ identity: "setup-run", createdAt: "2026-10-09T00:00:00Z" });
 	await blocker.release();
 	await pending;
 	expect(existsSync(marker)).toBe(true);

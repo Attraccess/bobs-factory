@@ -1,5 +1,6 @@
 export {
 	callConfiguredTool,
+	listConfiguredTools,
 	type ToolServerConfig,
 } from "./callConfiguredTool.js";
 export { serveFactoryContext } from "./factory-context-stdio.js";
@@ -17,6 +18,14 @@ export {
 	FactoryContextInfrastructureError,
 	verifyFactoryContext,
 } from "./factoryContextReadiness.js";
+export {
+	createFactoryOperatorBridge,
+	operatorCatalog,
+	operatorConnectionSchema,
+	operatorScopes,
+	operatorTools,
+	serveFactoryOperator,
+} from "./factoryOperator.js";
 export {
 	createFetchFailureModesClient,
 	type FetchFailureModesClientOptions,

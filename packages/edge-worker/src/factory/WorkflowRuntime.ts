@@ -28,6 +28,13 @@ import {
 } from "./AgentSettings.js";
 import { ciFixRuntimeInstructions } from "./CISupervision.js";
 import {
+	DeliveryContractSchema,
+	type DeliveryState,
+	digest,
+	externalCompletionProven,
+	freezeDelivery,
+} from "./Delivery.js";
+import {
 	acquireDelivery,
 	type DeliveryCoordination,
 	deliveryScopes,
@@ -36,7 +43,10 @@ import {
 	resourceScopes,
 	restoreDelivery,
 } from "./DeliveryCoordination.js";
-import { upgradeHandoffReadiness } from "./defaultWorkflows.js";
+import {
+	defaultWorkflows,
+	upgradeHandoffReadiness,
+} from "./defaultWorkflows.js";
 import type { ResolvedExecutionEnvironment } from "./ExecutionEnvironment.js";
 import {
 	ExecutionProfileStore,
@@ -168,6 +178,8 @@ export interface GraphCheckpoint {
 	outputs?: Record<string, unknown>;
 }
 export interface HumanDecision {
+	mode?: "repository" | "external" | "mixed";
+	externalDigest?: string;
 	repositories?: import("./RepositoryScope.js").ApprovedRepository[];
 	reviewId: string;
 	headSha: string;
@@ -176,6 +188,8 @@ export interface HumanDecision {
 	at: string;
 }
 export interface ReviewGate {
+	mode?: "repository" | "external" | "mixed";
+	externalDigest?: string;
 	repositories?: import("./RepositoryScope.js").ApprovedRepository[];
 	id: string;
 	headSha: string;
@@ -192,6 +206,23 @@ import { cleanupVideoEvidence } from "./Video.js";
 
 export interface FactoryRun {
 	workflowBlock?: WorkflowBlock;
+	delivery?: DeliveryState;
+	deliveryContracts?: DeliveryState[];
+	recoveryWorkflow?: Workflow;
+	externalReverifications?: {
+		actor: string;
+		at: string;
+		previousCheckpoint?: GraphCheckpoint;
+		previousOverlay?: Workflow;
+	}[];
+	deliveryRecovery?: {
+		requestId: string;
+		actor: string;
+		at: string;
+		previousWorkflow: Workflow;
+		previousCheckpoint?: GraphCheckpoint;
+		contractDigest: string;
+	};
 	ciSupervision?: import("./CISupervision.js").CISupervision;
 	stepAttempts?: import("./Provenance.js").StepAttempt[];
 	deliveryCoordination?: DeliveryCoordination;
@@ -404,6 +435,8 @@ export class WorkflowRuntime {
 				readFileSync(join(this.directory, "runs", filename), "utf8"),
 			);
 			run.workflow = WorkflowSchema.parse(run.workflow);
+			if (run.recoveryWorkflow)
+				run.recoveryWorkflow = WorkflowSchema.parse(run.recoveryWorkflow);
 			// Process-owned operations must reacquire after restart. Legacy broad
 			// ownership cannot block restored passive parent/CI frames.
 			restoreDelivery(run);
@@ -955,7 +988,7 @@ export class WorkflowRuntime {
 				this.save(run);
 				await this.graph(
 					run,
-					run.workflow.steps,
+					(run.recoveryWorkflow ?? run.workflow).steps,
 					run.outputs,
 					controller.signal,
 					"",
@@ -966,6 +999,21 @@ export class WorkflowRuntime {
 			}
 			controller.signal.throwIfAborted();
 			this.requireRunAvailable(run);
+			if (
+				run.delivery &&
+				run.delivery.contract.mode !== "repository" &&
+				!externalCompletionProven(run)
+			)
+				throw new Error(
+					"External delivery lacks verified acceptance and final state proof",
+				);
+			if (
+				run.delivery?.contract.mode === "mixed" &&
+				readPath(run.outputs, "merge.merged") !== true
+			)
+				throw new Error(
+					"Mixed delivery requires all provider-confirmed repository merges",
+				);
 			run.status = "completed";
 			if (readPath(run.outputs, "merge.merged") === true)
 				this.updateViewState(run.id, { settledAt: new Date().toISOString() });
@@ -1028,6 +1076,10 @@ export class WorkflowRuntime {
 	capacityOptions(run: FactoryRun, key: string, visit = 1): CapacityOptions {
 		return {
 			identity: `${this.directory}:run:${run.id}:${key}:${visit}`,
+			workflowRun: {
+				identity: `${this.directory}:run:${run.id}`,
+				createdAt: run.createdAt,
+			},
 			recoverable: true,
 			preserveOnShutdown: () => !run.workflowBlock && run.status !== "stopped",
 			onChange: (request) => {
@@ -1165,6 +1217,8 @@ export class WorkflowRuntime {
 			}
 			run.step = key;
 			this.log(run, key, `Starting ${step.name} (pass ${count})`);
+			const deliveryAware =
+				!!run.delivery || steps.some((s) => s.tool === "delivery-route");
 			const input = reviewBaseline
 				? structuredClone({
 						...(reviewBaseline.context as Record<string, unknown>),
@@ -1176,6 +1230,20 @@ export class WorkflowRuntime {
 								? {
 										ticketReference: structuredClone(run.ticketReference),
 										ticketSync: structuredClone(run.ticketSync),
+									}
+								: {}),
+							...(deliveryAware
+								? {
+										delivery: structuredClone(run.delivery),
+										deliveryExecutionReference: digest(
+											run.executionSnapshot ?? {
+												runner: run.runner,
+												repositoryId: run.repositoryId,
+											},
+										),
+										deliveryCandidateDigest: digest(
+											readPath(run.outputs, "plan.deliveryContract"),
+										),
 									}
 								: {}),
 							...Object.fromEntries(
@@ -1191,6 +1259,20 @@ export class WorkflowRuntime {
 						}
 					: {
 							originalInput: run.input,
+							...(deliveryAware
+								? {
+										delivery: structuredClone(run.delivery),
+										deliveryExecutionReference: digest(
+											run.executionSnapshot ?? {
+												runner: run.runner,
+												repositoryId: run.repositoryId,
+											},
+										),
+										deliveryCandidateDigest: digest(
+											readPath(run.outputs, "plan.deliveryContract"),
+										),
+									}
+								: {}),
 							...(run.ticketReference
 								? {
 										ticketReference: structuredClone(run.ticketReference),
@@ -1219,6 +1301,20 @@ export class WorkflowRuntime {
 				reviewBaseline,
 				currentScope: () => ({
 					originalInput: run.input,
+					...(deliveryAware
+						? {
+								delivery: structuredClone(run.delivery),
+								deliveryExecutionReference: digest(
+									run.executionSnapshot ?? {
+										runner: run.runner,
+										repositoryId: run.repositoryId,
+									},
+								),
+								deliveryCandidateDigest: digest(
+									readPath(run.outputs, "plan.deliveryContract"),
+								),
+							}
+						: {}),
 					outputs,
 					answers: run.answers,
 					chatMessages: this.chatMessages(run.id),
@@ -1677,7 +1773,21 @@ export class WorkflowRuntime {
 				run.questions = [];
 			}
 			if (
+				step.tool === "merge" &&
+				run.delivery?.contract.mode === "mixed" &&
+				readPath(output, "merged") === true
+			) {
+				output = {
+					...(output as Record<string, unknown>),
+					externalPending: true,
+				};
+				outputs[step.id] = output;
+				this.save(run);
+			}
+			if (
 				step.tool === "draft-pr" ||
+				(step.tool === "external-final" &&
+					readPath(output, "complete") === true) ||
 				step.tool === "handoff" ||
 				step.tool === "merge" ||
 				step.id === "implement" ||
@@ -1686,30 +1796,38 @@ export class WorkflowRuntime {
 				const pr = readPath(output, "url");
 				const merged =
 					step.tool === "merge" && readPath(output, "merged") === true;
+				const externalPending =
+					run.delivery?.contract.mode === "mixed" &&
+					!externalCompletionProven(run);
 				const handoffFix =
 					step.tool === "handoff" &&
 					(readPath(output, "fix") === true ||
 						readPath(output, "guideRecovery") !== undefined);
-				const stage = merged
-					? "done"
-					: step.tool === "handoff"
-						? handoffFix
-							? "in_progress"
-							: "in_review"
-						: step.tool === "merge"
-							? readPath(output, "fix") === true
+				const externalComplete =
+					step.tool === "external-final" && externalCompletionProven(run);
+				const stage =
+					externalComplete || (merged && !externalPending)
+						? "done"
+						: step.tool === "handoff"
+							? handoffFix
 								? "in_progress"
 								: "in_review"
-							: "in_progress";
-				let body = merged
-					? `Git provider confirmed merge: ${pr}. Run ${run.id}.`
-					: step.tool === "handoff"
-						? handoffFix
-							? `Handoff requires corrections: ${pr}. Corrective work continues in Factory.`
-							: `Ready for human review: ${pr}. Review the guide and explicitly approve this revision or request changes in Factory. ${outputs.guide ? guideHeadline(outputs.guide) : ""}`
-						: step.tool === "draft-pr"
-							? `Draft PR created or continued: ${pr}. Review and validation are underway.`
-							: `${step.name}: ${String(readPath(output, "summary") ?? (step.id === "plan" ? "Implementation direction recorded in the accepted plan." : "Inspect the implementation receipts and checks in Factory."))}`;
+							: step.tool === "merge"
+								? readPath(output, "fix") === true
+									? "in_progress"
+									: "in_review"
+								: "in_progress";
+				let body = externalComplete
+					? "External ticket changes independently verified, explicitly accepted and checked again against current state. Completion proof retained in Factory."
+					: merged
+						? `Git provider confirmed merge: ${pr}. Run ${run.id}.`
+						: step.tool === "handoff"
+							? handoffFix
+								? `Handoff requires corrections: ${pr}. Corrective work continues in Factory.`
+								: `Ready for human review: ${pr}. Review the guide and explicitly approve this revision or request changes in Factory. ${outputs.guide ? guideHeadline(outputs.guide) : ""}`
+							: step.tool === "draft-pr"
+								? `Draft PR created or continued: ${pr}. Review and validation are underway.`
+								: `${step.name}: ${String(readPath(output, "summary") ?? (step.id === "plan" ? "Implementation direction recorded in the accepted plan." : "Inspect the implementation receipts and checks in Factory."))}`;
 				const blockers = readPath(output, "blockers");
 				if (handoffFix && Array.isArray(blockers))
 					body += `\n\nBlockers:\n${blockers
@@ -1730,6 +1848,15 @@ export class WorkflowRuntime {
 						body,
 						...(typeof pr === "string" ? { pr } : {}),
 						...(merged ? { merged: true } : {}),
+						...(externalComplete
+							? {
+									completion: {
+										mode: run.delivery!.contract.mode as "external" | "mixed",
+										digest: run.delivery!.verification!.digest,
+										reviewId: run.delivery!.finalCheck!.reviewId,
+									},
+								}
+							: {}),
 					});
 					for (const delivery of deliveryRevisions(output).slice(1))
 						await this.track(run, {
@@ -2197,7 +2324,12 @@ export class WorkflowRuntime {
 
 	private async waitForHuman(
 		run: FactoryRun,
-		result: { headSha: string; url: string },
+		result: {
+			headSha: string;
+			url: string;
+			mode?: ReviewGate["mode"];
+			externalDigest?: string;
+		},
 		signal: AbortSignal,
 		state: NonNullable<GraphCheckpoint["active"]>,
 	): Promise<void> {
@@ -2205,6 +2337,8 @@ export class WorkflowRuntime {
 			run.reviewGate = {
 				id: randomUUID(),
 				headSha: result.headSha,
+				mode: result.mode,
+				externalDigest: result.externalDigest,
 				url: result.url,
 				repositories: deliveryRevisions(result),
 				status: "pending",
@@ -2231,8 +2365,11 @@ export class WorkflowRuntime {
 				await this.track(run, {
 					key: `review:${run.reviewGate!.id}`,
 					stage: "in_review",
-					pr: result.url,
-					body: `Awaiting explicit human approval for ${result.url}. Review the guide, then approve this revision or request changes in Factory.`,
+					pr: result.url || undefined,
+					body:
+						result.mode === "external"
+							? "External changes applied and independently verified. Review the guide and accept completed work or request changes. Applied work is retained after rejection."
+							: `Awaiting explicit human approval for ${result.url}. Review the guide, then approve this revision or request changes in Factory.`,
 				});
 			signal.throwIfAborted();
 			await waiting;
@@ -2248,7 +2385,14 @@ export class WorkflowRuntime {
 			gate = run.reviewGate;
 		if (run.status !== "waiting" || !pending || gate?.status !== "pending")
 			throw new Error("Run is not waiting for human review");
-		if (gate.id !== decision.reviewId || gate.headSha !== decision.headSha)
+		if (
+			(gate.mode !== "external" && !decision.headSha) ||
+			gate.id !== decision.reviewId ||
+			gate.headSha !== decision.headSha ||
+			(gate.externalDigest !== undefined &&
+				(gate.externalDigest !== decision.externalDigest ||
+					gate.externalDigest !== run.delivery?.verification?.digest))
+		)
 			throw new Error(
 				"The reviewed revision changed. Refresh and review again.",
 			);
@@ -2257,6 +2401,8 @@ export class WorkflowRuntime {
 		run.humanDecisions ??= [];
 		run.humanDecisions.push({
 			...decision,
+			mode: gate.mode,
+			externalDigest: gate.externalDigest,
 			repositories: structuredClone(gate.repositories),
 			at: new Date().toISOString(),
 		});
@@ -2424,6 +2570,146 @@ export class WorkflowRuntime {
 		void this.launch(run);
 		return run;
 	}
+
+	reverifyExternal(id: string, actor: string): FactoryRun {
+		const run = this.get(id);
+		if (
+			this.shuttingDown ||
+			this.isExecuting(id) ||
+			run.status !== "completed" ||
+			!run.delivery ||
+			run.delivery.contract.mode === "repository" ||
+			!run.ticketSync?.error
+		)
+			throw new Error(
+				"Renewed external verification requires an idle completed run with a ticket synchronization blocker",
+			);
+		for (const other of this.runs.values())
+			if (
+				other.id !== id &&
+				run.ticketReference &&
+				other.ticketReference?.url === run.ticketReference.url &&
+				["running", "waiting", "interrupted"].includes(other.status)
+			)
+				throw new Error("Another run owns this ticket");
+		const definition = [
+			run.recoveryWorkflow,
+			run.workflow,
+			...(run.workflowDefinitions ?? []),
+		].find((w) =>
+			w?.steps.some(
+				(s) => s.id === "external-reverify" && s.tool === "external-verify",
+			),
+		);
+		if (!definition)
+			throw new Error("Accepted workflow has no external reverification path");
+		run.externalReverifications ??= [];
+		run.externalReverifications.push({
+			actor,
+			at: new Date().toISOString(),
+			previousCheckpoint: structuredClone(run.checkpoint),
+			previousOverlay: structuredClone(run.recoveryWorkflow),
+		});
+		run.recoveryWorkflow = {
+			...structuredClone(definition),
+			id: "external-reverification",
+			name: "Renewed external verification",
+		};
+		run.checkpoint = { current: "external-reverify", visits: {} };
+		delete run.reviewGate;
+		delete run.delivery.finalCheck;
+		run.outputs["external-final"] = { drift: true, complete: false };
+		for (const receipt of run.ticketSync.receipts)
+			if (receipt.completion && !receipt.delivered && !receipt.superseded) {
+				receipt.superseded = true;
+				receipt.limitation =
+					"Previous external completion retired for renewed verification and acceptance.";
+			}
+		delete run.ticketSync.error;
+		run.status = "running";
+		this.updateViewState(id, { keptOpen: true });
+		this.log(
+			run,
+			"external-reverify",
+			`Operator ${actor} requested renewed verification and acceptance. Applied changes and repository merge receipts are retained.`,
+		);
+		this.save(run);
+		void this.launch(run);
+		return run;
+	}
+	recoverExternal(
+		id: string,
+		requestId: string,
+		value: unknown,
+		reviewedDigest: string,
+		actor: string,
+	): FactoryRun {
+		const run = this.get(id);
+		const contract = DeliveryContractSchema.parse(value);
+		if (run.deliveryRecovery?.requestId === requestId) {
+			if (run.deliveryRecovery.contractDigest !== digest(contract))
+				throw new Error("Recovery request ID already names another contract");
+			return run;
+		}
+		if (
+			this.shuttingDown ||
+			this.isExecuting(id) ||
+			run.status !== "failed" ||
+			!/(^|\/)draft-pr$/.test(run.step ?? "") ||
+			run.deliveryRecovery
+		)
+			throw new Error(
+				"Recovery requires an idle failed draft-pr run without a prior recovery",
+			);
+		if (
+			!run.ticketReference ||
+			contract.mode !== "external" ||
+			contract.authorization.status !== "authorized" ||
+			digest(contract) !== reviewedDigest
+		)
+			throw new Error(
+				"Explicitly reviewed authorized external contract and originating ticket required",
+			);
+		const origin = run.ticketReference;
+		if (!contract.targets.some((t) => t.resource.url === origin.url))
+			throw new Error(
+				"Recovery contract must include the verified originating ticket",
+			);
+		for (const other of this.runs.values())
+			if (
+				other.id !== id &&
+				other.ticketReference?.url === origin.url &&
+				["running", "waiting", "interrupted"].includes(other.status)
+			)
+				throw new Error("Another run owns this ticket");
+		freezeDelivery(run, contract);
+		run.deliveryRecovery = {
+			requestId,
+			actor,
+			at: new Date().toISOString(),
+			previousWorkflow: structuredClone(run.workflow),
+			previousCheckpoint: structuredClone(run.checkpoint),
+			contractDigest: reviewedDigest,
+		};
+		const stock = defaultWorkflows.find((w) => w.id === "factory-pipeline")!;
+		run.recoveryWorkflow = {
+			...structuredClone(stock),
+			id: "external-recovery",
+			name: "Audited external recovery",
+		};
+		run.checkpoint = { current: "external-reverify", visits: {} };
+		delete run.reviewGate;
+		run.status = "running";
+		delete run.error;
+		this.log(
+			run,
+			"external-recovery",
+			`Operator ${actor} requested external recovery. Original definition/checkpoint and failed publication evidence retained; independently reconcile current tickets before review.`,
+		);
+		this.save(run);
+		void this.launch(run);
+		return run;
+	}
 	retry(id: string): FactoryRun {
 		const run = this.get(id);
 		this.requireRunAvailable(run);
@@ -2504,7 +2790,8 @@ export class WorkflowRuntime {
 				});
 			}
 		};
-		if (run.checkpoint) extend(run.checkpoint, run.workflow.steps, "");
+		if (run.checkpoint)
+			extend(run.checkpoint, (run.recoveryWorkflow ?? run.workflow).steps, "");
 		delete run.iterationLimit;
 		run.status = "running";
 		delete run.error;

@@ -240,6 +240,28 @@ export interface IIssueTrackerService {
 	 */
 	updateIssue(issueId: string, updates: IssueUpdateInput): Promise<Issue>;
 
+	/** Complete content and both directions of ticket relationships for delivery verification. */
+	fetchDeliveryTicket?(id: string): Promise<{
+		id: string;
+		url: string;
+		project: string;
+		title: string;
+		description: string | null;
+		relationships: {
+			type: "blocks" | "related" | "duplicate" | "similar";
+			from: string;
+			to: string;
+		}[];
+	}>;
+	setDeliveryRelationship?(
+		kind: "add" | "remove",
+		value: {
+			type: "blocks" | "related" | "duplicate" | "similar";
+			from: string;
+			to: string;
+		},
+	): Promise<void>;
+
 	/**
 	 * Fetch attachments for an issue.
 	 *

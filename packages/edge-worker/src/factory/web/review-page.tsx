@@ -4,7 +4,7 @@ import { useRun } from "./client";
 import { FullReview, RunMeta } from "./focus";
 import { ReviewContextRow } from "./review-context-row";
 import { useReviewInput } from "./review-input";
-import { writeTextStored } from "./review-state";
+import { ticketTrackingPending, writeTextStored } from "./review-state";
 import { Button } from "./ui";
 
 export function ReviewPage({
@@ -47,7 +47,8 @@ export function ReviewPage({
 		);
 	const gate = run.reviewGate,
 		guide = run.outputs?.guide,
-		complete = ["complete", "completed"].includes(run.status);
+		complete = ["complete", "completed"].includes(run.status),
+		trackingPending = ticketTrackingPending(run);
 	return (
 		<div className="review-document">
 			<nav className="review-links" aria-label="Review navigation">
@@ -86,17 +87,38 @@ export function ReviewPage({
 					loaded review.
 				</p>
 			)}
+			{gate?.status === "pending" && run.outputs?.["external-final"]?.drift && (
+				<p className="notice" role="status">
+					Ticket state changed or could not be checked after acceptance. Review
+					the refreshed evidence and accept it again.
+				</p>
+			)}
+			{trackingPending && (
+				<p className="notice" role={run.ticketSync?.error ? "alert" : "status"}>
+					Ticket synchronization pending.{" "}
+					{run.ticketSync?.error ??
+						"Saved updates are being delivered in the background."}
+				</p>
+			)}
 			{guide && gate?.status !== "pending" && (
 				<p className="notice" role="status">
 					{gate?.status === "approve"
 						? complete
-							? "This revision was approved. The run is complete."
-							: "You approved this revision. Bob is checking merge criteria."
+							? trackingPending
+								? "This work was approved. Ticket synchronization still needs attention."
+								: "This revision was approved. The run is complete."
+							: gate?.mode === "external"
+								? "You accepted the completed work. Bob is checking the current ticket state."
+								: "You approved this revision. Bob is checking merge criteria."
 						: gate?.status === "reject"
-							? "Changes were requested for this revision."
+							? gate?.mode === "external"
+								? "Changes requested. Applied ticket changes remain while corrections are prepared."
+								: "Changes were requested for this revision."
 							: "This guide remains available for reading."}{" "}
 					{complete
-						? "You can settle the run or send a follow-up."
+						? trackingPending
+							? "Open the run story for tracking details and recovery actions."
+							: "You can settle the run or send a follow-up."
 						: "Approval is available only while a matching review is pending."}
 				</p>
 			)}

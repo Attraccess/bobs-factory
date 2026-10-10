@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { IIssueTrackerService, McpServerConfig } from "bobs-factory-core";
 import { z } from "zod";
+import { externalCompletionProven } from "./Delivery.js";
 import { isPullRequestSource } from "./GitProviderReference.js";
 import { issueSnapshot } from "./issueSnapshot.js";
 import type { FactoryRun } from "./WorkflowRuntime.js";
@@ -46,6 +47,7 @@ export interface TicketMilestone {
 	stageApplied?: boolean;
 	pr?: string;
 	merged?: boolean;
+	completion?: { mode: "external" | "mixed"; digest: string; reviewId: string };
 	delivered?: boolean;
 	superseded?: boolean;
 	error?: string;
@@ -532,8 +534,25 @@ export function recordTicketMilestone(
 	milestone: TicketMilestone,
 ): void {
 	if (!run.ticketReference || run.workflow.id === "simple") return;
-	if (milestone.stage === "done" && !milestone.merged)
-		throw new Error("Done requires a confirmed merge receipt");
+	if (milestone.stage === "done") {
+		if (
+			run.delivery?.contract.mode === "external" ||
+			run.delivery?.contract.mode === "mixed"
+		) {
+			if (
+				!externalCompletionProven(run) ||
+				!milestone.completion ||
+				milestone.completion.digest !== run.delivery.verification?.digest ||
+				(run.delivery.contract.mode === "mixed" &&
+					(run.outputs.merge as { merged?: boolean } | undefined)?.merged !==
+						true)
+			)
+				throw new Error(
+					"Done requires the accepted external completion proof and all mixed repository merges",
+				);
+		} else if (!milestone.merged)
+			throw new Error("Done requires a confirmed merge receipt");
+	}
 	run.ticketSync ??= { receipts: [] };
 	if (run.ticketSync.receipts.some((receipt) => receipt.key === milestone.key))
 		return;
@@ -558,6 +577,7 @@ export class TicketTracking {
 		private adapter: (run: FactoryRun) => Promise<TicketAdapter>,
 		private save: (run: FactoryRun) => void,
 		private log: (run: FactoryRun, message: string) => void,
+		private checkExternal?: (run: FactoryRun) => Promise<boolean>,
 	) {}
 	async record(run: FactoryRun, milestone: TicketMilestone): Promise<void> {
 		if (!run.ticketReference || run.workflow.id === "simple") return;
@@ -585,6 +605,18 @@ export class TicketTracking {
 					)
 						continue;
 					try {
+						if (receipt.stage === "done" && receipt.completion) {
+							if (
+								!externalCompletionProven(run) ||
+								receipt.completion.digest !==
+									run.delivery?.verification?.digest ||
+								!this.checkExternal ||
+								!(await this.checkExternal(run))
+							)
+								throw new StatusConflict(
+									"Accepted external state changed or could not be verified. Renew independent verification and human acceptance before closing the ticket.",
+								);
+						}
 						const adapter = await this.adapter(run);
 						let snapshot = await adapter.read();
 						const statusOf = (snapshot: TicketSnapshot) =>
@@ -597,13 +629,18 @@ export class TicketTracking {
 						const applyStage =
 							receipt.stage &&
 							!receipt.stageSuperseded &&
-							(!merged || receipt.merged);
+							(!merged || receipt.merged || receipt.completion);
 						const terminal =
 							["done", "cancelled"].includes(String(snapshot.status)) ||
 							["completed", "canceled"].includes(
 								String((snapshot.state as { type?: string } | undefined)?.type),
 							);
-						if (terminal && !receipt.merged && !reassess) {
+						if (
+							terminal &&
+							!receipt.merged &&
+							!receipt.completion &&
+							!reassess
+						) {
 							// Late progress from an older attempt is obsolete once the
 							// ticket is closed. Persist that decision to keep restarts quiet.
 							// Confirmed merges still deliver their evidence and PR link.

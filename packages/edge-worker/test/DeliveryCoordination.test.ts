@@ -692,6 +692,78 @@ it("recognizes two native worktrees of the same repository without configured fo
 	await Promise.all([a, b]);
 });
 
+it("keeps a queued overlapping delivery out of execution capacity", async () => {
+	const { SessionSemaphore } = await import("../src/RunnerConcurrency.js");
+	const capacity = new SessionSemaphore(1);
+	let finishIntegration!: () => void;
+	const integrating = new Promise<void>((resolve) => {
+		finishIntegration = resolve;
+	});
+	let finishCI!: () => void;
+	const waitingCI = new Promise<void>((resolve) => {
+		finishCI = resolve;
+	});
+	const runtime = new WorkflowRuntime(home(), {
+		capacity,
+		agent: async (context) => {
+			const lease = await capacity.acquireLease(
+				context.signal,
+				context.capacity,
+			);
+			try {
+				return {};
+			} finally {
+				await lease.release();
+			}
+		},
+		script: async () => ({}),
+		tool: async ({ run, step }) => {
+			if (step.id === "draft-pr" && run.input === "first") await integrating;
+			if (step.id === "ci" && run.input === "first") await waitingCI;
+			return {};
+		},
+	});
+	const definition = validateWorkflows([
+		...defaultWorkflows,
+		{
+			...delivery,
+			steps: [
+				...delivery.steps.slice(0, 2),
+				{ id: "ci", name: "CI", type: "tool", tool: "ci", next: "capture" },
+				...delivery.steps.slice(2),
+			],
+		},
+	]).at(-1)!;
+	const first = createRun(runtime, "first");
+	first.workflow = definition;
+	const second = createRun(runtime, "second");
+	second.workflow = definition;
+	const a = runtime.launch(first);
+	await vi.waitFor(() =>
+		expect(first.deliveryCoordination?.phase).toBe("active"),
+	);
+	const b = runtime.launch(second);
+	await vi.waitFor(() =>
+		expect(second.deliveryCoordination?.phase).toBe("queued"),
+	);
+	expect(capacity.active).toBe(0);
+	expect(capacity.waiting).toBe(0);
+	const spare = await capacity.acquireLease();
+	await spare.release();
+	finishIntegration();
+	await vi.waitFor(() =>
+		expect(first.capacityLeaves?.ci?.phase).toBe("waiting-ci"),
+	);
+	await b;
+	expect(second.status).toBe("completed");
+	expect(capacity.active).toBe(0);
+	expect(capacity.waiting).toBe(0);
+	finishCI();
+	await Promise.all([a, b]);
+	expect([first.status, second.status]).toEqual(["completed", "completed"]);
+	expect(capacity.active).toBe(0);
+});
+
 it("reserves three affected repositories out of seven and atomically adds newly changed targets", async () => {
 	const { acquireDelivery, deliveryScopes, releaseDelivery } = await import(
 		"../src/factory/DeliveryCoordination.js"

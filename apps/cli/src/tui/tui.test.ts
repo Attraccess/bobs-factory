@@ -6,6 +6,7 @@ import { AnswerForm, LaunchForm } from "./forms.js";
 import { tuiPort } from "./index.js";
 import {
 	conversation,
+	launchableWorkflows,
 	type RunItem,
 	stepStrip,
 	today,
@@ -322,4 +323,19 @@ it("requests a new terminal session once when the server forgets it, and sends w
 		response.end("{}");
 	});
 	await expect(client.get("/api/runs")).rejects.toThrow("same home (/home)");
+});
+
+it("offers only enabled manual workflows with available dependencies", () => {
+	expect(
+		launchableWorkflows({
+			repositories: [],
+			defaultWorkflow: "factory",
+			workflows: [
+				{ id: "factory", name: "Factory", enabled: false },
+				{ id: "takeover", name: "Takeover", unavailable: ["factory-pipeline"] },
+				{ id: "internal", name: "Internal", allowedTriggers: ["workflow"] },
+				{ id: "local", name: "Local", allowedTriggers: ["manual"] },
+			],
+		}).map((w) => w.id),
+	).toEqual(["local"]);
 });

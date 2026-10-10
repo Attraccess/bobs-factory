@@ -9,19 +9,28 @@ import {
 import { afterEach, expect, it, vi } from "vitest";
 import { EdgeWorker } from "../src/EdgeWorker.js";
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
+import {
+	checkOperatorTransport,
+	inspectOperatorTransport,
+	type OperatorTransport,
+} from "../src/factory/OperatorTransport.js";
 import type { FactoryRun } from "../src/factory/WorkflowRuntime.js";
 
-const { nativeCall, directCall } = vi.hoisted(() => ({
+const { nativeCall, directCall, nativeList, directList } = vi.hoisted(() => ({
 	nativeCall: vi.fn(),
+	nativeList: vi.fn(),
 	directCall: vi.fn(),
+	directList: vi.fn(),
 }));
 vi.mock("bobs-factory-codex-runner", async (original) => ({
 	...(await original<object>()),
 	callCodexMcpTool: nativeCall,
+	listCodexMcpTools: nativeList,
 }));
 vi.mock("bobs-factory-mcp-tools", async (original) => ({
 	...(await original<object>()),
 	callConfiguredTool: directCall,
+	listConfiguredTools: directList,
 }));
 
 const homes: string[] = [];
@@ -57,14 +66,7 @@ function fixture(runner: RunnerType, acceptedRunner?: RunnerType) {
 			runnerType: RunnerType;
 			config: AgentRunnerConfig;
 		}>;
-		factoryMcpConfig(run: FactoryRun): Promise<{
-			callTool(
-				server: string,
-				tool: string,
-				args: Record<string, unknown>,
-				signal: AbortSignal,
-			): Promise<unknown>;
-		}>;
+		factoryMcpConfig(run: FactoryRun): Promise<OperatorTransport>;
 		factoryTicketAdapter(
 			run: FactoryRun,
 		): Promise<{ read(): Promise<unknown> }>;
@@ -190,4 +192,111 @@ it.each([
 		childEnvironment,
 	);
 	expect(nativeCall).not.toHaveBeenCalled();
+});
+
+it("operator diagnosis and connectivity share native Codex selection while direct authentication rejects", async () => {
+	const codex = fixture("claude", "codex");
+	nativeCall.mockResolvedValue({
+		id: 77,
+		status: "in_progress",
+		comments: [],
+		attachments: [],
+	});
+	const resolved = await codex.edge.factoryMcpConfig(codex.run);
+	expect(inspectOperatorTransport(codex.run, resolved)).toMatchObject({
+		runner: "codex",
+		connections: [
+			{
+				server: "taskbot",
+				authentication: "codex_native",
+				permissionForTicketRead: true,
+			},
+		],
+	});
+	expect(await checkOperatorTransport(codex.run, resolved)).toMatchObject({
+		connected: true,
+		runner: "codex",
+		authentication: "codex_native",
+	});
+	const direct = fixture("opencode");
+	directCall.mockRejectedValue(new Error("401 Unauthorized"));
+	await expect(
+		checkOperatorTransport(
+			direct.run,
+			await direct.edge.factoryMcpConfig(direct.run),
+		),
+	).rejects.toThrow("Unauthorized");
+	expect(nativeCall).toHaveBeenCalledOnce();
+});
+it("operator diagnosis distinguishes missing, ambiguous and denied ticket transports", async () => {
+	const f = fixture("codex");
+	f.config.mcpConfig = {};
+	expect(
+		inspectOperatorTransport(f.run, await f.edge.factoryMcpConfig(f.run))
+			.selection?.error?.code,
+	).toBe("missing_transport");
+	f.config.mcpConfig = {
+		taskbot: { type: "http", url: "https://taskbot.example/mcp" },
+		duplicate: { type: "sse", url: "https://taskbot.example/other" },
+	};
+	expect(
+		inspectOperatorTransport(f.run, await f.edge.factoryMcpConfig(f.run))
+			.selection?.error?.code,
+	).toBe("ambiguous_transport");
+	delete f.config.mcpConfig.duplicate;
+	f.config.disallowedTools = ["mcp__taskbot__*"];
+	const resolved = await f.edge.factoryMcpConfig(f.run);
+	expect(
+		inspectOperatorTransport(f.run, resolved).connections[0]
+			?.permissionForTicketRead,
+	).toBe(false);
+	await expect(checkOperatorTransport(f.run, resolved)).rejects.toThrow(
+		"restricted",
+	);
+	expect(nativeCall).not.toHaveBeenCalled();
+});
+
+it.each([
+	"codex",
+	"opencode",
+] as const)("checks other connections on manual runs with the %s transport", async (runner) => {
+	const f = fixture(runner);
+	f.run.ticketReference = undefined;
+	f.run.input = "ordinary manual request";
+	f.config.mcpConfig = {
+		other: {
+			type: "http",
+			url: "https://other.example/mcp",
+			// biome-ignore lint/suspicious/noTemplateCurlyInString: configuration credential reference
+			headers: { Authorization: "${SELECTED_KEY}" },
+		},
+	};
+	f.config.childEnvironment = { SELECTED_KEY: "fixture-secret" };
+	const resolved = await f.edge.factoryMcpConfig(f.run);
+	expect(await checkOperatorTransport(f.run, resolved, "other")).toMatchObject({
+		connected: true,
+		operation: "tools/list",
+		server: "other",
+		runner,
+	});
+	const used = runner === "codex" ? nativeList : directList;
+	expect(used).toHaveBeenCalledOnce();
+	expect(JSON.stringify(used.mock.calls)).toContain("fixture-secret");
+	expect(runner === "codex" ? directList : nativeList).not.toHaveBeenCalled();
+	expect(nativeCall).not.toHaveBeenCalled();
+	expect(directCall).not.toHaveBeenCalled();
+	await expect(
+		checkOperatorTransport(f.run, resolved, "missing"),
+	).rejects.toMatchObject({ code: "missing_transport" });
+	used.mockRejectedValueOnce(new Error("401 Unauthorized"));
+	await expect(checkOperatorTransport(f.run, resolved)).rejects.toThrow(
+		"Unauthorized",
+	);
+	f.config.mcpConfig.duplicate = {
+		type: "http",
+		url: "https://duplicate.example/mcp",
+	};
+	await expect(
+		checkOperatorTransport(f.run, await f.edge.factoryMcpConfig(f.run)),
+	).rejects.toMatchObject({ code: "ambiguous_transport" });
 });
