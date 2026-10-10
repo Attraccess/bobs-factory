@@ -1237,21 +1237,24 @@ export class EdgeWorker extends EventEmitter {
 							identity: `${this.factoryHome}:operator-inspect:${run.id}:${randomUUID()}`,
 						},
 					),
-				check: (run, server) =>
-					this.runnerSlots.run(
+				check: (run, server) => {
+					const signal = AbortSignal.timeout(15000);
+					return this.runnerSlots.run(
 						async () => ({
 							instance: grants.instance(),
 							...(await checkOperatorTransport(
 								run,
 								await this.factoryMcpConfig(run),
 								server,
+								signal,
 							)),
 						}),
-						AbortSignal.timeout(15000),
+						signal,
 						{
 							identity: `${this.factoryHome}:operator-check:${run.id}:${randomUUID()}`,
 						},
-					),
+					);
+				},
 				sanitize: (text) => {
 					const sources: unknown[] = [
 						{
