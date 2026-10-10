@@ -204,6 +204,8 @@ export class SessionSemaphore implements ExecutionCapacity {
  */
 const capacityStates = new WeakMap<IAgentRunner, CapacityRequest>();
 const capacityExecutions = new WeakMap<IAgentRunner, Promise<unknown>>();
+/** Return durable cleanup for a saved checkpoint if no provider is invoked. */
+export type RunnerStartCheckpoint = () => Promise<void | (() => Promise<void>)>;
 export async function waitForRunnerCapacity(
 	runner: IAgentRunner,
 ): Promise<void> {
@@ -220,7 +222,7 @@ export function capRunnerStarts(
 	signal?: AbortSignal,
 	options: CapacityOptions = {},
 	admit?: () => void,
-	beforeStart?: () => Promise<void>,
+	beforeStart?: RunnerStartCheckpoint,
 ): IAgentRunner {
 	let controller: AbortController | undefined;
 	let pending = false;
@@ -257,9 +259,18 @@ export function capRunnerStarts(
 			admit?.();
 			admitted = true;
 			return await lease.run(async () => {
-				await beforeStart?.();
-				controller!.signal.throwIfAborted();
-				admit?.();
+				const restoreCheckpoint = await beforeStart?.();
+				try {
+					controller!.signal.throwIfAborted();
+					admit?.();
+				} catch (error) {
+					// Cancellation or admission rejection here proves the provider
+					// was never invoked. Finish durable cleanup before releasing capacity.
+					await restoreCheckpoint?.();
+					throw error;
+				}
+				// Once invoked, even a synchronous provider failure has uncertain
+				// effects; keep the checkpoint for conservative recovery.
 				return run();
 			});
 		} finally {

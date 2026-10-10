@@ -354,6 +354,7 @@ import {
 } from "./RepositoryRouter.js";
 import {
 	capRunnerStarts,
+	type RunnerStartCheckpoint,
 	runnerCapacityState,
 	waitForRunnerCapacity,
 } from "./RunnerConcurrency.js";
@@ -7325,7 +7326,7 @@ ${taskSection}`;
 		config: AgentRunnerConfig,
 		signal?: AbortSignal,
 		sessionId = config.workspaceName ?? config.workingDirectory ?? randomUUID(),
-		beforeStart?: () => Promise<void>,
+		beforeStart?: RunnerStartCheckpoint,
 	): IAgentRunner {
 		return capRunnerStarts(
 			this.buildRunnerForType(runnerType, config),

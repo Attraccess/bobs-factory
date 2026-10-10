@@ -16,7 +16,10 @@ import { AgentSessionStatus, createLogger } from "bobs-factory-core";
 import { AgentSessionManager } from "./AgentSessionManager.js";
 import type { ChatRepositoryProvider } from "./ChatRepositoryProvider.js";
 import { type ChatState, steeringState } from "./factory/SessionChat.js";
-import { runnerCapacityState } from "./RunnerConcurrency.js";
+import {
+	type RunnerStartCheckpoint,
+	runnerCapacityState,
+} from "./RunnerConcurrency.js";
 import type { RunnerConfigBuilder } from "./RunnerConfigBuilder.js";
 import { persistReplyEvent } from "./SessionRecovery.js";
 
@@ -116,7 +119,7 @@ export interface ChatSessionHandlerDeps {
 		signal?: AbortSignal,
 		sessionId?: string,
 		/** Persist the first provider-start boundary after capacity admission. */
-		beforeStart?: () => Promise<void>,
+		beforeStart?: RunnerStartCheckpoint,
 	) => IAgentRunner;
 	/**
 	 * Live read of the workspace-level custom-integration MCP config paths
@@ -1077,7 +1080,7 @@ export class ChatSessionHandler<TEvent> {
 
 	private async markExecutionStarted(
 		session: CyrusAgentSession,
-	): Promise<void> {
+	): ReturnType<RunnerStartCheckpoint> {
 		if (session.metadata?.chatExecutionStarted !== false) return;
 		// Persist before any provider side effects. Missing IDs after this boundary
 		// require recovery; only an explicitly never-started turn can start afresh.
@@ -1087,6 +1090,15 @@ export class ChatSessionHandler<TEvent> {
 				session.metadata!.chatExecutionStarted = false;
 			};
 		});
+		// The capacity wrapper invokes this only when post-save cancellation or
+		// admission rejection confirms that provider execution never began.
+		return () =>
+			this.persistMessage(() => {
+				session.metadata!.chatExecutionStarted = false;
+				return () => {
+					session.metadata!.chatExecutionStarted = true;
+				};
+			});
 	}
 
 	/**

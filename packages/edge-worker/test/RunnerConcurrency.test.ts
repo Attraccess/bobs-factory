@@ -144,7 +144,12 @@ describe("capRunnerStarts", () => {
 		const pending = fakeRunner(streaming);
 		pending.runner.stop = vi.fn();
 		const save = deferred<void>();
-		const checkpoint = vi.fn(() => save.promise);
+		const cleanup = deferred<void>();
+		const restore = vi.fn(() => cleanup.promise);
+		const checkpoint = vi.fn(async () => {
+			await save.promise;
+			return restore;
+		});
 		const wrapped = capRunnerStarts(
 			pending.runner,
 			semaphore,
@@ -159,9 +164,57 @@ describe("capRunnerStarts", () => {
 		await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledOnce());
 		wrapped.stop();
 		save.resolve();
+		await vi.waitFor(() => expect(restore).toHaveBeenCalledOnce());
+		expect(wrapped.isRunning()).toBe(true);
+		expect(semaphore.active).toBe(1);
+		cleanup.resolve();
 		await expect(done).rejects.toThrow("cancelled");
 		expect(pending.started).not.toHaveBeenCalled();
 		expect(pending.startedStreaming).not.toHaveBeenCalled();
+		expect(semaphore.active).toBe(0);
+	});
+	it("restores the checkpoint when post-save admission rejects", async () => {
+		const semaphore = new SessionSemaphore(1);
+		const pending = fakeRunner(false);
+		const restore = vi.fn(async () => {});
+		let available = true;
+		const wrapped = capRunnerStarts(
+			pending.runner,
+			semaphore,
+			undefined,
+			{},
+			() => {
+				if (!available) throw new Error("workflow disabled");
+			},
+			async () => {
+				available = false;
+				return restore;
+			},
+		);
+		await expect(wrapped.start("task")).rejects.toThrow("workflow disabled");
+		expect(restore).toHaveBeenCalledOnce();
+		expect(pending.started).not.toHaveBeenCalled();
+		expect(semaphore.active).toBe(0);
+	});
+	it("retains the checkpoint when provider startup fails", async () => {
+		const semaphore = new SessionSemaphore(1);
+		const pending = fakeRunner(false);
+		pending.runner.start = () => {
+			throw new Error("provider startup failed");
+		};
+		const restore = vi.fn(async () => {});
+		const wrapped = capRunnerStarts(
+			pending.runner,
+			semaphore,
+			undefined,
+			{},
+			undefined,
+			async () => restore,
+		);
+		await expect(wrapped.start("task")).rejects.toThrow(
+			"provider startup failed",
+		);
+		expect(restore).not.toHaveBeenCalled();
 		expect(semaphore.active).toBe(0);
 	});
 	it("does not execute when the startup checkpoint fails", async () => {

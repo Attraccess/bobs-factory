@@ -210,3 +210,84 @@ it.each([
 		rmSync(home, { recursive: true, force: true });
 	}
 });
+
+it.each([
+	["slack", false],
+	["zulip", false],
+	["slack", true],
+	["zulip", true],
+] as const)("recovers %s checkpoint cancellation conservatively (cleanup fails: %s)", async (platform, cleanupFails) => {
+	const home = mkdtempSync(join(tmpdir(), "chat-checkpoint-recovery-"));
+	try {
+		const f = productionFixture(platform, home);
+		let handler = new ChatSessionHandler(f.adapter, f.deps);
+		let releaseCheckpoint!: () => void;
+		const checkpoint = new Promise<void>((resolve) => {
+			releaseCheckpoint = resolve;
+		});
+		let checkpointSaved = false;
+		let saved: ReturnType<typeof handler.serializeState> | undefined;
+		f.worker.savePersistedState = async (
+			_force: boolean,
+			update?: () => () => void,
+		) => {
+			const rollback = update?.();
+			try {
+				const session = handler.getAllChatSessions()[0];
+				if (
+					cleanupFails &&
+					checkpointSaved &&
+					session?.metadata?.chatExecutionStarted === false
+				)
+					throw new Error("cleanup storage unavailable");
+				saved = JSON.parse(JSON.stringify(handler.serializeState()));
+				if (!checkpointSaved && session?.metadata?.chatExecutionStarted) {
+					checkpointSaved = true;
+					await checkpoint;
+				}
+			} catch (error) {
+				rollback?.();
+				throw error;
+			}
+		};
+		await handler.handleEvent({ id: "first", text: "Retained initial task" });
+		await vi.waitFor(() => expect(checkpointSaved).toBe(true));
+		const session = handler.getAllChatSessions()[0]!;
+		const pending = structuredClone(session.metadata?.pendingExecution);
+		expect(session.metadata?.chatExecutionStarted).toBe(true);
+		handler.interruptWorkflowSession(session.id);
+		releaseCheckpoint();
+		await expect(waitForRunnerCapacity(session.agentRunner!)).rejects.toThrow(
+			cleanupFails ? "cleanup storage unavailable" : "cancelled",
+		);
+		expect(f.prompts).toEqual([]);
+		expect(f.worker.runnerSlots.active).toBe(0);
+		expect(session.metadata?.chatExecutionStarted).toBe(cleanupFails);
+		handler = new ChatSessionHandler(f.adapter, f.deps);
+		handler.restoreState(saved!.sessions, saved!.entries);
+		const restored = handler.getAllChatSessions()[0]!;
+		expect(restored.metadata?.chatExecutionStarted).toBe(cleanupFails);
+		expect(restored.metadata?.pendingExecution).toEqual(pending);
+		expect(restored.codexSessionId).toBeUndefined();
+		f.config.codexDefaultModel = "future-chat-model";
+		if (cleanupFails) {
+			await expect(handler.resumeBlockedSession(session.id)).rejects.toThrow(
+				"Restore the saved conversation ID",
+			);
+			expect(f.prompts).toEqual([]);
+		} else {
+			await handler.resumeBlockedSession(session.id);
+			await vi.waitFor(() =>
+				expect(f.prompts).toEqual(["Retained initial task"]),
+			);
+			expect(f.observed[1]).toMatchObject({
+				runner: "codex",
+				model: "accepted-chat-model",
+			});
+			expect(f.observed[1].resumeSessionId).toBeUndefined();
+			expect(restored.metadata?.chatExecutionStarted).toBe(true);
+		}
+	} finally {
+		rmSync(home, { recursive: true, force: true });
+	}
+});
