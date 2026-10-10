@@ -16,9 +16,11 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { validateWorkflows } from "../../../packages/edge-worker/dist/factory/Workflow.js";
 import { WorkflowRuntime } from "../../../packages/edge-worker/dist/factory/WorkflowRuntime.js";
 import { MachineCapacity } from "../../../packages/edge-worker/dist/MachineCapacity.js";
 import { freezeCandidate } from "../../../scripts/lib/release-candidate.mjs";
+import { localRepository } from "../../cli/dist/src/onboarding.js";
 import {
 	DesktopAppLifecycle,
 	processStamp,
@@ -134,51 +136,101 @@ const old = appRelease("stable", readFileSync(install), target, {
 		target,
 		{ frozenCandidate: failedCandidate },
 	);
-// Create retained waiting state before native worker startup; no runner invoked.
+// Prepare a genuine configured repository and a completed mocked agent checkpoint
+// at a human review gate. Native startup must never execute a provider/title agent.
+const repository = join(root, "project");
+execFileSync("git", ["init", "-q", "-b", "main", repository]);
+execFileSync("git", [
+	"-C",
+	repository,
+	"-c",
+	"user.name=Fixture",
+	"-c",
+	"user.email=fixture@example.invalid",
+	"commit",
+	"--allow-empty",
+	"-qm",
+	"Shell fixture",
+]);
+execFileSync("git", [
+	"-C",
+	repository,
+	"remote",
+	"add",
+	"origin",
+	"https://github.com/f1-test/shell-update",
+]);
+writeFileSync(
+	join(home, "config.json"),
+	JSON.stringify({
+		repositories: [localRepository(repository, home, "fixture")],
+		defaultRunner: "codex",
+	}),
+);
 const seed = new WorkflowRuntime(home, {
-	agent: async () => {
-		throw Error("No provider permitted");
+	agent: async (ctx) => {
+		ctx.checkpointAgent?.({
+			runner: "codex",
+			sessionId: "mock-native-shell-checkpoint",
+			cwd: repository,
+		});
+		return { prepared: true, scope: "mock checkpoint only" };
 	},
 	script: async () => ({}),
-	tool: async () => ({}),
+	tool: async () => ({
+		headSha: "d".repeat(40),
+		url: "https://example.invalid/shell-review",
+	}),
 });
+const [workflow] = validateWorkflows([
+	{
+		id: "fixture",
+		name: "Fixture",
+		allowedTriggers: ["manual"],
+		steps: [
+			{
+				id: "prepare",
+				name: "Mock completed checkpoint",
+				type: "agent",
+				runner: "codex",
+				prompt: "Mock only",
+				next: "review",
+			},
+			{
+				id: "review",
+				name: "Retained human review",
+				type: "tool",
+				tool: "human-review",
+				next: "end",
+			},
+		],
+	},
+]);
 const run = seed.create({
 	id: "native-shell-wait",
 	title: "Retained shell checkpoint",
 	repositoryId: "fixture",
-	workspace: root,
+	workspace: repository,
 	input: "fixture",
 	triggerOrigin: {
 		type: "manual",
 		workflowId: "fixture",
 		at: new Date().toISOString(),
 	},
-	workflow: {
-		id: "fixture",
-		name: "Fixture",
-		allowedTriggers: ["manual"],
-		steps: [
-			{
-				id: "ask",
-				name: "Ask",
-				type: "agent",
-				prompt: "Mock",
-				askQuestions: true,
-				next: "end",
-			},
-		],
-	},
+	workflow,
 });
-run.status = "waiting";
-run.questions = ["Retained question"];
-run.questionBatchId = "fixture-batch";
-run.checkpoint = {
-	step: "ask",
-	agent: { runner: "codex", sessionId: "mock-native-shell-checkpoint" },
+run.titleGeneration = {
+	...run.titleGeneration,
+	state: "failed",
+	error: "Fixture disables title inference",
 };
+run.setupComplete = true;
 seed.save(run);
+void seed.launch(run);
+for (let n = 0; n < 100 && run.status !== "waiting"; n++)
+	await new Promise((resolve) => setTimeout(resolve, 100));
+assert.equal(run.status, "waiting");
 await seed.shutdown();
-const saved = readFileSync(join(home, "factory", "runs", `${run.id}.json`));
 const env = {
 	...process.env,
 	APPIMAGE_EXTRACT_AND_RUN: "1",
@@ -218,6 +270,20 @@ const owned = services.workerOwner(home),
 		fixtureClient([old, good], services),
 		keys,
 	);
+const client = new services.FactoryClient({
+	home,
+	port,
+	requestSession: services.requestFactoryTerminalSession,
+});
+await until(
+	async () =>
+		read(join(home, "factory", "runs", `${run.id}.json`)).status ===
+			"waiting" && (await client.get("/api/updates/drain")).idle,
+);
+// Startup normalization/recovery is its own lifecycle. Freeze the valid native
+// worker's waiting state before changing the app; it must then remain byte exact.
+const saved = readFileSync(join(home, "factory", "runs", `${run.id}.json`));
+assert.match(saved.toString(), /mock-native-shell-checkpoint/);
 save(
 	join(directory, "installation.json"),
 	await source.enroll({ ...old.identity, target }),
