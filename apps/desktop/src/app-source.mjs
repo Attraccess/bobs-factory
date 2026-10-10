@@ -70,6 +70,11 @@ export function verifyAppProof(proof, candidate, services) {
 		metadataBytes.length !== item.updateMetadata.size ||
 		digest(metadataBytes) !== item.updateMetadata.sha256 ||
 		metadata.fingerprint !== proof.fingerprint ||
+		metadata.schemaVersion !== 1 ||
+		metadata.product !== "bobs-factory-desktop" ||
+		metadata.channel !== candidate.channel ||
+		(!candidate.target.startsWith("darwin") &&
+			metadata.format !== "AppImage") ||
 		metadata.commit !== candidate.commit ||
 		metadata.version !== candidate.version ||
 		metadata.target !== candidate.target ||

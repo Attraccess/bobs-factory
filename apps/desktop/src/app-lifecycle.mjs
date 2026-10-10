@@ -98,6 +98,7 @@ export class DesktopAppLifecycle {
 			r.schema !== 1 ||
 			r.install !== this.install ||
 			r.target !== this.target ||
+			r.candidate.target !== this.target ||
 			r.fingerprint !== metadata.fingerprint ||
 			installationKind(this.install, this.target) !== "bob-owned" ||
 			appFingerprint(this.install, this.target) !== r.fingerprint
@@ -123,7 +124,11 @@ export class DesktopAppLifecycle {
 				this.services.workerOwner(this.home)
 			)
 				throw Error("Service stopped intent conflicts with a live worker");
-			if (existsSync(this.fence) && read(this.fence).transactionId !== id)
+			if (
+				existsSync(this.fence) &&
+				(read(this.fence).transactionId !== id ||
+					read(this.fence).product !== "bobs-factory-desktop")
+			)
 				throw Error("Another lifecycle owns maintenance");
 			this.id = id;
 			// An interrupted switch may have moved the old app. Recover from its immutable snapshot.

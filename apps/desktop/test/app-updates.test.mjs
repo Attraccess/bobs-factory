@@ -190,7 +190,9 @@ function signedProof(fingerprint) {
 		item.target = candidate.target;
 		const metadata = {
 			...f.identity,
+			schemaVersion: 1,
 			product: "bobs-factory-desktop",
+			format: "AppImage",
 			target: candidate.target,
 			fingerprint,
 			archive: item.archive,

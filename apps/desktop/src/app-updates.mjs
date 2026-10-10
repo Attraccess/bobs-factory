@@ -45,7 +45,7 @@ export async function appUpdates({
 			installationKind(install, target) === "external"
 				? "This desktop app is externally managed. Update through Homebrew/DEB/AUR or your installation owner."
 				: existsSync(receipt)
-					? "Verified Bob-owned app; shell upgrades preserve the local worker."
+					? "App receipt retained; activation rechecks ownership/integrity and preserves the local worker."
 					: "Verify this installed app against its signed release to enable self-updates.",
 	});
 	let busy = false;
@@ -102,7 +102,13 @@ export async function appUpdates({
 		child.unref();
 	}
 	return {
-		status: () => ({ ...manager.status(), ...handoff() }),
+		status: () => ({
+			...manager.status(),
+			...handoff(),
+			activationSupported:
+				installationKind(install, target) === "bob-owned" &&
+				existsSync(receipt),
+		}),
 		async action(action, input, revision) {
 			if (action === "configure") manager.configure(input, revision);
 			else if (action === "cancel")
