@@ -25,6 +25,7 @@ import {
 	appFingerprint,
 	DesktopAppSource,
 	installationKind,
+	verifyAppProof,
 } from "../src/app-source.mjs";
 import * as services from "../src/update-services.mjs";
 
@@ -53,6 +54,10 @@ test("complete app archive preserves framework symlinks and modes; traversal/spe
 			{ mode: 0o755 },
 		);
 		symlinkSync("A", join(w, "app", "Framework", "Versions", "Current"));
+		symlinkSync(
+			"Versions/Current/binary",
+			join(w, "app", "Framework", "binary"),
+		);
 		const packed = packApp(join(w, "app"));
 		unpackApp(packed, join(w, "unpacked"));
 		assert.deepEqual(tree(join(w, "unpacked")), tree(join(w, "app")));
@@ -73,6 +78,14 @@ test("complete app archive preserves framework symlinks and modes; traversal/spe
 					{ path: "a/evil", kind: "directory" },
 				]),
 			/beneath link/,
+		);
+		assert.throws(
+			() =>
+				validateEntries([
+					{ path: "a", kind: "link", link: "b" },
+					{ path: "b", kind: "link", link: "a" },
+				]),
+			/cycle/,
 		);
 	} finally {
 		rmSync(w, { recursive: true, force: true });
@@ -183,17 +196,18 @@ test("signed app source binds exact payload, channel, target and full inventory;
 		f.cleanup();
 	}
 });
-function signedProof(fingerprint) {
+function signedProof(fingerprint, target = candidate.target) {
 	const f = preparedFixture("nightly", { desktop: true });
 	try {
 		const item = f.manifest.desktop.artifacts[0];
-		item.target = candidate.target;
+		item.target = target;
 		const metadata = {
 			...f.identity,
 			schemaVersion: 1,
 			product: "bobs-factory-desktop",
-			format: "AppImage",
-			target: candidate.target,
+			format: target.startsWith("darwin") ? "bobs-app-v1" : "AppImage",
+			osSigning: "unsigned",
+			target,
 			fingerprint,
 			archive: item.archive,
 		};
@@ -207,7 +221,11 @@ function signedProof(fingerprint) {
 			r.file === item.updateMetadata.file ? item.updateMetadata : r,
 		);
 		const manifest = jsonBytes(f.manifest),
-			signedCandidate = { ...candidate, manifestSha256: digest(manifest) };
+			signedCandidate = {
+				...candidate,
+				target,
+				manifestSha256: digest(manifest),
+			};
 		return {
 			candidate: signedCandidate,
 			proof: {
@@ -222,6 +240,30 @@ function signedProof(fingerprint) {
 		f.cleanup();
 	}
 }
+test("user-owned DMG app is eligible but unsigned macOS publisher receipts cannot authorize it; external symlink handoff remains", () => {
+	const w = work();
+	try {
+		const app = join(w, "Bob.app");
+		mkdirSync(app);
+		assert.equal(installationKind(app, "darwin-arm64"), "bob-owned");
+		symlinkSync(app, join(w, "External.app"));
+		assert.equal(
+			installationKind(join(w, "External.app"), "darwin-arm64"),
+			"external",
+		);
+		const signed = signedProof("a".repeat(64), "darwin-arm64");
+		assert.throws(
+			() =>
+				verifyAppProof(signed.proof, signed.candidate, {
+					...services,
+					trustedKeys: keys,
+				}),
+			/authentic macOS signing/,
+		);
+	} finally {
+		rmSync(w, { recursive: true, force: true });
+	}
+});
 function setup() {
 	const w = work(),
 		home = join(w, "home"),

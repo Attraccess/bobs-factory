@@ -80,9 +80,37 @@ export function validateEntries(entries) {
 		for (let p = posix.dirname(e.path); p !== "."; p = posix.dirname(p))
 			if (byPath.get(p)?.kind !== "directory")
 				throw Error("App entry beneath link or missing directory");
+	function resolveTarget(target) {
+		// Framework links often target Versions/Current/foo, where Current is
+		// itself a directory link. Resolve entirely within the signed inventory.
+		for (let hop = 0; hop < 100; hop++) {
+			if (!safe(target)) throw Error("App link escapes archive");
+			const parts = target.split("/");
+			let followed = false;
+			for (let index = 0; index < parts.length; index++) {
+				const path = parts.slice(0, index + 1).join("/"),
+					entry = byPath.get(path);
+				if (!entry) throw Error("App link target absent");
+				if (entry.kind === "link") {
+					target = posix.normalize(
+						posix.join(
+							posix.dirname(path),
+							entry.link,
+							...parts.slice(index + 1),
+						),
+					);
+					followed = true;
+					break;
+				}
+				if (index < parts.length - 1 && entry.kind !== "directory")
+					throw Error("App link traverses a file");
+			}
+			if (!followed) return;
+		}
+		throw Error("App link cycle or excessive chain");
+	}
 	for (const e of entries.filter((x) => x.kind === "link"))
-		if (!names.has(posix.normalize(posix.join(posix.dirname(e.path), e.link))))
-			throw Error("App link target absent");
+		resolveTarget(posix.normalize(posix.join(posix.dirname(e.path), e.link)));
 }
 // Bob's framed gzip archive retains complete signed app bytes, Unix modes and internal
 // framework symlinks. No external tar/zip extraction, headers or path interpretation.
