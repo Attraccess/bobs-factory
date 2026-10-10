@@ -46,6 +46,13 @@ retains runtime identity, mounted shell hashes, exact source/compiled/fixture
 hashes and four separate Electron process phases. Receipt SHA-256:
 `26dff571bf4bc12b9e3c4c6efdb44ccd8b56e37969dee16a6ba7046b02026a34`.
 
+This receipt is historical evidence from the original controller. Independent
+review at `a0d3300dcc9f54f77a2857e4a322a9cdd0332dbf` found that its
+`passed:true` was written before cleanup and only the backend was awaited.
+It therefore does **not** prove cleanup completion. Its bytes and original
+fixture hashes remain unchanged; the corrected controller evidence below is
+a separate run, not a relabeling of this receipt.
+
 ## Observed assertions
 
 - The actual native worker PID **85442** retained a bounded shell job PID
@@ -151,3 +158,71 @@ fixture ports, certificate matching and assertion shapes; no production fix was 
   release eligibility/publication and merge remain separately gated. GitGuardian
   synthetic incidents **38083768** and **38084076** still require scoped operator
   review; no security bypass or historical evidence rewrite occurred.
+
+
+## Independent P2 cleanup correction
+
+The finding at `a0d3300dcc9f54f77a2857e4a322a9cdd0332dbf` is fixed in the
+maintained test controller. Every direct fixture child now has its own POSIX
+process group and a close-event promise. The ledger also records detached native
+workers/supervisors from the three explicit fixture homes, binding ownership to
+home directory identity, exact lock text/nonce, kernel start stamp, canonical
+executable identity and its frozen binary hash. It records group members while
+leaders are alive, so a leader exiting first does not drop its descendants.
+
+Cleanup sends TERM, waits a bounded grace period, escalates remaining owned
+groups to KILL, waits for every spawned child and verifies no live group members
+or fixture worker/supervisor locks remain. Zombies are terminated processes,
+not running work. A stale/reused PID, overwritten lock or replaced home fails
+closed: no guessed signals or deletion. An unrelated foreground process is
+outside the ledger. Controller TERM/INT and exceptions produce a failed receipt;
+PASS is finalized only after cleanup and HTTPS proxy closure succeed. Optional
+`F1_NATIVE_ACCEPTANCE_RECEIPT` preserves the requested receipt outside the fixture
+HOME. No helper is imported from the separate, unmerged PR87.
+
+**Fresh native/F1 result: PASS**, including all four actual Electron phases and
+cleanup, using the same exact ed7 binary/read-only mounted app and the original
+controlled scope above. The final run executed the modified test bytes on parent
+`a0d3300dcc9f54f77a2857e4a322a9cdd0332dbf`; file hashes bind the corrected working tree, rather than
+claiming the parent commit contains these changes.
+
+- [Fresh receipt](assets/2026-10-10-native-desktop-acceptance/corrected-native-acceptance.json):
+  SHA-256 `9bfc07873dbbca29eeac324f6e04629f2d549511b03e03a8dc84644def15332a`.
+- Corrected controller SHA-256: `1d63e3d6849be96d40e6f8541489a987450ea0d738661e78dd07af368c7db427`.
+- Cleanup helper SHA-256: `0d5893e4a95d3a58ef800c720ad470857730bd4bc0051057d8c4db1ae46f7d97`.
+- [Cleanup/check bindings](assets/2026-10-10-native-desktop-acceptance/cleanup-validation.json):
+  9 owned groups drained, 6 direct children closed,
+  4 recorded locks verified removed, no remaining groups or failures.
+- [Focused test output](assets/2026-10-10-native-desktop-acceptance/cleanup-regressions.log):
+  eight process/receipt regressions plus two existing desktop boundary tests,
+  **10/10 PASS**. These execute actual TERM-ignoring children, an exited parent
+  with a stubborn descendant, controller SIGTERM/nonzero exit, failed lock
+  removal, a cleanup exception/nonzero exit, stale PID identity, lock overwrite,
+  replacement HOME and an unrelated surviving foreground process. No source-text
+  assertions substitute for process behavior.
+
+The first corrected-drive attempts accurately returned cleanup FAIL while native
+workflow assertions passed: [canonical launcher alias validation failure](assets/2026-10-10-native-desktop-acceptance/cleanup-development-alias-fail.json)
+and [mutable argv identity validation failure](assets/2026-10-10-native-desktop-acceptance/cleanup-development-argv-fail.json).
+The final ledger resolves the launcher symlink for executable validation and uses
+the kernel start stamp for process identity, which survives exec/argv changes.
+These are fixture-development failures, not production defects or PASS evidence.
+Their isolated state is retained privately; the final native fixture is
+`/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-acceptance-ql58uH`.
+
+Recheck the changed path with:
+
+```sh
+node --test apps/desktop/test/acceptance-cleanup.test.mjs \
+  apps/desktop/test/contracts.test.mjs scripts/tests/desktop-runtime.test.mjs
+F1_NATIVE_ACCEPTANCE_RECEIPT=/tmp/pr88-final-native-acceptance.json \
+  node apps/desktop/test/run-native-acceptance.mjs \
+  /tmp/native-acceptance-ed7-artifact/runtime/bobs-factory-1.0.0-nightly.20261010.7-darwin-arm64 \
+  "/tmp/native-acceptance-ed7-mount/Bob's Factory.app" \
+  /tmp/bobs-factory-desktop-121/apps/desktop/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron
+```
+
+No build/matrix/signed23 repetition or new production acceptance claim is made.
+All physical/provider/second-machine/Linux/minimum-OS/reboot/logout/signing/publication
+and whole-shell gates above remain open. GitGuardian incidents 38083768 and
+38084076 retain their operator-review gate; no bypass or history rewrite.
