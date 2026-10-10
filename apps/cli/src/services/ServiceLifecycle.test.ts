@@ -2,13 +2,14 @@ import {
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
+	symlinkSync,
 	unlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { acquireInstanceLock } from "./InstanceLock.js";
+import { acquireInstanceLock, workerOwner } from "./InstanceLock.js";
 import {
 	type ServiceExecutor,
 	ServiceLifecycle,
@@ -37,6 +38,28 @@ function fixture(platform = "linux") {
 	return { root, calls, manager, executable };
 }
 describe("user service ownership", () => {
+	it("reconciles a verified dead worker on maintenance without changing caller provenance", async () => {
+		const { manager, executable } = fixture();
+		manager.install(executable);
+		const record = manager.record()!;
+		symlinkSync(
+			JSON.stringify({
+				schema: 1,
+				pid: 2147483647,
+				nonce: "dead-native-startup",
+				home: record.home,
+				processStamp: "dead",
+				executable,
+				owner: "service",
+			}),
+			join(record.home, "runtime", "worker.lock"),
+		);
+		const marker = process.env.BOBS_FACTORY_WORKER_ID;
+		await manager.action("maintenance");
+		expect(workerOwner(record.home)).toBeUndefined();
+		expect(process.env.BOBS_FACTORY_WORKER_ID).toBe(marker);
+		expect(manager.record()?.desired).toBe("maintenance");
+	});
 	it("install is stopped and not enrolled, with no manager start", () => {
 		const { manager, executable, calls } = fixture();
 		manager.install(executable);

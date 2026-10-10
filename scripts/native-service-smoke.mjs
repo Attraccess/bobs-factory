@@ -88,6 +88,23 @@ try {
 			],
 		}),
 	);
+} catch (error) {
+	try {
+		console.error("Native fixture ownership/status:", JSON.stringify(status()));
+		console.error(
+			"Native fixture worker logs:",
+			command("logs").replace(
+				/First passkey setup code[^\n]*/g,
+				"First passkey setup code: [redacted]",
+			),
+		);
+	} catch (diagnosticError) {
+		console.error(
+			"Native fixture diagnostics unavailable:",
+			diagnosticError.message,
+		);
+	}
+	throw error;
 } finally {
 	if (installed) {
 		try {
