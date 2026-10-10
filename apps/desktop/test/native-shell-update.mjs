@@ -3,16 +3,19 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
 import {
+	closeSync,
 	cpSync,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
+	openSync,
 	readFileSync,
 	rmSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { WorkflowRuntime } from "../../../packages/edge-worker/dist/factory/WorkflowRuntime.js";
 import { MachineCapacity } from "../../../packages/edge-worker/dist/MachineCapacity.js";
 import { freezeCandidate } from "../../../scripts/lib/release-candidate.mjs";
@@ -271,7 +274,45 @@ try {
 	await lease.release();
 	// The actual main.mjs reads its exact quit ticket, exits, and the production
 	// lifecycle launches/health-checks the replacement actual packaged Electron.
-	await manager.reconcile();
+	const retained = join(root, "external-helper");
+	mkdirSync(retained);
+	for (const file of [
+		"app-helper.mjs",
+		"app-lifecycle.mjs",
+		"app-source.mjs",
+		"app-archive.mjs",
+	])
+		cpSync(join(app, "src", file), join(retained, file));
+	// Only this isolated test module supplies the generated public RSA key. The
+	// installed product has no test-key flag, trust override or OS signing bypass.
+	writeFileSync(
+		join(retained, "update-services.mjs"),
+		`export * from ${JSON.stringify(pathToFileURL(join(app, "src", "update-services.mjs")).href)};\nexport const trustedKeys = ${JSON.stringify(keys)};\n`,
+	);
+	const request = join(retained, "request.json");
+	save(request, {
+		home,
+		install,
+		target,
+		port,
+		directory,
+		identity: { ...old.identity, target },
+		uiPid: uiIdentity.pid,
+		uiStamp: uiIdentity.stamp,
+		launchArgs: ["--no-sandbox"],
+	});
+	const log = openSync(join(root, "helper.log"), "a");
+	const helper = spawn(
+		join(app, "node_modules", "electron", "dist", "electron"),
+		[join(retained, "app-helper.mjs"), request],
+		{ env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, stdio: ["ignore", log, log] },
+	);
+	closeSync(log);
+	const helperExit = await new Promise((r, j) => {
+		helper.once("exit", r);
+		helper.once("error", j);
+	});
+	assert.equal(helperExit, 0, readFileSync(join(root, "helper.log"), "utf8"));
 	assert.equal(
 		manager.status().transaction.phase,
 		"succeeded",
@@ -318,6 +359,7 @@ try {
 				workerPidUnchanged: true,
 				checks: [
 					"active-lease deferral",
+					"actual external Electron Node-mode helper entry",
 					"actual Electron exit before complete-app replacement",
 					"actual candidate health identity",
 					"same native worker PID/nonce",
