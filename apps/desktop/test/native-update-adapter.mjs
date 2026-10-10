@@ -102,6 +102,9 @@ for (const failHealth of crashChild ? [false] : [false, true]) {
 			"mock credential boundary",
 		);
 		assert(workerOwner(home));
+		await new OwnedUpdateLifecycle(home, port).releaseMaintenance(
+			result.transaction.id,
+		);
 		const crashed = workerOwner(home);
 		process.kill(crashed.pid, "SIGKILL");
 		await new Promise((r) => setTimeout(r, 200));

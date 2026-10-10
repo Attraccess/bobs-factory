@@ -51,9 +51,14 @@ export async function runUpdateSupervisor(
 				try {
 					if (
 						transaction &&
-						!["succeeded", "rolled-back", "cancelled"].includes(
-							transaction.phase,
-						)
+						((
+							transaction as typeof transaction & {
+								release?: { status: string };
+							}
+						).release?.status === "pending" ||
+							!["succeeded", "rolled-back", "cancelled"].includes(
+								transaction.phase,
+							))
 					)
 						await manager.recover("operation owner stopped");
 					else await manager.tick();

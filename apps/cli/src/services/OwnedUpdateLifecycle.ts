@@ -429,12 +429,34 @@ export class OwnedUpdateLifecycle {
 		await this.health(old);
 	}
 	async releaseMaintenance(transactionId: string) {
+		if (!this.transactionId) {
+			const journal = JSON.parse(
+				readFileSync(join(this.home, "updates", "state.json"), "utf8"),
+			);
+			const transaction = journal.transaction;
+			if (
+				transaction?.id !== transactionId ||
+				(!transaction.release &&
+					!["succeeded", "rolled-back", "cancelled"].includes(
+						transaction.phase,
+					))
+			)
+				throw new Error(
+					"Maintenance release lacks exact durable terminal outcome",
+				);
+			this.transactionId = transactionId;
+		}
 		if (transactionId !== this.transactionId)
 			throw new Error("Maintenance owner mismatch");
+		if (existsSync(this.fence())) {
+			const saved = JSON.parse(readFileSync(this.fence(), "utf8"));
+			if (saved.transactionId !== transactionId)
+				throw new Error("Another lifecycle owns maintenance");
+		}
 		await this.client.post("/api/updates/maintenance", {
 			transactionId,
 			action: "end",
 		});
-		rmSync(this.fence());
+		rmSync(this.fence(), { force: true });
 	}
 }
