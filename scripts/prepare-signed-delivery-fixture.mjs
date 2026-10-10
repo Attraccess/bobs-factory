@@ -23,6 +23,14 @@ assert.equal(
 	"Native fixture builds require clean frozen source/tooling",
 );
 mkdirSync(output, { recursive: false });
+const buildEnv = {
+	PATH: process.env.PATH,
+	HOME: join(output, "build-home"),
+	TMPDIR: join(output, "build-tmp"),
+	LANG: "en_US.UTF-8",
+};
+mkdirSync(buildEnv.HOME);
+mkdirSync(buildEnv.TMPDIR);
 const commit = execFileSync("git", ["rev-parse", "HEAD"], {
 	cwd: root,
 	encoding: "utf8",
@@ -77,7 +85,7 @@ const selections = [
 		}),
 	],
 ];
-execFileSync("pnpm", ["build"], { cwd: root, stdio: "inherit" });
+execFileSync("pnpm", ["build"], { cwd: root, env: buildEnv, stdio: "inherit" });
 for (const [name, frozen] of selections) {
 	const candidate = join(output, `candidate-${name}.json`);
 	writeFileSync(candidate, `${JSON.stringify(frozen, null, 2)}\n`);
@@ -99,7 +107,7 @@ for (const [name, frozen] of selections) {
 			"--output",
 			join(output, `build-${name}`),
 		],
-		{ cwd: root, stdio: "inherit" },
+		{ cwd: root, env: buildEnv, stdio: "inherit" },
 	);
 }
 console.log(`TEST ONLY native fixtures frozen at ${commit} in ${output}`);
