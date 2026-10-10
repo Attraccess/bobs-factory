@@ -22,6 +22,7 @@ import {
 import {
 	candidateIdentity,
 	freezeCandidate,
+	validateCandidate,
 } from "../lib/release-candidate.mjs";
 import { keys, signBytes, testInstaller } from "./release-fixtures.mjs";
 
@@ -33,6 +34,7 @@ export function preparedFixture(
 		stableVersion = "1.0.0",
 		sequence = 10,
 		desktop = false,
+		frozenCandidate,
 	} = {},
 ) {
 	const work = mkdtempSync(join(tmpdir(), "factory-publication-fixture-"));
@@ -68,32 +70,34 @@ export function preparedFixture(
 		);
 		workflowSha = git("rev-parse", "HEAD");
 	}
-	const candidate = freezeCandidate({
-		channel,
-		version:
-			channel === "stable"
-				? stableVersion
-				: channel === "beta"
-					? "1.0.0-beta"
-					: undefined,
-		commit: "a".repeat(40),
-		workflowSha,
-		committedVersion: "1.0.0-beta",
-		sequence,
-		date: "2026-10-09T00:00:00Z",
-		...(channel === "stable"
-			? {
-					promotion: {
-						channel: "nightly",
-						version: "1.0.0-nightly.20261009.9",
-						tag: "v1.0.0-nightly.20261009.9",
-						commit: "a".repeat(40),
-						manifestSha256: "c".repeat(64),
-						releaseId: 9,
-					},
-				}
-			: {}),
-	});
+	const candidate = frozenCandidate
+		? validateCandidate(frozenCandidate)
+		: freezeCandidate({
+				channel,
+				version:
+					channel === "stable"
+						? stableVersion
+						: channel === "beta"
+							? "1.0.0-beta"
+							: undefined,
+				commit: "a".repeat(40),
+				workflowSha,
+				committedVersion: "1.0.0-beta",
+				sequence,
+				date: "2026-10-09T00:00:00Z",
+				...(channel === "stable"
+					? {
+							promotion: {
+								channel: "nightly",
+								version: "1.0.0-nightly.20261009.9",
+								tag: "v1.0.0-nightly.20261009.9",
+								commit: "a".repeat(40),
+								manifestSha256: "c".repeat(64),
+								releaseId: 9,
+							},
+						}
+					: {}),
+			});
 	const identity = candidateIdentity(candidate, 123);
 	const output = join(work, "prepared"),
 		assets = join(output, "assets");

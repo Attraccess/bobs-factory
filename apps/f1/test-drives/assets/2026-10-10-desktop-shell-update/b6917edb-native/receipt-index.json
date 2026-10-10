@@ -1,0 +1,211 @@
+{
+	"scope": "Unsigned native preparation and notice inclusion; Linux controlled test-only publisher/app upgrade/rollback; no production trust, Apple signing, licensing acceptance or publication",
+	"source": "b6917edb845ac482f3910cc98525d75e5cd67c05",
+	"workflowSha": "b6917edb845ac482f3910cc98525d75e5cd67c05",
+	"candidateDigest": "74b03ef56e09b33dc2037d2d9449c9fd08fde26cfcffbd6751437487f8d286e1",
+	"version": "1.0.0-nightly.20261010.15",
+	"runId": 38082354282,
+	"targets": {
+		"darwin-arm64": {
+			"githubArtifactId": 11681126355,
+			"zipSize": 369494656,
+			"assets": [
+				{
+					"file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-mac-arm64.dmg",
+					"size": 166701803,
+					"sha256": "651c038f1c558c0ad7b5166c2a117dff84b16dab021cf985ce4bdbbf8059cf73"
+				},
+				{
+					"file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-mac-arm64.bobsapp.gz",
+					"size": 170969481,
+					"sha256": "51a22c08a8d2e4edfb66d30005f4a8fd983fe2b1999e4d2d4ab4a250e1c3bfe5"
+				}
+			],
+			"metadata": {
+				"file": "desktop-update-darwin-arm64.json",
+				"size": 1153,
+				"sha256": "d89ed5eae9c7154ad48d2d053d58c0c70b656835e5b397a4cbb317b9421a493e"
+			},
+			"receipts": [
+				{
+					"file": "desktop-build.json",
+					"size": 3935,
+					"sha256": "6c89ca3f4e21b75a7b6ac409bfe18f19c8ddeb2625e0962286dbc96b03353c54",
+					"storedFile": "desktop-build.json.raw"
+				},
+				{
+					"file": "desktop-update-darwin-arm64.json",
+					"size": 1153,
+					"sha256": "d89ed5eae9c7154ad48d2d053d58c0c70b656835e5b397a4cbb317b9421a493e",
+					"storedFile": "desktop-update-darwin-arm64.json.raw"
+				},
+				{
+					"file": "native-electron-receipt.json",
+					"size": 456,
+					"sha256": "f2c9b7e5f15a295596f97cd266cb2c36fc93ca6522c43667ea332907efd04383",
+					"storedFile": "native-electron-receipt.json.raw"
+				},
+				{
+					"file": "native-service-receipt.json",
+					"size": 456,
+					"sha256": "6187401bc9d06ad88a4fddf380a07f7b655054c43674b9ffd9de503005ede5a2",
+					"storedFile": "native-service-receipt.json.raw"
+				}
+			]
+		},
+		"darwin-x64": {
+			"githubArtifactId": 11680718260,
+			"zipSize": 382476994,
+			"assets": [
+				{
+					"file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-mac-x64.dmg",
+					"size": 172834085,
+					"sha256": "5ec93fddefbf8d220ee75b3d9035a0776b4af9d5493e93dd90f09b66274aeaf8"
+				},
+				{
+					"file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-mac-x64.bobsapp.gz",
+					"size": 175402895,
+					"sha256": "a3503a355f33f6127038b84064ebf57a4d564c3a81e5a2393aa51f347f841ec6"
+				}
+			],
+			"metadata": {
+				"file": "desktop-update-darwin-x64.json",
+				"size": 1149,
+				"sha256": "65f214db1f935e406060a2bdfea0078bd0178f5d5404cca72025006f0538c7f5"
+			},
+			"receipts": [
+				{
+					"file": "desktop-build.json",
+					"size": 3921,
+					"sha256": "7777f6bb5dd155a5f2e286dd336b2737622ee0ea0d9b87a3f83458475f9a6d41",
+					"storedFile": "desktop-build.json.raw"
+				},
+				{
+					"file": "desktop-update-darwin-x64.json",
+					"size": 1149,
+					"sha256": "65f214db1f935e406060a2bdfea0078bd0178f5d5404cca72025006f0538c7f5",
+					"storedFile": "desktop-update-darwin-x64.json.raw"
+				},
+				{
+					"file": "native-electron-receipt.json",
+					"size": 454,
+					"sha256": "94fa9ee0ce5570c6b954ee3c951139b553e82fac2d4e4d357ee70d61c9a44326",
+					"storedFile": "native-electron-receipt.json.raw"
+				},
+				{
+					"file": "native-service-receipt.json",
+					"size": 458,
+					"sha256": "63d59f8a8ff6a7f05057e2f8f88022aea83cc49fc516b7e2923cde22d7e1afef",
+					"storedFile": "native-service-receipt.json.raw"
+				}
+			]
+		},
+		"linux-arm64": {
+			"githubArtifactId": 11681221319,
+			"zipSize": 346563516,
+			"assets": [
+				{
+					"file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-linux-arm64.AppImage",
+					"size": 174320123,
+					"sha256": "75deef4e223e1b5e3777c7d475da070f71d3e30fb420f45dc2b79ac0bce2f57f"
+				},
+				{
+					"file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-linux-arm64.deb",
+					"size": 129923444,
+					"sha256": "1429f318ce8850c79966c5a2ea32426b5a87839bccd3285ece1607f6ca90d2cc"
+				}
+			],
+			"metadata": {
+				"file": "desktop-update-linux-arm64.json",
+				"size": 1155,
+				"sha256": "3c8203da757e4c94a4c450243d38601f875eebf6afc7e965c50395aef5846f11"
+			},
+			"receipts": [
+				{
+					"file": "desktop-build.json",
+					"size": 4912,
+					"sha256": "aa276018d9a65f3ec590dd9edf2b4bc83c8cd5b72962df547a072104a939905e",
+					"storedFile": "desktop-build.json.raw"
+				},
+				{
+					"file": "desktop-update-linux-arm64.json",
+					"size": 1155,
+					"sha256": "3c8203da757e4c94a4c450243d38601f875eebf6afc7e965c50395aef5846f11",
+					"storedFile": "desktop-update-linux-arm64.json.raw"
+				},
+				{
+					"file": "native-electron-receipt.json",
+					"size": 1499,
+					"sha256": "daa6d60191bbc218de93cf97d0cab0cfc37dab0df5c456ce3440ca3e5628078b",
+					"storedFile": "native-electron-receipt.json.raw"
+				},
+				{
+					"file": "native-service-receipt.json",
+					"size": 403,
+					"sha256": "d221b0276874963d42e2b6594f6038492e41d503d1d8d834777ace0662b03e46",
+					"storedFile": "native-service-receipt.json.raw"
+				},
+				{
+					"file": "native-shell-update-receipt.json",
+					"size": 917,
+					"sha256": "8193a4daa90fbce02d939f8484abb2adad52d7380ad556c96d6190588022caa8",
+					"storedFile": "native-shell-update-receipt.json.raw"
+				}
+			]
+		},
+		"linux-x64": {
+			"githubArtifactId": 11681336059,
+			"zipSize": 352322009,
+			"assets": [
+				{
+					"file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-linux-x64.AppImage",
+					"size": 173048985,
+					"sha256": "264071449b9a82e2100a96a6d8bccfe539771b5527d442b7af435bc361dfbcbb"
+				},
+				{
+					"file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-linux-x64.deb",
+					"size": 136873676,
+					"sha256": "3c7186d863d674e8c2f45ac6fe609d7efb80471589de72b20ec8155c06f09237"
+				}
+			],
+			"metadata": {
+				"file": "desktop-update-linux-x64.json",
+				"size": 1151,
+				"sha256": "9a078b8cb400c39398e1573505c70c75bfcd86ebb93ed91c4f5433343fe2bb9c"
+			},
+			"receipts": [
+				{
+					"file": "desktop-build.json",
+					"size": 4894,
+					"sha256": "3af55b697d7844ce68c560b3b06472a5b66a2487ebc2dc96118b273ed08b9dde",
+					"storedFile": "desktop-build.json.raw"
+				},
+				{
+					"file": "desktop-update-linux-x64.json",
+					"size": 1151,
+					"sha256": "9a078b8cb400c39398e1573505c70c75bfcd86ebb93ed91c4f5433343fe2bb9c",
+					"storedFile": "desktop-update-linux-x64.json.raw"
+				},
+				{
+					"file": "native-electron-receipt.json",
+					"size": 1497,
+					"sha256": "3d9fa6da2f079b3c2ccdecefcd6c5668e853ef2c6397cd649ec85cb24699298a",
+					"storedFile": "native-electron-receipt.json.raw"
+				},
+				{
+					"file": "native-service-receipt.json",
+					"size": 403,
+					"sha256": "1890b4983de34efde4f27d4bac5b18f465f055f32af4ea3691f7acd106474c50",
+					"storedFile": "native-service-receipt.json.raw"
+				},
+				{
+					"file": "native-shell-update-receipt.json",
+					"size": 915,
+					"sha256": "230ef6c80e9b2eabf8134735c94a23e2b960061728106024775cb06b6a46c8ac",
+					"storedFile": "native-shell-update-receipt.json.raw"
+				}
+			]
+		}
+	},
+	"storage": "Original downloaded receipt/metadata bytes retain their artifact filenames with .raw appended, so formatting hooks cannot rewrite authenticated byte evidence. This index is derived."
+}

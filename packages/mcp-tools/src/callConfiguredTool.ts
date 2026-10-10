@@ -102,8 +102,11 @@ async function withConfiguredClient<T>(
 				: new StreamableHTTPClientTransport(new URL(config.url), {
 						requestInit: { headers: config.headers },
 					});
+	let closing: Promise<void> | undefined;
+	const close = () =>
+		(closing ??= client.close().finally(() => transport.close()));
 	const stop = () => {
-		void client.close();
+		void close().catch(() => {});
 	};
 	signal.addEventListener("abort", stop, { once: true });
 	try {
@@ -113,6 +116,6 @@ async function withConfiguredClient<T>(
 		return await operation(client);
 	} finally {
 		signal.removeEventListener("abort", stop);
-		await client.close();
+		await close();
 	}
 }

@@ -263,11 +263,16 @@ release so the exact approval and validation remain inspectable.
 To assemble reviewed material, use `scripts/build-release-source.mjs --sha
 FULL_SHA --candidate FILE --materials DIRECTORY --output EMPTY_DIRECTORY`. The input directory
 contains precise reviewed rebuild/relink instructions in `README.md`, regular
-source files/archives, and `source-materials.json` with `schemaVersion: 1`, exact
-`commit`, `bunVersion: "1.4.2"` and `records`. Each record names its `kind`, flat
+source files/archives, and `source-materials.json` with `schemaVersion: 2`, exact
+`commit`, `version`, `workflowSha`, `candidateDigest`, `bunVersion: "1.4.2"`,
+`records`, `patches` and per-target `builds`. Each record names its `kind`, flat
 `file`, HTTPS `source`, exact `revision`, byte `size` and `sha256`. Include a
 `bun` record named `bun-source.tar.gz`, the exact patched `webkit` source and
 any corresponding dependency/library source required by the licensing review.
+Native object, build-config and actual relink-log records bind the same frozen
+candidate and target. Follow the maintained
+[source-material assembly and bounded intake contract](source-materials/README.md);
+legacy beta source bytes and independent approval receipts remain unchanged.
 The tool adds `factory-source.tar.gz`
 from the exact committed Git tree, its lockfile, commit and material inventory,
 then emits `source-rebuild.tar.gz` and its `source-record.json`. These integrity
@@ -305,8 +310,13 @@ Desktop packaging remains owned by its separate delivery. When evidence includes
 `desktop: {schemaVersion: 1, artifacts: [...]}`, each item declares the same exact
 version, source commit and channel, a unique target and observed
 `platformRequirements`. Its `archive`, `updateMetadata` and `validation` records
-carry file, size and SHA-256. Preparation copies and validates all three assets;
-the validation JSON must report `product: "bobs-factory"`, `status: "passed"`,
+carry file, size and SHA-256. Preparation copies and validates these assets;
+an optional `updateArchive` record separately inventories the complete recovery
+payload (macOS `.bobsapp.gz`, Linux AppImage). It is copied, signed and verified with
+the other assets, never resolved from a detached URL. `updateMetadata` binds that
+payload's format/full-app fingerprint and authentic macOS signing status to the
+same candidate. The unsigned preparation workflow cannot satisfy macOS activation.
+The validation JSON must report `product: "bobs-factory"`, `status: "passed"`,
 matching version/commit/channel/target, `candidateDigest` and `workflowSha`.
 All records must also match the signed `assets` inventory. Missing, duplicated or
 altered validation receipts block discovery and stable promotion. Recovery checks

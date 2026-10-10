@@ -247,6 +247,16 @@ test("channel-only discovery authenticates API calls and skips older verified hi
 				selectedOnly: true,
 			});
 			assert.equal(result.stable.manifest.channel, "beta");
+			const explicit = await discoverReleases(fallback.client, keys, {
+				selectedOnly: true,
+				allowBetaFallback: false,
+			});
+			assert.equal(explicit.stable, null);
+			assert.equal(explicit.nightly.manifest.channel, "nightly");
+			assert.equal(
+				explicit.verified.some((value) => value.manifest.channel === "beta"),
+				false,
+			);
 			assert.match(
 				result.rejected[0].reason,
 				/Unknown or retired publisher key/,

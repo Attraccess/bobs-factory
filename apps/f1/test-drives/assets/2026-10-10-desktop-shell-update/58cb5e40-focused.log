@@ -1,0 +1,45 @@
+(node:71190) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ complete app archive preserves framework symlinks and modes; traversal/special ancestry fails before extraction (7.326ms)
+✔ signed app source binds exact payload, channel, target and full inventory; publisher tamper never stages (104.926333ms)
+✔ user-owned DMG app is eligible but unsigned macOS publisher receipts cannot authorize it; external symlink handoff remains (76.564375ms)
+✔ nightly app replacement keeps runtime state, old app and policy; failed health rolls back and suppresses candidate (778.135541ms)
+✔ app final authorization rejects raced policy {"paused":true} (302.867542ms)
+✔ app final authorization rejects raced policy {"pin":"2.0.0"} (294.010792ms)
+✔ app final authorization rejects raced policy {"channel":"stable"} (299.321375ms)
+✔ app final authorization rejects raced policy {"policy":"manual"} (300.817708ms)
+✔ stable requires exact candidate Install; Quit is never consent, stale receipt rejects (257.926417ms)
+✔ forged staged fingerprint/receipt never executes, including self-consistent local tampering (302.887542ms)
+✔ signed desktop discovery requires intact archive, update metadata and validation inventory (101.324083ms)
+✔ discovery separates signed stable/nightly, excludes incomplete candidates and aborts network failures (233.596708ms)
+✔ nightly history uses global sequence even without manifests and tolerates unverified older history (0.154375ms)
+✔ channel-only discovery authenticates API calls and skips older verified history (303.269791ms)
+✔ stable promotion selects an older signed nightly and refuses unavailable or invalid selections (425.577333ms)
+✔ controlled nightly installer smoke uses frozen identity and preserves installation after failures (2591.636834ms)
+✔ controlled stable installer smoke uses frozen identity and preserves installation after failures (2077.249084ms)
+✔ controlled beta installer smoke uses frozen identity and preserves installation after failures (2102.835958ms)
+✔ prepared recovery rejects desktop validation for a different frozen candidate (186.545833ms)
+✔ receipt archive bytes are independent of file ordering and timestamps (65.417542ms)
+✔ prepared validation rejects modified binary bytes, missing gates and different recipes (164.2615ms)
+✔ publisher dry run makes no remote calls and produces candidate-bound assets digest (244.510334ms)
+✔ publisher reconciles tag-after without duplicate immutable mutations (687.128291ms)
+✔ publisher reconciles draft-after without duplicate immutable mutations (604.940333ms)
+✔ publisher reconciles upload-after:build-provenance.json without duplicate immutable mutations (600.222042ms)
+✔ publisher reconciles publish-after without duplicate immutable mutations (593.514208ms)
+✔ partial upload resumes only missing assets and Pages recovery only dispatches synchronization (781.802958ms)
+✔ conflicting tag, candidate and immutable assets are never replaced (1723.665833ms)
+✔ stable approval binds exact signed asset bytes and stable publication sets latest (412.256208ms)
+✔ a newer stable signed by an unknown key blocks older tooling before any publication mutation (300.6555ms)
+✔ unverifiable latest nightly blocks preparation and publication (453.8815ms)
+✔ unverifiable latest nightly blocks preparation and publication despite an older verified nightly (469.747625ms)
+✔ stale nightly candidate does not create a tag or draft (218.191625ms)
+✔ publication lock rejects overlapping versions and releases after failure (0.921417ms)
+✔ fresh preparation consumes exact artifact ZIPs and produces unsigned inspectable assets without mutations (667.107125ms)
+ℹ tests 35
+ℹ suites 0
+ℹ pass 35
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8146.652708

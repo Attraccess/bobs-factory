@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "product": "bobs-factory-desktop",
+  "candidateDigest": "a1e00110dc11a52c7fadad9364cc6ea98b3026acb83e3d048e80994a4608f492",
+  "version": "1.0.0-nightly.20261010.14",
+  "commit": "03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257",
+  "target": "linux-x64",
+  "runtime": {
+    "schemaVersion": 1,
+    "product": "bobs-factory",
+    "version": "1.0.0-nightly.20261010.14",
+    "candidateDigest": "a1e00110dc11a52c7fadad9364cc6ea98b3026acb83e3d048e80994a4608f492",
+    "workflowSha": "03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257",
+    "committedVersion": "1.0.0-beta",
+    "commit": "03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257",
+    "dirty": false,
+    "target": "linux-x64",
+    "tooling": {
+      "bun": "1.4.2"
+    },
+    "executable": {
+      "file": "bobs-factory",
+      "size": 120399328,
+      "sha256": "32ffc6c44dd834c9c2e8ec2738f82b57fa794810973989bca9c40e9786973c52"
+    },
+    "resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+    "validation": "pending runtime smoke",
+    "requirements": "glibc; native target smoke required"
+  },
+  "assets": [
+    {
+      "file": "bobs-factory-desktop-1.0.0-nightly.20261010.14-linux-x64.AppImage",
+      "size": 173048993,
+      "sha256": "1895f19b54426ad127fe7381394c741c0190cc2bd4b80f9871e9b8965b0e8e94"
+    },
+    {
+      "file": "bobs-factory-desktop-1.0.0-nightly.20261010.14-linux-x64.deb",
+      "size": 136874000,
+      "sha256": "857388b1d341b6c9afee90c70788c574ebcc8022be1ca0ad6f48f9006a806060"
+    }
+  ],
+  "update": {
+    "archive": {
+      "file": "bobs-factory-desktop-1.0.0-nightly.20261010.14-linux-x64.AppImage",
+      "size": 173048993,
+      "sha256": "1895f19b54426ad127fe7381394c741c0190cc2bd4b80f9871e9b8965b0e8e94"
+    },
+    "metadata": {
+      "file": "desktop-update-linux-x64.json",
+      "size": 1151,
+      "sha256": "de1c0a9f7624cb2a5dd2672feb9941ceb7736cfcd4d566ed99762975266cbd03"
+    },
+    "osSigning": "not-applicable"
+  },
+  "licenseValidation": {
+    "status": "passed",
+    "electronLicenses": {
+      "schemaVersion": 1,
+      "product": "electron",
+      "version": "44.7.0",
+      "files": [
+        {
+          "file": "LICENSE",
+          "size": 1096,
+          "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+        },
+        {
+          "file": "LICENSES.chromium.html",
+          "size": 20115518,
+          "sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+        }
+      ]
+    },
+    "installers": [
+      {
+        "file": "bobs-factory-desktop-1.0.0-nightly.20261010.14-linux-x64.AppImage",
+        "size": 173048993,
+        "sha256": "1895f19b54426ad127fe7381394c741c0190cc2bd4b80f9871e9b8965b0e8e94",
+        "electronLicenses": {
+          "schemaVersion": 1,
+          "product": "electron",
+          "version": "44.7.0",
+          "files": [
+            {
+              "file": "LICENSE",
+              "size": 1096,
+              "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+            },
+            {
+              "file": "LICENSES.chromium.html",
+              "size": 20115518,
+              "sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+            }
+          ]
+        }
+      },
+      {
+        "file": "bobs-factory-desktop-1.0.0-nightly.20261010.14-linux-x64.deb",
+        "size": 136874000,
+        "sha256": "857388b1d341b6c9afee90c70788c574ebcc8022be1ca0ad6f48f9006a806060",
+        "electronLicenses": {
+          "schemaVersion": 1,
+          "product": "electron",
+          "version": "44.7.0",
+          "files": [
+            {
+              "file": "LICENSE",
+              "size": 1096,
+              "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+            },
+            {
+              "file": "LICENSES.chromium.html",
+              "size": 20115518,
+              "sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+            }
+          ]
+        }
+      }
+    ],
+    "update": {
+      "file": "bobs-factory-desktop-1.0.0-nightly.20261010.14-linux-x64.AppImage",
+      "size": 173048993,
+      "sha256": "1895f19b54426ad127fe7381394c741c0190cc2bd4b80f9871e9b8965b0e8e94",
+      "electronLicenses": {
+        "schemaVersion": 1,
+        "product": "electron",
+        "version": "44.7.0",
+        "files": [
+          {
+            "file": "LICENSE",
+            "size": 1096,
+            "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+          },
+          {
+            "file": "LICENSES.chromium.html",
+            "size": 20115518,
+            "sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+          }
+        ]
+      }
+    }
+  },
+  "signing": "unsigned preparation only",
+  "validation": "native install/auth/lifecycle receipts required",
+  "publication": false
+}

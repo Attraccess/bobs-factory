@@ -1,0 +1,4 @@
+Bob's Factory is an Apache-2.0 fork of Cyrus, originally developed by Ceedar.
+The shared Factory UI, worker and upstream attribution are preserved. Electron
+and Chromium notices accompany the packaged shell; the bundled Factory runtime
+includes its dependency inventory, licenses and rebuild material.

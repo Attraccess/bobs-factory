@@ -1097,3 +1097,23 @@ it("retains failed documentation and links when newer status milestones supersed
 			.map((call) => call.args.to),
 	).toEqual(["in_review"]);
 });
+
+it("retains ticket milestones during update maintenance and delivers them after resume", async () => {
+	const f = fixture();
+	f.service.setUpdateMaintenance(true);
+	await f.service.record(f.run, {
+		key: "update-drain",
+		stage: "in_progress",
+		body: "Accepted work completed before the update snapshot",
+	});
+	expect(f.calls).toEqual([]);
+	expect(f.run.ticketSync?.receipts[0]).toMatchObject({
+		key: "update-drain",
+		body: "Accepted work completed before the update snapshot",
+	});
+	expect(f.service.isBusy()).toBe(false);
+	f.service.setUpdateMaintenance(false);
+	await f.service.flush(f.run);
+	expect(f.run.ticketSync?.receipts[0]?.delivered).toBe(true);
+	expect(f.ticket.status).toBe("in_progress");
+});

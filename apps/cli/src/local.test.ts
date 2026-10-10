@@ -87,7 +87,7 @@ it("retains operator connection repairs across local restart and preserves proje
 	);
 	const previousPort = process.env.BOBS_FACTORY_FACTORY_PORT;
 	try {
-		await launchLocal(options);
+		const firstWorker = await launchLocal(options);
 		const path = join(home, "config.json");
 		const saved = JSON.parse(readFileSync(path, "utf8"));
 		Object.assign(saved.repositories[0], {
@@ -98,7 +98,12 @@ it("retains operator connection repairs across local restart and preserves proje
 		saved.strictMcpConfig = true;
 		saved.repositories[0].githubUrl = "https://github.com/example/fixture";
 		writeFileSync(path, JSON.stringify(saved));
-		await launchLocal({ ...options, agent: "codex", model: "new-model" });
+		await firstWorker.stop();
+		const secondWorker = await launchLocal({
+			...options,
+			agent: "codex",
+			model: "new-model",
+		});
 		const effective = vi.mocked(EdgeWorker).mock.calls.at(-1)?.[0];
 		expect(effective).toMatchObject({
 			defaultRunner: "codex",
@@ -111,6 +116,7 @@ it("retains operator connection repairs across local restart and preserves proje
 			vi.mocked(EdgeWorker).mock.calls.at(-1)?.[0].repositories[0],
 		).toMatchObject(saved.repositories[0]);
 		expect(setConfigPath).toHaveBeenLastCalledWith(path);
+		await secondWorker.stop();
 		await launchLocal({ ...options, agent: "codex", model: undefined });
 		expect(
 			JSON.parse(readFileSync(path, "utf8")).codexDefaultModel,

@@ -1,0 +1,34 @@
+{
+	"sourceCommit": "09173e8765867e8ef87db8a8e2664687688e4c72",
+	"target": "darwin-arm64",
+	"executableSha256": "42e6504d556ce063bc3fce021f520042a4ab9125cd126a05ed0b0f2e71b5c45b",
+	"outcome": "rolled-back",
+	"pendingReleaseAcknowledgment": true,
+	"checks": [
+		{
+			"name": "wrong-candidate",
+			"expectedHealthy": false,
+			"healthy": false,
+			"exit": {
+				"code": 1,
+				"signal": null
+			},
+			"stateUnchanged": true,
+			"startupError": [
+				"Fatal error: error: Installed runtime does not match update transaction outcome rolled-back"
+			]
+		},
+		{
+			"name": "correct-previous",
+			"expectedHealthy": true,
+			"healthy": true,
+			"exit": {
+				"code": 0,
+				"signal": null
+			},
+			"stateUnchanged": true,
+			"startupError": []
+		}
+	],
+	"passed": true
+}

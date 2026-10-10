@@ -19,6 +19,8 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | Prepared Cursor SDK | binary runner / external Node host | `BOBS_FACTORY_CURSOR_SDK_PATH`, `BOBS_FACTORY_CURSOR_NODE` | Keep SDK/native files external; preserve native IDs |
 | Distribution | build, CI, installer, metadata | frozen stable/nightly candidates with explicitly selected signed nightly promotion sources, four-target archives, signed schema-2 manifest + SHA-256 inventory | Stage replacement separately from mutable state; immutable schema-1 beta requires additive signed attestation |
 | Release discovery | installer, Pages, Nix, future updater | stable/default (authenticated beta fallback only without an explicit channel), explicit stable/nightly, exact version; pinned RSA/SHA-256 keys | Preserve signed bytes; refresh trusted bootstrap for key rotation; no unsigned fallback |
+| Instance updates | authenticated dashboard, CLI, external owned supervisor | `<factoryHome>/updates/state.json`, per-channel overrides, pause/pin and durable restart receipts | Preserve settings across entry points; snapshot only compatible Factory-owned state; native stores and Factory authentication stay outside rollback |
+| Desktop shell updates | local installed Electron launcher, external app helper | `<factoryHome>/desktop/updates/state.json`, shared policy/consent rules, signed complete-app ownership receipt and health journal | Replace only the verified user-owned app; retain old UI; fence the local worker without restarting it; selected remote instances keep their own update settings |
 | Publication | release workflows, publisher | repository-wide lock; retained asset/approval digests and recovery receipts; ordering against complete published provider history | Publication disabled until protected key/rollout setup; stable approval binds exact signed bytes; unknown signing keys cannot hide newer stable releases or bypass nightly eligibility |
 | External wire protocol | upstream HTTP adapters / MCP contexts | `X-Cyrus-Team-Id`, `X-Cyrus-Config-Capabilities`, `x-cyrus-mcp-context-id` | Retain ASCII protocol names; no hosted enrollment |
 | Operator MCP | CLI, worker, operator grant store | `bobs-factory-operator`, `operator`, `operator-mcp`, `<home>/factory/operator` | Local owner grants; dashboard passkeys and accepted run profiles remain separate |
@@ -64,6 +66,12 @@ candidate-bound validation receipts. New native builds also retain public instal
 validation against controlled downloads with synthetic signing keys. These receipts
 are tied to the frozen source, release version, tooling SHA and candidate digest;
 production signing and release approval remain separate gates.
+Complete shell updates consume candidate-bound `updateArchive` and `updateMetadata`
+records in that inventory, independently of runtime candidates. macOS app archives
+must preserve and pass authentic OS signing/notarization; unsigned preparation is
+never update trust. DMG/user AppImage installs need actual writable ownership plus
+publisher-proven complete installed bytes. External packages use their owner.
+See [the desktop update contract](distribution/DESKTOP.md#complete-app-updates).
 
 ## Factory external ticket delivery
 

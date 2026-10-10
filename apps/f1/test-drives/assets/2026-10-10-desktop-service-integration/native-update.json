@@ -1,0 +1,56 @@
+{
+	"passed": true,
+	"mode": "unsigned native/runtime; mocked release source and injected health failure",
+	"receipts": [
+		{
+			"home": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-update-KxuV6P",
+			"port": 19461,
+			"phase": "succeeded",
+			"preservedRunId": "38d3340d-bc3a-4687-8966-82aab6221a05",
+			"mockedAgentCalls": 1,
+			"previous": "1.0.0-nightly.20261010.905",
+			"candidate": "1.0.0-nightly.20261010.907",
+			"installed": "1.0.0-nightly.20261010.907",
+			"owner": {
+				"schema": 1,
+				"pid": 95198,
+				"nonce": "25b5b1e9-848f-4dd5-99d1-2dbb38f1e75e",
+				"home": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-update-KxuV6P",
+				"executable": "/private/tmp/lifecycle-native-branded-907/bobs-factory-1.0.0-nightly.20261010.907-darwin-arm64/bobs-factory",
+				"owner": "desktop",
+				"startedAt": "2026-10-10T17:40:49.737Z",
+				"processStamp": "Sat Oct 10 19:40:49 2026",
+				"dashboardPort": 19461
+			},
+			"snapshot": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-update-KxuV6P/updates/snapshots/8a3f417f-3eda-4cf1-8286-3c7b357f0301"
+		},
+		{
+			"home": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-update-hlcj4L",
+			"port": 19463,
+			"phase": "rolled-back",
+			"preservedRunId": "c7ede42e-f3e9-4364-ace3-c87013661c62",
+			"mockedAgentCalls": 1,
+			"previous": "1.0.0-nightly.20261010.905",
+			"candidate": "1.0.0-nightly.20261010.907",
+			"installed": "1.0.0-nightly.20261010.905",
+			"owner": {
+				"schema": 1,
+				"pid": 95577,
+				"nonce": "237197c5-a6ac-481c-b6d9-c6805a7a119b",
+				"home": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-update-hlcj4L",
+				"executable": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-update-hlcj4L/runtime/desktop-installed/lib/bobs-factory/bobs-factory-1.0.0-nightly.20261010.905-darwin-arm64/bobs-factory",
+				"owner": "desktop",
+				"startedAt": "2026-10-10T17:41:05.209Z",
+				"processStamp": "Sat Oct 10 19:41:04 2026",
+				"dashboardPort": 19463
+			},
+			"snapshot": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-update-hlcj4L/updates/snapshots/ac84c47b-78c9-463a-abcc-c1beaad1c809"
+		},
+		{
+			"home": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-update-crash-RffCnj",
+			"port": 19465,
+			"phase": "rolled-back",
+			"assertion": "external supervisor crash after link activation recovers without worker API"
+		}
+	]
+}

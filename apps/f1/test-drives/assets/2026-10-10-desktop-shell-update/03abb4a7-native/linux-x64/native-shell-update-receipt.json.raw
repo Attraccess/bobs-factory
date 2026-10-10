@@ -1,0 +1,14 @@
+file:///home/runner/work/bobs-factory/bobs-factory/source/apps/desktop/src/update-services.mjs:27549
+      throw new FactoryRequestError(parsed?.error ?? `Request failed (HTTP ${response.status})`, response.status);
+            ^
+
+FactoryRequestError: Freeze intake before inspecting update drain
+    at FactoryClient.json (file:///home/runner/work/bobs-factory/bobs-factory/source/apps/desktop/src/update-services.mjs:27549:13)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async file:///home/runner/work/bobs-factory/bobs-factory/source/apps/desktop/test/native-shell-update.mjs:289:18
+    at async until (file:///home/runner/work/bobs-factory/bobs-factory/source/apps/desktop/test/native-shell-update.mjs:255:11)
+    at async file:///home/runner/work/bobs-factory/bobs-factory/source/apps/desktop/test/native-shell-update.mjs:286:1 {
+  status: 409
+}
+
+Node.js v24.18.0
