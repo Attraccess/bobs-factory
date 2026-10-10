@@ -267,6 +267,7 @@ export function validateReleaseManifest(value) {
 				targets.add(item.target);
 				for (const record of [
 					item.archive,
+					...(item.updateArchive ? [item.updateArchive] : []),
 					item.updateMetadata,
 					item.validation,
 				]) {
@@ -341,6 +342,7 @@ export function releaseAssetRecords(value, inventory = true) {
 		]),
 		...(value.desktop?.artifacts ?? []).flatMap((item) => [
 			item.archive,
+			...(item.updateArchive ? [item.updateArchive] : []),
 			item.updateMetadata,
 			item.validation,
 		]),

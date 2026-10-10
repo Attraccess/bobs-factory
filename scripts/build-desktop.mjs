@@ -11,8 +11,13 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import {
+	prepareElectronLicenses,
+	verifyDesktopInstallerLicenses,
+} from "./lib/desktop-licenses.mjs";
 import { desktopRuntime } from "./lib/desktop-runtime.mjs";
 import { validateCandidate } from "./lib/release-candidate.mjs";
+import { prepareDesktopUpdate } from "./prepare-desktop-update.mjs";
 
 const { values } = parseArgs({
 	options: {
@@ -61,6 +66,46 @@ cpSync(resolve(values.runtime), runtime, {
 	errorOnExist: true,
 });
 try {
+	// pnpm may suppress dependency lifecycle scripts. Materialize the pinned
+	// native Electron distribution (upstream package checksum verification) before
+	// copying notices; electron-builder's separate cache is not this distribution.
+	execFileSync(
+		process.execPath,
+		[join(app, "node_modules", "electron", "install.js")],
+		{
+			cwd: app,
+			stdio: "inherit",
+			env: {
+				...process.env,
+				ELECTRON_INSTALL_PLATFORM: process.platform,
+				ELECTRON_INSTALL_ARCH: process.arch,
+			},
+		},
+	);
+	const electronLicenses = prepareElectronLicenses(app);
+	execFileSync(
+		"bun",
+		[
+			"build",
+			join(app, "src", "update-services.ts"),
+			"--target",
+			"node",
+			"--format",
+			"esm",
+			"--outfile",
+			join(app, "src", "update-services.mjs"),
+		],
+		{ cwd: root, stdio: "inherit" },
+	);
+	writeFileSync(
+		join(app, "desktop-identity.json"),
+		JSON.stringify({
+			version: candidate.candidate.version,
+			commit,
+			target,
+			channel: candidate.candidate.channel,
+		}),
+	);
 	execFileSync(
 		"pnpm",
 		[
@@ -80,6 +125,26 @@ try {
 			env: { ...process.env, CSC_IDENTITY_AUTO_DISCOVERY: "false" },
 		},
 	);
+
+	const installedApp =
+		process.platform === "darwin"
+			? join(
+					output,
+					process.arch === "arm64" ? "mac-arm64" : "mac",
+					"Bob's Factory.app",
+				)
+			: join(
+					output,
+					`bobs-factory-desktop-${candidate.candidate.version}-linux-${process.arch}.AppImage`,
+				);
+	const update = prepareDesktopUpdate({
+		app: installedApp,
+		output,
+		candidate,
+		target,
+		unsigned: true,
+		electronLicenses,
+	});
 	const assets = readdirSync(output)
 		.filter((name) => /\.(dmg|AppImage|deb)$/.test(name))
 		.map((name) => {
@@ -99,10 +164,24 @@ try {
 		if (!assets.some((asset) => asset.file === expected))
 			throw new Error(`Desktop asset contract mismatch: ${expected}`);
 	}
+	const licenseValidation = {
+		status: "passed",
+		electronLicenses,
+		installers: assets.map((asset) => ({
+			...asset,
+			electronLicenses: verifyDesktopInstallerLicenses(
+				join(output, asset.file),
+				electronLicenses,
+			),
+		})),
+		update: { ...update.archive, electronLicenses },
+	};
 	writeFileSync(
 		join(output, "desktop-build.json"),
-		`${JSON.stringify({ schemaVersion: 1, product: "bobs-factory-desktop", candidateDigest: candidate.digest, version: candidate.candidate.version, commit, target, runtime: identity, assets, signing: "unsigned preparation only", validation: "native install/auth/lifecycle receipts required", publication: false }, null, 2)}\n`,
+		`${JSON.stringify({ schemaVersion: 1, product: "bobs-factory-desktop", candidateDigest: candidate.digest, version: candidate.candidate.version, commit, target, runtime: identity, assets, update, licenseValidation, signing: "unsigned preparation only", validation: "native install/auth/lifecycle receipts required", publication: false }, null, 2)}\n`,
 	);
 } finally {
 	rmSync(runtime, { recursive: true, force: true });
+	rmSync(join(app, "desktop-identity.json"), { force: true });
+	rmSync(join(app, "electron-licenses"), { recursive: true, force: true });
 }

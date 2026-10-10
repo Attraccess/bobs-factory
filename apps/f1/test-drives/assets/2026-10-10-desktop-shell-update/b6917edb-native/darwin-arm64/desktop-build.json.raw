@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "product": "bobs-factory-desktop",
+  "candidateDigest": "74b03ef56e09b33dc2037d2d9449c9fd08fde26cfcffbd6751437487f8d286e1",
+  "version": "1.0.0-nightly.20261010.15",
+  "commit": "b6917edb845ac482f3910cc98525d75e5cd67c05",
+  "target": "darwin-arm64",
+  "runtime": {
+    "schemaVersion": 1,
+    "product": "bobs-factory",
+    "version": "1.0.0-nightly.20261010.15",
+    "candidateDigest": "74b03ef56e09b33dc2037d2d9449c9fd08fde26cfcffbd6751437487f8d286e1",
+    "workflowSha": "b6917edb845ac482f3910cc98525d75e5cd67c05",
+    "committedVersion": "1.0.0-beta",
+    "commit": "b6917edb845ac482f3910cc98525d75e5cd67c05",
+    "dirty": false,
+    "target": "darwin-arm64",
+    "tooling": {
+      "bun": "1.4.2"
+    },
+    "executable": {
+      "file": "bobs-factory",
+      "size": 101624562,
+      "sha256": "7bdabaed94c2103f694aa4de0c6b94a02367816e39d9ce5dccf63f7275250abb"
+    },
+    "resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+    "validation": "pending runtime smoke",
+    "requirements": "macOS; native target smoke required"
+  },
+  "assets": [
+    {
+      "file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-mac-arm64.dmg",
+      "size": 166701803,
+      "sha256": "651c038f1c558c0ad7b5166c2a117dff84b16dab021cf985ce4bdbbf8059cf73"
+    }
+  ],
+  "update": {
+    "archive": {
+      "file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-mac-arm64.bobsapp.gz",
+      "size": 170969481,
+      "sha256": "51a22c08a8d2e4edfb66d30005f4a8fd983fe2b1999e4d2d4ab4a250e1c3bfe5"
+    },
+    "metadata": {
+      "file": "desktop-update-darwin-arm64.json",
+      "size": 1153,
+      "sha256": "d89ed5eae9c7154ad48d2d053d58c0c70b656835e5b397a4cbb317b9421a493e"
+    },
+    "osSigning": "unsigned"
+  },
+  "licenseValidation": {
+    "status": "passed",
+    "electronLicenses": {
+      "schemaVersion": 1,
+      "product": "electron",
+      "version": "44.7.0",
+      "files": [
+        {
+          "file": "LICENSE",
+          "size": 1096,
+          "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+        },
+        {
+          "file": "LICENSES.chromium.html",
+          "size": 20115518,
+          "sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+        }
+      ]
+    },
+    "installers": [
+      {
+        "file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-mac-arm64.dmg",
+        "size": 166701803,
+        "sha256": "651c038f1c558c0ad7b5166c2a117dff84b16dab021cf985ce4bdbbf8059cf73",
+        "electronLicenses": {
+          "schemaVersion": 1,
+          "product": "electron",
+          "version": "44.7.0",
+          "files": [
+            {
+              "file": "LICENSE",
+              "size": 1096,
+              "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+            },
+            {
+              "file": "LICENSES.chromium.html",
+              "size": 20115518,
+              "sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+            }
+          ]
+        }
+      }
+    ],
+    "update": {
+      "file": "bobs-factory-desktop-1.0.0-nightly.20261010.15-mac-arm64.bobsapp.gz",
+      "size": 170969481,
+      "sha256": "51a22c08a8d2e4edfb66d30005f4a8fd983fe2b1999e4d2d4ab4a250e1c3bfe5",
+      "electronLicenses": {
+        "schemaVersion": 1,
+        "product": "electron",
+        "version": "44.7.0",
+        "files": [
+          {
+            "file": "LICENSE",
+            "size": 1096,
+            "sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+          },
+          {
+            "file": "LICENSES.chromium.html",
+            "size": 20115518,
+            "sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+          }
+        ]
+      }
+    }
+  },
+  "signing": "unsigned preparation only",
+  "validation": "native install/auth/lifecycle receipts required",
+  "publication": false
+}

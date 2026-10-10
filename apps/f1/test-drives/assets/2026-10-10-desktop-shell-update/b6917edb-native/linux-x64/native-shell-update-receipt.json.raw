@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "scope": "actual unsigned AppImage/Electron and native worker; controlled test-only RSA release and simulated outer release evidence; Xvfb --no-sandbox; no real provider or Apple signing",
+  "version": "1.0.0-nightly.20261010.15",
+  "commit": "b6917edb845ac482f3910cc98525d75e5cd67c05",
+  "target": "linux-x64",
+  "candidateDigest": "74b03ef56e09b33dc2037d2d9449c9fd08fde26cfcffbd6751437487f8d286e1",
+  "imageSha256": "264071449b9a82e2100a96a6d8bccfe539771b5527d442b7af435bc361dfbcbb",
+  "workerPidUnchanged": true,
+  "checks": [
+    "active-lease deferral",
+    "actual external Electron Node-mode helper entry",
+    "actual Electron exit before complete-app replacement",
+    "actual candidate health identity",
+    "same native worker PID/nonce",
+    "waiting workflow checkpoint byte preservation",
+    "actual candidate stop before rollback",
+    "failed candidate suppression"
+  ]
+}

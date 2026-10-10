@@ -297,6 +297,7 @@ if (!values.resume) {
 		for (const item of evidence.desktop.artifacts ?? []) {
 			for (const record of [
 				item.archive,
+				...(item.updateArchive ? [item.updateArchive] : []),
 				item.updateMetadata,
 				item.validation,
 			]) {

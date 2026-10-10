@@ -1,0 +1,52 @@
+✔ packaging requires exact pinned vendor notices; recovery retains bytes and missing/tampered notices fail closed (6.418292ms)
+(node:86256) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ first nightly shell subscribes to nightly idle-auto; saved stable/manual choices survive reopening a nightly app (43.637708ms)
+✔ complete app archive preserves framework symlinks and modes; traversal/special ancestry fails before extraction (4.521875ms)
+✔ intermediate directory symlinks resolve before ..; actual outside sentinel cannot be packed or extracted (1.550959ms)
+✔ signed app source binds exact payload, channel, target and full inventory; publisher tamper never stages (88.38975ms)
+✔ user-owned DMG app is eligible but unsigned macOS publisher receipts cannot authorize it; external symlink handoff remains (69.04625ms)
+✔ nightly app replacement keeps runtime state, old app and policy; failed health rolls back and suppresses candidate (710.50375ms)
+✔ app final authorization rejects raced policy {"paused":true} (299.628833ms)
+✔ app final authorization rejects raced policy {"pin":"2.0.0"} (305.7925ms)
+✔ app final authorization rejects raced policy {"channel":"stable"} (285.105959ms)
+✔ app final authorization rejects raced policy {"policy":"manual"} (285.81375ms)
+✔ stable requires exact candidate Install; Quit is never consent, stale receipt rejects (245.561416ms)
+✔ forged staged fingerprint/receipt never executes, including self-consistent local tampering (281.231ms)
+✔ interrupted recovery preserves foreign-bytes on repeated attempts; authenticated missing/restored installs still recover (470.439917ms)
+✔ interrupted recovery preserves foreign-symlink on repeated attempts; authenticated missing/restored installs still recover (465.997333ms)
+✔ interrupted recovery preserves foreign-dangling-symlink on repeated attempts; authenticated missing/restored installs still recover (485.781833ms)
+✔ open launcher refreshes automatic candidates/results without discarding edits or changing captured consent (4.608333ms)
+✔ signed desktop discovery requires intact archive, update metadata and validation inventory (131.012625ms)
+✔ discovery separates signed stable/nightly, excludes incomplete candidates and aborts network failures (205.287958ms)
+✔ nightly history uses global sequence even without manifests and tolerates unverified older history (0.157875ms)
+✔ channel-only discovery authenticates API calls and skips older verified history (360.622375ms)
+✔ stable promotion selects an older signed nightly and refuses unavailable or invalid selections (351.51875ms)
+✔ controlled nightly installer smoke uses frozen identity and preserves installation after failures (2363.132292ms)
+✔ controlled stable installer smoke uses frozen identity and preserves installation after failures (2227.585292ms)
+✔ controlled beta installer smoke uses frozen identity and preserves installation after failures (2217.101417ms)
+✔ prepared recovery rejects desktop validation for a different frozen candidate (185.486625ms)
+✔ receipt archive bytes are independent of file ordering and timestamps (63.164375ms)
+✔ prepared validation rejects modified binary bytes, missing gates and different recipes (186.968875ms)
+✔ publisher dry run makes no remote calls and produces candidate-bound assets digest (310.396334ms)
+✔ publisher reconciles tag-after without duplicate immutable mutations (698.466916ms)
+✔ publisher reconciles draft-after without duplicate immutable mutations (626.0335ms)
+✔ publisher reconciles upload-after:build-provenance.json without duplicate immutable mutations (588.485625ms)
+✔ publisher reconciles publish-after without duplicate immutable mutations (606.826333ms)
+✔ partial upload resumes only missing assets and Pages recovery only dispatches synchronization (1111.0875ms)
+✔ conflicting tag, candidate and immutable assets are never replaced (1715.872583ms)
+✔ stable approval binds exact signed asset bytes and stable publication sets latest (404.919333ms)
+✔ a newer stable signed by an unknown key blocks older tooling before any publication mutation (291.028459ms)
+✔ unverifiable latest nightly blocks preparation and publication (432.921375ms)
+✔ unverifiable latest nightly blocks preparation and publication despite an older verified nightly (410.008458ms)
+✔ stale nightly candidate does not create a tag or draft (208.709083ms)
+✔ publication lock rejects overlapping versions and releases after failure (1.470625ms)
+✔ fresh preparation consumes exact artifact ZIPs and produces unsigned inspectable assets without mutations (631.19425ms)
+ℹ tests 42
+ℹ suites 0
+ℹ pass 42
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8462.141375

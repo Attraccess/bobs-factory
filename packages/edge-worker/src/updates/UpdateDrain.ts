@@ -45,8 +45,21 @@ export class UpdateDrain {
 			throw new Error("Malformed update maintenance marker");
 		return id;
 	}
+	private persistedTransaction(transactionId: string) {
+		const fence = join(this.home, "runtime", "update-owner.json");
+		if (existsSync(fence)) {
+			const owner = JSON.parse(readFileSync(fence, "utf8"));
+			if (
+				owner.transactionId === transactionId &&
+				owner.product === "bobs-factory-desktop"
+			)
+				return new UpdateManager(join(this.home, "desktop")).status()
+					.transaction;
+		}
+		return new UpdateManager(this.home).status().transaction;
+	}
 	async begin(transactionId: string) {
-		const transaction = new UpdateManager(this.home).status().transaction;
+		const transaction = this.persistedTransaction(transactionId);
 		if (
 			!transaction ||
 			transaction.id !== transactionId ||
@@ -154,7 +167,7 @@ export class UpdateDrain {
 		if (!this.active()) return;
 		if (this.transaction() !== transactionId)
 			throw new Error("Maintenance transaction mismatch");
-		const transaction = new UpdateManager(this.home).status().transaction;
+		const transaction = this.persistedTransaction(transactionId);
 		const phase =
 			transaction?.release?.status === "pending"
 				? transaction.release.outcome

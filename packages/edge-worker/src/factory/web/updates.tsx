@@ -7,6 +7,12 @@ import { api, useAction } from "./client";
 import { useFormState } from "./form-state";
 import { Button } from "./ui";
 
+declare global {
+	interface Window {
+		factoryDesktop?: { openAppUpdates(): Promise<void> };
+	}
+}
+
 type Status = ReturnType<UpdateManager["status"]>;
 const keyOf = (status: Status) =>
 	status.pending
@@ -51,6 +57,14 @@ export function UpdateSettings() {
 	return (
 		<section className="recipe" aria-labelledby="instance-updates">
 			<h2 id="instance-updates">Instance updates</h2>
+			{window.factoryDesktop && (
+				<p>
+					<Button onClick={() => void window.factoryDesktop?.openAppUpdates()}>
+						Desktop app update settings
+					</Button>{" "}
+					· Applies only to this local UI installation.
+				</p>
+			)}
 			<p>
 				These controls apply to this connected Factory backend. Desktop and
 				other hosts keep their own settings.

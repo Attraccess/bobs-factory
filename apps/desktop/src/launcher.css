@@ -38,3 +38,18 @@ button {
 #status {
 	color: #ffd0a8;
 }
+
+select {
+	padding: 12px;
+	margin: 8px 0;
+	font: inherit;
+}
+pre {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	font: 13px system-ui;
+}
+input[type="checkbox"] {
+	display: inline;
+	width: auto;
+}
