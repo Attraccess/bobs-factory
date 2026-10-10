@@ -158,6 +158,8 @@ it("rejects all new operator mutations during maintenance while authenticated in
 		"steer_run",
 		"retry_ticket_sync",
 		"update_mcp_connection",
+		"check_mcp_connection",
+		"inspect_mcp_connections",
 	]) {
 		const response = await call(name, {
 			runId: f.run.id,
@@ -173,6 +175,49 @@ it("rejects all new operator mutations during maintenance while authenticated in
 	);
 	expect(JSON.stringify(f.run)).toBe(before);
 	expect(f.drain.receipt()).toEqual(receipt);
+	expect((await f.drain.inspect()).idle).toBe(true);
+});
+it.each([
+	"inspect_run",
+	"inspect_mcp_connections",
+	"check_mcp_connection",
+])("counts admitted %s through awaited preparation and refuses live inspection after freeze", async (name) => {
+	const f = setup(),
+		{ call, service } = operator(f);
+	let done!: () => void;
+	const hold = new Promise<void>((resolve) => {
+		done = resolve;
+	});
+	const preparation = vi.fn(async () => {
+		await hold;
+		return { connected: true };
+	});
+	service.hooks.mcp = preparation;
+	service.hooks.check = preparation;
+	const accepted = call(name, {
+		runId: f.run.id,
+		...(name === "check_mcp_connection" ? { server: "fixture" } : {}),
+	});
+	await vi.waitFor(() => expect(preparation).toHaveBeenCalledTimes(1));
+	await f.drain.begin("exact-transaction");
+	expect((await f.drain.inspect()).idle).toBe(false);
+	expect(f.capacity.pauseAdmissionsForUpdate).not.toHaveBeenCalled();
+	const stored = (await call("inspect_run", { runId: f.run.id })).json();
+	expect(stored).toMatchObject({
+		ok: true,
+		result: {
+			status: "waiting",
+			mcp: { error: { code: "update_maintenance" } },
+		},
+	});
+	for (const tool of ["check_mcp_connection", "inspect_mcp_connections"])
+		expect((await call(tool, { runId: f.run.id })).json()).toMatchObject({
+			ok: false,
+			error: { code: "update_maintenance" },
+		});
+	expect(preparation).toHaveBeenCalledTimes(1);
+	done();
+	expect((await accepted).json().ok).toBe(true);
 	expect((await f.drain.inspect()).idle).toBe(true);
 });
 it("drains an authenticated configuration operation admitted before freeze through its final awaited mutation", async () => {

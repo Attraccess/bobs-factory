@@ -1,4 +1,5 @@
-import { spawnExecution } from "bobs-factory-core";
+import { executionEnvironment, spawnExecution } from "bobs-factory-core";
+import { listConfiguredTools } from "bobs-factory-mcp-tools";
 import { MachineCapacity } from "../../src/MachineCapacity.js";
 
 const [directory, home, ledger, mode] = process.argv.slice(2);
@@ -39,7 +40,26 @@ const work = async (kind: string, duration: number) => {
 	});
 	await lease.release();
 };
-if (mode === "orphan") await work("orphan", 60000);
+if (mode === "mcp-orphan") {
+	await capacity.run(
+		() =>
+			listConfiguredTools(
+				{
+					command: process.execPath,
+					args: [
+						"-e",
+						`const fs=require('node:fs');const input=require('node:readline').createInterface({input:process.stdin});fs.appendFileSync(process.argv[1],JSON.stringify({phase:'start',pid:process.pid,token:process.env.BOBS_FACTORY_EXECUTION_LEASE})+'\\n');setInterval(()=>{},1000);input.on('line',line=>{const m=JSON.parse(line);if(m.method==='initialize')process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result:{protocolVersion:m.params.protocolVersion,capabilities:{tools:{}},serverInfo:{name:'orphan',version:'1'}}})+'\\n');});`,
+						ledger!,
+					],
+					env: executionEnvironment(),
+				},
+				new AbortController().signal,
+				directory!,
+			),
+		undefined,
+		{ identity: `${home}:mcp-orphan` },
+	);
+} else if (mode === "orphan") await work("orphan", 60000);
 else if (mode === "queued" || mode?.startsWith("workflow-"))
 	await work(mode!, 180);
 else

@@ -140,6 +140,21 @@ export async function assertLegacyCapacityDrained(
 }
 /** One durable pool per factory instance, shared by workers using the same home. */
 export class MachineCapacity implements ExecutionCapacity {
+	/** Reuse active role ownership; otherwise retain a durable lease through cleanup. */
+	async run<T>(
+		work: () => Promise<T>,
+		signal?: AbortSignal,
+		options?: CapacityOptions,
+	): Promise<T> {
+		signal?.throwIfAborted();
+		if (executionScope.getStore()) return work();
+		const lease = await this.acquireLease(signal, options);
+		try {
+			return await lease.run(work);
+		} finally {
+			await lease.release();
+		}
+	}
 	readonly directory: string;
 	private owner!: CapacityOwner;
 	private initialized: Promise<void>;

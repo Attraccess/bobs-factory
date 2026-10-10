@@ -251,18 +251,23 @@ export class OperatorService {
 	}
 	async call(name: string, input: unknown, scopes: readonly string[]) {
 		const tool = operatorTools.find((t) => t.name === name);
-		if (!tool || tool.scope === "inspect")
+		// Authorization scope does not describe runtime effects. MCP inspection
+		// resolves credentials/configuration; connection checks execute transports.
+		if (!tool || ["list_runs", "read_run_activity"].includes(name))
 			return this.dispatch(name, input, scopes);
+		const storedOnly = name === "inspect_run";
 		if (
 			this.updateDrain?.active() ||
 			existsSync(
 				join(this.runtime.directory, "..", "updates", "maintenance.json"),
 			)
-		)
+		) {
+			if (storedOnly) return this.dispatch(name, input, scopes, false);
 			throw new OperatorError(
 				"update_maintenance",
 				"Factory update maintenance; retry after restart",
 			);
+		}
 		const operation = {};
 		// Admission and accounting precede every await. Calls already admitted
 		// finish naturally; inspect cannot report idle until their final mutation.
@@ -277,6 +282,7 @@ export class OperatorService {
 		name: string,
 		input: unknown,
 		scopes: readonly string[],
+		resolveMcp = true,
 	) {
 		const tool = operatorTools.find((t) => t.name === name);
 		if (!tool) throw new OperatorError("not_found", "Operator tool not found");
@@ -325,7 +331,15 @@ export class OperatorService {
 		const run = this.run(args.runId);
 		if (name === "inspect_run") {
 			let mcp: any;
-			if (this.hooks.mcp) {
+			if (!resolveMcp) {
+				mcp = this.error(
+					new OperatorError(
+						"update_maintenance",
+						"Live connection inspection is paused during update maintenance",
+					),
+					{ runId: run.id },
+				);
+			} else if (this.hooks.mcp) {
 				try {
 					mcp = await this.hooks.mcp(run);
 				} catch (error) {
