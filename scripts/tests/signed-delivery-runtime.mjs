@@ -1,4 +1,4 @@
-// Native integration drive, not a publication gate. Build four local VERSIONs
+// Native integration drive, not a publication gate. Build six local VERSIONs
 // using the canonical builder first; see the matching F1 report for reproduction.
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
@@ -653,6 +653,76 @@ try {
 		port,
 		requestSession: requestFactoryTerminalSession,
 	});
+	await check(
+		"CLI and authenticated native API retain both channel overrides, pause and pin",
+		async () => {
+			for (const args of [
+				["--channel", "stable", "--policy", "idle-auto"],
+				[
+					"--channel",
+					"nightly",
+					"--policy",
+					"manual",
+					"--pause",
+					"--pin",
+					n1.manifest.version,
+				],
+			]) {
+				const r = await command(
+					link,
+					["--home", nativeHome, "update", "settings", ...args],
+					{ env },
+				);
+				assert.equal(r.code, 0, r.stderr);
+			}
+			const saved = manager.status();
+			assert.deepEqual(saved.settings, {
+				channel: "nightly",
+				overrides: { stable: "idle-auto", nightly: "manual" },
+				paused: true,
+				pin: n1.manifest.version,
+			});
+			assert.deepEqual(
+				(await api.get("/api/updates")).settings,
+				saved.settings,
+			);
+			const changed = await api.put("/api/updates/settings", {
+				revision: saved.revision,
+				settings: { channel: "stable", paused: false, pin: null },
+			});
+			const r = await command(
+				link,
+				["--home", nativeHome, "update", "status"],
+				{ env },
+			);
+			assert.equal(r.code, 0, r.stderr);
+			assert.deepEqual(JSON.parse(r.stdout).settings, changed.settings);
+			assert.deepEqual(changed.settings.overrides, saved.settings.overrides);
+			await assert.rejects(
+				api.put("/api/updates/settings", {
+					revision: saved.revision,
+					settings: { paused: true },
+				}),
+				/changed|revision|stale/i,
+			);
+			assert.deepEqual(
+				new UpdateManager(nativeHome).status().settings,
+				changed.settings,
+			);
+			// Restore documented defaults through the production API before subscription.
+			for (const channel of ["nightly", "stable"]) {
+				await api.put("/api/updates/settings", {
+					revision: manager.status().revision,
+					settings: { channel, policy: "default" },
+				});
+			}
+			return {
+				cliSaved: saved.settings,
+				apiSaved: changed.settings,
+				staleWriteRejected: true,
+			};
+		},
+	);
 	const preserved = () => {
 		const next = JSON.parse(
 			readFileSync(join(nativeHome, "factory/runs", `${run.id}.json`)),

@@ -102,6 +102,12 @@ launcher cleans its temporary runtime and trial ownership, while the original
 worker retains the same PID. [Provisional coexistence receipt](assets/2026-10-10-signed-delivery/provisional-2e47-trial-coexistence.json).
 It is deliberately not relabeled as corrected final-flow or OS service evidence.
 
+A separate controlled native CLI/API handoff at the same2e47 bytes also passes:
+both saved channel overrides, pause and pin appear in the authenticated API;
+an API edit appears in native CLI status; an old revision is rejected and the
+saved defaults can be restored through the API. The full final driver includes
+this check. This provisional check does not clear the failed replacement flow.
+
 ## Reproduction harness
 
 After freezing a corrected clean combined tree, prepare native fixtures once:
