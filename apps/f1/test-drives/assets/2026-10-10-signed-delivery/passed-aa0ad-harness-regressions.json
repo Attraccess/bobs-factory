@@ -1,0 +1,49 @@
+{
+	"schemaVersion": 1,
+	"purpose": "TEST ONLY signed-delivery harness shutdown and fixture cleanup regressions",
+	"passed": true,
+	"harnesses": {
+		"regressionScriptSha256": "4d4e27a33f6b50e6ae0631b917e7405e2c622326d0a4c40511d7c2f695f0f349",
+		"processFixtureSha256": "2599120ec15092e64b8be13e0505920437eae86d53526b13f96e828722d5a48a",
+		"runtimeDriverSha256": "8407c8fe53bc049323198a97fe56c8f1604fa4acb748c2ac66b14bf311e1209a",
+		"lifecycleHelperSha256": "8ddfa5081e26a0e3fd0b42e30be8740a829ae6993a53b7aa4bf495290961a3b3"
+	},
+	"results": [
+		{
+			"name": "TERM-ignoring child is escalated and reaped within a bound",
+			"passed": true,
+			"elapsedMs": 209,
+			"result": {
+				"code": null,
+				"signal": "SIGKILL",
+				"timedOut": true,
+				"forcedKill": true,
+				"closeTimedOut": false,
+				"descendantPid": 85365,
+				"unrelatedProcessPreserved": true
+			}
+		},
+		{
+			"name": "owned temp HOME is removed after success receipt",
+			"passed": true,
+			"fixtureReceiptPassed": true,
+			"receiptPath": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-harness-regressions-qAZIpQ/success.json"
+		},
+		{
+			"name": "owned temp HOME is removed after failure receipt",
+			"passed": true,
+			"fixtureReceiptPassed": false,
+			"receiptPath": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-harness-regressions-qAZIpQ/failure.json"
+		},
+		{
+			"name": "receipt inside fixture is retained instead of deleted",
+			"passed": true,
+			"removed": false,
+			"reason": "receipt-inside-fixture"
+		}
+	],
+	"limitations": [
+		"No production binary or service was started.",
+		"No provider, signing key, or native credential was used."
+	]
+}

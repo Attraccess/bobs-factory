@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "product": "bobs-factory",
+  "version": "1.0.0-nightly.20261010.15",
+  "candidateDigest": "d053b7c2993931d93c88754fe7922e3c3c0352f2cb3bb18201584d2a7b2dea7f",
+  "workflowSha": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+  "committedVersion": "1.0.0-beta",
+  "commit": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+  "dirty": false,
+  "target": "darwin-x64",
+  "file": "bobs-factory-1.0.0-nightly.20261010.15-darwin-x64.tar.gz",
+  "size": 35002336,
+  "sha256": "f130c66f7f2ac4c39ee7bf8f1ce3fc02945f3e1591bce24ad44c405fbaca3867"
+}

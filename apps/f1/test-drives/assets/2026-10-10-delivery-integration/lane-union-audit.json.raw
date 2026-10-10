@@ -1,0 +1,32 @@
+{
+  "base": "4324a9fe2b48cb7cabb8e2979c5adebef82f332d",
+  "combined": "4a350aadd6d0176814819f52c72ded055ef96482",
+  "lanes": {
+    "84": "fecdda18379ebc1cd91b20f63839bb7820fb24b1",
+    "86": "16e60465ed36e18ac45d71db38226dd4b0ccd4e2",
+    "85": "e05c0dfa965d41faeb958ef44ca4bbfb4a070f50",
+    "87": "f39cd84f65e36f83dc97209ceaf1423df0469d8b",
+    "88": "c5b0eadad7068a608a283b0374ebd8c65ddccc0a",
+    "89": "39a93e49dfee3e812a2e0f00a736c7a393e0da64",
+    "90": "ac8ee1067576db6b260b03128af180117db37ca7"
+  },
+  "laneUnionFiles": 253,
+  "combinedChangedFiles": 253,
+  "missingFiles": [],
+  "composedFiles": [
+    "scripts/tests/public-install.test.mjs",
+    "CHANGELOG.md",
+    "docs/PRODUCT_CONTRACTS.md"
+  ],
+  "historicalAssetFiles": 101,
+  "changedHistoricalAssets": [],
+  "ancestry": {
+    "84": true,
+    "86": true,
+    "85": true,
+    "87": true,
+    "88": true,
+    "89": true,
+    "90": true
+  }
+}

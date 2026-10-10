@@ -1,0 +1,15 @@
+{
+	"sourceCommit": "aa0ad1404aed147cf82fc259cf0c11f6bb18753b",
+	"target": "darwin-arm64",
+	"executableSha256": "cb1b58234415bd445d776eedb8e6d804e186e9fe3fe767a94bef0b492a7458cd",
+	"home": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-startup-contention-vaJtWR/instance",
+	"healthy": true,
+	"installedStateUnchanged": true,
+	"exit": {
+		"code": null,
+		"signal": null
+	},
+	"error": [],
+	"passed": true,
+	"purpose": "native replacement startup under bounded live updater state-lock contention"
+}

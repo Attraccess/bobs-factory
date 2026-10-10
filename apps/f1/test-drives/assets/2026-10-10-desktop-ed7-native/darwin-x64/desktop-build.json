@@ -1,0 +1,40 @@
+{
+	"schemaVersion": 1,
+	"product": "bobs-factory-desktop",
+	"candidateDigest": "1c176a2d98cb18524a8f593eed73d335a747fa8b977ce4f4794e20a31084c791",
+	"version": "1.0.0-nightly.20261010.7",
+	"commit": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+	"target": "darwin-x64",
+	"runtime": {
+		"schemaVersion": 1,
+		"product": "bobs-factory",
+		"version": "1.0.0-nightly.20261010.7",
+		"candidateDigest": "1c176a2d98cb18524a8f593eed73d335a747fa8b977ce4f4794e20a31084c791",
+		"workflowSha": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+		"committedVersion": "1.0.0-beta",
+		"commit": "ed7bcaf6feb0fb8f39d9e0255b2fea0bfffeb1f1",
+		"dirty": false,
+		"target": "darwin-x64",
+		"tooling": {
+			"bun": "1.4.2"
+		},
+		"executable": {
+			"file": "bobs-factory",
+			"size": 108409104,
+			"sha256": "f35cf2735a544499fd4bd2eaa15d2788af06d256c1ebd4787ca956c608e0a74c"
+		},
+		"resourceDigest": "4fc874433b46f5436701dc69cf06846a0203d82aa1a6d666e5c8d9a7653ebd60",
+		"validation": "pending runtime smoke",
+		"requirements": "macOS; native target smoke required"
+	},
+	"assets": [
+		{
+			"file": "bobs-factory-desktop-1.0.0-nightly.20261010.7-mac-x64.dmg",
+			"size": 170298334,
+			"sha256": "1ad8b4d612f66c69e8b4b934a0e62e3a86c8e960ce166834cc7cb77baf15c1bf"
+		}
+	],
+	"signing": "unsigned preparation only",
+	"validation": "native install/auth/lifecycle receipts required",
+	"publication": false
+}

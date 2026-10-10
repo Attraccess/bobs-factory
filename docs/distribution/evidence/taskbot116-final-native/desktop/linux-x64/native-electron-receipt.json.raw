@@ -1,0 +1,20 @@
+[5590:1010/205324.106349:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[5590:1010/205324.132270:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[5590:1010/205324.184962:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[5590:1010/205324.185547:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[5590:1010/205324.195508:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[5590:1010/205325.890445:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+{
+  "passed": true,
+  "platform": "linux",
+  "arch": "x64",
+  "electron": "44.7.0",
+  "fixture": "/tmp/factory-electron-smoke-AIvr3x",
+  "auth": "CDP virtual authenticator enrollment/login/logout",
+  "closedWindowKeepsWorker": true,
+  "reopenSamePid": true,
+  "explicitStop": true,
+  "confirmationMaintenanceRaceRejected": true,
+  "stopSuppressesAutomaticRestart": true,
+  "nativeCredentials": "not tested"
+}

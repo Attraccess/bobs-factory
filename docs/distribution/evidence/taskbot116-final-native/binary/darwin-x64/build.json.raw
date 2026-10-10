@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "product": "bobs-factory",
+  "version": "1.0.0-nightly.20261010.15",
+  "candidateDigest": "d053b7c2993931d93c88754fe7922e3c3c0352f2cb3bb18201584d2a7b2dea7f",
+  "workflowSha": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+  "committedVersion": "1.0.0-beta",
+  "commit": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+  "dirty": false,
+  "target": "darwin-x64",
+  "tooling": {
+    "bun": "1.4.2"
+  },
+  "executable": {
+    "file": "bobs-factory",
+    "size": 108441872,
+    "sha256": "3ebf7decb6d0b1c1e0a000237440404d4e70075da7b0095452b9d694483ad030"
+  },
+  "resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+  "validation": "pending runtime smoke",
+  "requirements": "macOS; native target smoke required"
+}

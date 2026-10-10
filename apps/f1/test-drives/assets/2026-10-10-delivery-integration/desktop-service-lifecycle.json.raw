@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "home": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/f1-desktop-lifecycle-Me8QD9",
+  "mode": "mock/scripted",
+  "assertions": [
+    "one-home ownership",
+    "client disconnect leaves human wait",
+    "graceful stop/reopen same run/native checkpoint",
+    "question/gates/outputs/history preserved",
+    "accepted answer completes once",
+    "authenticated activity/detail retained"
+  ],
+  "calls": 3,
+  "finishes": 1
+}

@@ -1,0 +1,1464 @@
+{
+	"schemaVersion": 1,
+	"purpose": "TEST ONLY signed source/install/runtime integration; NOT release publication evidence",
+	"passed": false,
+	"sourceCommit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+	"target": "darwin-arm64",
+	"fixtureKeyFingerprint": "39d2f45a8a0a07c89183b240fd5c6ce11fed969ae2ef9a0481f0316f39feb542",
+	"builds": [
+		{
+			"version": "1.0.0-nightly.20261010.1101",
+			"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"candidateDigest": "bed509752b3b72c7723bda5c7c29454d97ff0314fdad6cf9ddc60f32b9ad504d",
+			"workflowSha": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"target": "darwin-arm64",
+			"bun": "1.4.2",
+			"executable": {
+				"file": "bobs-factory",
+				"size": 101558514,
+				"sha256": "e1225adbc5dc44ec520c740757f2219115331d2ee9c4373258b148304f885d31"
+			},
+			"archive": {
+				"archive": "bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.tar.gz",
+				"archiveSha256": "86e5241df9034fa48363328fc8ee8bc0b896ef47d244644e8528b1971ab0c290",
+				"archiveSize": 32577733,
+				"manifest": "bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.manifest.json",
+				"manifestSha256": "d7ab8dfc1a283e3672e7d81d132eb221bf2d5d5b8d86359dea5a7cb8da466204",
+				"manifestSize": 560
+			}
+		},
+		{
+			"version": "1.0.0-nightly.20261010.1102",
+			"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"candidateDigest": "bd36d0d754748f8d8f8ddac7b85e51d7932432ac1a82a93349c8bb4ca572eee2",
+			"workflowSha": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"target": "darwin-arm64",
+			"bun": "1.4.2",
+			"executable": {
+				"file": "bobs-factory",
+				"size": 101558514,
+				"sha256": "63de8972a48764cf9678c6d9b509a40d3b35d92157e68c8e4a2c535d414d3aa8"
+			},
+			"archive": {
+				"archive": "bobs-factory-1.0.0-nightly.20261010.1102-darwin-arm64.tar.gz",
+				"archiveSha256": "37ed4bf76250295cd8252f5e5476c9763f15ba8d16ca775adcc1b3d22d7d60ab",
+				"archiveSize": 32577708,
+				"manifest": "bobs-factory-1.0.0-nightly.20261010.1102-darwin-arm64.manifest.json",
+				"manifestSha256": "0b52eb05d2eb1d0f09c503de29125a521c6de04a92fdb6ceba91db73450f2c86",
+				"manifestSize": 560
+			}
+		},
+		{
+			"version": "1.0.0-nightly.20261010.1103",
+			"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"candidateDigest": "3853c82afa473df02618c82b3fd795ae1ceb85d5f4b7834381c3d73132b1d143",
+			"workflowSha": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"target": "darwin-arm64",
+			"bun": "1.4.2",
+			"executable": {
+				"file": "bobs-factory",
+				"size": 101558514,
+				"sha256": "283540b7b9eeb8fb87b8d37358bd0083053af6bc1b8bc45a7c253697937df718"
+			},
+			"archive": {
+				"archive": "bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.tar.gz",
+				"archiveSha256": "0cae55c91b477b776da3113fca7f490eab2f844d460ff98fd340e57025a75cf9",
+				"archiveSize": 32577717,
+				"manifest": "bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.manifest.json",
+				"manifestSha256": "424ed88d119306db06dbcb0469b499ec0e8e1e2c0ab04e65d5e59e6403ff3646",
+				"manifestSize": 560
+			}
+		},
+		{
+			"version": "1.0.0",
+			"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"candidateDigest": "ddbd3c45fe41ddd22f1ca3130364aa67efcad492dba9131beffe146a87a5acbb",
+			"workflowSha": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"target": "darwin-arm64",
+			"bun": "1.4.2",
+			"executable": {
+				"file": "bobs-factory",
+				"size": 101558514,
+				"sha256": "0af142f0a49f89780e32dfbd6f064ee2f7e23884a4fec0edeea20b3dbbbb5bb6"
+			},
+			"archive": {
+				"archive": "bobs-factory-1.0.0-darwin-arm64.tar.gz",
+				"archiveSha256": "1b45bcd866abd03b6896002bdeb115d10a6db3b852db11f07e099c0be0b58b03",
+				"archiveSize": 32577600,
+				"manifest": "bobs-factory-1.0.0-darwin-arm64.manifest.json",
+				"manifestSha256": "2d50e3a9a22a5510c96edb5ee89d1e37404bd1a0616f8c8fa6935483c32e6463",
+				"manifestSize": 516
+			}
+		},
+		{
+			"version": "1.0.0-beta",
+			"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"candidateDigest": "3f6992646396fef3e7f03e1ef6700cdaee6f9370572045d4a16b1b936042c9ef",
+			"workflowSha": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+			"target": "darwin-arm64",
+			"bun": "1.4.2",
+			"executable": {
+				"file": "bobs-factory",
+				"size": 101558514,
+				"sha256": "4a66cf2971b9eb2d589a10c31a7fea7225a726feec875fa6ee3b08256f1ec87e"
+			},
+			"archive": {
+				"archive": "bobs-factory-1.0.0-beta-darwin-arm64.tar.gz",
+				"archiveSha256": "f6ecf2480856b05ff012df0cb80b3e4b03d9f5ec3363e4dbc7d728bee15aadf0",
+				"archiveSize": 32577608,
+				"manifest": "bobs-factory-1.0.0-beta-darwin-arm64.manifest.json",
+				"manifestSha256": "48cfd38e2ef6fbce5ac3916246ea28c399a93ca30c3c527785ccd2ff5101893d",
+				"manifestSize": 526
+			}
+		}
+	],
+	"results": [
+		{
+			"name": "successful signed discovery, download, extraction and actual native version probe",
+			"passed": true,
+			"details": {
+				"candidate": {
+					"version": "1.0.0-nightly.20261010.1101",
+					"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+					"channel": "nightly",
+					"target": "darwin-arm64",
+					"manifestSha256": "8e463c972005c7f01e7c85cc924d06d1dfd1d65261f86e146db010e2750d30e4",
+					"publishedAt": "2026-10-10T18:00:00.000Z"
+				},
+				"executableSha256": "e1225adbc5dc44ec520c740757f2219115331d2ee9c4373258b148304f885d31",
+				"noticesRetained": true
+			}
+		},
+		{
+			"name": "explicit updater stable refuses beta; installer unbound default permits authenticated beta fallback",
+			"passed": true
+		},
+		{
+			"name": "untrusted TEST signing pin is rejected",
+			"passed": true
+		},
+		{
+			"name": "signed manifest tampering is rejected before extraction",
+			"passed": true
+		},
+		{
+			"name": "missing signature is rejected before extraction",
+			"passed": true
+		},
+		{
+			"name": "partial signed target inventory is rejected",
+			"passed": true
+		},
+		{
+			"name": "missing immutable target asset is rejected",
+			"passed": true
+		},
+		{
+			"name": "tampered archive response cannot pass canonical byte checks",
+			"passed": true
+		},
+		{
+			"name": "candidate inventory identity mismatch is rejected",
+			"passed": true
+		},
+		{
+			"name": "wrong requested signed channel cannot be staged",
+			"passed": true
+		},
+		{
+			"name": "real shell install hands explicit per-home channel/policy to actual native CLI",
+			"passed": true,
+			"details": {
+				"settings": {
+					"channel": "nightly",
+					"overrides": {},
+					"paused": false
+				},
+				"installed": {
+					"version": "1.0.0-nightly.20261010.1101",
+					"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+					"target": "darwin-arm64"
+				},
+				"noWorkerStarted": true
+			}
+		},
+		{
+			"name": "both overrides, pause and pin survive explicit reinstall and ordinary default reinstall",
+			"passed": true,
+			"details": {
+				"retainedSettings": {
+					"channel": "nightly",
+					"overrides": {
+						"stable": "idle-auto",
+						"nightly": "manual"
+					},
+					"paused": true,
+					"pin": "1.0.0-nightly.20261010.1101"
+				}
+			}
+		},
+		{
+			"name": "signed source offline failure is visible and recoverable",
+			"passed": true
+		},
+		{
+			"name": "explicit subscription to a later signed nightly replaces one real idle owned worker",
+			"passed": true,
+			"details": {
+				"transaction": {
+					"id": "83b2569a-533f-4851-8d00-c3a44dad0f1e",
+					"candidate": {
+						"version": "1.0.0-nightly.20261010.1102",
+						"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+						"channel": "nightly",
+						"target": "darwin-arm64",
+						"manifestSha256": "48d9473e446d1bbe8b023c59e8bf44c5b12f13709dbb6765d0ecc9689f936c99",
+						"publishedAt": "2026-10-10T18:00:00.000Z"
+					},
+					"staged": {
+						"candidate": {
+							"version": "1.0.0-nightly.20261010.1102",
+							"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+							"channel": "nightly",
+							"target": "darwin-arm64",
+							"manifestSha256": "48d9473e446d1bbe8b023c59e8bf44c5b12f13709dbb6765d0ecc9689f936c99",
+							"publishedAt": "2026-10-10T18:00:00.000Z"
+						},
+						"executable": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-integration-pUZn0p/owned-home/updates/stage/stage-84VUi3/runtime/lib/bobs-factory/bobs-factory-1.0.0-nightly.20261010.1102-darwin-arm64/bobs-factory",
+						"previousExecutable": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-integration-pUZn0p/owned-home/updates/stage/stage-rkNTri/runtime/lib/bobs-factory/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64/bobs-factory"
+					},
+					"previous": {
+						"version": "1.0.0-nightly.20261010.1101",
+						"commit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+						"target": "darwin-arm64"
+					},
+					"snapshot": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-integration-pUZn0p/owned-home/updates/snapshots/83b2569a-533f-4851-8d00-c3a44dad0f1e",
+					"revision": 2,
+					"phase": "succeeded",
+					"switchStarted": true,
+					"startedAt": "2026-10-10T18:09:01.705Z",
+					"release": {
+						"transactionId": "83b2569a-533f-4851-8d00-c3a44dad0f1e",
+						"outcome": "succeeded",
+						"status": "acknowledged"
+					}
+				},
+				"owner": {
+					"schema": 1,
+					"pid": 18990,
+					"nonce": "edc52c56-2ca5-4a57-b670-3a7ee997ac90",
+					"home": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-integration-pUZn0p/owned-home",
+					"executable": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-integration-pUZn0p/owned-home/updates/stage/stage-84VUi3/runtime/lib/bobs-factory/bobs-factory-1.0.0-nightly.20261010.1102-darwin-arm64/bobs-factory",
+					"owner": "desktop",
+					"startedAt": "2026-10-10T18:09:02.434Z",
+					"processStamp": "Sat Oct 10 20:09:02 2026",
+					"dashboardPort": 19681
+				},
+				"preservedRunId": "f178066c-3bf1-4016-b847-3200618e7f72",
+				"mockedAgentCalls": 1
+			}
+		},
+		{
+			"name": "real paused/pinned/manual policy races after native preflight cancel before stop",
+			"passed": true
+		},
+		{
+			"name": "manual nightly holds a signed candidate until exact explicit Install, with lost-ack recovery",
+			"passed": true
+		},
+		{
+			"name": "stable return requires explicit downgrade consent and actual compatibility preflight",
+			"passed": false,
+			"error": "AssertionError [ERR_ASSERTION]: {\"id\":\"5c628c29-1fb2-4aad-b57d-64874b9cfd74\",\"candidate\":{\"version\":\"1.0.0\",\"commit\":\"2e47c11ab00fd51fe7c87eda9693b3709e26b7e6\",\"channel\":\"stable\",\"target\":\"darwin-arm64\",\"manifestSha256\":\"34e57108fe20532e7acd342d3f168f2ba34fa36aef50131fa38d174736a6d0bb\",\"publishedAt\":\"2026-10-10T18:00:00.000Z\"},\"staged\":{\"candidate\":{\"version\":\"1.0.0\",\"commit\":\"2e47c11ab00fd51fe7c87eda9693b3709e26b7e6\",\"channel\":\"stable\",\"target\":\"darwin-arm64\",\"manifestSha256\":\"34e57108fe20532e7acd342d3f168f2ba34fa36aef50131fa38d174736a6d0bb\",\"publishedAt\":\"2026-10-10T18:00:00.000Z\"},\"executable\":\"/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-integration-pUZn0p/owned-home/return-stage/stage/stage-z1IJFH/runtime/lib/bobs-factory/bobs-factory-1.0.0-darwin-arm64/bobs-factory\",\"previousExecutable\":\"/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-integration-pUZn0p/owned-home/updates/stage/stage-eMxbT0/runtime/lib/bobs-factory/bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64/bobs-factory\"},\"previous\":{\"version\":\"1.0.0-nightly.20261010.1103\",\"commit\":\"2e47c11ab00fd51fe7c87eda9693b3709e26b7e6\",\"target\":\"darwin-arm64\"},\"snapshot\":\"/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-signed-integration-pUZn0p/owned-home/updates/snapshots/5c628c29-1fb2-4aad-b57d-64874b9cfd74\",\"revision\":14,\"phase\":\"rolled-back\",\"switchStarted\":true,\"startedAt\":\"2026-10-10T18:09:14.484Z\",\"error\":\"Replacement failed exact runtime/preserved-state health check: Bob’s Factory is not running on port 19681. Start it with `bobs-factory`, or pass --port.\",\"release\":{\"transactionId\":\"5c628c29-1fb2-4aad-b57d-64874b9cfd74\",\"outcome\":\"rolled-back\",\"status\":\"acknowledged\"}}\n+ actual - expected\n\n+ 'rolled-back'\n- 'succeeded'\n\n    at file:///private/tmp/bobs-factory-signed-integration-116/scripts/tests/signed-delivery-runtime.mjs:812:11\n    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at async check (file:///private/tmp/bobs-factory-signed-integration-116/scripts/tests/signed-delivery-runtime.mjs:74:19)\n    at async file:///private/tmp/bobs-factory-signed-integration-116/scripts/tests/signed-delivery-runtime.mjs:787:2"
+		}
+	],
+	"requests": [
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/4/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-beta",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/5/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-beta",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://jappyjan.github.io/bobs-factory/releases/latest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://jappyjan.github.io/bobs-factory/releases/latest.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://jappyjan.github.io/bobs-factory/releases/latest.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/bobs-factory-1.0.0-beta-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/bobs-factory-1.0.0-beta-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-beta/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://jappyjan.github.io/bobs-factory/releases/latest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://jappyjan.github.io/bobs-factory/releases/latest.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://jappyjan.github.io/bobs-factory/releases/latest.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/bobs-factory-1.0.0-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/bobs-factory-1.0.0-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://jappyjan.github.io/bobs-factory/releases/latest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://jappyjan.github.io/bobs-factory/releases/latest.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://jappyjan.github.io/bobs-factory/releases/latest.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/bobs-factory-1.0.0-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/bobs-factory-1.0.0-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/4/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/1/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1101",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/bobs-factory-1.0.0-nightly.20261010.1101-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1101/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/4/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/2/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1102",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1102",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/2/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1102",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/bobs-factory-1.0.0-nightly.20261010.1102-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/bobs-factory-1.0.0-nightly.20261010.1102-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/4/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/3/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/3/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/4/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/3/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/3/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/4/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/3/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/3/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/4/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/3/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/3/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1103",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/bobs-factory-1.0.0-nightly.20261010.1103-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1103/install-binary.sh",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/4/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/2/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0-nightly.20261010.1102/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0-nightly.20261010.1102",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/releases/4/assets?per_page=100&page=1",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.sig",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/release.json.key-id",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/candidate.json",
+			"authorization": false
+		},
+		{
+			"url": "https://api.github.com/repos/jappyjan/bobs-factory/git/ref/tags/v1.0.0",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/bobs-factory-1.0.0-darwin-arm64.tar.gz",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/bobs-factory-1.0.0-darwin-arm64.manifest.json",
+			"authorization": false
+		},
+		{
+			"url": "https://github.com/jappyjan/bobs-factory/releases/download/v1.0.0/install-binary.sh",
+			"authorization": false
+		}
+	],
+	"limitations": [
+		"Other native targets are inventory fixtures with explicit not-run status.",
+		"Ephemeral TEST signing pin is not production publisher trust.",
+		"Mock checkpoint ID is preserved; no real agent continuation/credits.",
+		"Host native credential boundary uses sentinel bytes only; production stores are never read.",
+		"No OS service, actual Electron shell, package manager, login/reboot or publication exercised."
+	]
+}

@@ -1,0 +1,825 @@
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	﻿2026-10-10T19:55:38.0075863Z Current runner version: '2.337.0'
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0106679Z ##[group]Runner Image Provisioner
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0107912Z Hosted Compute Agent
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0108508Z Version: 20261002.596
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0109214Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0110336Z Build Date: 2026-10-02T22:28:27Z
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0111089Z Worker ID: {aab1d6db-c1f9-4f9c-8b0e-7a6d59aad827}
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0111904Z Region: eastus2
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0112473Z Cloud: Azure
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0113064Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0114898Z ##[group]Operating System
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0115743Z Ubuntu
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0116287Z 24.04.5
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0116784Z LTS
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0117386Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0117953Z ##[group]Runner Image
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0118660Z Image: ubuntu-24.04-arm
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0119274Z Version: 20261004.142.1
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0120817Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24-arm64/20261004.142/images/ubuntu/Ubuntu2404-Arm64-Readme.md
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0122822Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24-arm64%2F20261004.142
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0123881Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0125097Z ##[group]GITHUB_TOKEN Permissions
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0128129Z Contents: read
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0128754Z Metadata: read
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0129329Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0132434Z Secret source: Actions
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0133641Z Cache mode: write
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0134435Z Prepare workflow directory
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0500679Z Prepare all required actions
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.0552409Z Getting action download info
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.2340413Z Download action repository 'actions/checkout@v7' (SHA:3d3c42e5aac5ba805825da76410c181273ba90b1)
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.3372491Z Download action repository 'actions/setup-node@v7' (SHA:949feb2413d6458794dcd2491c4babbbce0c15c1)
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.5861967Z Download action repository 'oven-sh/setup-bun@v2' (SHA:0c5077e51419868618aeaa5fe8019c62421857d6)
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.7610598Z Download action repository 'actions/upload-artifact@v6' (SHA:b7c566a772e6b6bfb58ed0dc250532a479d7789f)
+desktop (linux-arm64, ubuntu-24.04-arm)	Set up job	2026-10-10T19:55:38.9521792Z Complete job name: desktop (linux-arm64, ubuntu-24.04-arm)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	﻿2026-10-10T19:55:39.0384763Z ##[group]Run actions/checkout@v7
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0386249Z with:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0386985Z   ref: 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0387953Z   path: tooling
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0388642Z   persist-credentials: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0389445Z   repository: jappyjan/bobs-factory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0394134Z   token: ***
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0394779Z   ssh-strict: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0395476Z   ssh-user: git
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0396141Z   clean: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0396800Z   sparse-checkout-cone-mode: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0397605Z   fetch-depth: 1
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0398250Z   fetch-tags: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0398959Z   show-progress: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0399606Z   lfs: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0400517Z   submodules: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0401247Z   set-safe-directory: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0401971Z   allow-unsafe-pr-checkout: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.0403467Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1232243Z Syncing repository: jappyjan/bobs-factory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1234846Z ##[group]Getting Git version info
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1236102Z Working directory is '/home/runner/work/bobs-factory/bobs-factory/tooling'
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1237623Z [command]/usr/bin/git version
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1286479Z git version 2.55.0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1306819Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1319965Z Temporarily overriding HOME='/home/runner/work/_temp/5febafd1-2bac-4476-8c4f-86ccd324a4be' before making global git config changes
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1324504Z Adding repository directory to the temporary git global config as a safe directory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1326092Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/bobs-factory/bobs-factory/tooling
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1352702Z ##[group]Determining repository object format
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1354196Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1358687Z ##[group]Initializing the repository
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1359868Z [command]/usr/bin/git init /home/runner/work/bobs-factory/bobs-factory/tooling
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1428470Z hint: Using 'master' as the name for the initial branch. This default branch name
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1430492Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1432333Z hint: to use in all of your new repositories, which will suppress this warning,
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1433943Z hint: call:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1434681Z hint:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1435579Z hint: 	git config --global init.defaultBranch <name>
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1436422Z hint:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1437864Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1439081Z hint: 'development'. The just-created branch can be renamed via this command:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1440325Z hint:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1441096Z hint: 	git branch -m <name>
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1441767Z hint:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1442736Z hint: Disable this message with "git config set advice.defaultBranchName false"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1444152Z Initialized empty Git repository in /home/runner/work/bobs-factory/bobs-factory/tooling/.git/
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1446540Z [command]/usr/bin/git remote add origin https://github.com/jappyjan/bobs-factory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1480547Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1482134Z ##[group]Disabling automatic garbage collection
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1483414Z [command]/usr/bin/git config --local gc.auto 0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1513270Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1514664Z ##[group]Setting up auth
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1515756Z Removing SSH command configuration
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1517496Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1543781Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1807965Z Removing HTTP extra header
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1811908Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.1846638Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2018509Z Removing includeIf entries pointing to credentials config files
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2022835Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2055446Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2233778Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2267970Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/bobs-factory/bobs-factory/tooling/.git.path /home/runner/work/_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2295549Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/bobs-factory/bobs-factory/tooling/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2324129Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/tooling/.git.path /github/runner_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2353759Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/tooling/.git/worktrees/*.path /github/runner_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2380337Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2381917Z ##[group]Fetching the repository
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:39.2386189Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6511903Z From https://github.com/jappyjan/bobs-factory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6512778Z  * branch            03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257 -> FETCH_HEAD
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6520015Z [command]/usr/bin/git rev-parse --verify --quiet 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257^{object}
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6542580Z 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6545538Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6546161Z ##[group]Determining the checkout info
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6546795Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6550351Z [command]/usr/bin/git sparse-checkout disable
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6587923Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6613747Z ##[group]Checking out the ref
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.6616956Z [command]/usr/bin/git checkout --progress --force 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8113079Z Note: switching to '03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257'.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8113960Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8114655Z You are in 'detached HEAD' state. You can look around, make experimental
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8115595Z changes and commit them, and you can discard any commits you make in this
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8116345Z state without impacting any branches by switching back to a branch.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8116692Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8116942Z If you want to create a new branch to retain commits you create, you may
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8117573Z do so (now or later) by using -c with the switch command. Example:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8117927Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8118082Z   git switch -c <new-branch-name>
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8118372Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8118646Z Or undo this operation with:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8118903Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8119059Z   git switch -
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8119265Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8119556Z Turn off this advice by setting config variable advice.detachedHead to false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8120280Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8120624Z HEAD is now at 03abb4a fix(desktop): materialize pinned Electron before notice preparation
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8122765Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8161881Z [command]/usr/bin/git log -1 --format=%H
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8183731Z 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8192309Z ##[group]Removing auth
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8192956Z Removing SSH command configuration
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8196468Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8224258Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8403213Z Removing HTTP extra header
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8405322Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8435016Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8611675Z Removing includeIf entries pointing to credentials config files
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8614020Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8636682Z includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/tooling/.git.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8637466Z includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/tooling/.git/worktrees/*.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8638275Z includeif.gitdir:/github/workspace/tooling/.git.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8638813Z includeif.gitdir:/github/workspace/tooling/.git/worktrees/*.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8644105Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/tooling/.git.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8666156Z /home/runner/work/_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8674509Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/tooling/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-ca91e7af\-067a\-4bd9\-8bec\-1882e99c9c78\.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8705755Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/tooling/.git/worktrees/*.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8726766Z /home/runner/work/_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8734144Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/tooling/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-ca91e7af\-067a\-4bd9\-8bec\-1882e99c9c78\.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8764954Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/tooling/.git.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8789877Z /github/runner_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8796067Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/tooling/.git.path \/github\/runner_temp\/git\-credentials\-ca91e7af\-067a\-4bd9\-8bec\-1882e99c9c78\.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8856805Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/tooling/.git/worktrees/*.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8889655Z /github/runner_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8895628Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/tooling/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-ca91e7af\-067a\-4bd9\-8bec\-1882e99c9c78\.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.8925622Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9097054Z Removing credentials config '/home/runner/work/_temp/git-credentials-ca91e7af-067a-4bd9-8bec-1882e99c9c78.config'
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9105650Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	﻿2026-10-10T19:55:40.9368741Z ##[group]Run actions/checkout@v7
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9369362Z with:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9370053Z   ref: 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9370532Z   path: source
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9370845Z   persist-credentials: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9371219Z   repository: jappyjan/bobs-factory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9373942Z   token: ***
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9374257Z   ssh-strict: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9374633Z   ssh-user: git
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9374929Z   clean: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9375240Z   sparse-checkout-cone-mode: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9375628Z   fetch-depth: 1
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9375900Z   fetch-tags: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9376203Z   show-progress: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9376491Z   lfs: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9376777Z   submodules: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9377192Z   set-safe-directory: true
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9377564Z   allow-unsafe-pr-checkout: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:40.9377898Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0053996Z Syncing repository: jappyjan/bobs-factory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0054945Z ##[group]Getting Git version info
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0055600Z Working directory is '/home/runner/work/bobs-factory/bobs-factory/source'
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0089022Z [command]/usr/bin/git version
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0122354Z git version 2.55.0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0141372Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0156808Z Temporarily overriding HOME='/home/runner/work/_temp/ba65d6ff-d3f6-476c-b083-73db92e226a3' before making global git config changes
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0163479Z Adding repository directory to the temporary git global config as a safe directory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0164816Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/bobs-factory/bobs-factory/source
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0191107Z ##[group]Determining repository object format
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0192627Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0193357Z ##[group]Initializing the repository
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0193906Z [command]/usr/bin/git init /home/runner/work/bobs-factory/bobs-factory/source
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0218648Z hint: Using 'master' as the name for the initial branch. This default branch name
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0219436Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0230966Z hint: to use in all of your new repositories, which will suppress this warning,
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0231650Z hint: call:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0231957Z hint:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0232333Z hint: 	git config --global init.defaultBranch <name>
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0232732Z hint:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0233151Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0233801Z hint: 'development'. The just-created branch can be renamed via this command:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0234316Z hint:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0234633Z hint: 	git branch -m <name>
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0234981Z hint:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0235424Z hint: Disable this message with "git config set advice.defaultBranchName false"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0236139Z Initialized empty Git repository in /home/runner/work/bobs-factory/bobs-factory/source/.git/
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0237385Z [command]/usr/bin/git remote add origin https://github.com/jappyjan/bobs-factory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0258174Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0259405Z ##[group]Disabling automatic garbage collection
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0260889Z [command]/usr/bin/git config --local gc.auto 0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0292457Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0293295Z ##[group]Setting up auth
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0293910Z Removing SSH command configuration
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0296861Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0324221Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0492556Z Removing HTTP extra header
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0497103Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0525736Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0722039Z Removing includeIf entries pointing to credentials config files
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0722813Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0750012Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0933265Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0967264Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/bobs-factory/bobs-factory/source/.git.path /home/runner/work/_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.0996021Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/bobs-factory/bobs-factory/source/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.1025873Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/source/.git.path /github/runner_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.1055057Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/source/.git/worktrees/*.path /github/runner_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.1082540Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.1083456Z ##[group]Fetching the repository
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:41.1088552Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4399284Z From https://github.com/jappyjan/bobs-factory
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4400016Z  * branch            03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257 -> FETCH_HEAD
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4407523Z [command]/usr/bin/git rev-parse --verify --quiet 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257^{object}
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4432182Z 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4434741Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4435439Z ##[group]Determining the checkout info
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4435979Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4439921Z [command]/usr/bin/git sparse-checkout disable
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4475892Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4504873Z ##[group]Checking out the ref
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.4506573Z [command]/usr/bin/git checkout --progress --force 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.5998736Z Note: switching to '03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257'.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.5999191Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.5999392Z You are in 'detached HEAD' state. You can look around, make experimental
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6000516Z changes and commit them, and you can discard any commits you make in this
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6001009Z state without impacting any branches by switching back to a branch.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6001272Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6001538Z If you want to create a new branch to retain commits you create, you may
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6001991Z do so (now or later) by using -c with the switch command. Example:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6002281Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6002376Z   git switch -c <new-branch-name>
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6002625Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6002730Z Or undo this operation with:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6002908Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6002995Z   git switch -
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6003203Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6003478Z Turn off this advice by setting config variable advice.detachedHead to false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6003793Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6004051Z HEAD is now at 03abb4a fix(desktop): materialize pinned Electron before notice preparation
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6015060Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6052783Z [command]/usr/bin/git log -1 --format=%H
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6076273Z 03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6085032Z ##[group]Removing auth
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6085484Z Removing SSH command configuration
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6088221Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6116907Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6294268Z Removing HTTP extra header
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6301881Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6331213Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6505437Z Removing includeIf entries pointing to credentials config files
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6507874Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6530464Z includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/source/.git.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6531082Z includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/source/.git/worktrees/*.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6531622Z includeif.gitdir:/github/workspace/source/.git.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6532072Z includeif.gitdir:/github/workspace/source/.git/worktrees/*.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6537694Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/source/.git.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6560327Z /home/runner/work/_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6569262Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/source/.git.path \/home\/runner\/work\/_temp\/git\-credentials\-a9db9d7a\-63ef\-428d\-8c4a\-0d796a23a2f1\.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6600743Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/source/.git/worktrees/*.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6621936Z /home/runner/work/_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6629258Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/bobs-factory/bobs-factory/source/.git/worktrees/*.path \/home\/runner\/work\/_temp\/git\-credentials\-a9db9d7a\-63ef\-428d\-8c4a\-0d796a23a2f1\.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6659200Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/source/.git.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6683413Z /github/runner_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6689980Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/source/.git.path \/github\/runner_temp\/git\-credentials\-a9db9d7a\-63ef\-428d\-8c4a\-0d796a23a2f1\.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6762189Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/source/.git/worktrees/*.path
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6783685Z /github/runner_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6789406Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/source/.git/worktrees/*.path \/github\/runner_temp\/git\-credentials\-a9db9d7a\-63ef\-428d\-8c4a\-0d796a23a2f1\.config
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6818922Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.6993473Z Removing credentials config '/home/runner/work/_temp/git-credentials-a9db9d7a-63ef-428d-8c4a-0d796a23a2f1.config'
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/checkout@v7	2026-10-10T19:55:42.7002869Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	﻿2026-10-10T19:55:42.7167247Z ##[group]Run actions/setup-node@v7
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:42.7167721Z with:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:42.7167933Z   node-version: 24.18.0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:42.7168173Z   package-manager-cache: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:42.7168485Z   check-latest: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:42.7171378Z   token: ***
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:42.7171787Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:42.8170659Z Attempting to download 24.18.0...
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:43.3346465Z Acquiring 24.18.0 - arm64 from https://github.com/actions/node-versions/releases/download/24.18.0-28070977815/node-24.18.0-linux-arm64.tar.gz
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:43.7541058Z Extracting ...
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:43.7640305Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/05b874cd-9822-4916-ab87-55ccc8d0e90f -f /home/runner/work/_temp/73f21474-8fec-4bd2-b545-7fed918fc807
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:44.6745675Z Adding to the cache ...
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:46.3337439Z ##[group]Environment details
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:46.5170348Z node: v24.18.0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:46.5170669Z npm: 11.16.0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:46.5171293Z yarn: 1.22.22
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/setup-node@v7	2026-10-10T19:55:46.5171805Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	﻿2026-10-10T19:55:46.5319643Z ##[group]Run oven-sh/setup-bun@v2
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:46.5320326Z with:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:46.5320549Z   bun-version: 1.4.2
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:46.5320819Z   no-cache: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:46.5323212Z   token: ***
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:46.5323470Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:46.7362119Z Cache hit for: bun-wVrHkKQBgitWT/+93b/CaaV2NPM=
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:47.0130367Z Received 35470553 of 35470553 (100.0%), 140.9 MBs/sec
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:47.0131187Z Cache Size: ~34 MB (35470553 B)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:47.0160027Z [command]/usr/bin/tar -xf /home/runner/work/_temp/a8cc9359-d876-4045-a021-5dea952d1c8f/cache.tzst -P -C /home/runner/work/bobs-factory/bobs-factory --use-compress-program unzstd
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:47.1018044Z Cache restored successfully
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:47.1035639Z [command]/home/runner/.bun/bin/bun --revision
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:47.1081308Z 1.4.2+744846f84
+desktop (linux-arm64, ubuntu-24.04-arm)	Run oven-sh/setup-bun@v2	2026-10-10T19:55:47.1085933Z Using a cached version of Bun: 1.4.2+744846f84
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	﻿2026-10-10T19:55:47.1222599Z ##[group]Run node --input-type=module <<'JS'
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1223255Z ^[[36;1mnode --input-type=module <<'JS'^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1223590Z ^[[36;1mimport {writeFileSync} from 'node:fs';^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1223965Z ^[[36;1mimport {execFileSync} from 'node:child_process';^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1224512Z ^[[36;1mimport {validateCandidate} from './tooling/scripts/lib/release-candidate.mjs';^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1225109Z ^[[36;1mconst c=validateCandidate(JSON.parse(process.env.CANDIDATE_JSON));^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1226172Z ^[[36;1mfor(const [path,expected] of [['tooling',c.candidate.workflowSha],['source',c.candidate.commit]])if(execFileSync('git',['-C',path,'rev-parse','HEAD'],{encoding:'utf8'}).trim()!==expected)throw Error('Frozen checkout identity mismatch');^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1227258Z ^[[36;1mwriteFileSync(process.env.RUNNER_TEMP+'/candidate.json',process.env.CANDIDATE_JSON);^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1227792Z ^[[36;1mJS^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1228006Z ^[[36;1mcorepack enable^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1228524Z ^[[36;1mcorepack prepare "$(node -p 'require("./source/package.json").packageManager')" --activate^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1314508Z shell: /usr/bin/bash -e {0}
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1315006Z env:
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1317176Z   CANDIDATE_JSON: {"candidate":{"schemaVersion":1,"product":"bobs-factory","repository":"jappyjan/bobs-factory","channel":"nightly","version":"1.0.0-nightly.20261010.14","tag":"v1.0.0-nightly.20261010.14","commit":"03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257","committedVersion":"1.0.0-beta","workflowSha":"03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257","recipe":{"schemaVersion":1,"toolingSha":"03abb4a7a8b6787e7fe8c3fa0b5c7e25fb5b0257","bun":"1.4.2","node":"24.18.0","versionOverride":"1.0.0-nightly.20261010.14"},"targets":["darwin-arm64","darwin-x64","linux-x64","linux-arm64"],"sequence":14},"digest":"a1e00110dc11a52c7fadad9364cc6ea98b3026acb83e3d048e80994a4608f492"}
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.1319478Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Verify frozen preparation identity	2026-10-10T19:55:47.2783841Z Preparing pnpm@10.33.1 for immediate activation...
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	﻿2026-10-10T19:55:48.0697949Z ##[group]Run pnpm install --frozen-lockfile
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:48.0698518Z ^[[36;1mpnpm install --frozen-lockfile^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:48.0734509Z shell: /usr/bin/bash -e {0}
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:48.0734825Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:48.4211523Z Scope: all 20 workspace projects
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:48.4701947Z Lockfile is up to date, resolution step is skipped
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:48.5132189Z Progress: resolved 1, reused 0, downloaded 0, added 0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:48.5551608Z Packages: +730
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:48.5552111Z ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:49.5147284Z Progress: resolved 730, reused 0, downloaded 186, added 185
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:50.5158109Z Progress: resolved 730, reused 0, downloaded 388, added 382
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:51.5204326Z Progress: resolved 730, reused 0, downloaded 564, added 540
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:52.5220743Z Progress: resolved 730, reused 0, downloaded 654, added 634
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:53.5229811Z Progress: resolved 730, reused 0, downloaded 729, added 729
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:53.5505839Z Progress: resolved 730, reused 0, downloaded 730, added 730, done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0009656Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0010389Z dependencies:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0010726Z + @linear/sdk 60.0.0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0011092Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0011211Z devDependencies:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0011483Z + @biomejs/biome 2.4.13
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0011885Z + @typescript/native-preview 7.0.0-dev.20260707.2
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0012250Z + husky 9.1.7
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0012479Z + lint-staged 16.4.0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0012689Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.0470171Z . prepare$ husky
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1138471Z . prepare: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1553091Z ╭ Warning ─────────────────────────────────────────────────────────────────────╮
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1554100Z │                                                                              │
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1555478Z │   Ignored build scripts: cloudflared@0.7.1, electron-winstaller@5.4.0,       │
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1560373Z │   esbuild@0.28.1, esbuild@0.28.2.                                            │
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1561328Z │   Run "pnpm approve-builds" to pick which dependencies should be allowed     │
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1561993Z │   to run scripts.                                                            │
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1562670Z │                                                                              │
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1563347Z ╰──────────────────────────────────────────────────────────────────────────────╯
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm install --frozen-lockfile	2026-10-10T19:55:54.1877454Z Done in 6s using pnpm v10.33.1
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	﻿2026-10-10T19:55:54.2475200Z ##[group]Run pnpm --filter 'bobs-factory...' build
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:54.2475809Z ^[[36;1mpnpm --filter 'bobs-factory...' build^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:54.2512028Z shell: /usr/bin/bash -e {0}
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:54.2512321Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:54.5301499Z Scope: 17 of 20 workspace projects
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:54.5347528Z packages/core build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:54.5348560Z packages/cloudflare-tunnel-client build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:54.5362827Z packages/mcp-tools build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:54.7371489Z packages/cloudflare-tunnel-client build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.1149641Z packages/core build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.1723637Z packages/mcp-tools build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.1729403Z packages/claude-runner build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.1732013Z packages/config-updater build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.1735211Z packages/github-event-transport build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.1738561Z packages/gitlab-event-transport build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.7481283Z packages/github-event-transport build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.7510002Z packages/linear-event-transport build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.7590480Z packages/gitlab-event-transport build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.7650576Z packages/slack-event-transport build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.7711644Z packages/claude-runner build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.7730475Z packages/zulip-event-transport build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:55.8723832Z packages/config-updater build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.1780960Z packages/zulip-event-transport build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.1977331Z packages/slack-event-transport build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.2107726Z packages/linear-event-transport build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.2112011Z packages/simple-agent-runner build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.4017717Z packages/simple-agent-runner build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.4022551Z packages/cursor-runner build$ tsgo && node -e "for(const f of ['permission-check.mjs','sdk-host.mjs']) require('node:fs').copyFileSync('src/'+f, 'dist/'+f)"
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.4023385Z packages/codex-runner build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.4028779Z packages/gemini-runner build$ tsgo && cp -r src/prompts dist/prompts
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.4029627Z packages/opencode-runner build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.9651141Z packages/opencode-runner build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:56.9713273Z packages/codex-runner build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:57.0166256Z packages/cursor-runner build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:57.0310745Z packages/gemini-runner build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:57.0315945Z packages/edge-worker build$ tsgo && tsgo -p tsconfig.web.json && npm run copy-prompts
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.3555232Z packages/edge-worker build: npm warn Unknown env config "verify-deps-before-run". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.3557506Z packages/edge-worker build: npm warn Unknown env config "npm-globalconfig". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.3559101Z packages/edge-worker build: npm warn Unknown env config "overrides". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.3561010Z packages/edge-worker build: npm warn Unknown env config "recursive". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.3563978Z packages/edge-worker build: npm warn Unknown env config "_jsr-registry". This will stop working in the next major version of npm. See `npm help npmrc` for supported config options.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.3616243Z packages/edge-worker build: > bobs-factory-edge-worker@0.2.73 copy-prompts
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.3617947Z packages/edge-worker build: > cp label-prompt-template.md dist/ && cp -r prompts dist/ && rm -rf dist/bobs-factory-skills-plugin && cp -rL bobs-factory-skills-plugin dist/bobs-factory-skills-plugin && node scripts/build-factory-web.mjs
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.7529852Z packages/edge-worker build: Factory web build: 8d3d4482da77e00c940f5fae
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.7659912Z packages/edge-worker build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:55:59.7663578Z apps/cli build$ tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter 'bobs-factory...' build	2026-10-10T19:56:00.2804911Z apps/cli build: Done
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	﻿2026-10-10T19:56:00.2913846Z ##[group]Run pnpm --filter bobs-factory-desktop test
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.2914354Z ^[[36;1mpnpm --filter bobs-factory-desktop test^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.2949258Z shell: /usr/bin/bash -e {0}
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.2949884Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.5816111Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.5817145Z > bobs-factory-desktop@1.0.0-beta test /home/runner/work/bobs-factory/bobs-factory/source/apps/desktop
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.5818392Z > pnpm --filter bobs-factory-core build && bun build src/update-services.ts --target node --format esm --outfile src/update-services.mjs && node --test test/*.test.mjs
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.5819035Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.8691851Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.8692803Z > bobs-factory-core@0.2.73 build /home/runner/work/bobs-factory/bobs-factory/source/packages/core
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.8693525Z > tsgo
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:00.8693658Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:01.3687600Z Bundled 147 modules in 70ms
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:01.3687936Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:01.3691304Z   update-services.mjs  2.92 MB  (entry point)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:01.3691708Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:01.4531526Z ✔ packaging requires exact pinned vendor notices; recovery retains bytes and missing/tampered notices fail closed (8.419398ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:02.1456319Z (node:3233) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:02.1457211Z (Use `node --trace-deprecation ...` to show where the warning was created)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:02.1484293Z ✔ first nightly shell subscribes to nightly idle-auto; saved stable/manual choices survive reopening a nightly app (38.091979ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:02.1485817Z ✔ complete app archive preserves framework symlinks and modes; traversal/special ancestry fails before extraction (4.775457ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:02.1487366Z ✔ intermediate directory symlinks resolve before ..; actual outside sentinel cannot be packed or extracted (3.682595ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:02.1488693Z ✔ signed app source binds exact payload, channel, target and full inventory; publisher tamper never stages (76.196109ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:02.1490228Z ✔ user-owned DMG app is eligible but unsigned macOS publisher receipts cannot authorize it; external symlink handoff remains (68.960079ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:03.8915082Z ✔ nightly app replacement keeps runtime state, old app and policy; failed health rolls back and suppresses candidate (1783.170811ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:04.0757436Z ✔ app final authorization rejects raced policy {"paused":true} (215.579524ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:04.2948957Z ✔ app final authorization rejects raced policy {"pin":"2.0.0"} (186.494124ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:04.4696219Z ✔ app final authorization rejects raced policy {"channel":"stable"} (217.781727ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:04.6742797Z ✔ app final authorization rejects raced policy {"policy":"manual"} (170.760948ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:04.9021597Z ✔ stable requires exact candidate Install; Quit is never consent, stale receipt rejects (214.518955ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.1107417Z ✔ forged staged fingerprint/receipt never executes, including self-consistent local tampering (219.315339ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.3658845Z ✔ interrupted recovery preserves foreign-bytes on repeated attempts; authenticated missing/restored installs still recover (269.924159ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.6873851Z ✔ interrupted recovery preserves foreign-symlink on repeated attempts; authenticated missing/restored installs still recover (314.559474ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7774823Z ✔ interrupted recovery preserves foreign-dangling-symlink on repeated attempts; authenticated missing/restored installs still recover (257.842396ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7901797Z ✔ remote origins cannot become local filesystem or insecure bridge targets (1.154827ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7903044Z ✔ open launcher refreshes automatic candidates/results without discarding edits or changing captured consent (5.549203ms)
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7904766Z ℹ tests 18
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7905118Z ℹ suites 0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7905473Z ℹ pass 18
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7905736Z ℹ fail 0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7906075Z ℹ cancelled 0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7906828Z ℹ skipped 0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7907191Z ℹ todo 0
+desktop (linux-arm64, ubuntu-24.04-arm)	Run pnpm --filter bobs-factory-desktop test	2026-10-10T19:56:05.7907519Z ℹ duration_ms 4394.590136
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	﻿2026-10-10T19:56:05.8081255Z ##[group]Run bun run tooling/scripts/build-binary.ts --source-root source --candidate "$RUNNER_TEMP/candidate.json" --release-version "$VERSION" --target "$TARGET" --output "$RUNNER_TEMP/runtime"
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:05.8082666Z ^[[36;1mbun run tooling/scripts/build-binary.ts --source-root source --candidate "$RUNNER_TEMP/candidate.json" --release-version "$VERSION" --target "$TARGET" --output "$RUNNER_TEMP/runtime"^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:05.8084103Z ^[[36;1mnode tooling/scripts/build-desktop.mjs --source-root source --candidate "$RUNNER_TEMP/candidate.json" --runtime "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" --output "$RUNNER_TEMP/desktop"^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:05.8118423Z shell: /usr/bin/bash -e {0}
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:05.8118708Z env:
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:05.8119050Z   VERSION: 1.0.0-nightly.20261010.14
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:05.8119396Z   TARGET: linux-arm64
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:05.8119627Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:10.3012915Z /home/runner/work/_temp/runtime/bobs-factory-1.0.0-nightly.20261010.14-linux-arm64.tar.gz
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:12.2323668Z Bundled 147 modules in 63ms
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:12.2323968Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:12.2329042Z   update-services.mjs  2.92 MB  (entry point)
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:12.2329262Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:12.8655149Z   • electron-builder  version=26.15.3 os=6.17.0-1022-azure
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:12.8690218Z   • loaded configuration  file=package.json ("build" field)
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:13.3275066Z   • packageManager not detected by file, falling back to environment detection  resolvedPackageManager=pnpm detected=/home/runner/work/bobs-factory/bobs-factory/source/apps/desktop
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:13.6025552Z   • detected workspace root for project using packageManager field  pm=pnpm config=pnpm@10.33.1 resolved=/home/runner/work/bobs-factory/bobs-factory/source projectDir=/home/runner/work/bobs-factory/bobs-factory/source/apps/desktop
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:13.6096801Z   • executing @electron/rebuild  electronVersion=44.7.0 arch=arm64 buildFromSource=false workspaceRoot=/home/runner/work/bobs-factory/bobs-factory/source projectDir=./ appDir=./
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:13.6098056Z   • installing native dependencies  arch=arm64
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:13.7534897Z   • completed installing native dependencies
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:13.7556747Z   • packaging       platform=linux arch=arm64 electron=44.7.0 appOutDir=/home/runner/work/_temp/desktop/linux-arm64-unpacked
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:14.1286652Z   • using cached artifact  label=electron
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:15.6883267Z   • downloaded electron zip extracted successfully  output=/home/runner/work/_temp/desktop/linux-arm64-unpacked
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:15.6978431Z   • searching for node modules  pm=pnpm searchDir=/home/runner/work/bobs-factory/bobs-factory/source/apps/desktop
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:16.4850944Z   • no node modules found in collection, trying next search directory  searchDir=/home/runner/work/bobs-factory/bobs-factory/source/apps/desktop attempt=0
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:16.4852333Z   • searching for node modules  pm=pnpm searchDir=/home/runner/work/bobs-factory/bobs-factory/source
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.6167287Z   • building        target=AppImage arch=arm64 file=/home/runner/work/_temp/desktop/bobs-factory-desktop-1.0.0-nightly.20261010.14-linux-arm64.AppImage
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7760313Z   • downloading     label=appimage-12.0.1.7z progress=2%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7805097Z   • downloading     label=appimage-12.0.1.7z progress=3%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7806927Z   • downloading     label=appimage-12.0.1.7z progress=4%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7810257Z   • downloading     label=appimage-12.0.1.7z progress=5%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7811615Z   • downloading     label=appimage-12.0.1.7z progress=6%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7820400Z   • downloading     label=appimage-12.0.1.7z progress=7%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7855704Z   • downloading     label=appimage-12.0.1.7z progress=8%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7856526Z   • downloading     label=appimage-12.0.1.7z progress=9%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7861030Z   • downloading     label=appimage-12.0.1.7z progress=10%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7862829Z   • downloading     label=appimage-12.0.1.7z progress=11%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7863937Z   • downloading     label=appimage-12.0.1.7z progress=12%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7870454Z   • downloading     label=appimage-12.0.1.7z progress=13%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7871788Z   • downloading     label=appimage-12.0.1.7z progress=14%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7906935Z   • downloading     label=appimage-12.0.1.7z progress=15%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7909742Z   • downloading     label=appimage-12.0.1.7z progress=16%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7910480Z   • downloading     label=appimage-12.0.1.7z progress=17%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7910995Z   • downloading     label=appimage-12.0.1.7z progress=18%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7915414Z   • downloading     label=appimage-12.0.1.7z progress=19%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7916078Z   • downloading     label=appimage-12.0.1.7z progress=20%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7916797Z   • downloading     label=appimage-12.0.1.7z progress=21%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7917572Z   • downloading     label=appimage-12.0.1.7z progress=22%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7929508Z   • downloading     label=appimage-12.0.1.7z progress=23%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7931279Z   • downloading     label=appimage-12.0.1.7z progress=24%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7954887Z   • downloading     label=appimage-12.0.1.7z progress=25%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7958936Z   • downloading     label=appimage-12.0.1.7z progress=26%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7960361Z   • downloading     label=appimage-12.0.1.7z progress=27%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7961630Z   • downloading     label=appimage-12.0.1.7z progress=28%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7962240Z   • downloading     label=appimage-12.0.1.7z progress=29%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7966337Z   • downloading     label=appimage-12.0.1.7z progress=30%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7967349Z   • downloading     label=appimage-12.0.1.7z progress=31%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7967976Z   • downloading     label=appimage-12.0.1.7z progress=32%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7968950Z   • downloading     label=appimage-12.0.1.7z progress=33%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7971123Z   • downloading     label=appimage-12.0.1.7z progress=34%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7982108Z   • downloading     label=appimage-12.0.1.7z progress=35%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7982792Z   • downloading     label=appimage-12.0.1.7z progress=37%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.7983396Z   • downloading     label=appimage-12.0.1.7z progress=38%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8005470Z   • downloading     label=appimage-12.0.1.7z progress=39%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8010772Z   • downloading     label=appimage-12.0.1.7z progress=40%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8011752Z   • downloading     label=appimage-12.0.1.7z progress=41%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8015409Z   • downloading     label=appimage-12.0.1.7z progress=42%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8016037Z   • downloading     label=appimage-12.0.1.7z progress=43%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8023005Z   • downloading     label=appimage-12.0.1.7z progress=48%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8025427Z   • downloading     label=appimage-12.0.1.7z progress=52%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8026950Z   • downloading     label=appimage-12.0.1.7z progress=55%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8032881Z   • downloading     label=appimage-12.0.1.7z progress=56%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8033878Z   • downloading     label=appimage-12.0.1.7z progress=57%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8034499Z   • downloading     label=appimage-12.0.1.7z progress=58%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8036720Z   • downloading     label=appimage-12.0.1.7z progress=59%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8054645Z   • downloading     label=appimage-12.0.1.7z progress=60%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8059542Z   • downloading     label=appimage-12.0.1.7z progress=61%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8061687Z   • downloading     label=appimage-12.0.1.7z progress=62%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8062296Z   • downloading     label=appimage-12.0.1.7z progress=63%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8062985Z   • downloading     label=appimage-12.0.1.7z progress=64%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8066444Z   • downloading     label=appimage-12.0.1.7z progress=65%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8069287Z   • downloading     label=appimage-12.0.1.7z progress=66%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8070852Z   • downloading     label=appimage-12.0.1.7z progress=67%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8072452Z   • downloading     label=appimage-12.0.1.7z progress=68%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8082589Z   • downloading     label=appimage-12.0.1.7z progress=72%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8084213Z   • downloading     label=appimage-12.0.1.7z progress=77%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8089606Z   • downloading     label=appimage-12.0.1.7z progress=82%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8130982Z   • downloading     label=appimage-12.0.1.7z progress=85%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8150577Z   • downloading     label=appimage-12.0.1.7z progress=86%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8204366Z   • downloading     label=appimage-12.0.1.7z progress=90%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8205013Z   • downloading     label=appimage-12.0.1.7z progress=95%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.8207571Z   • downloaded      label=appimage-12.0.1.7z progress=100%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9856652Z   • downloading     label=7zip-linux-arm64.tar.gz progress=1%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9859472Z   • downloading     label=7zip-linux-arm64.tar.gz progress=3%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9861170Z   • downloading     label=7zip-linux-arm64.tar.gz progress=4%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9862337Z   • downloading     label=7zip-linux-arm64.tar.gz progress=5%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9863814Z   • downloading     label=7zip-linux-arm64.tar.gz progress=6%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9871118Z   • downloading     label=7zip-linux-arm64.tar.gz progress=12%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9871747Z   • downloading     label=7zip-linux-arm64.tar.gz progress=20%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9877417Z   • downloading     label=7zip-linux-arm64.tar.gz progress=25%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9880286Z   • downloading     label=7zip-linux-arm64.tar.gz progress=34%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9883195Z   • downloading     label=7zip-linux-arm64.tar.gz progress=40%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9884471Z   • downloading     label=7zip-linux-arm64.tar.gz progress=47%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9902674Z   • downloading     label=7zip-linux-arm64.tar.gz progress=49%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9903640Z   • downloading     label=7zip-linux-arm64.tar.gz progress=50%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9908672Z   • downloading     label=7zip-linux-arm64.tar.gz progress=51%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9910309Z   • downloading     label=7zip-linux-arm64.tar.gz progress=53%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9910988Z   • downloading     label=7zip-linux-arm64.tar.gz progress=54%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9911726Z   • downloading     label=7zip-linux-arm64.tar.gz progress=55%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9915733Z   • downloading     label=7zip-linux-arm64.tar.gz progress=57%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9917045Z   • downloading     label=7zip-linux-arm64.tar.gz progress=58%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9917643Z   • downloading     label=7zip-linux-arm64.tar.gz progress=60%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9918167Z   • downloading     label=7zip-linux-arm64.tar.gz progress=61%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9925293Z   • downloading     label=7zip-linux-arm64.tar.gz progress=66%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9927092Z   • downloading     label=7zip-linux-arm64.tar.gz progress=73%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9928399Z   • downloading     label=7zip-linux-arm64.tar.gz progress=75%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9952391Z   • downloading     label=7zip-linux-arm64.tar.gz progress=76%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9953770Z   • downloading     label=7zip-linux-arm64.tar.gz progress=77%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9954490Z   • downloading     label=7zip-linux-arm64.tar.gz progress=79%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9955089Z   • downloading     label=7zip-linux-arm64.tar.gz progress=80%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9961775Z   • downloading     label=7zip-linux-arm64.tar.gz progress=86%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9964703Z   • downloading     label=7zip-linux-arm64.tar.gz progress=95%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:18.9965943Z   • downloaded      label=7zip-linux-arm64.tar.gz progress=100%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:27.1191111Z   • building embedded block map  file=/home/runner/work/_temp/desktop/bobs-factory-desktop-1.0.0-nightly.20261010.14-linux-arm64.AppImage
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.4184950Z   • building        target=deb arch=arm64 file=/home/runner/work/_temp/desktop/bobs-factory-desktop-1.0.0-nightly.20261010.14-linux-arm64.deb
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.5845890Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=1%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.5894432Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=2%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.5938649Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=3%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.5955602Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=4%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.5991513Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=5%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6001104Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=6%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6007442Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=7%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6045384Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=8%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6054343Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=9%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6055191Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=10%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6065217Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=11%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6095898Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=12%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6108904Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=14%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6109926Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=16%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6117779Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=17%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6145629Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=18%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6161849Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=19%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6169529Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=20%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6172260Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=21%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6175312Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=22%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6179204Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=23%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6182796Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=24%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6190278Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=25%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6196684Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=26%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6204918Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=27%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6206349Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=28%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6212059Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=29%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6219639Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=31%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6225067Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=32%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6230832Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=33%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6231983Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=34%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6236095Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=35%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6241303Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=36%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6245486Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=37%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6250760Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=38%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6254236Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=39%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6267388Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=40%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6268111Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=41%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6274086Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=42%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6277541Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=43%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6290656Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=44%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6292702Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=45%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6293821Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=46%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6296767Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=47%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6297473Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=48%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6298292Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=49%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6302292Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=50%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6305544Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=51%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6307130Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=52%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6313549Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=53%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6350803Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=54%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6380911Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=55%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6382290Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=56%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6383077Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=57%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6383902Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=58%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6410890Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=59%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6412878Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=60%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6414677Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=61%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6416046Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=62%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6416974Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=63%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6456978Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=64%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6460745Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=65%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6463151Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=66%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6465732Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=67%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6468214Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=68%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6471638Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=69%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6474452Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=71%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6477070Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=72%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6479652Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=73%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6482795Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=74%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6486189Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=75%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6488494Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=76%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6491163Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=77%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6494471Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=78%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6497566Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=80%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6500456Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=81%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6503083Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=82%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6506350Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=83%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6508697Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=84%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6511752Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=85%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6516432Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=86%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6518829Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=87%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6525085Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=88%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6526331Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=89%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6529938Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=90%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6532630Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=91%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6535844Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=92%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6540047Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=93%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6542696Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=95%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6597437Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=96%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6620016Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=97%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6620797Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=98%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6636253Z   • downloading     label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=99%
+desktop (linux-arm64, ubuntu-24.04-arm)	Build matching native runtime and desktop installers	2026-10-10T19:56:33.6651189Z   • downloaded      label=fpm-1.17.0-ruby-3.4.3-linux-arm64v8.7z progress=100%
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	﻿2026-10-10T19:58:05.6283099Z ##[group]Run node source/scripts/native-service-smoke.mjs "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" > "$RUNNER_TEMP/desktop/native-service-receipt.json"
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:05.6284367Z ^[[36;1mnode source/scripts/native-service-smoke.mjs "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" > "$RUNNER_TEMP/desktop/native-service-receipt.json"^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:05.6319170Z shell: /usr/bin/bash -e {0}
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:05.6319467Z env:
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:05.6319961Z   VERSION: 1.0.0-nightly.20261010.14
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:05.6320367Z   TARGET: linux-arm64
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:05.6320627Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:23.5640874Z Fatal error: error: Service is in maintenance; verified resume required
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:23.5641642Z       at perform (/$bunfs/root/bobs-factory:224951:13)
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:23.5642174Z       at action (/$bunfs/root/bobs-factory:224927:32)
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:23.5642598Z       at async <anonymous> (/$bunfs/root/bobs-factory:226498:100)
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate isolated native user-service ownership	2026-10-10T19:58:23.5642925Z 
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	﻿2026-10-10T19:58:29.1067664Z ##[group]Run export BOBS_FACTORY_DESKTOP_BINARY="$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET/bobs-factory"
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1068702Z ^[[36;1mexport BOBS_FACTORY_DESKTOP_BINARY="$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET/bobs-factory"^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1069494Z ^[[36;1mexport HOME="$RUNNER_TEMP/desktop-os-home"^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1070415Z ^[[36;1mmkdir -p "$HOME"^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1070738Z ^[[36;1mif [ "Linux" = "Linux" ]; then^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1071483Z ^[[36;1m  xvfb-run -a source/apps/desktop/node_modules/.bin/electron --no-sandbox source/apps/desktop/test/native-smoke.mjs > "$RUNNER_TEMP/desktop/native-electron-receipt.json"^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1273050Z ^[[36;1melse^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1273733Z ^[[36;1m  source/apps/desktop/node_modules/.bin/electron source/apps/desktop/test/native-smoke.mjs > "$RUNNER_TEMP/desktop/native-electron-receipt.json"^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1274349Z ^[[36;1mfi^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1307971Z shell: /usr/bin/bash -e {0}
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1308235Z env:
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1308410Z   VERSION: 1.0.0-nightly.20261010.14
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1308648Z   TARGET: linux-arm64
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate native Electron menu Stop and maintenance race	2026-10-10T19:58:29.1308831Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate actual Linux complete shell upgrade and rollback	﻿2026-10-10T19:58:34.2761271Z ##[group]Run xvfb-run -a node apps/desktop/test/native-shell-update.mjs "$RUNNER_TEMP/desktop/bobs-factory-desktop-$VERSION-linux-$(node -p 'process.arch').AppImage" "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" "$RUNNER_TEMP/candidate.json" > "$RUNNER_TEMP/desktop/native-shell-update-receipt.json"
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate actual Linux complete shell upgrade and rollback	2026-10-10T19:58:34.2763371Z ^[[36;1mxvfb-run -a node apps/desktop/test/native-shell-update.mjs "$RUNNER_TEMP/desktop/bobs-factory-desktop-$VERSION-linux-$(node -p 'process.arch').AppImage" "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" "$RUNNER_TEMP/candidate.json" > "$RUNNER_TEMP/desktop/native-shell-update-receipt.json"^[[0m
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate actual Linux complete shell upgrade and rollback	2026-10-10T19:58:34.2797673Z shell: /usr/bin/bash -e {0}
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate actual Linux complete shell upgrade and rollback	2026-10-10T19:58:34.2797905Z env:
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate actual Linux complete shell upgrade and rollback	2026-10-10T19:58:34.2798089Z   VERSION: 1.0.0-nightly.20261010.14
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate actual Linux complete shell upgrade and rollback	2026-10-10T19:58:34.2798610Z   TARGET: linux-arm64
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate actual Linux complete shell upgrade and rollback	2026-10-10T19:58:34.2798812Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Validate actual Linux complete shell upgrade and rollback	2026-10-10T19:59:19.3633072Z ##[error]Process completed with exit code 1.
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	﻿2026-10-10T19:59:19.3700962Z ##[group]Run actions/upload-artifact@v6
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.3701249Z with:
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.3701626Z   name: desktop-linux-arm64-a1e00110dc11a52c7fadad9364cc6ea98b3026acb83e3d048e80994a4608f492
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.3703606Z   path: /home/runner/work/_temp/desktop/*.bobsapp.gz
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	/home/runner/work/_temp/desktop/desktop-update-*.json
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	/home/runner/work/_temp/desktop/*.dmg
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	/home/runner/work/_temp/desktop/*.AppImage
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	/home/runner/work/_temp/desktop/*.deb
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	/home/runner/work/_temp/desktop/desktop-build.json
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	/home/runner/work/_temp/desktop/native-service-receipt.json
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	/home/runner/work/_temp/desktop/native-electron-receipt.json
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	/home/runner/work/_temp/desktop/native-shell-update-receipt.json
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	/home/runner/work/_temp/runtime/*.tar.gz
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.3705386Z   if-no-files-found: warn
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.3705595Z   compression-level: 6
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.3705791Z   overwrite: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.3705985Z   include-hidden-files: false
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.3706206Z ##[endgroup]
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.5068182Z Multiple search paths detected. Calculating the least common ancestor of all paths
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.5071307Z The least common ancestor is /home/runner/work/_temp. This will be the root directory of the artifact
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.5071896Z With the provided path, there will be 8 files uploaded
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.5076886Z Artifact name is valid!
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.5078567Z Root directory input is valid!
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:19.7033311Z Beginning upload of artifact content to blob storage
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:20.1148293Z Uploaded bytes 8388608
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:20.3749412Z Uploaded bytes 16777216
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:20.4828679Z Uploaded bytes 25165824
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:20.6755717Z Uploaded bytes 33554432
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:20.8467182Z Uploaded bytes 41943040
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:21.1693104Z Uploaded bytes 50331648
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:21.2836279Z Uploaded bytes 58720256
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:21.4911355Z Uploaded bytes 67108864
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:21.5928344Z Uploaded bytes 75497472
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:21.7841857Z Uploaded bytes 83886080
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:21.9723963Z Uploaded bytes 92274688
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:22.2022123Z Uploaded bytes 100663296
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:22.3502401Z Uploaded bytes 109051904
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:22.6146768Z Uploaded bytes 117440512
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:22.7504170Z Uploaded bytes 125829120
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:22.9744416Z Uploaded bytes 134217728
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:23.1626515Z Uploaded bytes 142606336
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:23.3727780Z Uploaded bytes 150994944
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:23.5422777Z Uploaded bytes 159383552
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:23.7187483Z Uploaded bytes 167772160
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:23.9555837Z Uploaded bytes 176160768
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:24.1613803Z Uploaded bytes 184549376
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:24.2952114Z Uploaded bytes 192937984
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:24.5489566Z Uploaded bytes 201326592
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:24.6607463Z Uploaded bytes 209715200
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:24.8867310Z Uploaded bytes 218103808
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:25.0441926Z Uploaded bytes 226492416
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:25.3241010Z Uploaded bytes 234881024
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:25.4399238Z Uploaded bytes 243269632
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:25.6953216Z Uploaded bytes 251658240
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:25.8444940Z Uploaded bytes 260046848
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:26.0014105Z Uploaded bytes 268435456
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:26.2646468Z Uploaded bytes 276824064
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:26.3556202Z Uploaded bytes 285212672
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:26.5142267Z Uploaded bytes 293601280
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:26.7050621Z Uploaded bytes 301989888
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:26.9001162Z Uploaded bytes 310378496
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.0983701Z Uploaded bytes 318767104
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.2984391Z Uploaded bytes 327155712
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.4795202Z Uploaded bytes 335544320
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.6737551Z Uploaded bytes 343932928
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.7368390Z Uploaded bytes 346563562
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.7490873Z Finished uploading artifact content to blob storage!
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.7493186Z SHA256 digest of uploaded artifact zip is 1d34c8359d3a5c508eee987d387630082a5556cbe2ba0c0f5dfddc27d77222fe
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.7494696Z Finalizing artifact upload
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.9907485Z Artifact desktop-linux-arm64-a1e00110dc11a52c7fadad9364cc6ea98b3026acb83e3d048e80994a4608f492.zip successfully finalized. Artifact ID 11680414454
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.9909653Z Artifact desktop-linux-arm64-a1e00110dc11a52c7fadad9364cc6ea98b3026acb83e3d048e80994a4608f492 has been successfully uploaded! Final size is 346563562 bytes. Artifact ID is 11680414454
+desktop (linux-arm64, ubuntu-24.04-arm)	Run actions/upload-artifact@v6	2026-10-10T19:59:27.9915791Z Artifact download URL: https://github.com/jappyjan/bobs-factory/actions/runs/38081694851/artifacts/11680414454
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	﻿2026-10-10T19:59:28.0118043Z Post job cleanup.
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.0820624Z [command]/usr/bin/git version
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.0870751Z git version 2.55.0
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.0898370Z Temporarily overriding HOME='/home/runner/work/_temp/11a6aabe-6334-4c3b-940f-ee8938673ab1' before making global git config changes
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.0899815Z Adding repository directory to the temporary git global config as a safe directory
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.0900628Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/bobs-factory/bobs-factory/source
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.0918336Z Removing SSH command configuration
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.0924431Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.0956040Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.1142020Z Removing HTTP extra header
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.1146459Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.1177916Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.1374621Z Removing includeIf entries pointing to credentials config files
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.1382018Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.1413578Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	﻿2026-10-10T19:59:28.1742168Z Post job cleanup.
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2420323Z [command]/usr/bin/git version
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2490506Z git version 2.55.0
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2504528Z Temporarily overriding HOME='/home/runner/work/_temp/7dcce08c-8cc2-48be-94c9-cdf5c56c2117' before making global git config changes
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2505634Z Adding repository directory to the temporary git global config as a safe directory
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2506606Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/bobs-factory/bobs-factory/tooling
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2529077Z Removing SSH command configuration
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2535651Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2568149Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2746524Z Removing HTTP extra header
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2751582Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2780288Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2970868Z Removing includeIf entries pointing to credentials config files
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2971778Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+desktop (linux-arm64, ubuntu-24.04-arm)	Post Run actions/checkout@v7	2026-10-10T19:59:28.2999326Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+desktop (linux-arm64, ubuntu-24.04-arm)	Complete job	﻿2026-10-10T19:59:28.3312241Z Cleaning up orphan processes
+desktop (linux-arm64, ubuntu-24.04-arm)	Complete job	2026-10-10T19:59:28.3681270Z Terminate orphan process: pid (5477) (bobs-factory)

@@ -7,12 +7,14 @@ import {
 	readFileSync,
 	readlinkSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { generateRecipes } from "../generate-package-recipes.mjs";
 import {
 	compareReleaseVersions,
 	fileRecord,
@@ -73,7 +75,9 @@ function fixture(version = "0.2.74") {
 		const name = `bobs-factory-${nextVersion}-${native}`;
 		const stage = join(work, name);
 		mkdirSync(stage);
-		const executable = Buffer.from(`#!/bin/sh\necho ${nextVersion}\n`);
+		const executable = Buffer.from(
+			`#!/bin/sh\necho ${nextVersion}\nif [ -n "$BOBS_FACTORY_TEST_DOWNLOADS" ]; then printf '%s\\n' "$@" > "$BOBS_FACTORY_TEST_DOWNLOADS/executed-args"; fi\n`,
+		);
 		writeFileSync(join(stage, "bobs-factory"), executable, { mode: 0o755 });
 		writeFileSync(join(stage, "LICENSE"), "Apache License 2.0");
 		writeFileSync(join(stage, "NOTICE"), "Bob's Factory derived from Cyrus");
@@ -253,6 +257,21 @@ test("anonymous install configures PATH once, retains old version, and safely re
 	try {
 		let result = f.install();
 		assert.equal(result.status, 0, result.stderr);
+		const ownershipRecord = join(
+			f.prefix,
+			`lib/bobs-factory/records/bobs-factory-0.2.73-${native}.json`,
+		);
+		assert.deepEqual(JSON.parse(readFileSync(ownershipRecord, "utf8")), {
+			schemaVersion: 1,
+			product: "bobs-factory",
+			owner: "bobs-factory-installer",
+			source: "bootstrap",
+			channel: "stable",
+			version: "0.2.73",
+			target: native,
+			commit,
+			publisherKeyId: "fixture",
+		});
 		const before = readFileSync(f.profile, "utf8");
 		execFileSync("sh", ["-n", f.profile]);
 		const path = execFileSync(
@@ -291,6 +310,10 @@ test("anonymous install configures PATH once, retains old version, and safely re
 			"repeat must not append PATH repeatedly",
 		);
 		assert.match(readlinkSync(join(f.prefix, "bin/bobs-factory")), /0\.2\.74/);
+		assert.ok(
+			readFileSync(ownershipRecord, "utf8").includes('"version": "0.2.73"'),
+			"upgrading retains the prior version's ownership record",
+		);
 	} finally {
 		f.cleanup();
 	}
@@ -389,6 +412,8 @@ test("Pages synchronizes a verified beta manifest and preserves prior metadata o
 			"sync-release-metadata.mjs",
 			"install.sh",
 			"lib/binary-release.mjs",
+			"lib/release-material.mjs",
+			"lib/bounded-archive.mjs",
 			"lib/release-candidate.mjs",
 			"lib/release-signature.mjs",
 			"lib/github-release.mjs",
@@ -895,6 +920,256 @@ test("legacy beta requires signed inventory attestation without rewriting its ma
 			Buffer.concat([attestation, Buffer.from(" ")]),
 		);
 		assert.notEqual(f.install().status, 0);
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("removal validates all ownership before deleting and preserves state and unknown files", () => {
+	const f = fixture();
+	try {
+		assert.equal(f.install().status, 0);
+		const remove = () =>
+			spawnSync(
+				"sh",
+				[join(root, "scripts/uninstall-binary.sh"), f.prefix, "--stopped"],
+				{ encoding: "utf8" },
+			);
+		const executable = join(f.prefix, "bin/bobs-factory");
+		const link = readlinkSync(executable);
+		const foreign = join(f.prefix, "lib/bobs-factory/operator-file");
+		writeFileSync(foreign, "keep");
+		const receipt = join(
+			f.prefix,
+			`lib/bobs-factory/records/${f.current.name}.json`,
+		);
+		const bytes = readFileSync(receipt);
+		writeFileSync(
+			receipt,
+			bytes.toString().replace("bobs-factory-installer", "foreign"),
+		);
+		assert.notEqual(remove().status, 0);
+		assert.equal(readlinkSync(executable), link);
+		writeFileSync(receipt, bytes);
+		const result = remove();
+		assert.equal(result.status, 0, result.stderr);
+		assert.throws(() => readlinkSync(executable));
+		assert.equal(readFileSync(foreign, "utf8"), "keep");
+		assert.equal(
+			readFileSync(f.profile, "utf8").includes("Existing user settings"),
+			true,
+		);
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("installer refuses redirected stores and removal refuses foreign links", () => {
+	const f = fixture();
+	try {
+		const external = join(f.work, "external");
+		mkdirSync(external);
+		mkdirSync(join(f.prefix, "lib"), { recursive: true });
+		symlinkSync(external, join(f.prefix, "lib/bobs-factory"));
+		assert.notEqual(f.install().status, 0);
+		assert.equal(readFileSync(f.profile, "utf8"), "# Existing user settings\n");
+		rmSync(join(f.prefix, "lib/bobs-factory"));
+		assert.equal(f.install().status, 0);
+		rmSync(join(f.prefix, "bin/bobs-factory"));
+		symlinkSync("/unrelated/bobs-factory", join(f.prefix, "bin/bobs-factory"));
+		const result = spawnSync(
+			"sh",
+			[join(root, "scripts/uninstall-binary.sh"), f.prefix, "--stopped"],
+			{ encoding: "utf8" },
+		);
+		assert.notEqual(result.status, 0);
+		assert.equal(
+			readlinkSync(join(f.prefix, "bin/bobs-factory")),
+			"/unrelated/bobs-factory",
+		);
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("settings handoff names the chosen instance without supplying an implicit policy reset", () => {
+	const f = fixture("1.0.0-nightly.20261009.10");
+	try {
+		const home = join(f.work, "state");
+		const result = f.install("--channel", "nightly", "--home", home);
+		assert.equal(result.status, 0, result.stderr);
+		assert.deepEqual(
+			readFileSync(join(f.downloads, "executed-args"), "utf8")
+				.trim()
+				.split("\n"),
+			["--home", home, "update", "settings", "--channel", "nightly"],
+		);
+		assert.equal(
+			f.install(
+				"--channel",
+				"nightly",
+				"--home",
+				home,
+				"--update-policy",
+				"manual",
+			).status,
+			0,
+		);
+		assert.deepEqual(
+			readFileSync(join(f.downloads, "executed-args"), "utf8")
+				.trim()
+				.split("\n"),
+			[
+				"--home",
+				home,
+				"update",
+				"settings",
+				"--channel",
+				"nightly",
+				"--policy",
+				"manual",
+			],
+		);
+		assert.equal(f.install("--update-policy", "idle-auto").status, 1);
+		assert.match(result.stdout, /nightly/);
+	} finally {
+		f.cleanup();
+	}
+});
+
+test("recipes require signed complete published desktop packages and immutable URLs", async () => {
+	const f = fixture();
+	try {
+		const manifest = structuredClone(f.current.metadata);
+		manifest.desktop = { schemaVersion: 1, artifacts: [] };
+		const contents = new Map();
+		for (const target of TARGETS) {
+			const [os, arch] = target.split("-");
+			const stem = `bobs-factory-desktop-${manifest.version}-${os === "darwin" ? "mac" : "linux"}-${arch}`;
+			const record = (ext) => {
+				const file = `${stem}.${ext}`;
+				const bytes = Buffer.from(file);
+				contents.set(file, bytes);
+				return { file, size: bytes.length, sha256: sha256(bytes) };
+			};
+			const archive = record(os === "darwin" ? "dmg" : "AppImage");
+			const updateMetadata = record("update.json");
+			const validation = record("validation.json");
+			manifest.desktop.artifacts.push({
+				version: manifest.version,
+				commit,
+				channel: "stable",
+				target,
+				platformRequirements: "native validation pending publication",
+				archive,
+				updateMetadata,
+				validation,
+			});
+			manifest.assets.push(archive, updateMetadata, validation);
+			if (os === "linux") manifest.assets.push(record("deb"));
+		}
+		const base = `https://github.com/${REPOSITORY}/releases/download/${manifest.tag}`;
+		const refresh = () => {
+			const bytes = jsonBytes(manifest);
+			contents.set("release.json", bytes);
+			contents.set("release.json.sig", signBytes(bytes));
+			contents.set("release.json.key-id", Buffer.from("fixture\n"));
+		};
+		refresh();
+		contents.set(
+			"candidate.json",
+			readFileSync(join(f.downloads, "candidate.json")),
+		);
+		const assets = () =>
+			[
+				...manifest.assets,
+				...["release.json", "release.json.sig", "release.json.key-id"].map(
+					(file) => ({
+						file,
+						size: contents.get(file).length,
+						sha256: sha256(contents.get(file)),
+					}),
+				),
+			].map((r) => ({
+				name: r.file,
+				size: r.size,
+				digest: `sha256:${r.sha256}`,
+				state: "uploaded",
+				browser_download_url: `${base}/${r.file}`,
+			}));
+		const client = {
+			api: async (path) =>
+				path.startsWith("releases/tags/")
+					? {
+							id: 1,
+							tag_name: manifest.tag,
+							prerelease: false,
+							published_at: "2026-10-10",
+						}
+					: { object: { type: "commit", sha: commit } },
+			pages: async () => assets(),
+			bytes: async (asset) => contents.get(asset.name),
+		};
+		const recipes = await generateRecipes(client, manifest.version, keys);
+		const prepared = JSON.parse(recipes["npm/package.json"]);
+		assert.equal(prepared.private, true);
+		assert.deepEqual(prepared.factoryRelease, {
+			version: manifest.version,
+			channel: "stable",
+		});
+		const recipeFile = join(f.work, "PKGBUILD");
+		writeFileSync(recipeFile, recipes["aur/bobs-factory-desktop-bin/PKGBUILD"]);
+		execFileSync("bash", ["-n", recipeFile]);
+
+		assert.match(recipes["Casks/bobs-factory.rb"], /mac-#\{arch\}.dmg/);
+		assert.match(
+			recipes["aur/bobs-factory-desktop-bin/PKGBUILD"],
+			/sha256sums_aarch64/,
+		);
+		const desktop = manifest.desktop;
+		delete manifest.desktop;
+		manifest.assets = manifest.assets.filter(
+			(a) => !a.file.startsWith("bobs-factory-desktop-"),
+		);
+		refresh();
+		const nativeOnly = await generateRecipes(
+			client,
+			manifest.version,
+			keys,
+			"npm",
+		);
+		assert.equal(JSON.parse(nativeOnly["npm/package.json"]).private, true);
+		await assert.rejects(
+			generateRecipes(client, manifest.version, keys),
+			/desktop targets/,
+		);
+		manifest.desktop = desktop;
+		manifest.assets.push(
+			...desktop.artifacts.flatMap((item) => [
+				item.archive,
+				item.updateMetadata,
+				item.validation,
+			]),
+		);
+		for (const arch of ["arm64", "x64"]) {
+			const file = `bobs-factory-desktop-${manifest.version}-linux-${arch}.deb`;
+			const bytes = contents.get(file);
+			manifest.assets.push({ file, size: bytes.length, sha256: sha256(bytes) });
+		}
+		refresh();
+		contents.set("release.json.sig", Buffer.from("invalid"));
+		await assert.rejects(
+			generateRecipes(client, manifest.version, keys),
+			/signature/,
+		);
+		manifest.assets = manifest.assets.filter(
+			(a) => !a.file.endsWith("x64.deb"),
+		);
+		refresh();
+		await assert.rejects(
+			generateRecipes(client, manifest.version, keys),
+			/Missing signed desktop package/,
+		);
 	} finally {
 		f.cleanup();
 	}

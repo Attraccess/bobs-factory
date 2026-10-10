@@ -37,10 +37,12 @@ jobs:
         with:
           ref: ${{ fromJSON(inputs.candidate_json).candidate.workflowSha }}
           path: tooling
+          persist-credentials: false
       - uses: actions/checkout@v7
         with:
           ref: ${{ fromJSON(inputs.candidate_json).candidate.commit }}
           path: source
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: '24.18.0'
@@ -50,9 +52,10 @@ jobs:
           bun-version: '1.4.2'
       - name: Validate frozen source and workflow
         env:
+          EXPECTED_TOOLING_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           CANDIDATE_JSON: ${{ inputs.candidate_json }}
         run: |
-          node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {validateCandidate} from "./tooling/scripts/lib/release-candidate.mjs"; const r=validateCandidate(JSON.parse(process.env.CANDIDATE_JSON)); if(r.candidate.workflowSha !== process.env.GITHUB_SHA) throw Error("Dispatch from the frozen tooling ref"); writeFileSync(process.env.RUNNER_TEMP+"/candidate.json",process.env.CANDIDATE_JSON)'
+          node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {execFileSync} from "node:child_process"; import {validateCandidate} from "./tooling/scripts/lib/release-candidate.mjs"; const r=validateCandidate(JSON.parse(process.env.CANDIDATE_JSON)); if(r.candidate.workflowSha!==process.env.EXPECTED_TOOLING_SHA) throw Error("Run from frozen event tooling"); for(const [path,sha] of [["tooling",r.candidate.workflowSha],["source",r.candidate.commit]]) if(execFileSync("git",["-C",path,"rev-parse","HEAD"],{encoding:"utf8"}).trim()!==sha) throw Error("Frozen checkout mismatch"); writeFileSync(process.env.RUNNER_TEMP+"/candidate.json",process.env.CANDIDATE_JSON)'
           corepack enable
           corepack prepare "$(node -p 'require("./source/package.json").packageManager')" --activate
       - run: pnpm install --frozen-lockfile
@@ -77,6 +80,11 @@ jobs:
         run: node tooling/scripts/smoke-native-helpers.mjs --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output "$RUNNER_TEMP/artifacts"
       - name: Prepared agent protocol boundaries without live inference
         run: node tooling/scripts/smoke-prepared-agent-boundaries.mjs --source-root source --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output "$RUNNER_TEMP/artifacts"
+      - name: Packed npm trial lifecycle with native runtime and controlled browser
+        env:
+          VERSION: ${{ fromJSON(inputs.candidate_json).candidate.version }}
+          TARGET: ${{ matrix.target }}
+        run: BOBS_FACTORY_TRIAL_SMOKE_BINARY="$RUNNER_TEMP/factory-prefix/bin/bobs-factory" node --test tooling/scripts/tests/trial-launcher.test.mjs tooling/scripts/tests/trial-launcher-bootstrap.test.mjs
       - name: Publisher signature interoperability
         run: node --test tooling/scripts/tests/release-signature.test.mjs
       - uses: actions/upload-artifact@v6

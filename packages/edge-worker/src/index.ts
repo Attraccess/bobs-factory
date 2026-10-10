@@ -65,6 +65,7 @@ export type { CreateGitWorktreeOptions } from "./GitService.js";
 export { GitService } from "./GitService.js";
 export type { SerializedGlobalRegistryState } from "./GlobalSessionRegistry.js";
 export { GlobalSessionRegistry } from "./GlobalSessionRegistry.js";
+export { preflightFactoryState } from "./lifecycle/PreflightState.js";
 export type { McpConfigServiceDeps } from "./McpConfigService.js";
 export { McpConfigService } from "./McpConfigService.js";
 export { RepositoryRouter } from "./RepositoryRouter.js";
@@ -95,5 +96,23 @@ export {
 	DEFAULT_BLOCK_MESSAGE,
 	UserAccessControl,
 } from "./UserAccessControl.js";
+export { PublishedUpdateSource } from "./updates/PublishedUpdateSource.js";
+export type {
+	InstalledUpdate,
+	StagedUpdate,
+	UpdateCandidate,
+	UpdateLifecycle,
+	UpdateSettings,
+	UpdateSettingsPatch,
+	UpdateSource,
+	UpdateState,
+	UpdateTransaction,
+} from "./updates/UpdateManager.js";
+
+export {
+	candidateKey,
+	effectiveUpdatePolicy,
+	UpdateManager,
+} from "./updates/UpdateManager.js";
 export { WorktreeIncludeService } from "./WorktreeIncludeService.js";
 export { ZulipChatAdapter } from "./ZulipChatAdapter.js";

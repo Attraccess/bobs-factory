@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "product": "bobs-factory",
+  "version": "1.0.0-nightly.20261010.21",
+  "candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+  "workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+  "committedVersion": "1.0.0-beta",
+  "commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+  "dirty": false,
+  "target": "linux-x64",
+  "tooling": {
+    "bun": "1.4.2"
+  },
+  "executable": {
+    "file": "bobs-factory",
+    "size": 120428000,
+    "sha256": "144e32d1894e912072948379210eb1f6e30c688be8aeeee7f8b2d21e27b50caa"
+  },
+  "resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+  "validation": "pending runtime smoke",
+  "requirements": "glibc; native target smoke required"
+}

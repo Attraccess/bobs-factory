@@ -22,8 +22,14 @@ import {
 import {
 	candidateIdentity,
 	freezeCandidate,
+	validateCandidate,
 } from "../lib/release-candidate.mjs";
 import { keys, signBytes, testInstaller } from "./release-fixtures.mjs";
+
+import {
+	fixtureTar,
+	sourceMaterialFixture,
+} from "./source-material-fixture.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 export function preparedFixture(
@@ -33,6 +39,8 @@ export function preparedFixture(
 		stableVersion = "1.0.0",
 		sequence = 10,
 		desktop = false,
+		legacy = false,
+		frozenCandidate,
 	} = {},
 ) {
 	const work = mkdtempSync(join(tmpdir(), "factory-publication-fixture-"));
@@ -68,33 +76,45 @@ export function preparedFixture(
 		);
 		workflowSha = git("rev-parse", "HEAD");
 	}
-	const candidate = freezeCandidate({
-		channel,
-		version:
-			channel === "stable"
-				? stableVersion
-				: channel === "beta"
-					? "1.0.0-beta"
-					: undefined,
-		commit: "a".repeat(40),
-		workflowSha,
-		committedVersion: "1.0.0-beta",
-		sequence,
-		date: "2026-10-09T00:00:00Z",
-		...(channel === "stable"
-			? {
-					promotion: {
-						channel: "nightly",
-						version: "1.0.0-nightly.20261009.9",
-						tag: "v1.0.0-nightly.20261009.9",
-						commit: "a".repeat(40),
-						manifestSha256: "c".repeat(64),
-						releaseId: 9,
-					},
-				}
-			: {}),
-	});
-	const identity = candidateIdentity(candidate, 123);
+	const candidate = frozenCandidate
+		? validateCandidate(frozenCandidate)
+		: freezeCandidate({
+				channel,
+				version:
+					channel === "stable"
+						? stableVersion
+						: channel === "beta"
+							? "1.0.0-beta"
+							: undefined,
+				commit: "a".repeat(40),
+				workflowSha,
+				committedVersion: "1.0.0-beta",
+				sequence,
+				date: "2026-10-09T00:00:00Z",
+				...(channel === "stable"
+					? {
+							promotion: {
+								channel: "nightly",
+								version: "1.0.0-nightly.20261009.9",
+								tag: "v1.0.0-nightly.20261009.9",
+								commit: "a".repeat(40),
+								manifestSha256: "c".repeat(64),
+								releaseId: 9,
+							},
+						}
+					: {}),
+			});
+	const identity = legacy
+		? {
+				version: candidate.candidate.version,
+				tag: candidate.candidate.tag,
+				commit: candidate.candidate.commit,
+				runId: 123,
+			}
+		: candidateIdentity(candidate, 123);
+	const candidateFields = legacy
+		? {}
+		: { candidateDigest: candidate.digest, workflowSha: identity.workflowSha };
 	const output = join(work, "prepared"),
 		assets = join(output, "assets");
 	mkdirSync(assets, { recursive: true });
@@ -107,7 +127,7 @@ export function preparedFixture(
 		status: "passed",
 		receipt: { file: "receipt.txt", sha256: sha256(readFileSync(receipt)) },
 	};
-	execFileSync("tar", [
+	fixtureTar([
 		"-czf",
 		join(assets, "validation-receipts.tar.gz"),
 		"-C",
@@ -127,8 +147,7 @@ export function preparedFixture(
 			commit: identity.commit,
 			target,
 			dirty: false,
-			candidateDigest: candidate.digest,
-			workflowSha: identity.workflowSha,
+			...candidateFields,
 			committedVersion: identity.committedVersion,
 			tooling: { bun: "1.4.2" },
 			resourceDigest: "e".repeat(64),
@@ -146,13 +165,7 @@ export function preparedFixture(
 			join(stage, "THIRD_PARTY_NOTICES.txt"),
 			`Bun 1.4.2\n${"Fixture license ".repeat(30)}`,
 		);
-		execFileSync("tar", [
-			"-czf",
-			join(assets, `${name}.tar.gz`),
-			"-C",
-			work,
-			name,
-		]);
+		fixtureTar(["-czf", join(assets, `${name}.tar.gz`), "-C", work, name]);
 		const archive = fileRecord(
 			join(assets, `${name}.tar.gz`),
 			`${name}.tar.gz`,
@@ -166,8 +179,7 @@ export function preparedFixture(
 				commit: identity.commit,
 				target,
 				dirty: false,
-				candidateDigest: candidate.digest,
-				workflowSha: identity.workflowSha,
+				...candidateFields,
 				committedVersion: identity.committedVersion,
 				...archive,
 			}),
@@ -193,8 +205,7 @@ export function preparedFixture(
 			commit: identity.commit,
 			target,
 			dirty: false,
-			candidateDigest: candidate.digest,
-			workflowSha: identity.workflowSha,
+			...candidateFields,
 			executableSha256: build.executable.sha256,
 			resourceDigest: build.resourceDigest,
 			platform: {
@@ -293,16 +304,44 @@ export function preparedFixture(
 	mkdirSync(source);
 	for (const [name, bytes] of [
 		["commit.txt", identity.commit],
-		["candidate.json", jsonBytes(candidate)],
+		...(!legacy ? [["candidate.json", jsonBytes(candidate)]] : []),
 		["README.md", "Fixture rebuild instructions"],
 		["pnpm-lock.yaml", "Fixture lock"],
-		["bun-source.tar.gz", "Fixture Bun source"],
-		["release-tooling.tar.gz", "Simulated frozen tooling"],
+		...(!legacy
+			? [["release-tooling.tar.gz", "Simulated frozen tooling"]]
+			: []),
 		["factory-source.tar.gz", "Simulated committed source"],
-		["source-materials.json", '{"simulated":true}'],
 	])
 		writeFileSync(join(source, name), bytes);
-	execFileSync("tar", [
+	if (legacy) {
+		writeFileSync(
+			join(source, "bun-source.tar.gz"),
+			"Historical controlled runtime source",
+		);
+		writeFileSync(
+			join(source, "source-materials.json"),
+			jsonBytes({
+				schemaVersion: 1,
+				commit: identity.commit,
+				bunVersion: "1.4.2",
+				records: [
+					fileRecord(join(source, "bun-source.tar.gz"), "bun-source.tar.gz"),
+				],
+			}),
+		);
+	} else {
+		const material = sourceMaterialFixture(source, identity);
+		material.bundled = [
+			"commit.txt",
+			"candidate.json",
+			"pnpm-lock.yaml",
+			"factory-source.tar.gz",
+			"release-tooling.tar.gz",
+		].map((file) => fileRecord(join(source, file), file));
+		writeFileSync(join(source, "source-materials.json"), jsonBytes(material));
+	}
+
+	fixtureTar([
 		"-czf",
 		join(assets, "source-rebuild.tar.gz"),
 		"-C",
@@ -319,8 +358,7 @@ export function preparedFixture(
 		version: identity.version,
 		commit: identity.commit,
 		buildRunId: 123,
-		candidateDigest: candidate.digest,
-		workflowSha: identity.workflowSha,
+		...candidateFields,
 		reviewedCandidate: gate,
 		fullPayloadF1: gate,
 		migrationPreservation: gate,
@@ -345,8 +383,7 @@ export function preparedFixture(
 				commit: identity.commit,
 				channel,
 				target: "darwin-arm64",
-				candidateDigest: candidate.digest,
-				workflowSha: identity.workflowSha,
+				...candidateFields,
 			}),
 		);
 		evidence.desktop = {
@@ -372,14 +409,15 @@ export function preparedFixture(
 		};
 	}
 	writeFileSync(join(assets, "release-evidence.json"), jsonBytes(evidence));
-	writeFileSync(join(assets, "candidate.json"), jsonBytes(candidate));
+	if (!legacy)
+		writeFileSync(join(assets, "candidate.json"), jsonBytes(candidate));
 	const run = {
 		id: 123,
 		status: "completed",
 		conclusion: "success",
 		repository: { full_name: REPOSITORY },
 		head_repository: { full_name: REPOSITORY },
-		head_sha: identity.workflowSha,
+		head_sha: legacy ? identity.commit : identity.workflowSha,
 		path: ".github/workflows/binary-build.yml",
 		event: "workflow_dispatch",
 		run_attempt: 1,
@@ -394,28 +432,32 @@ export function preparedFixture(
 			t,
 			{
 				id: i + 1,
-				name: `bobs-factory-${t}-${candidate.digest}-1`,
+				name: legacy
+					? `bobs-factory-${t}-${identity.commit}`
+					: `bobs-factory-${t}-${candidate.digest}-1`,
 				expired: false,
 				digest: `sha256:${"d".repeat(64)}`,
-				workflow_run: { id: 123, head_sha: identity.workflowSha },
+				workflow_run: {
+					id: 123,
+					head_sha: legacy ? identity.commit : identity.workflowSha,
+				},
 			},
 		]),
 	);
 	writeFileSync(
 		join(assets, "build-provenance.json"),
-		jsonBytes({ candidateDigest: candidate.digest, run, jobs, artifacts }),
+		jsonBytes({ ...candidateFields, run, jobs, artifacts }),
 	);
 	for (const name of ["install.sh", "install-binary.sh"])
 		writeFileSync(join(assets, name), readFileSync(join(scripts, name)));
 	const manifest = {
-		schemaVersion: 2,
+		schemaVersion: legacy ? 1 : 2,
 		...(channel !== "beta" ? { publicInstallerValidation: 1 } : {}),
 		product: "bobs-factory",
 		repository: REPOSITORY,
 		status: "available",
-		channel,
-		candidateDigest: candidate.digest,
-		workflowSha: identity.workflowSha,
+		channel: legacy ? "prerelease" : channel,
+		...candidateFields,
 		version: identity.version,
 		tag: identity.tag,
 		commit: identity.commit,
@@ -428,9 +470,13 @@ export function preparedFixture(
 		source: sourceRecord,
 		targets,
 		...(desktop ? { desktop: evidence.desktop } : {}),
-		assets: readdirSync(assets)
-			.sort()
-			.map((f) => fileRecord(join(assets, f), f)),
+		...(!legacy
+			? {
+					assets: readdirSync(assets)
+						.sort()
+						.map((f) => fileRecord(join(assets, f), f)),
+				}
+			: {}),
 	};
 	writeFileSync(join(assets, "release.json"), jsonBytes(manifest));
 	writeFileSync(

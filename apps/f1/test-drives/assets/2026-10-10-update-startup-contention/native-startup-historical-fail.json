@@ -1,0 +1,19 @@
+{
+	"sourceCommit": "2e47c11ab00fd51fe7c87eda9693b3709e26b7e6",
+	"target": "darwin-arm64",
+	"executableSha256": "0af142f0a49f89780e32dfbd6f064ee2f7e23884a4fec0edeea20b3dbbbb5bb6",
+	"home": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-startup-contention-AqZSya/instance",
+	"healthy": false,
+	"exit": {
+		"code": 1,
+		"signal": null
+	},
+	"error": [
+		"Fatal error: error: Update settings are being saved; retry. Inspect a retained state.lock after interruption.",
+		"      at change (/$bunfs/root/bobs-factory:195084:13)",
+		"      at observeInstalled (/$bunfs/root/bobs-factory:195114:16)",
+		"      at new FactoryServer (/$bunfs/root/bobs-factory:204183:31)"
+	],
+	"passed": false,
+	"purpose": "native replacement startup under bounded live updater state-lock contention"
+}

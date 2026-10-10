@@ -1,0 +1,27 @@
+{
+	"sourceCommit": "aa0ad1404aed147cf82fc259cf0c11f6bb18753b",
+	"target": "darwin-arm64",
+	"executableSha256": "cb1b58234415bd445d776eedb8e6d804e186e9fe3fe767a94bef0b492a7458cd",
+	"harnessSha256": "ce0a421465f1c1b809265f1cf9297dcdccec4e363a287fea15847782f63fedcb",
+	"home": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/bobs-startup-contention-k8fBek/instance",
+	"healthy": true,
+	"journalUnchanged": true,
+	"exit": {
+		"code": null,
+		"signal": null
+	},
+	"processCleanup": {
+		"code": 0,
+		"signal": null,
+		"forcedKill": false,
+		"closeTimedOut": false
+	},
+	"ownerStopped": true,
+	"error": [],
+	"passed": true,
+	"purpose": "native replacement startup under bounded live updater state-lock contention",
+	"fixtureCleanup": {
+		"removed": true,
+		"reason": "receipt-written"
+	}
+}

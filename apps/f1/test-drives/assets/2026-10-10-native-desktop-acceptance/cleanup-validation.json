@@ -1,0 +1,67 @@
+{
+	"executionParent": "a0d3300dcc9f54f77a2857e4a322a9cdd0332dbf",
+	"controllerSha256": "1d63e3d6849be96d40e6f8541489a987450ea0d738661e78dd07af368c7db427",
+	"cleanupHelperSha256": "0d5893e4a95d3a58ef800c720ad470857730bd4bc0051057d8c4db1ae46f7d97",
+	"regressionSourceSha256": "4e6099b4950453a34ab4461833061ff727efb51d874bde5969184659435ee3c1",
+	"nativeReceiptSha256": "9bfc07873dbbca29eeac324f6e04629f2d549511b03e03a8dc84644def15332a",
+	"focusedTests": 10,
+	"nativePassed": true,
+	"cleanup": {
+		"passed": true,
+		"groups": [36093, 36101, 36143, 36154, 36255, 36309, 36335, 36372, 36385],
+		"escalated": [],
+		"remaining": [],
+		"children": [
+			{
+				"pid": 36093,
+				"code": 0,
+				"signal": null
+			},
+			{
+				"pid": 36101,
+				"code": 0,
+				"signal": null
+			},
+			{
+				"pid": 36255,
+				"code": 0,
+				"signal": null
+			},
+			{
+				"pid": 36309,
+				"code": 0,
+				"signal": null
+			},
+			{
+				"pid": 36372,
+				"code": 0,
+				"signal": null
+			},
+			{
+				"pid": 36385,
+				"code": 0,
+				"signal": null
+			}
+		],
+		"locks": [
+			{
+				"path": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-acceptance-ql58uH/remote/runtime/worker.lock",
+				"removed": true
+			},
+			{
+				"path": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-acceptance-ql58uH/local/runtime/worker.lock",
+				"removed": true
+			},
+			{
+				"path": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-acceptance-ql58uH/local/runtime/update-supervisor.lock",
+				"removed": true
+			},
+			{
+				"path": "/private/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/factory-native-acceptance-ql58uH/independent/runtime/worker.lock",
+				"removed": true
+			}
+		],
+		"failures": []
+	},
+	"rawNativeReceiptSha256": "6d95f8455965b4876f295e4915c41c17d06c2cb1ce093822ace3529393650725"
+}

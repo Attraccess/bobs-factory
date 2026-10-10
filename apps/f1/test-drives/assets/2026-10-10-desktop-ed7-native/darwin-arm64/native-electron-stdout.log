@@ -1,0 +1,15 @@
+Downloading Electron binary...
+{
+  "passed": true,
+  "platform": "darwin",
+  "arch": "arm64",
+  "electron": "44.7.0",
+  "fixture": "/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/factory-electron-smoke-8DAtAX",
+  "auth": "CDP virtual authenticator enrollment/login/logout",
+  "closedWindowKeepsWorker": true,
+  "reopenSamePid": true,
+  "explicitStop": true,
+  "confirmationMaintenanceRaceRejected": true,
+  "stopSuppressesAutomaticRestart": true,
+  "nativeCredentials": "not tested"
+}

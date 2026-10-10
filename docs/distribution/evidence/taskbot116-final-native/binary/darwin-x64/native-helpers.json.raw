@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "product": "bobs-factory",
+  "validation": "native-helpers",
+  "status": "passed",
+  "version": "1.0.0-nightly.20261010.15",
+  "candidateDigest": "d053b7c2993931d93c88754fe7922e3c3c0352f2cb3bb18201584d2a7b2dea7f",
+  "workflowSha": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+  "commit": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+  "target": "darwin-x64",
+  "dirty": false,
+  "resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+  "executableSha256": "3ebf7decb6d0b1c1e0a000237440404d4e70075da7b0095452b9d694483ad030",
+  "platform": {
+    "os": "darwin",
+    "arch": "x64",
+    "release": "24.6.0",
+    "systemVersion": "15.7.9",
+    "cpuModel": "Intel(R) Core(TM) i7-8700B CPU @ 3.20GHz",
+    "libc": "not-applicable"
+  },
+  "scope": {
+    "transport": "controlled-local-https",
+    "credentials": "synthetic-scoped",
+    "agentInference": "none"
+  },
+  "checks": {
+    "gitCredentialScoped": "passed",
+    "gitCredentialForeignRejected": "passed",
+    "restApiScoped": "passed",
+    "graphqlApiScoped": "passed",
+    "apiForeignRejected": "passed",
+    "missingCredentialNoFallback": "passed",
+    "http201CiRetry": "passed",
+    "helperWithoutPath": "passed",
+    "cursorPermission": "passed"
+  },
+  "requestCount": 4
+}

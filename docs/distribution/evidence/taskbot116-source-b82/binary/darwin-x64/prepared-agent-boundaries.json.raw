@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "product": "bobs-factory",
+  "validation": "prepared-agent-boundaries",
+  "status": "passed",
+  "version": "1.0.0-nightly.20261010.21",
+  "candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+  "workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+  "commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+  "target": "darwin-x64",
+  "dirty": false,
+  "resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+  "executableSha256": "087ee6c64f3c53a499d0ad88b102a8cae97e2f2a0bea2f10a8ddf29f644d4843",
+  "scope": {
+    "agents": "synthetic-sdk-and-mocked-adapters",
+    "authenticatedProviders": false,
+    "agentInference": "none"
+  },
+  "compiledCursorIpcCreateResume": "passed",
+  "adapterCheckout": {
+    "commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+    "dirty": false
+  },
+  "adapters": {
+    "claude": {
+      "status": "passed",
+      "passed": 61,
+      "skipped": 0,
+      "files": [
+        "ClaudeRunner.test.ts",
+        "env-isolation.test.ts",
+        "spawn-claude-code-process.test.ts",
+        "pending-work-lifecycle.test.ts"
+      ],
+      "reportSha256": "7191509269bdba875b5a8f130af13b27d46d675020e15c65fcfc3466902e916e"
+    },
+    "codex": {
+      "status": "passed",
+      "passed": 77,
+      "skipped": 0,
+      "files": [
+        "AppServerCodexBackend.test.ts",
+        "appServerProcess.test.ts",
+        "CodexRunner.startup.test.ts",
+        "CodexRunner.streaming.test.ts",
+        "CodexRunner.mcp-config.test.ts"
+      ],
+      "reportSha256": "c6cd49cc114581b6fac304c7e31bc1da78bd911d5b723f16b20236311d2a5b79"
+    },
+    "gemini": {
+      "status": "passed",
+      "passed": 65,
+      "skipped": 1,
+      "files": [
+        "GeminiRunner.test.ts",
+        "SimpleGeminiRunner.test.ts"
+      ],
+      "reportSha256": "3275c554662a334ff81cef9f7b7eafa85f17de3832c552d8285b7f3ef7a43065"
+    },
+    "opencode": {
+      "status": "passed",
+      "passed": 21,
+      "skipped": 0,
+      "files": [
+        "OpenCodeRunner.test.ts",
+        "OpenCodeRunner.environment.test.ts",
+        "formatter.replay.test.ts"
+      ],
+      "reportSha256": "8c9e4b8fc907ff5ab8ead863cd7ed76335aec97fab3177b8d2b1fb93c2b41665"
+    },
+    "cursor": {
+      "status": "passed",
+      "passed": 8,
+      "skipped": 0,
+      "files": [
+        "prepared-sdk.test.ts",
+        "CursorWorkerRunner.test.ts",
+        "CursorRunner.environment.test.ts"
+      ],
+      "reportSha256": "3ce56dee7afae249d7d032605f688c32fae97a13d6138741777edf604795ca5d"
+    }
+  }
+}

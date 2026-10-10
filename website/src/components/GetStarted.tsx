@@ -201,6 +201,14 @@ export function GetStarted() {
 							</li>
 						</ul>
 					)}
+					<p className="mt-6 text-sm text-ink-2">
+						<a
+							className="underline"
+							href={`${import.meta.env.BASE_URL}downloads/`}
+						>
+							See all installation options and their availability
+						</a>
+					</p>
 					<Reveal delay={0.1} className="mt-8 flex flex-wrap gap-3">
 						<a
 							href={REPO}
