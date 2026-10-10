@@ -66,6 +66,22 @@ cpSync(resolve(values.runtime), runtime, {
 	errorOnExist: true,
 });
 try {
+	// pnpm may suppress dependency lifecycle scripts. Materialize the pinned
+	// native Electron distribution (upstream package checksum verification) before
+	// copying notices; electron-builder's separate cache is not this distribution.
+	execFileSync(
+		process.execPath,
+		[join(app, "node_modules", "electron", "install.js")],
+		{
+			cwd: app,
+			stdio: "inherit",
+			env: {
+				...process.env,
+				ELECTRON_INSTALL_PLATFORM: process.platform,
+				ELECTRON_INSTALL_ARCH: process.arch,
+			},
+		},
+	);
 	const electronLicenses = prepareElectronLicenses(app);
 	execFileSync(
 		"bun",
