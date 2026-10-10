@@ -1,0 +1,74 @@
+{
+	"testedRevision": "320cc5b7daf047398d1c462c53aeb46af02215bd",
+	"mode": "mock",
+	"sourceSHA256": {
+		"packages/edge-worker/src/RunnerConcurrency.ts": "2887547b6832dcf676e2933b02bdda9216e31c8a0871cf675928e609eb602ffb",
+		"packages/edge-worker/src/ChatSessionHandler.ts": "2ab5ddbf0ede9848cb981df3da46debfdacde93952dff101d4c532d0124a3d02",
+		"packages/edge-worker/src/EdgeWorker.ts": "ab947b79a0c5ef98f45423a9e0571b5329277ab949379972ea479ad1049a7d34",
+		"packages/edge-worker/test/RunnerConcurrency.test.ts": "2ac59674258dc46587984f5f727ea3d0f130e488d94864bc09438283e3dcb36c",
+		"packages/edge-worker/test/ChatSessionHandler.model-recovery.test.ts": "fc720e768de30eb728182078c1adf949513bad90e0d357d8c40a45aabac9ec88"
+	},
+	"fixtures": {
+		"checkpoint-cancel-chat-f1.ts": {
+			"path": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/checkpoint-cancel-chat-f1.ts",
+			"sha256": "62708803726dacec999d5c89ff8d7fc39c59e83f20808ebf0fb66c81ff0d37cc"
+		},
+		"queued-first-chat-f1.ts": {
+			"path": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/queued-first-chat-f1.ts",
+			"sha256": "3b124efc8a14a6ad67d3c2efbb1256f899dbb77b5b63cd5dbba7d61bf59e6c44"
+		},
+		"established-chat-f1.ts": {
+			"path": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/established-chat-f1.ts",
+			"sha256": "b9700eac72712c2308001e8e86c8ec10d9a5a151f8bd1325e7fdea273614482a"
+		}
+	},
+	"checks": {
+		"focusedTests": {
+			"passed": 96,
+			"suites": 8,
+			"log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/tests.log"
+		},
+		"lint": {
+			"passed": true,
+			"existingWarnings": 19,
+			"log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/lint.log"
+		},
+		"buildAndTypecheck": {
+			"passed": true,
+			"log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/commit-checks.log"
+		},
+		"f1Drives": {
+			"checkpointCancellation": "passed",
+			"capacityQueue": "passed",
+			"establishedConversation": "passed"
+		}
+	},
+	"receipts": {
+		"checkpoint-cancel-chat-receipt.json": {
+			"rawPath": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/checkpoint-cancel-chat-receipt.json",
+			"rawSHA256": "184940e9e1abff7eab93ddb181bc8a8cc873ac5a64d2ae6ca2acfdf68004cb20",
+			"committedSHA256": "16ef007273a098941f101441eac68f545e43ff45e3518cc66a2ba2687be39f80"
+		},
+		"queued-first-chat-receipt.json": {
+			"rawPath": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/queued-first-chat-receipt.json",
+			"rawSHA256": "44414ee0612c467346eff4001d669e508e8712aa8d5a292ca0bfc3132eb8bea0",
+			"committedSHA256": "7dff26f8b1a4ab27e5b83298e16e5cae31de92e5eee42c43a3d66251d32bb4ec"
+		},
+		"qa-production-missing-thread-receipt.json": {
+			"rawPath": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/qa-production-missing-thread-receipt.json",
+			"rawSHA256": "13772a2e9f6e27d099aee9f9f323d1ab3c5ce7da44d6e3df39f76e55e676fd73",
+			"committedSHA256": "ac8787f708e03f47086def32f30aa2fd4e736d095f974763156483eec05943dd"
+		},
+		"qa-chat-model-complete-receipt.json": {
+			"rawPath": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/qa-chat-model-complete-receipt.json",
+			"rawSHA256": "6be6d883bd9cf902107f50556a6c7930144f6a383643e58eb1fab44eb104f899",
+			"committedSHA256": "3df2bd5cc29da3748aac53a44774ddec44fc2885bcb28cc4e2e34122371f7ef2"
+		},
+		"established-catalog-receipt.json": {
+			"rawPath": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-checkpoint-fix/established-catalog-receipt.json",
+			"rawSHA256": "62c8d0f82605b0b4d08afb0441e7f510c142a9255fa3e492e9c7fe4e17c9acd4",
+			"committedSHA256": "b02baadb4d9ae53d034333c0d837ef7d47b4c04aceefc617463513917f6d9ba4"
+		}
+	},
+	"receiptProjection": "Capacity snapshots retain only counts; disposable lease and process identities remain in raw evidence. All other fields are unchanged."
+}
