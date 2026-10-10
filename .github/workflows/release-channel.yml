@@ -5,12 +5,15 @@ on:
   workflow_dispatch:
     inputs:
       channel:
-        description: Nightly preparation or stable promotion from latest signed nightly
+        description: Nightly preparation or stable promotion from a selected signed nightly
         type: choice
         options: [nightly, stable]
         default: nightly
       version:
         description: Stable version (nightly version is allocated once)
+        type: string
+      nightly_tag:
+        description: Exact published nightly tag to promote (required for stable)
         type: string
 permissions:
   contents: read
@@ -40,10 +43,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           CHANNEL: ${{ inputs.channel || 'nightly' }}
           VERSION: ${{ inputs.version }}
+          NIGHTLY_TAG: ${{ inputs.nightly_tag }}
         run: |
           mkdir -p "$RUNNER_TEMP/candidate"
           created=$(node --input-type=module -e 'import {githubClient} from "./scripts/lib/github-release.mjs"; console.log((await githubClient().api("actions/runs/"+process.env.GITHUB_RUN_ID)).created_at)')
-          node scripts/prepare-release-candidate.mjs --channel "$CHANNEL" --version "$VERSION" --sequence "$GITHUB_RUN_ID" --date "$created" --workflow-sha "$GITHUB_SHA" --output "$RUNNER_TEMP/candidate/candidate.json"
+          promotion_args=()
+          if [ "$CHANNEL" = stable ]; then promotion_args=(--nightly-tag "$NIGHTLY_TAG"); fi
+          node scripts/prepare-release-candidate.mjs --channel "$CHANNEL" --version "$VERSION" "${promotion_args[@]}" --sequence "$GITHUB_RUN_ID" --date "$created" --workflow-sha "$GITHUB_SHA" --output "$RUNNER_TEMP/candidate/candidate.json"
       - uses: actions/upload-artifact@v6
         if: github.run_attempt == '1'
         with:

@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
-import { sha256 } from "../lib/binary-release.mjs";
+import { sha256, validateReleaseManifest } from "../lib/binary-release.mjs";
 import {
 	discoverReleases,
 	githubClient,
 	requireVerifiedNightlyHistory,
+	selectVerifiedPromotionNightly,
 } from "../lib/github-release.mjs";
 import { preparedFixture } from "./prepared-fixture.mjs";
 import { keys } from "./release-fixtures.mjs";
@@ -80,6 +81,54 @@ function provider(fixtures) {
 		},
 	};
 }
+test("signed desktop discovery requires intact archive, update metadata and validation inventory", async () => {
+	const f = preparedFixture("nightly", { desktop: true });
+	try {
+		const p = provider([f]);
+		assert.equal(
+			(await discoverReleases(p.client, keys)).nightly.manifest.desktop
+				.artifacts.length,
+			1,
+		);
+		const assets = structuredClone(p.releaseList[0].assets);
+		for (const file of [
+			"desktop.tar.gz",
+			"desktop-update.json",
+			"desktop-validation.json",
+		]) {
+			for (const fault of ["missing", "size", "digest", "duplicate"]) {
+				p.releaseList[0].assets = structuredClone(assets);
+				const asset = p.releaseList[0].assets.find((a) => a.name === file);
+				if (fault === "missing")
+					p.releaseList[0].assets = p.releaseList[0].assets.filter(
+						(a) => a.name !== file,
+					);
+				if (fault === "size") asset.size++;
+				if (fault === "digest") asset.digest = `sha256:${"f".repeat(64)}`;
+				if (fault === "duplicate") p.releaseList[0].assets.push({ ...asset });
+				const state = await discoverReleases(p.client, keys);
+				assert.equal(state.nightly, null, `${file}: ${fault}`);
+				assert.equal(state.rejected.length, 1);
+			}
+		}
+		const incomplete = structuredClone(f.manifest);
+		incomplete.assets = incomplete.assets.filter(
+			(a) => a.file !== "desktop-validation.json",
+		);
+		assert.throws(
+			() => validateReleaseManifest(incomplete),
+			/Signed inventory mismatch/,
+		);
+		const wrongSource = structuredClone(f.manifest);
+		wrongSource.desktop.artifacts[0].commit = "f".repeat(40);
+		assert.throws(
+			() => validateReleaseManifest(wrongSource),
+			/Desktop identity/,
+		);
+	} finally {
+		f.cleanup();
+	}
+});
 test("discovery separates signed stable/nightly, excludes incomplete candidates and aborts network failures", async () => {
 	const stable = preparedFixture("stable"),
 		nightly = preparedFixture(),
@@ -213,5 +262,51 @@ test("channel-only discovery authenticates API calls and skips older verified hi
 	} finally {
 		stable.cleanup();
 		nightly.cleanup();
+	}
+});
+
+test("stable promotion selects an older signed nightly and refuses unavailable or invalid selections", async () => {
+	const older = preparedFixture("nightly", { sequence: 9 });
+	const latest = preparedFixture("nightly", { sequence: 10 });
+	const stable = preparedFixture("stable");
+	try {
+		const p = provider([latest, older, stable]);
+		let state = await discoverReleases(p.client, keys);
+		assert.equal(state.nightly.manifest.tag, latest.manifest.tag);
+		const selected = selectVerifiedPromotionNightly(state, older.manifest.tag);
+		assert.equal(selected.manifest.tag, older.manifest.tag);
+		assert.equal(
+			selected.manifestSha256,
+			sha256(readFileSync(join(older.assets, "release.json"))),
+		);
+		for (const tag of [
+			undefined,
+			"",
+			stable.manifest.tag,
+			"v1.0.0-beta",
+			"v1.0.0-nightly.20261009.8",
+		])
+			assert.throws(
+				() => selectVerifiedPromotionNightly(state, tag),
+				/Stable promotion/,
+			);
+		p.releaseList[1].draft = true;
+		state = await discoverReleases(p.client, keys);
+		assert.throws(
+			() => selectVerifiedPromotionNightly(state, older.manifest.tag),
+			/not a complete signed published/,
+		);
+		p.releaseList[1].draft = false;
+		p.releaseList[1].assets = p.releaseList[1].assets.filter(
+			(a) => a.name !== "runtime-smoke-linux-arm64.txt",
+		);
+		state = await discoverReleases(p.client, keys);
+		assert.throws(
+			() => selectVerifiedPromotionNightly(state, older.manifest.tag),
+			/not a complete signed published/,
+		);
+		assert.equal(state.nightly.manifest.tag, latest.manifest.tag);
+	} finally {
+		for (const f of [older, latest, stable]) f.cleanup();
 	}
 });

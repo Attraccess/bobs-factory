@@ -245,6 +245,39 @@ export function validateReleaseManifest(value) {
 				/^[a-f0-9]{40}$/.test(value.workflowSha),
 			"Missing frozen candidate identity",
 		);
+		if (value.desktop !== undefined) {
+			requireValue(
+				value.desktop.schemaVersion === 1 &&
+					Array.isArray(value.desktop.artifacts) &&
+					value.desktop.artifacts.length > 0,
+				"Invalid delivered desktop inventory",
+			);
+			const targets = new Set();
+			for (const item of value.desktop.artifacts) {
+				requireValue(
+					item.version === value.version &&
+						item.commit === value.commit &&
+						item.channel === value.channel &&
+						typeof item.target === "string" &&
+						!targets.has(item.target) &&
+						typeof item.platformRequirements === "string" &&
+						item.platformRequirements.length > 0,
+					"Desktop identity/platform requirements mismatch",
+				);
+				targets.add(item.target);
+				for (const record of [
+					item.archive,
+					item.updateMetadata,
+					item.validation,
+				]) {
+					requireValue(
+						/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(record?.file),
+						"Unsafe desktop filename",
+					);
+					validateFile(record, record.file);
+				}
+			}
+		}
 		const required = [
 			"candidate.json",
 			"release-evidence.json",
@@ -261,6 +294,13 @@ export function validateReleaseManifest(value) {
 				new Set(value.assets.map((a) => a.file)).size === value.assets.length,
 			"Ambiguous signed inventory",
 		);
+		if (value.publicInstallerValidation !== undefined) {
+			requireValue(
+				value.publicInstallerValidation === 1,
+				"Unsupported public installer validation",
+			);
+			required.push(...TARGETS.map((t) => `public-installer-${t}.json`));
+		}
 		for (const file of required)
 			requireValue(
 				value.assets.some((a) => a.file === file),
@@ -298,6 +338,11 @@ export function releaseAssetRecords(value, inventory = true) {
 		...Object.values(value.targets).flatMap((t) => [
 			{ file: t.archive, sha256: t.archiveSha256, size: t.archiveSize },
 			{ file: t.manifest, sha256: t.manifestSha256, size: t.manifestSize },
+		]),
+		...(value.desktop?.artifacts ?? []).flatMap((item) => [
+			item.archive,
+			item.updateMetadata,
+			item.validation,
 		]),
 	];
 }
@@ -399,6 +444,7 @@ export function validateArtifactZip(
 		"runtime-smoke.txt",
 		"native-helpers.json",
 		"prepared-agent-boundaries.json",
+		"public-installer.json",
 	];
 	for (const file of needed) {
 		requireValue(
@@ -808,4 +854,43 @@ export function validatePreparedAgentBoundaries(
 	}
 	// Required release checks use mocks; authenticated live tests are manual-only.
 	return receipt;
+}
+
+export function validatePublicInstaller(receipt, identity, target) {
+	requireValue(
+		receipt?.schemaVersion === 1 &&
+			receipt.product === "bobs-factory" &&
+			receipt.validation === "public-installer" &&
+			receipt.status === "passed" &&
+			receipt.scope === "native-archive-controlled-downloads" &&
+			receipt.version === identity.version &&
+			receipt.commit === identity.commit &&
+			receipt.target === target &&
+			receipt.candidateDigest === identity.candidateDigest &&
+			receipt.workflowSha === identity.workflowSha &&
+			[
+				"channelResolution",
+				"exactVersion",
+				"repeatInstall",
+				"badHashPreservesInstallation",
+				"badSizePreservesInstallation",
+				"badSourcePreservesInstallation",
+				"unavailableTargetPreservesInstallation",
+				"badSignaturePreservesInstallation",
+			].every((check) => receipt.checks?.[check] === "passed"),
+		`Missing candidate-bound public installer validation: ${target}`,
+	);
+}
+export function validateDesktopReceipt(receipt, identity, target) {
+	requireValue(
+		receipt?.product === "bobs-factory" &&
+			receipt.status === "passed" &&
+			receipt.version === identity.version &&
+			receipt.commit === identity.commit &&
+			receipt.channel === identity.channel &&
+			receipt.target === target &&
+			receipt.candidateDigest === identity.candidateDigest &&
+			receipt.workflowSha === identity.workflowSha,
+		"Missing candidate-bound desktop validation; retain desktop delivery as blocked",
+	);
 }

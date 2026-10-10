@@ -19,9 +19,11 @@ import {
 	TARGETS,
 	validateArchive,
 	validateBuildProvenance,
+	validateDesktopReceipt,
 	validateEvidence,
 	validateNativeHelpers,
 	validatePreparedAgentBoundaries,
+	validatePublicInstaller,
 	validateReleaseManifest,
 } from "./binary-release.mjs";
 import { candidateIdentity, validateCandidate } from "./release-candidate.mjs";
@@ -151,6 +153,14 @@ export function validatePreparedRelease(
 			target,
 			build,
 		);
+		if (manifest.publicInstallerValidation === 1)
+			validatePublicInstaller(
+				JSON.parse(
+					readFileSync(join(directory, `public-installer-${target}.json`)),
+				),
+				identity,
+				target,
+			);
 		const smoke = readFileSync(
 			join(directory, `runtime-smoke-${target}.txt`),
 			"utf8",
@@ -164,6 +174,12 @@ export function validatePreparedRelease(
 			`Missing native runtime smoke: ${target}`,
 		);
 	}
+	for (const item of manifest.desktop?.artifacts ?? [])
+		validateDesktopReceipt(
+			JSON.parse(readFileSync(join(directory, item.validation.file))),
+			identity,
+			item.target,
+		);
 	const temporary = mkdtempSync(join(tmpdir(), "factory-prepared-evidence-"));
 	try {
 		const archive = join(directory, "validation-receipts.tar.gz");

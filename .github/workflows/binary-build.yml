@@ -71,6 +71,8 @@ jobs:
         run: |
           ./tooling/scripts/install-binary.sh "$RUNNER_TEMP/artifacts/bobs-factory-$VERSION-$TARGET.tar.gz" "$RUNNER_TEMP/artifacts/bobs-factory-$VERSION-$TARGET.manifest.json" "$RUNNER_TEMP/factory-prefix"
           ./tooling/scripts/smoke-binary.sh "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" | tee "$RUNNER_TEMP/artifacts/runtime-smoke.txt"
+      - name: Public installer with native archives and controlled signed downloads
+        run: node tooling/scripts/smoke-public-install.mjs --artifacts "$RUNNER_TEMP/artifacts"
       - name: Native scoped helpers with controlled HTTPS
         run: node tooling/scripts/smoke-native-helpers.mjs --binary "$RUNNER_TEMP/factory-prefix/bin/bobs-factory" --output "$RUNNER_TEMP/artifacts"
       - name: Prepared agent protocol boundaries without live inference

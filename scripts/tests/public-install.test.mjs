@@ -310,6 +310,18 @@ test("first public beta installs anonymously by default or exact version", () =>
 				"1.0.0-beta",
 			);
 		}
+		const link = readlinkSync(join(f.prefix, "bin/bobs-factory"));
+		const profile = readFileSync(f.profile, "utf8");
+		for (const args of [
+			["--channel", "stable"],
+			["--channel", "stable", "--version", "1.0.0-beta"],
+		]) {
+			const rejected = f.install(...args);
+			assert.notEqual(rejected.status, 0);
+			assert.match(rejected.stderr, /Requested channel/);
+			assert.equal(readlinkSync(join(f.prefix, "bin/bobs-factory")), link);
+			assert.equal(readFileSync(f.profile, "utf8"), profile);
+		}
 		const result = f.install("--version", "1.0.0-beta.01");
 		assert.notEqual(result.status, 0);
 		assert.match(result.stderr, /Invalid version/);

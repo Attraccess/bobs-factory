@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
 	compareReleaseVersions,
@@ -163,4 +167,54 @@ test("native build provenance binds separate workflow SHA and candidate artifact
 			),
 		/candidate artifact/,
 	);
+});
+
+test("stable preparation retries retain the selected nightly and reject changed selection", () => {
+	const work = mkdtempSync(join(tmpdir(), "factory-candidate-retry-"));
+	try {
+		const promotion = {
+			channel: "nightly",
+			commit,
+			version: "1.0.0-nightly.20261009.9",
+			tag: "v1.0.0-nightly.20261009.9",
+			manifestSha256: "c".repeat(64),
+			releaseId: 4,
+		};
+		const candidate = freezeCandidate({
+			...args,
+			channel: "stable",
+			version: "1.0.0",
+			promotion,
+		});
+		const output = join(work, "candidate.json");
+		const bytes = JSON.stringify(candidate);
+		writeFileSync(output, bytes);
+		const run = (...extra) =>
+			spawnSync(
+				process.execPath,
+				[
+					"scripts/prepare-release-candidate.mjs",
+					"--channel",
+					"stable",
+					"--version",
+					"1.0.0",
+					"--workflow-sha",
+					workflowSha,
+					"--output",
+					output,
+					...extra,
+				],
+				{ encoding: "utf8" },
+			);
+		const retained = run("--nightly-tag", promotion.tag);
+		assert.equal(retained.status, 0, retained.stderr);
+		assert.match(retained.stdout, /Retained frozen candidate/);
+		assert.notEqual(run().status, 0);
+		const changed = run("--nightly-tag", "v1.0.0-nightly.20261009.10");
+		assert.notEqual(changed.status, 0);
+		assert.match(changed.stderr, /Retry inputs differ/);
+		assert.equal(readFileSync(output, "utf8"), bytes);
+	} finally {
+		rmSync(work, { recursive: true, force: true });
+	}
 });
