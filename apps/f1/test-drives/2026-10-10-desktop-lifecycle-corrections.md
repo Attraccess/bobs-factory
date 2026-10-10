@@ -30,6 +30,17 @@ checks across six files pass. Mocked F1 desktop lifecycle, maintenance/drain9
 scenarios and replacement/rollback10 scenarios pass. These use controlled agents
 and do not prove physical provider continuation.
 
+Independent combined review (Taskbot116 comment1118) clears all five original
+production correction findings at exact84f2: the four findings above plus the
+updater's completed-outcome startup identity selection. It independently validates
+authentic ownership revocation, actual Linux ARM Stop, systemd directive syntax,
+real Electron confirmation/maintenance fencing, authenticated readiness, native
+cold-start outcome selection and lost-ack adapter recovery. It confirms final091
+updater semantics are production-equivalent. Its sole P2 finding is the maintained
+84f2 Stop-completion fixture timing defect, corrected in ed7 and rerun successfully
+on all four targets below. This clearance does not close the remaining acceptance
+or authorize merge/publication.
+
 ## Retained native failures
 
 [Run38075672515](https://github.com/jappyjan/bobs-factory/actions/runs/38075672515)
@@ -101,8 +112,8 @@ shell upgrading or official publisher trust/publication.
 | --- | --- | --- |
 | #121 desktop | Branded shared frontend shell; local attach/per-home worker lock; isolated origin sessions and limited launcher bridge; first passkey/onboarding UI; close/reopen same worker; explicit native Stop; DMG/AppImage/DEB preparation; shared runtime update settings/adapter; all four native virtual-auth/menu/maintenance/suppression checks pass. | Actual running-job window-close continuation, full prepared repository/provider onboarding, trusted DMG drag/open and package installation/removal/upgrade trials, remote HTTPS/native auth/client mismatch trials, physical credentials, minimum OS/libc proof, signing/publication and **full unattended Electron-shell/package updating**. Runtime/frontend replacement is not a complete app update. Shell implementation is separately assigned from frozen ed7 (comment1114). |
 | #122 headless | Server-only CLI includes static frontend, no display/browser required; explicit service mode; protected host-local update control; per-home ownership; runtime replacement/rollback and mocked continuation; login/lingering/keychain boundaries documented; controlled signed installer/policy/coexistence23/23 accepted. | Separate-host remote control and connection-loss trial, reboot/logout/lingering and physical native provider/auth continuation. |
-| #124 lifecycle | Stopped opt-in install, startup enable/disable, actual manager PID/home/executable health, logs/start/Stop/restart/remove, crash backoff, retained removal, safe maintenance, orphan ownership recovery, suppressed intentional Stop and documented external handoff; four-target actual manager and Electron Stop checks pass. | Independent corrected-source review, actual login/logout/reboot/lingering, deliberately disabled PM2/manual/Nix migration on disposable hosts, preserved native provider continuation. Existing Mac PM2 ownership was never changed. |
-| #119/#120 integration | Corrected updater sources merged; shared adapter authentic readiness, provenance, maintenance, external supervision and Stop suppression; mocked F1 retained; controlled signed runtime integration23/23 accepted. | Independent outcome review, separately assigned shell update capability and all retained public release gates. |
+| #124 lifecycle | Stopped opt-in install, startup enable/disable, actual manager PID/home/executable health, logs/start/Stop/restart/remove, crash backoff, retained removal, safe maintenance, orphan ownership recovery, suppressed intentional Stop and documented external handoff; four-target actual manager and Electron Stop checks pass; independent production corrections cleared. | Actual login/logout/reboot/lingering, deliberately disabled PM2/manual/Nix migration on disposable hosts, preserved native provider continuation. Existing Mac PM2 ownership was never changed. |
+| #119/#120 integration | Corrected updater sources merged; shared adapter authentic readiness, provenance, maintenance, external supervision and Stop suppression; mocked F1 retained; controlled signed runtime integration23/23 accepted; independent completed-outcome/recovery review cleared. | Separately assigned shell update capability and all retained public release gates. |
 
 GitGuardian is **failed**, not bypassed: exact ed7 check114285305556 finds four
 occurrences across two synthetic capacity-lease UUID incidents in workspace140347.
