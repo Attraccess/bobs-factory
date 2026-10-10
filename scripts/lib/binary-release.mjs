@@ -692,7 +692,12 @@ export function validateEvidence(evidence, directory, identity) {
 			prefix,
 			regularOnly: true,
 			limits: { maxMembers: 256 },
-			collect: ["commit.txt", "source-materials.json"].map((f) => prefix + f),
+			collect: [
+				"commit.txt",
+				"source-materials.json",
+				"candidate.json",
+				"release-tooling.tar.gz",
+			].map((f) => prefix + f),
 		});
 		const listing = scanned.entries.map((e) => e.name);
 		for (const file of [

@@ -30,6 +30,43 @@ const hasControl = (value) =>
 const check = (condition, message) => {
 	if (!condition) throw new Error(message);
 };
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+// Conservative portable identity: canonical Unicode decomposition, caseless
+// comparison (including multi-character case mappings), and ignored format marks.
+// Reject aliases rather than guessing which spelling a later extraction retains.
+const pathKey = (value) =>
+	value
+		.normalize("NFD")
+		.toLowerCase()
+		.toUpperCase()
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/\p{Default_Ignorable_Code_Point}/gu, "");
+function validPathText(value) {
+	return (
+		!value.includes("\\") &&
+		!hasControl(value) &&
+		!/\p{Default_Ignorable_Code_Point}/u.test(value) &&
+		Buffer.byteLength(value.normalize("NFD")) <= 4096 &&
+		value.split("/").every((p) => Buffer.byteLength(p.normalize("NFD")) <= 255)
+	);
+}
+function memberName(name, type, prefix) {
+	// GNU tar may emit one './' root record and one exact './' root prefix.
+	// Remove only that prefix, before collection, duplicates, or control matching.
+	if (name === "./" && type === "5") return null;
+	if (name.startsWith("./")) name = name.slice(2);
+	const path = name.replace(/\/$/, "");
+	check(
+		validPathText(name) &&
+			(type === "5" || !name.endsWith("/")) &&
+			(path === prefix.slice(0, -1) || path.startsWith(prefix)) &&
+			path.split("/").every((p) => p && p !== "." && p !== "..") &&
+			(path !== prefix.slice(0, -1) || type === "5"),
+		`Unsafe/duplicate source archive inventory: ${JSON.stringify(name)}`,
+	);
+	return type === "5" ? `${path}/` : path;
+}
 
 // Overrides are trusted caller policy, never archive metadata. A single worker has
 // no descendants; execFileSync's deadline kills it and closes all owned streams/fds.
@@ -64,6 +101,23 @@ export function inspectArchive(archive, options = {}) {
 // link BEFORE consuming '..'. A link may never leave its root, even transiently.
 function validateLinks(entries, prefix) {
 	const root = prefix.replace(/\/$/, "");
+	// Include implicit directories so aliases in directory prefixes and collisions
+	// between a file/link and a directory are independent of archive member order.
+	const tree = new Map();
+	for (const entry of entries) {
+		const parts = entry.name.replace(/\/$/, "").split("/");
+		for (let i = 1; i <= parts.length; i++) {
+			const name = parts.slice(0, i).join("/");
+			const key = pathKey(name);
+			const type = i === parts.length ? entry.type : "5";
+			const prior = tree.get(key);
+			check(
+				!prior || (prior.name === name && prior.type === "5" && type === "5"),
+				`Ambiguous filesystem alias or directory/file collision: ${name}`,
+			);
+			tree.set(key, { name, type });
+		}
+	}
 	const links = new Map(
 		entries
 			.filter((e) => e.type === "2")
@@ -86,17 +140,24 @@ function validateLinks(entries, prefix) {
 			}
 			parts.push(part);
 			check(parts[0] === root, "Source archive contains external link targets");
-			const link = links.get(parts.join("/"));
+			const path = parts.join("/");
+			const alias = tree.get(pathKey(path));
+			check(
+				!alias || alias.name === path,
+				`Ambiguous filesystem alias in link target: ${path}`,
+			);
+			check(
+				!pending.length || !alias || alias.type !== "0",
+				"Source archive traverses a non-directory member",
+			);
+			const link = links.get(path);
 			if (link !== undefined) {
 				check(
 					++hops <= 40,
 					"Source archive contains a symlink cycle or excessive link chain",
 				);
 				check(
-					link &&
-						!link.startsWith("/") &&
-						!link.includes("\\") &&
-						!hasControl(link),
+					link && !link.startsWith("/") && validPathText(link),
 					"Source archive contains external link targets",
 				);
 				parts.pop();
@@ -107,7 +168,7 @@ function validateLinks(entries, prefix) {
 	for (const entry of entries) resolve(entry.name);
 }
 const string = (b) =>
-	b.subarray(0, b.indexOf(0) < 0 ? b.length : b.indexOf(0)).toString("utf8");
+	utf8.decode(b.subarray(0, b.indexOf(0) < 0 ? b.length : b.indexOf(0)));
 function number(b) {
 	// GNU base-256 permits large sizes; reject negative or imprecise values.
 	if (b[0] & 0x80) {
@@ -139,17 +200,20 @@ function pax(bytes) {
 				bytes[offset + length - 1] === 10,
 			"Invalid PAX record length",
 		);
-		const record = bytes
-			.subarray(space + 1, offset + length - 1)
-			.toString("utf8");
-		const equal = record.indexOf("=");
+		const record = bytes.subarray(space + 1, offset + length - 1);
+		const equal = record.indexOf(61);
 		check(equal > 0, "Invalid PAX record");
-		const key = record.slice(0, equal);
+		const key = utf8.decode(record.subarray(0, equal));
 		check(
 			!key.startsWith("GNU.sparse") && key !== "SCHILY.filetype",
 			"Unsupported sparse/special tar entry",
 		);
-		fields[key] = record.slice(equal + 1);
+		// Ignored xattrs can legitimately be binary (macOS SCHILY provenance).
+		// Path overrides must never acquire replacement-character aliases.
+		const value = record.subarray(equal + 1);
+		fields[key] = ["path", "linkpath"].includes(key)
+			? utf8.decode(value)
+			: value.toString("utf8");
 		offset += length;
 	}
 	return fields;
@@ -206,6 +270,7 @@ async function readArchive(options) {
 		names = new Set(),
 		texts = {};
 	const wanted = new Set(collect);
+	const controls = new Map(collect.map((name) => [pathKey(name), name]));
 	const finish = () => {
 		if (fd !== undefined) {
 			closeSync(fd);
@@ -296,6 +361,15 @@ async function readArchive(options) {
 					longName = undefined;
 					longLink = undefined;
 				}
+				if (!special) name = memberName(name, type, prefix);
+				check(name !== null || size === 0, "Non-regular tar entry has payload");
+				if (!special && name !== null) {
+					const control = controls.get(pathKey(name));
+					check(
+						control === undefined || control === name,
+						"Ambiguous filesystem alias for archive control",
+					);
+				}
 				check(
 					Number.isSafeInteger(size) &&
 						size >= 0 &&
@@ -314,14 +388,7 @@ async function readArchive(options) {
 						"Archive control bytes limit exceeded",
 					);
 				}
-				if (!special) {
-					check(
-						name.startsWith(prefix) &&
-							!name.includes("\\") &&
-							!hasControl(name) &&
-							!name.split("/").some((p) => p === "." || p === ".."),
-						`Unsafe/duplicate source archive inventory: ${JSON.stringify(name)}`,
-					);
+				if (!special && name !== null) {
 					check(
 						!names.has(name.replace(/\/$/, "")),
 						"Unsafe/duplicate source archive inventory",

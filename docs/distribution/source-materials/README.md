@@ -171,6 +171,36 @@ chains fail after at most 40 expansions. Legitimate framework
 `Versions/Current` chains remain valid. A structural pass is not proof of upstream
 source completeness, native byte correspondence or legal acceptance.
 
+Member names are validated after PAX/GNU overrides and before control collection,
+duplicate detection or legacy matching. Repeated separators, interior `.`/`..`,
+absolute paths, backslashes, invalid UTF-8, controls and Unicode default-ignorable
+marks fail closed. Names have at most 4096 decomposed UTF-8 bytes and 255 per
+component. Directory names have one canonical trailing slash; regular/link names
+have none. One exact leading `./` is removed, and the GNU tar `./` directory record
+is ignored. No second `./` or other dot component is accepted. Thus GNU-prefixed
+controls use the same identity as unprefixed controls, including legacy checks.
+
+Intake applies one conservative portable policy on both macOS and Linux; passing
+on a case-sensitive host does not exempt an archive from macOS alias checks. A
+virtual tree includes implicit directory prefixes and rejects differently spelled
+members with the same Unicode NFD/caseless key, directory/file/link collisions,
+and differently spelled link references to an existing component. Caseless keys
+use Unicode lower/upper/lower mappings, including multi-character mappings; the
+policy deliberately rejects some distinctions a particular filesystem preserves.
+Collected controls also reserve their exact spelling, including forbidden new
+candidate/tooling controls at the legacy boundary. Exact Unicode filenames and
+link targets remain supported; this is not an ASCII-only comparison or a probe
+of the validation host's filesystem. Hardlinks remain unsupported. Link-containing
+paths cannot traverse regular files, and no member can be placed beneath an
+archived link. Exact framework chains remain accepted.
+
+The actual retained Bun and TinyCC archives pass this portable policy, including
+Bun's Unicode fixtures and nine symlinks, without changing their bytes or hashes.
+A future upstream archive with colliding names requires an explicit reviewed
+material/target policy and freshly bound hashes before intake; there is no silent
+Linux-only bypass. This does not establish compatibility for arbitrary filesystem
+comparison rules outside the supported macOS/Linux scope.
+
 A digestless historical-beta identity rejects `candidateDigest`/`workflowSha`
 claims in manifests, evidence, native archives/builds/receipts and source material,
 even if those fields are malformed or null. New source schemas and frozen
