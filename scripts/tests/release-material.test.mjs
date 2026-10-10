@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import {
+	existsSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -26,7 +27,10 @@ import {
 	validateSourceArchive,
 	validateSourceMaterials,
 } from "../lib/release-material.mjs";
-import { sourceMaterialFixture } from "./source-material-fixture.mjs";
+import {
+	fixtureTar,
+	sourceMaterialFixture,
+} from "./source-material-fixture.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const commit = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -69,7 +73,7 @@ test("source packaging binds exact committed factory source and reviewed runtime
 		const archive = join(output, "source-rebuild.tar.gz");
 		validateSourceArchive(archive, identity);
 		assert.equal(
-			execFileSync("tar", ["-xOzf", archive, "source-rebuild/commit.txt"], {
+			fixtureTar(["-xOzf", archive, "source-rebuild/commit.txt"], {
 				encoding: "utf8",
 			}).trim(),
 			commit,
@@ -82,7 +86,7 @@ test("source packaging binds exact committed factory source and reviewed runtime
 			}),
 		);
 		assert.match(
-			execFileSync("tar", ["-tzf", archive], { encoding: "utf8" }),
+			fixtureTar(["-tzf", archive], { encoding: "utf8" }),
 			/factory-source\.tar\.gz/,
 		);
 		assert.notEqual(
@@ -129,7 +133,7 @@ test("source packaging binds exact committed factory source and reviewed runtime
 		writeFileSync(join(materials, "bun-source.tar.gz"), "corrupt");
 		assert.throws(
 			() => validateSourceMaterials(manifest, materials, identity),
-			/integrity failure/,
+			/integrity failure|size mismatch/,
 		);
 	} finally {
 		rmSync(work, { recursive: true, force: true });
@@ -143,14 +147,38 @@ test("evidence archive import rejects links and never extracts traversal bytes",
 		writeFileSync(join(stage, "release-evidence.json"), "{}");
 		writeFileSync(join(stage, "source-rebuild.tar.gz"), "fixture");
 		const archive = join(work, "evidence.tar.gz");
-		execFileSync("tar", ["-czf", archive, "-C", work, "release-evidence"]);
+		fixtureTar(["-czf", archive, "-C", work, "release-evidence"]);
+		mkdirSync(join(work, "valid"));
+		writeFileSync(
+			join(work, "valid/incoming-evidence.tar.gz"),
+			"retained input",
+		);
 		extractEvidenceArchive(archive, join(work, "valid"));
+		assert.equal(
+			readFileSync(join(work, "valid/incoming-evidence.tar.gz"), "utf8"),
+			"retained input",
+		);
+		mkdirSync(join(work, "conflict"));
+		writeFileSync(
+			join(work, "conflict/source-rebuild.tar.gz"),
+			"preserved prior bytes",
+		);
+		assert.throws(
+			() => extractEvidenceArchive(archive, join(work, "conflict")),
+			/EEXIST/,
+		);
+		assert.equal(
+			readFileSync(join(work, "conflict/source-rebuild.tar.gz"), "utf8"),
+			"preserved prior bytes",
+		);
+		assert(!existsSync(join(work, "conflict/release-evidence.json")));
+
 		assert.equal(
 			readFileSync(join(work, "valid/release-evidence.json"), "utf8"),
 			"{}",
 		);
 		symlinkSync("/tmp/foreign-file", join(stage, "link"));
-		execFileSync("tar", ["-czf", archive, "-C", work, "release-evidence"]);
+		fixtureTar(["-czf", archive, "-C", work, "release-evidence"]);
 		assert.throws(
 			() => extractEvidenceArchive(archive, join(work, "invalid")),
 			/links\/special files/,
@@ -168,6 +196,7 @@ test("evidence intake rejects a dirty version edit before retrieving build prove
 			"prepare-release-evidence.mjs",
 			"lib/binary-release.mjs",
 			"lib/release-material.mjs",
+			"lib/bounded-archive.mjs",
 			"lib/release-candidate.mjs",
 		])
 			writeFileSync(
@@ -264,7 +293,7 @@ test("semantic intake rejects omitted, substituted and tampered rebuild material
 		const archive = join(work, "source.tar.gz");
 		const pack = (m) => {
 			writeFileSync(join(stage, "source-materials.json"), jsonBytes(m));
-			execFileSync("tar", ["-czf", archive, "-C", work, "source-rebuild"]);
+			fixtureTar(["-czf", archive, "-C", work, "source-rebuild"]);
 		};
 		pack(manifest);
 		validateSourceArchive(archive, identity);
@@ -282,13 +311,13 @@ test("semantic intake rejects omitted, substituted and tampered rebuild material
 			pack(bad);
 			assert.throws(
 				() => validateSourceArchive(archive, identity),
-				/required material/,
+				/required material|uninventoried/,
 			);
 		}
 		const upstreamStage = join(work, "upstream");
 		const webkitPrefix = "WebKit-2e2aa2290fac856d6f451ceacb58f7f5b44dd057";
 		mkdirSync(upstreamStage);
-		execFileSync("tar", [
+		fixtureTar([
 			"-xzf",
 			join(stage, "webkit-source.tar.gz"),
 			"-C",
@@ -298,7 +327,7 @@ test("semantic intake rejects omitted, substituted and tampered rebuild material
 			"/etc/passwd",
 			join(upstreamStage, webkitPrefix, "external-link"),
 		);
-		execFileSync("tar", [
+		fixtureTar([
 			"-czf",
 			join(stage, "webkit-source.tar.gz"),
 			"-C",
@@ -316,7 +345,7 @@ test("semantic intake rejects omitted, substituted and tampered rebuild material
 			/external link targets/,
 		);
 		rmSync(join(upstreamStage, webkitPrefix, "external-link"));
-		execFileSync("tar", [
+		fixtureTar([
 			"-czf",
 			join(stage, "webkit-source.tar.gz"),
 			"-C",
@@ -334,7 +363,7 @@ test("semantic intake rejects omitted, substituted and tampered rebuild material
 		pack(manifest);
 		assert.throws(
 			() => validateSourceArchive(archive, identity),
-			/Generated source bundle integrity failure/,
+			/Generated source bundle integrity failure|size mismatch/,
 		);
 		writeFileSync(join(stage, "factory-source.tar.gz"), "controlled source");
 		const badRevision = structuredClone(manifest);
@@ -387,7 +416,7 @@ test("semantic intake rejects omitted, substituted and tampered rebuild material
 		pack(manifest);
 		assert.throws(
 			() => validateSourceArchive(archive, identity),
-			/integrity failure/,
+			/integrity failure|size mismatch/,
 		);
 	} finally {
 		rmSync(work, { recursive: true, force: true });

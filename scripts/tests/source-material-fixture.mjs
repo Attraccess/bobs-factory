@@ -5,6 +5,12 @@ import { join } from "node:path";
 import { fileRecord, jsonBytes, TARGETS } from "../lib/binary-release.mjs";
 import { RUNTIME_SOURCES } from "../lib/release-material.mjs";
 
+export const fixtureTar = (args, options = {}) =>
+	execFileSync("tar", args, {
+		...options,
+		env: { ...process.env, COPYFILE_DISABLE: "1" },
+	});
+
 export function sourceMaterialFixture(directory, identity) {
 	mkdirSync(directory, { recursive: true });
 	const records = [];
@@ -25,7 +31,7 @@ export function sourceMaterialFixture(directory, identity) {
 			mkdirSync(join(path, ".."), { recursive: true });
 			writeFileSync(path, bytes);
 		}
-		execFileSync("tar", ["-czf", join(directory, file), "-C", staging, prefix]);
+		fixtureTar(["-czf", join(directory, file), "-C", staging, prefix]);
 		rmSync(staging, { recursive: true });
 	};
 	for (const [kind, pin] of Object.entries(RUNTIME_SOURCES)) {

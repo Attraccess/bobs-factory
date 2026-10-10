@@ -17,7 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Block new frozen releases when source or relink inputs are missing, substituted or tampered, while preserving historical beta evidence and requiring independent full-payload review ([Taskbot #116](https://taskbot.apps.janjaap.de/p/bobs-factory/t/116), [#90](https://github.com/jappyjan/bobs-factory/pull/90)).
+- Block new frozen releases when source or relink inputs are missing, substituted or tampered; reject intermediate symlink escapes, bound archive intake, and prevent new candidate metadata from being downgraded to legacy beta, while preserving genuine historical inventory/receipt bytes and requiring independent full-payload review ([Taskbot #116](https://taskbot.apps.janjaap.de/p/bobs-factory/t/116), [#90](https://github.com/jappyjan/bobs-factory/pull/90)).
 
 - Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 

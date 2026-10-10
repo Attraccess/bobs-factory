@@ -390,6 +390,7 @@ test("Pages synchronizes a verified beta manifest and preserves prior metadata o
 			"install.sh",
 			"lib/binary-release.mjs",
 			"lib/release-material.mjs",
+			"lib/bounded-archive.mjs",
 			"lib/release-candidate.mjs",
 			"lib/release-signature.mjs",
 			"lib/github-release.mjs",

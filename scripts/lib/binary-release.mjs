@@ -12,7 +12,8 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { releaseChannel, validateCandidate } from "./release-candidate.mjs";
+import { inspectArchive } from "./bounded-archive.mjs";
+import { releaseChannel } from "./release-candidate.mjs";
 import { validateSourceArchive } from "./release-material.mjs";
 
 export const REPOSITORY = "jappyjan/bobs-factory";
@@ -179,7 +180,24 @@ function validateFile(record, expected) {
 		`Invalid size: ${expected}`,
 	);
 }
+// Legacy identities cannot discard new-candidate claims at any input boundary.
+function validateCandidateBoundary(value, identity, label) {
+	if (identity.candidateDigest) return;
+	const pending = [value];
+	while (pending.length) {
+		const current = pending.pop();
+		if (!current || typeof current !== "object") continue;
+		requireValue(
+			!Object.hasOwn(current, "candidateDigest") &&
+				!Object.hasOwn(current, "workflowSha"),
+			`New candidate metadata at legacy boundary: ${label}`,
+		);
+		for (const child of Object.values(current)) pending.push(child);
+	}
+}
 export function validateReleaseManifest(value) {
+	if (value?.schemaVersion === 1)
+		validateCandidateBoundary(value, {}, "release manifest");
 	requireValue(
 		[1, 2].includes(value?.schemaVersion) &&
 			value.product === "bobs-factory" &&
@@ -467,6 +485,7 @@ export function validateArtifactZip(
 export function validateArchive(archivePath, manifestPath, identity, target) {
 	const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 	const name = `bobs-factory-${identity.version}-${target}`;
+	validateCandidateBoundary(manifest, identity, "archive manifest");
 	requireValue(
 		manifest.schemaVersion === 1 &&
 			manifest.product === "bobs-factory" &&
@@ -529,6 +548,7 @@ export function validateArchive(archivePath, manifestPath, identity, target) {
 		const build = JSON.parse(
 			readFileSync(join(work, name, "build.json"), "utf8"),
 		);
+		validateCandidateBoundary(build, identity, "embedded build");
 		requireValue(
 			build.schemaVersion === 1 &&
 				build.product === "bobs-factory" &&
@@ -581,6 +601,8 @@ export function validateArchive(archivePath, manifestPath, identity, target) {
 	return manifest;
 }
 export function validateEvidence(evidence, directory, identity) {
+	validateCandidateBoundary(identity, identity, "release identity");
+	validateCandidateBoundary(evidence, identity, "release evidence");
 	requireValue(
 		evidence?.schemaVersion === 1 &&
 			evidence.product === "bobs-factory" &&
@@ -660,79 +682,52 @@ export function validateEvidence(evidence, directory, identity) {
 			sha256File(sourcePath) === evidence.source.sha256,
 		"Source/rebuild archive integrity failure",
 	);
-	const listing = execFileSync("tar", ["-tzf", sourcePath], {
-		encoding: "utf8",
-	})
-		.trim()
-		.split("\n");
-	requireValue(
-		listing.length === new Set(listing).size &&
-			listing.every(
-				(entry) =>
-					entry.startsWith("source-rebuild/") &&
-					!entry.includes("\\") &&
-					!entry.split("/").some((part) => part === "." || part === ".."),
-			),
-		"Unsafe source/rebuild archive inventory",
-	);
-	const verbose = execFileSync("tar", ["-tvzf", sourcePath], {
-		encoding: "utf8",
-	})
-		.trim()
-		.split("\n");
-	requireValue(
-		verbose.every((line) => /^[d-]/.test(line)),
-		"Links/special files in source/rebuild archive",
-	);
-	for (const file of [
-		"commit.txt",
-		"README.md",
-		"pnpm-lock.yaml",
-		"bun-source.tar.gz",
-	])
-		requireValue(
-			listing.includes(`source-rebuild/${file}`),
-			`Source/rebuild material missing: ${file}`,
-		);
-	const commit = execFileSync(
-		"tar",
-		["-xOzf", sourcePath, "source-rebuild/commit.txt"],
-		{ encoding: "utf8" },
-	).trim();
-	requireValue(
-		commit === identity.commit,
-		"Source/rebuild archive commit mismatch",
-	);
 	if (identity.candidateDigest) {
+		validateSourceArchive(sourcePath, identity);
+	} else {
+		// Genuine beta source/receipts stay untouched; new-candidate inputs cannot be
+		// reclassified by deleting only the caller's identity or manifest fields.
+		const prefix = "source-rebuild/";
+		const scanned = inspectArchive(sourcePath, {
+			prefix,
+			regularOnly: true,
+			limits: { maxMembers: 256 },
+			collect: ["commit.txt", "source-materials.json"].map((f) => prefix + f),
+		});
+		const listing = scanned.entries.map((e) => e.name);
 		for (const file of [
-			"candidate.json",
-			"release-tooling.tar.gz",
-			"factory-source.tar.gz",
-			"source-materials.json",
+			"commit.txt",
+			"README.md",
+			"pnpm-lock.yaml",
+			"bun-source.tar.gz",
 		])
 			requireValue(
-				listing.includes(`source-rebuild/${file}`),
+				listing.includes(prefix + file),
 				`Source/rebuild material missing: ${file}`,
 			);
-		const frozen = validateCandidate(
-			JSON.parse(
-				execFileSync(
-					"tar",
-					["-xOzf", sourcePath, "source-rebuild/candidate.json"],
-					{ encoding: "utf8" },
-				),
-			),
+		requireValue(
+			scanned.texts[`${prefix}commit.txt`].trim() === identity.commit,
+			"Source/rebuild archive commit mismatch",
 		);
 		requireValue(
-			frozen.digest === identity.candidateDigest &&
-				frozen.candidate?.workflowSha === identity.workflowSha &&
-				frozen.candidate?.recipe?.versionOverride === identity.version,
-			"Source recipe mismatch",
+			!listing.some((e) =>
+				["candidate.json", "release-tooling.tar.gz"].includes(
+					e.slice(prefix.length),
+				),
+			),
+			"New candidate inputs at legacy boundary",
 		);
+		if (scanned.texts[`${prefix}source-materials.json`] !== undefined) {
+			const material = JSON.parse(
+				scanned.texts[`${prefix}source-materials.json`],
+			);
+			validateCandidateBoundary(material, identity, "source materials");
+			requireValue(
+				material.schemaVersion === 1,
+				"New source schema at legacy boundary",
+			);
+		}
 	}
-	// Immutable schema-1 beta recovery keeps its historical material/receipt bytes.
-	// Every newly frozen candidate must pass semantic material intake.
-	if (identity.candidateDigest) validateSourceArchive(sourcePath, identity);
 	return evidence;
 }
 
@@ -743,6 +738,8 @@ function validateNativeReceiptIdentity(
 	build,
 	validation,
 ) {
+	validateCandidateBoundary(receipt, identity, "native receipt");
+	validateCandidateBoundary(build, identity, "native build");
 	if (identity.candidateDigest)
 		requireValue(
 			receipt.candidateDigest === identity.candidateDigest &&

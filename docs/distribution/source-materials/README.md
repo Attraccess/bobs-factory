@@ -128,6 +128,57 @@ unchanged; newly prepared releases must use the stricter material intake. Legacy
 independent licensing-receipt checks; it does not invent a replacement candidate
 or rewrite historical source/evidence bytes.
 
+## Archive intake limits
+
+The intake reader streams gzip and parses USTAR, PAX and GNU long-name/link headers
+without invoking `tar` on submitted archives. Header checks bound size before a
+member is written or captured. Expanded-byte limits apply to actual decompressor
+output, including padding and concatenated gzip streams; another tar hidden after
+the end marker is rejected. Unknown source bundle members never reach disk.
+
+The fixed default policy in `scripts/lib/bounded-archive.mjs` permits 8 GiB of
+compressed input, 4 GiB per member, 16 GiB expanded per archive pass and 500,000
+headers (including extension headers). Flat outer source bundles have a tighter
+256-header cap. Candidate/material manifests and captured upstream license/build
+scripts are limited to 1 MiB each, with an 8 MiB aggregate capture budget including
+extension headers. Direct material manifests bound instructions/licenses/patches
+and native build configurations to 1 MiB, relink text logs to 16 MiB, and total
+recorded file bytes to 16 GiB. Inventory records must bind the exact positive size
+and SHA-256; declared sizes do not substitute for streaming enforcement.
+
+Each pass runs in a single owned Node worker with a 120-second deadline. The worker
+creates no descendants; timeout kills that process, closes its descriptors and
+lets the caller remove its private staging directory. Stream buffers are 64 KiB,
+with at most one output chunk of expanded-byte overshoot before rejection. Listing
+responses are capped at 128 MiB. Nested runtime/object archives are inspected,
+never extracted; their decompression has the same byte/header/time limits. These
+are per-pass limits; validation uses a finite set of outer and nested passes.
+
+The checked-in policy accommodates the retained 64,602,344-byte Bun and
+1,036,641-byte TinyCC inputs: actual reader checks observed 213,862,400 and
+4,976,640 expanded bytes respectively. No size or passing intake is claimed for
+unassembled WebKit/native objects. Before increasing a cap for a legitimate
+larger input, review its pinned size/hash, expected expansion, member inventory
+and host budget. Trusted callers can supply `{limits: {...}}` to
+`validateSourceArchive`, `validateSourceMaterials`, `extractEvidenceArchive` or
+`inspectArchive`; submitted manifests cannot raise limits. Public release intake
+uses the fixed defaults.
+
+Outer bundles are regular-only. Nested source links are resolved component by
+component using the archive's link map: intermediate links expand before `..`
+traversal, every step must remain inside the source root, and cycles/excessive
+chains fail after at most 40 expansions. Legitimate framework
+`Versions/Current` chains remain valid. A structural pass is not proof of upstream
+source completeness, native byte correspondence or legal acceptance.
+
+A digestless historical-beta identity rejects `candidateDigest`/`workflowSha`
+claims in manifests, evidence, native archives/builds/receipts and source material,
+even if those fields are malformed or null. New source schemas and frozen
+candidate/tooling inputs also cannot enter through that legacy path. Genuine
+historical material remains accepted with its original inventory and receipt
+bytes; additive authentication still requires protected signing and exact
+inventory approval. Do not delete contradictory metadata to force acceptance.
+
 The operator still reviews the entire frozen payload: all runtime dependencies,
 required notices/source/rebuild inputs, generated or modified code, actual object
 relink correspondence, and desktop installer/update archives. The shell owner

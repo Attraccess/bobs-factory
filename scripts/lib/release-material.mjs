@@ -1,62 +1,56 @@
-import { execFileSync } from "node:child_process";
 import {
-	closeSync,
+	copyFileSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
-	openSync,
 	readFileSync,
 	rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, posix } from "node:path";
+import { join } from "node:path";
 import { requireValue, sha256File } from "./binary-release.mjs";
+import { ARCHIVE_LIMITS, inspectArchive } from "./bounded-archive.mjs";
 import { canonical, validateCandidate } from "./release-candidate.mjs";
 
 export const sourceFileSha256 = sha256File;
 
-// Only regular bytes are extracted; an operator-supplied archive is never executed.
-export function extractEvidenceArchive(archive, output) {
-	const entries = execFileSync("tar", ["-tzf", archive], { encoding: "utf8" })
-		.trim()
-		.split("\n");
+// Only bounded regular bytes are staged; operator archives are never executed.
+export function extractEvidenceArchive(archive, output, options = {}) {
+	const policy = {
+		prefix: "release-evidence/",
+		regularOnly: true,
+		collect: ["release-evidence/release-evidence.json"],
+		limits: options.limits,
+	};
+	const scanned = inspectArchive(archive, policy);
+	const files = scanned.entries.filter((e) => e.type === "0");
 	requireValue(
-		entries.length === new Set(entries).size &&
-			entries.every(
-				(entry) =>
-					entry.startsWith("release-evidence/") &&
-					/^[A-Za-z0-9_./-]+$/.test(entry) &&
-					!entry.split("/").some((part) => part === "." || part === ".."),
-			),
-		"Unsafe/duplicate evidence archive inventory",
-	);
-	const types = execFileSync("tar", ["-tvzf", archive], { encoding: "utf8" })
-		.trim()
-		.split("\n");
-	requireValue(
-		types.every((line) => /^[d-]/.test(line)),
-		"Evidence archive contains links/special files",
-	);
-	requireValue(
-		entries.includes("release-evidence/release-evidence.json") &&
-			entries.includes("release-evidence/source-rebuild.tar.gz"),
+		files.some((e) => e.name === "release-evidence/release-evidence.json") &&
+			files.some((e) => e.name === "release-evidence/source-rebuild.tar.gz"),
 		"Evidence archive is missing release manifest/source material",
 	);
-	for (const entry of entries) {
-		const destination = join(output, entry.slice("release-evidence/".length));
-		if (entry.endsWith("/")) {
-			mkdirSync(destination, { recursive: true });
-			continue;
+	const temporary = mkdtempSync(join(tmpdir(), "factory-evidence-intake-"));
+	const copied = [];
+	try {
+		inspectArchive(archive, {
+			...policy,
+			expected: Object.fromEntries(files.map((e) => [e.name, e.size])),
+			output: temporary,
+		});
+
+		mkdirSync(output, { recursive: true });
+		for (const entry of files) {
+			const name = entry.name.slice(policy.prefix.length);
+			const destination = join(output, name);
+			mkdirSync(join(destination, ".."), { recursive: true });
+			copyFileSync(join(temporary, name), destination, 1);
+			copied.push(destination);
 		}
-		mkdirSync(dirname(destination), { recursive: true });
-		const fd = openSync(destination, "wx");
-		try {
-			execFileSync("tar", ["-xOzf", archive, entry], {
-				stdio: ["ignore", fd, "pipe"],
-			});
-		} finally {
-			closeSync(fd);
-		}
+	} catch (error) {
+		for (const path of copied) rmSync(path, { force: true });
+		throw error;
+	} finally {
+		rmSync(temporary, { recursive: true, force: true });
 	}
 }
 
@@ -85,56 +79,7 @@ const reserved = new Set([
 	"release-tooling.tar.gz",
 ]);
 
-function archiveEntries(path, prefix, regularOnly = false) {
-	const entries = execFileSync("tar", ["-tzf", path], {
-		encoding: "utf8",
-		maxBuffer: 64 * 1024 * 1024,
-	})
-		.trim()
-		.split("\n");
-	requireValue(
-		entries.length === new Set(entries).size &&
-			entries.every(
-				(e) =>
-					e.startsWith(prefix) &&
-					!e.includes("\\") &&
-					!e.split("/").some((p) => p === "." || p === ".."),
-			),
-		"Unsafe/duplicate source archive inventory",
-	);
-	const types = execFileSync("tar", ["-tvzf", path], {
-		encoding: "utf8",
-		maxBuffer: 64 * 1024 * 1024,
-	})
-		.trim()
-		.split("\n");
-	requireValue(
-		types.every((line) => {
-			if (/^[d-]/.test(line)) return true;
-			if (regularOnly || !line.startsWith("l")) return false;
-			const start = line.indexOf(prefix);
-			if (start < 0) return false;
-			const [member, target] = line.slice(start).split(" -> ");
-			if (!target || target.startsWith("/") || target.includes("\\"))
-				return false;
-			return posix
-				.resolve("/", posix.dirname(member), target)
-				.startsWith(`/${prefix}`);
-		}),
-		"Source archive contains links/special files or external link targets",
-	);
-
-	return entries;
-}
-function archiveText(path, entry) {
-	return execFileSync("tar", ["-xOzf", path, entry], {
-		encoding: "utf8",
-		maxBuffer: 16 * 1024 * 1024,
-	});
-}
-
-// Structural/integrity checks do not determine license completeness or execute inputs.
-export function validateSourceMaterials(materials, directory, identity) {
+function validateMaterialIdentity(materials, identity) {
 	requireValue(
 		materials?.schemaVersion === 2 &&
 			materials.commit === identity.commit &&
@@ -146,7 +91,23 @@ export function validateSourceMaterials(materials, directory, identity) {
 			Array.isArray(materials.records),
 		"Source material must match exact candidate and pinned Bun runtime (schema 2 required)",
 	);
+}
+
+// Structural/integrity checks do not determine license completeness or execute inputs.
+export function validateSourceMaterials(
+	materials,
+	directory,
+	identity,
+	options = {},
+) {
+	validateMaterialIdentity(materials, identity);
 	const files = new Set();
+	const limits = { ...ARCHIVE_LIMITS, ...options.limits };
+	requireValue(
+		materials.records.length <= limits.maxMembers,
+		"Source material record count limit exceeded",
+	);
+	let totalBytes = 0;
 	for (const record of materials.records) {
 		requireValue(
 			safeName(record.file) &&
@@ -169,6 +130,28 @@ export function validateSourceMaterials(materials, directory, identity) {
 				record.size > 0,
 			"Source material requires SHA-256 and size",
 		);
+		if (
+			[
+				"runtime-license",
+				"tinycc-patch",
+				"instructions",
+				"build-config",
+				"relink-log",
+			].includes(record.kind)
+		)
+			requireValue(
+				record.size <=
+					(record.kind === "relink-log"
+						? limits.maxTextBytes
+						: limits.maxControlBytes),
+				"Source material text byte limit exceeded",
+			);
+		totalBytes += record.size;
+		requireValue(
+			record.size <= limits.maxMemberBytes &&
+				totalBytes <= limits.maxExpandedBytes,
+			"Source material byte limit exceeded",
+		);
 		const path = join(directory, record.file);
 		requireValue(
 			lstatSync(path).isFile(),
@@ -190,6 +173,7 @@ export function validateSourceMaterials(materials, directory, identity) {
 		);
 		return records[0];
 	};
+	let bunTexts;
 	for (const [kind, pin] of Object.entries(RUNTIME_SOURCES)) {
 		const record = one(kind);
 		requireValue(
@@ -202,7 +186,21 @@ export function validateSourceMaterials(materials, directory, identity) {
 			`Wrong pinned ${kind} source`,
 		);
 		const prefix = `${pin.repo}-${pin.revision}/`;
-		const entries = archiveEntries(join(directory, record.file), prefix);
+		const inspected = inspectArchive(join(directory, record.file), {
+			prefix,
+			collect:
+				kind === "bun"
+					? [
+							"LICENSE.md",
+							"scripts/build/deps/webkit.ts",
+							"scripts/build/deps/tinycc.ts",
+							"patches/tinycc/tcc.h.patch",
+						].map((f) => prefix + f)
+					: [],
+			limits: options.limits,
+		});
+		const entries = inspected.entries.map((e) => e.name);
+		if (kind === "bun") bunTexts = inspected.texts;
 		const required =
 			kind === "bun"
 				? [
@@ -226,10 +224,9 @@ export function validateSourceMaterials(materials, directory, identity) {
 		if (kind === "bun") {
 			for (const dependency of ["webkit", "tinycc"])
 				requireValue(
-					archiveText(
-						join(directory, record.file),
-						`${prefix}scripts/build/deps/${dependency}.ts`,
-					).includes(RUNTIME_SOURCES[dependency].revision),
+					bunTexts[`${prefix}scripts/build/deps/${dependency}.ts`].includes(
+						RUNTIME_SOURCES[dependency].revision,
+					),
 					"Bun dependency source pin mismatch",
 				);
 		}
@@ -237,19 +234,15 @@ export function validateSourceMaterials(materials, directory, identity) {
 	const license = one("runtime-license");
 	requireValue(
 		readFileSync(join(directory, license.file), "utf8") ===
-			archiveText(
-				join(directory, "bun-source.tar.gz"),
-				`bun-${RUNTIME_SOURCES.bun.revision}/LICENSE.md`,
-			),
+			bunTexts[`bun-${RUNTIME_SOURCES.bun.revision}/LICENSE.md`],
 		"Pinned runtime license mismatch",
 	);
 	const patch = one("tinycc-patch");
 	requireValue(
 		readFileSync(join(directory, patch.file), "utf8") ===
-			archiveText(
-				join(directory, "bun-source.tar.gz"),
-				`bun-${RUNTIME_SOURCES.bun.revision}/patches/tinycc/tcc.h.patch`,
-			),
+			bunTexts[
+				`bun-${RUNTIME_SOURCES.bun.revision}/patches/tinycc/tcc.h.patch`
+			],
 		"Pinned TinyCC patch mismatch",
 	);
 	const instructions = one("instructions");
@@ -311,11 +304,13 @@ export function validateSourceMaterials(materials, directory, identity) {
 				one("relink-log", target).revision === identity.commit,
 			`Rebuild input source mismatch: ${target}`,
 		);
-		const entries = archiveEntries(
-			join(directory, objects.file),
-			"objects/",
-			true,
-		).filter((e) => !e.endsWith("/"));
+		const entries = inspectArchive(join(directory, objects.file), {
+			prefix: "objects/",
+			regularOnly: true,
+			limits: options.limits,
+		})
+			.entries.filter((e) => e.type === "0")
+			.map((e) => e.name);
 		requireValue(
 			Array.isArray(build.objectInventory) &&
 				build.objectInventory.length > 0 &&
@@ -335,39 +330,78 @@ export function validateSourceMaterials(materials, directory, identity) {
 	return materials;
 }
 
-export function validateSourceArchive(archive, identity) {
-	const entries = archiveEntries(archive, "source-rebuild/", true);
-	const temporary = mkdtempSync(join(tmpdir(), "factory-source-intake-"));
-	try {
-		// Outer bundle is flat and regular-only. Never extract or run nested sources.
-		for (const entry of entries.filter((e) => !e.endsWith("/"))) {
-			const name = entry.slice("source-rebuild/".length);
-			requireValue(safeName(name), "Unsafe source bundle path");
-			const fd = openSync(join(temporary, name), "wx");
-			try {
-				execFileSync("tar", ["-xOzf", archive, entry], {
-					stdio: ["ignore", fd, "pipe"],
-				});
-			} finally {
-				closeSync(fd);
-			}
-		}
-		const frozen = validateCandidate(
-			JSON.parse(readFileSync(join(temporary, "candidate.json"), "utf8")),
+export function validateSourceArchive(archive, identity, options = {}) {
+	const policy = {
+		prefix: "source-rebuild/",
+		regularOnly: true,
+		flat: true,
+		limits: { maxMembers: 256, ...options.limits },
+	};
+	const scanned = inspectArchive(archive, {
+		...policy,
+		collect: ["candidate.json", "commit.txt", "source-materials.json"].map(
+			(f) => policy.prefix + f,
+		),
+	});
+	const entries = scanned.entries.map((e) => e.name);
+	const control = (f) => scanned.texts[policy.prefix + f];
+	const frozen = validateCandidate(JSON.parse(control("candidate.json")));
+	requireValue(
+		frozen.digest === identity.candidateDigest &&
+			frozen.candidate.commit === identity.commit &&
+			frozen.candidate.workflowSha === identity.workflowSha &&
+			frozen.candidate.version === identity.version &&
+			control("commit.txt").trim() === identity.commit,
+		"Source bundle candidate mismatch",
+	);
+	const manifest = JSON.parse(control("source-materials.json"));
+	validateMaterialIdentity(manifest, identity);
+	requireValue(
+		Array.isArray(manifest.records) && Array.isArray(manifest.bundled),
+		"Generated source bundle inventory required",
+	);
+	const expected = {};
+	requireValue(
+		manifest.bundled.length === reserved.size - 1,
+		"Generated source bundle inventory required",
+	);
+	for (const record of [...manifest.records, ...manifest.bundled]) {
+		requireValue(
+			safeName(record.file) &&
+				hash(record.sha256) &&
+				Number.isSafeInteger(record.size) &&
+				record.size > 0 &&
+				!Object.hasOwn(expected, policy.prefix + record.file),
+			"Unsafe/duplicate source material filename or size",
 		);
 		requireValue(
-			frozen.digest === identity.candidateDigest &&
-				frozen.candidate.commit === identity.commit &&
-				frozen.candidate.workflowSha === identity.workflowSha &&
-				frozen.candidate.version === identity.version &&
-				readFileSync(join(temporary, "commit.txt"), "utf8").trim() ===
-					identity.commit,
-			"Source bundle candidate mismatch",
+			manifest.records.includes(record)
+				? !reserved.has(record.file)
+				: reserved.has(record.file) && record.file !== "source-materials.json",
+			"Unsafe/duplicate generated bundle record",
 		);
-		const manifest = JSON.parse(
-			readFileSync(join(temporary, "source-materials.json"), "utf8"),
-		);
-		validateSourceMaterials(manifest, temporary, identity);
+		expected[policy.prefix + record.file] = record.size;
+	}
+	expected[`${policy.prefix}source-materials.json`] = Buffer.byteLength(
+		control("source-materials.json"),
+	);
+	requireValue(
+		[...reserved].every((f) => Object.hasOwn(expected, policy.prefix + f)),
+		"Generated source bundle inventory required",
+	);
+	requireValue(
+		entries.filter((e) => !e.endsWith("/")).length ===
+			Object.keys(expected).length &&
+			scanned.entries
+				.filter((e) => e.type === "0")
+				.every((e) => expected[e.name] === e.size),
+		"Missing/uninventoried source bundle bytes or size mismatch",
+	);
+	const temporary = mkdtempSync(join(tmpdir(), "factory-source-intake-"));
+	try {
+		// Only inventoried sizes may reach disk, after candidate/control validation.
+		inspectArchive(archive, { ...policy, expected, output: temporary });
+		validateSourceMaterials(manifest, temporary, identity, options);
 		requireValue(
 			Array.isArray(manifest.bundled) &&
 				manifest.bundled.length === reserved.size - 1,
@@ -389,13 +423,13 @@ export function validateSourceArchive(archive, identity) {
 				"Generated source bundle integrity failure",
 			);
 		}
-		const expected = new Set([
+		const complete = new Set([
 			...reserved,
 			...manifest.records.map((r) => r.file),
 		]);
 		requireValue(
-			entries.filter((e) => !e.endsWith("/")).length === expected.size &&
-				[...expected].every((f) => entries.includes(`source-rebuild/${f}`)),
+			entries.filter((e) => !e.endsWith("/")).length === complete.size &&
+				[...complete].every((f) => entries.includes(`source-rebuild/${f}`)),
 			"Missing/uninventoried source bundle bytes",
 		);
 		return manifest;
