@@ -129,3 +129,37 @@ it("binds genuine installer layout and immutable receipt; changed provenance rej
 		read.mockRestore();
 	}
 });
+
+it("normalizes a selected desktop home alias before validating its canonical receipt", () => {
+	const root = realpathSync(
+			mkdtempSync(join(tmpdir(), "factory-desktop-alias-")),
+		),
+		home = join(root, "state"),
+		alias = join(root, "alias");
+	const prefix = join(home, "runtime", "desktop-installed"),
+		name = "bobs-factory-1.0.0-linux-x64",
+		target = join(prefix, "lib", "bobs-factory", name, "bobs-factory"),
+		link = join(prefix, "bin", "bobs-factory");
+	mkdirSync(join(prefix, "bin"), { recursive: true });
+	mkdirSync(join(prefix, "lib", "bobs-factory", name), { recursive: true });
+	symlinkSync(home, alias);
+	writeFileSync(target, "owned");
+	symlinkSync(target, link);
+	writeFileSync(
+		join(home, "runtime", "desktop-runtime.json"),
+		JSON.stringify({
+			schema: 1,
+			home,
+			executable: link,
+			initial: {
+				product: "bobs-factory",
+				version: "1.0.0",
+				target: "linux-x64",
+				commit: "a".repeat(40),
+			},
+		}),
+	);
+	const adapter = new OwnedUpdateLifecycle(alias, 3457);
+	expect(adapter.home).toBe(home);
+	expect(adapter.runtimeLink).toBe(link);
+});

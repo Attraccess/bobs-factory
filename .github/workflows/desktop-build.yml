@@ -3,6 +3,15 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [main]
+    paths:
+      - 'apps/desktop/**'
+      - 'apps/cli/**'
+      - 'packages/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/desktop-build.yml'
   workflow_dispatch:
     inputs:
       candidate_json:
