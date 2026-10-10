@@ -15,6 +15,8 @@ import {
 	localRepository,
 	savePrivateJson,
 } from "./onboarding.js";
+import { acquireInstanceLock } from "./services/InstanceLock.js";
+import { assertServiceLaunch } from "./services/ServiceLifecycle.js";
 
 export async function launchLocal(values: {
 	repo?: string;
@@ -35,6 +37,9 @@ export async function launchLocal(values: {
 		!["claude", "codex", "gemini", "cursor", "opencode"].includes(values.agent)
 	)
 		throw new Error("Unknown agent");
+	process.env.BOBS_FACTORY_FACTORY_PORT = String(port);
+	assertServiceLaunch(home);
+	const releaseOwnership = await acquireInstanceLock(home);
 	const config = loadLocalConfig(home);
 	const repository = values.repo
 		? localRepository(values.repo, home)
@@ -79,6 +84,11 @@ export async function launchLocal(values: {
 		worker.configureLocalRepository(repository, runner),
 	);
 	worker = new EdgeWorker(effective, onboarding);
+	const originalStop = worker.stop?.bind(worker);
+	worker.stop = async () => {
+		if (originalStop) await originalStop();
+		releaseOwnership();
+	};
 	worker.setConfigPath(configPath);
 	await worker.start();
 	if (repository && selected)
