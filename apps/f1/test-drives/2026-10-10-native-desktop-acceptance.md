@@ -51,7 +51,9 @@ review at `a0d3300dcc9f54f77a2857e4a322a9cdd0332dbf` found that its
 `passed:true` was written before cleanup and only the backend was awaited.
 It therefore does **not** prove cleanup completion. Its bytes and original
 fixture hashes remain unchanged; the corrected controller evidence below is
-a separate run, not a relabeling of this receipt.
+a separate run, not a relabeling of this receipt. The historical raw receipt hash
+above predates repository JSON formatting; its unchanged committed file SHA-256
+is `addf36b67a489de427cca5ba6ee1c04030e75d3ec24fc1e8c1b0738bba61a1f5`.
 
 ## Observed assertions
 
@@ -193,7 +195,7 @@ claiming the parent commit contains these changes.
 - [Cleanup/check bindings](assets/2026-10-10-native-desktop-acceptance/cleanup-validation.json):
   9 owned groups drained, 6 direct children closed,
   4 recorded locks verified removed, no remaining groups or failures.
-- [Focused test output](assets/2026-10-10-native-desktop-acceptance/cleanup-regressions.log):
+- [Focused test output](assets/2026-10-10-native-desktop-acceptance/cleanup-regressions.txt):
   eight process/receipt regressions plus two existing desktop boundary tests,
   **10/10 PASS**. These execute actual TERM-ignoring children, an exited parent
   with a stubborn descendant, controller SIGTERM/nonzero exit, failed lock
@@ -226,3 +228,8 @@ No build/matrix/signed23 repetition or new production acceptance claim is made.
 All physical/provider/second-machine/Linux/minimum-OS/reboot/logout/signing/publication
 and whole-shell gates above remain open. GitGuardian incidents 38083768 and
 38084076 retain their operator-review gate; no bypass or history rewrite.
+
+Required hooks for the correction passed staged Biome, full workspace build and
+full workspace typecheck. Syntax/JSON/hash checks and `git diff --check` passed.
+The raw new receipt was formatted as repository JSON without changing its values;
+`cleanup-validation.json` retains both raw and committed receipt SHA-256 values.
