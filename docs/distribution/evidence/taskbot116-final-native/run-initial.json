@@ -1,0 +1,16 @@
+{
+	"id": 38085071118,
+	"head_sha": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+	"event": "pull_request",
+	"run_attempt": 1,
+	"status": "queued",
+	"conclusion": null,
+	"html_url": "https://github.com/jappyjan/bobs-factory/actions/runs/38085071118",
+	"created_at": "2026-10-10T20:46:42Z",
+	"updated_at": "2026-10-10T20:46:56Z",
+	"artifacts": {
+		"total_count": 0,
+		"artifacts": []
+	},
+	"scope": "initial provider observation, no completed-native claim"
+}

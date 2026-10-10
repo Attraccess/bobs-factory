@@ -1,0 +1,23 @@
+{
+	"candidate": {
+		"schemaVersion": 1,
+		"product": "bobs-factory",
+		"repository": "jappyjan/bobs-factory",
+		"channel": "nightly",
+		"version": "1.0.0-nightly.20261010.15",
+		"tag": "v1.0.0-nightly.20261010.15",
+		"commit": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+		"committedVersion": "1.0.0-beta",
+		"workflowSha": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+		"recipe": {
+			"schemaVersion": 1,
+			"toolingSha": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+			"bun": "1.4.2",
+			"node": "24.18.0",
+			"versionOverride": "1.0.0-nightly.20261010.15"
+		},
+		"targets": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
+		"sequence": 15
+	},
+	"digest": "d053b7c2993931d93c88754fe7922e3c3c0352f2cb3bb18201584d2a7b2dea7f"
+}
