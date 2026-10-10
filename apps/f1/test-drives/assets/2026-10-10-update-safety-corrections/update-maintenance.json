@@ -1,0 +1,20 @@
+{
+	"mode": "mock",
+	"testedCommit": "ee7befdcc2cd36726df01d19c338e1a4ad4741b8",
+	"home": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/f1-update-maintenance-j9VCVM",
+	"receipts": [
+		"actual EdgeWorker reboot skips pending dispatch/preflight and retains receipt, waiting question and mock-native checkpoint",
+		"actual worker-owned OperatorServer rejects seven mutation tools during freeze and preserves authenticated inspection",
+		"exact successful release deliberately resumes production pending dispatcher/preflight once; mismatched release does not resume",
+		"awaited authenticated operator mutation admitted before freeze drains through final retained-state write before idle acknowledgment",
+		"actual production ticket preflight admitted before freeze drains through routing and state persistence before idle acknowledgment"
+	],
+	"fetches": 2,
+	"routes": 2,
+	"limitations": [
+		"Actual EdgeWorker startup/listeners; controlled tracker detail fetch and final route instead of agents/network",
+		"Synthetic operator grant and seeded waiting checkpoint; no native session execution",
+		"No PublishedUpdateSource successful signature/extraction or OwnedUpdateLifecycle/OS restart is exercised",
+		"No production homes, real agent credits, signing or publication"
+	]
+}
