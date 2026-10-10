@@ -6,13 +6,23 @@ import {
 import { GuideSchema } from "../src/factory/FactoryResults.js";
 import { reviewGuideMarkdown } from "../src/factory/FactoryTools.js";
 import { validateGuideCoverage } from "../src/factory/Guide.js";
+import { legacyGuidePrompt } from "../src/factory/legacyGuidePrompt.js";
+import { inventoryGuideInstructions } from "../src/factory/specialistSteps.js";
+import { videoPrompts } from "../src/factory/videoPrompts.js";
 import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 
+const stockBrief = defaultWorkflows
+	.find((w) => w.id === "factory-pipeline")!
+	.steps.find((s) => s.id === "guide")!;
+const legacyGuideStep = {
+	...stockBrief,
+	guideContract: undefined,
+	prompt: legacyGuidePrompt + videoPrompts.guide + inventoryGuideInstructions,
+};
 function fixture() {
 	const context = {
-		step: defaultWorkflows
-			.find((w) => w.id === "factory-pipeline")!
-			.steps.find((s) => s.id === "guide")!,
+		// Chapter-guide contract: a step still carrying the legacy stock prompt.
+		step: { ...legacyGuideStep },
 		run: {
 			outputs: {
 				capture: { screenshots: [{ area: "Feature", state: "mobile" }] },
@@ -254,13 +264,23 @@ it("requires compact fields for every new guide regardless of version or frozen 
 	).toBe(false);
 });
 
-it("upgrades the saved QA guide to compact content without changing operator settings", () => {
+it.each([
+	[
+		"current chapter guide",
+		legacyGuidePrompt + videoPrompts.guide + inventoryGuideInstructions,
+	],
+	["chapter guide before specialists", legacyGuidePrompt + videoPrompts.guide],
+	[
+		"chapter guide before compact content",
+		legacyGuidePrompt.split("\nEvery new guide MUST")[0]!,
+	],
+])("upgrades the saved %s to the review brief without changing operator settings", (_name, prompt) => {
 	const stored = structuredClone(defaultWorkflows);
 	const guide = stored
 		.find((w) => w.id === "factory-pipeline")!
 		.steps.find((s) => s.id === "guide")!;
-	const current = guide.prompt;
-	guide.prompt = current!.split("\nEvery new guide MUST")[0]!;
+	guide.prompt = prompt;
+	delete guide.guideContract;
 	guide.model = "operator-model";
 	const migrated = upgradeWorkflows(stored) as typeof stored;
 	expect(
@@ -268,11 +288,18 @@ it("upgrades the saved QA guide to compact content without changing operator set
 			.find((w) => w.id === "factory-pipeline")!
 			.steps.find((s) => s.id === "guide"),
 	).toMatchObject({
-		prompt: current,
+		prompt: stockBrief.prompt,
+		guideContract: "brief-v1",
 		model: "operator-model",
 		qaContract: "qa-v1",
 	});
 	expect(upgradeWorkflows(migrated)).toEqual(migrated);
+	guide.prompt = "My custom guide instructions";
+	const custom = (upgradeWorkflows(stored) as typeof stored)
+		.find((w) => w.id === "factory-pipeline")!
+		.steps.find((s) => s.id === "guide")!;
+	expect(custom.prompt).toBe("My custom guide instructions");
+	expect(custom.guideContract).toBeUndefined();
 });
 
 it("rejects absent nonvisual maps and links with actionable paths, but reads historical maps", async () => {

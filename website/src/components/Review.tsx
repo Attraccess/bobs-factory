@@ -5,28 +5,28 @@ import { BrowserFrame, ease, Reveal, SectionTitle, Shot } from "./ui";
 
 const tabs = [
 	{
-		id: "overview",
-		label: "Overview",
-		shot: "review-overview",
-		note: "One sentence, a before/after system diagram, and how much needs care.",
+		id: "ask",
+		label: "The ask",
+		shot: "review-verdict",
+		note: "Your request, word for word — and every place Bob had to decide what it meant.",
 	},
 	{
-		id: "chapter",
-		label: "See it",
-		shot: "review-chapter",
-		note: "Each chapter: before → after, risk level, and the screenshots that prove it.",
+		id: "proof",
+		label: "Proof",
+		shot: "review-proof",
+		note: "One line per requirement, each with the proof that it works: cropped screenshots, observed values, tests.",
 	},
 	{
-		id: "how",
-		label: "How it works",
-		shot: "review-how",
-		note: "Step-by-step flows for the logic, written for the human reviewing it.",
+		id: "call",
+		label: "Your call",
+		shot: "review-call",
+		note: "Only what needs a human: taste, trade-offs and consequences. Mark each line met or not.",
 	},
 	{
 		id: "files",
 		label: "Files",
 		shot: "review-files",
-		note: "Every changed file, grouped by chapter. Files that don't fit stand out.",
+		note: "Every changed file, grouped by the requirement it serves. Files nothing asked for stand out.",
 	},
 	{
 		id: "diff",
@@ -38,7 +38,7 @@ const tabs = [
 		id: "decide",
 		label: "Decide",
 		shot: "review-decision",
-		note: "Risks, criteria and evidence in one place. Approve, or tell Bob what to change.",
+		note: "Objections become precise feedback for Bob. Or approve the exact revision you read.",
 	},
 ];
 const DURATION = 5200;
@@ -147,16 +147,17 @@ export function Review() {
 						</>
 					}
 				>
-					Bob doesn't drop a 600-line diff on you. He writes a guided tour of
-					the whole PR — inspired by visual recaps — with screenshots, diagrams,
-					risks and exactly what to check. Then he waits.
+					Bob doesn't drop a 600-line diff on you. He writes a review brief that
+					answers one question — does this deliver what you asked? — with your
+					request, proof for every requirement, and only the decisions that need
+					you. Then he waits.
 				</SectionTitle>
 
 				<div ref={ref} className="mt-14">
 					<div
 						className="mb-6 flex flex-wrap gap-2"
 						role="tablist"
-						aria-label="Review guide steps"
+						aria-label="Review brief sections"
 					>
 						{tabs.map((item, position) => (
 							<button
@@ -197,7 +198,7 @@ export function Review() {
 									>
 										<Shot
 											name={tab.shot}
-											alt={`Review guide: ${tab.label}`}
+											alt={`Review brief: ${tab.label}`}
 											className="h-full object-cover object-top"
 										/>
 									</motion.div>
@@ -272,11 +273,11 @@ export function Review() {
 					{[
 						[
 							"Request changes",
-							"Your feedback goes to the fixer, then back through code review, CI and QA — and you get a fresh guide.",
+							"Your feedback goes to the fixer, then back through code review, CI and QA — and you get a fresh brief that says what changed.",
 						],
 						[
 							"Comment on anything",
-							"Hold any chapter item, screenshot or diff line to attach a comment to your feedback.",
+							"Mark a requirement not met, or hold any line or diff row, to attach a comment to your feedback.",
 						],
 						[
 							"Drafts survive",

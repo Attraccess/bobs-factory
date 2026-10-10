@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Replace the chapter-based review guide with a requirement-first review brief. It quotes your original request, shows every interpretation Bob made and who decided it, gives each requirement one decisive proof (cropped screenshots, observed values, tests or code), asks only the questions that need your judgment, and lists what changed beyond the ask and what was not verified. Architecture changes get sequence diagrams of real flows plus endpoint, stored-data and dependency tables. Mark lines met or not met; objections become precise change-request feedback. Saved stock recipes upgrade automatically; running and historical runs keep their chapter guides.
+
 - Prepare frozen stable and nightly binary candidates with signed channel discovery, exact-asset stable approval and recoverable publication. Check stable ordering against complete provider history, block nightly eligibility when the latest published nightly cannot be verified, authenticate efficient website discovery, and explain unavailable installer channels. Nightlies remain opt-in and publication stays disabled pending protected signing and rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117), [#70](https://github.com/jappyjan/bobs-factory/pull/70)).
 
 ### Fixed

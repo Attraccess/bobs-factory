@@ -739,9 +739,8 @@ Resolve the access, tooling or application setup and answer in the dashboard or
 ticket. The same run retries capture and visual review, reusing verified accepted
 screenshots when their provenance still matches. Repeated blockers wait for another
 answer; an answer never waives missing evidence or approves the PR. This checkpoint
-survives restart. The dashboard displays those images and a guide organized around the goal,
-before/after behavior, requirements, checks, risks and human review instructions,
-inspired by Rocky's visual recap.
+survives restart. The dashboard displays those images as proof inside the review
+brief, attached to the requirement or decision they demonstrate.
 
 ## QA and screenshot roles
 
@@ -776,7 +775,7 @@ Answers cannot waive testing or approve the PR. Custom recipes need the supporte
 with a configuration error instead of routing access failures into product edits.
 The dashboard shows criterion outcomes, execution receipts, blocked reasons,
 findings and optional observations alongside the gallery. The complete human
-guide maps actual story evidence to requirements and discloses limitations.
+brief quotes observed story evidence per requirement and discloses limitations.
 
 Recognized stock saved recipes upgrade coherently and idempotently, preserving
 runner/model choices. Customized affected prompts or routes remain unchanged.
@@ -1141,9 +1140,10 @@ Large structured role results can use `submit_result_artifact` on the scoped
 directory, submit its relative path, then return the small envelope unchanged.
 The runtime rereads the bounded file (8 MiB maximum), verifies its digest and
 run/role/head/base binding, and applies the same result and evidence validation as
-inline JSON. Guide chapters may use `fileIndexes` into the complete runtime-owned
-`reviewScope.files` inventory; `scope.files: "runtime"` keeps scope authoritative.
-Every changed file must still be covered; shared files may belong to several feature chapters. Rejected candidates and
+inline JSON. Brief requirement lines, beyond-the-ask items and `sinceLastReview`
+changes (or legacy guide chapters) may use `fileIndexes` into the complete
+runtime-owned `reviewScope.files` inventory. Every changed file must still be
+covered; shared files may belong to several lines. Rejected candidates and
 correction diagnostics remain separate from accepted outputs.
 
 Finalization is coordinated for overlapping repository/base-branch scopes, including
@@ -1301,64 +1301,75 @@ new admission with a visible error; they are not reclaimed by heartbeat expiry.
 Reconcile the external execution before repairing its coordinator record. Never delete
 coordinator state while participating execution may still be running. Corrupt state,
 failed storage writes and unknown process state prevent ungated execution.
-### Guided human review
+### Review brief
 
-The shared reader opens **Overview → one page per chapter → Changed files → Decide**.
-The retained run header, PR links and revision notices stay available. Segments,
-Back/Next, the page selector and Up/k or Down/j navigate the guide. Page links use
-`?page=overview`, `chapter:<id>`, `files` or `decide` in the hash route. Page,
-visited steps, reviewed markers, disclosures and individual checks stay local to
-this browser and this exact guide revision. Moving forward marks a chapter read;
-jumping or moving back does not. A replacement guide resets progress. Reading
-markers never gate approval, and navigation never submits a human decision.
+The stock guide step writes a **review brief** (`guideContract: "brief-v1"`). It
+answers one question for the human — does this PR deliver what was asked? — in a
+fixed order on one scrolling page:
 
-New guide results require purpose-written `tldr` (90 characters maximum) and
-`decision.summaryShort` (160). Every chapter requires `tldr` (70), `beforeShort`
-and `afterShort` (50 each), `risk: {level: "low" | "medium" | "high", text}` (70),
-and 1–3 `keyChecks: [{do, expect}]` pairs (60 characters per field). Fields must
-be nonblank; do not truncate full prose into short fields. Existing full summary,
-before/after, checks, risks, files, diagrams and evidence remain in More detail.
-Incomplete new output is rejected and sent back to the same guide role for bounded
-correction. Older saved guides remain readable without migration or invented
-compact text or risk levels.
+1. **What you asked for**: the original request, quoted, then every
+   interpretation the run had to make (scope, UX, defaults, migration), marked
+   *You decided*, *In the ticket* or *Bob decided*. Bob-decided rows are
+   highlighted.
+2. **Does it do that?**: one line per requirement group with one decisive
+   proof — a cropped screenshot, an observed-values table, a code or test
+   excerpt, a command, linear steps, or a link to steps of a system flow.
+   Status is honest about the kind of proof: shown working, tests only, partly,
+   no evidence, gap (not met) or waived.
+3. **Your call**: only judgments a person must make (taste, trade-offs,
+   consequences, compatibility), each with what Bob chose. An empty section is
+   valid for mechanical changes.
+4. **How it’s built** (only when components interact differently, data is stored
+   differently or the trust boundary moves): sequence diagrams, one per real
+   trigger, with real endpoints and a Before/After toggle for changed flows, plus
+   fact tables for endpoints, stored data and dependencies. Rows that move the
+   trust boundary or change behavior for existing users are marked risk.
+5. **Changed beyond the ask**, **Not verified** and **Noticed along the way**.
 
-Optional `flow: {title, steps: [{label, detail}]}` reveals one of 2–8 stages at a
-time. Newly authored guides declare `scope: {kind: "purely-visual" | "nonvisual",
-rationale, files}` from the complete PR diff and accepted requirements. The files
-must match the whole-PR inventory exactly. Screenshots alone never establish the
-purely visual exemption. Technical, logic, structural, nonvisual supporting and
-mixed guides require `system: {lanes, parts, before, after}` with 3–6 meaningful
-lanes and nonempty chapter `systemPartIds` for every changed or logic chapter.
-Empty connection sets are allowed when truthful. Runtime instructions and
-validation apply even to older frozen/custom authoring definitions; saved older
-artifacts retain their permissive reading schema. Lanes use `{id, name}`; parts
-use `{id, label, laneId, status}` with status
-`new`, `changed`, `unchanged` or `legacy`. Connections use `{source, target,
-label?, weak?}` and are identified by directed endpoints. Chapter
-`systemPartIds` must reference existing parts. Before/After toggles work
-independently; route hover or focus highlights relevant parts. Screenshot
-references retain accepted area/state/caption, with optional known `device`
-(`Desktop`, `Mobile`, `Email`, `Reader`) and `language`. Mixed chapters show
-one visual mode at a time. Image and diff dialogs support arrows and Escape.
+Every changed file belongs to a requirement line or a beyond-the-ask item; the
+Changed files view groups the diff that way. The runtime adds CI results, diff
+statistics and process hygiene items, binds the exact file snapshot and attaches
+specialist coverage, shown as review notes under each line.
 
-The page card follows the progress segments directly. On mobile, segments remain
-through 14 pages; larger guides use a compact selector. The sticky feedback count
-opens the collected comments on Decide, including an empty list. Item comments,
-drafts and checks remain available throughout; collected-feedback submission,
-additional feedback and page-level PR/diff links live on Decide. Heading focus
-moves after navigation with an outline only for keyboard use. Screenshot device
-tags use accepted capture context or an honest unknown-device fallback.
+Validation rejects a brief whose lines do not account for every active frozen
+inventory requirement (process criteria may sit in `hygiene`), whose status
+contradicts review coverage (`not_met` must be `gap`, `deliberately_skipped`
+must be `waived`), that leaves a changed file unexplained, names files outside
+the PR, references screenshots outside the accepted capture inventory or stale
+videos, breaks a flow reference, or puts local absolute paths or commit SHAs in
+prose. Rejected output returns to the guide role for bounded correction. A gap or
+`not-ready` verdict routes handoff to the configured correction route, as before.
+`sinceLastReview` summarizes changes after a real human review; it is rejected
+otherwise.
 
-Maps use direct curves with separate endpoints, supplied labels and sample legends.
-Six lanes fit desktop; narrow screens scroll within the map. Individual apps,
-nested plugins, packages and libraries have distinct stable area identities and a
-separate palette. Areas owned by one chapter show ONLY THIS STEP.
+The sticky decision panel shows how many lines you marked. ✓ records agreement
+locally; ✕ opens a comment on that exact line, which becomes part of the
+submitted change request. Approve is disabled while comments are drafted, so
+feedback is never lost by approving; marking lines is optional. Approval still
+binds the exact pending revision. The brief is also published to the PR
+description and, without a ticket, as a run comment.
+
+Saved recipes still carrying any released stock chapter-guide prompt upgrade to
+the brief prompt and contract. Customized guide prompts keep the chapter guide
+unless the Recipes editor’s Review format selects the brief. Runs keep the
+contract they started with: frozen definitions continue to produce and read
+chapter guides, and historical guides remain readable in the chapter reader.
+
+#### Chapter guides (legacy)
+
+Chapter guides open **Overview → one page per chapter → Changed files → Decide**.
+Back/Next, the page selector and Up/k or Down/j navigate. Page links use
+`?page=overview`, `chapter:<id>`, `files` or `decide`. Reading markers stay local
+to this browser and guide revision and never gate approval. Chapter-guide results
+keep their compact fields (`tldr`, `decision.summaryShort`, per-chapter `tldr`,
+`beforeShort`, `afterShort`, `risk`, `keyChecks`), `scope`, and for nonvisual
+changes a `system` lane map with `systemPartIds`, validated as before.
 
 Changed files loads a runtime-owned, immutable snapshot of the guide’s complete
 PR merge-base/head pair. The file inventory and bounded per-file patches live
 under run evidence, outside dashboard payloads. Later commits, guide refreshes
 or completed runs cannot replace that saved diff. Binary or patches over 2 MB
-show an explanation and PR link. Chapter claims group real files; shared files
+show an explanation and PR link. Requirement lines (or legacy chapters) group real files; shared files
 appear in each group but overall counts include them once. Unassigned files are
 shown defensively for old/incomplete guides; new guide coverage still rejects
 omitted files. Trees distinguish tests, renames and line counts. Split and unified

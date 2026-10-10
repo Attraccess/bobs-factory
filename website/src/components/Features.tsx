@@ -81,7 +81,7 @@ export function Features() {
 								<Phone>
 									<Shot
 										name="mobile-review"
-										alt="Review guide on a phone in dark mode"
+										alt="Review brief on a phone in dark mode"
 									/>
 								</Phone>
 							</motion.div>

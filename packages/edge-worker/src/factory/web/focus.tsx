@@ -25,6 +25,7 @@ import {
 } from "./question-answers";
 import { revisionOf } from "./restoration";
 import { GuidedReview } from "./review";
+import { useApproval } from "./review-approval";
 import {
 	type FeedbackController,
 	useFeedbackController,
@@ -347,7 +348,8 @@ export function ReviewEntry({ run }: { run: any }) {
 		<div className="review-entry">
 			<p>
 				{String(
-					guide.summary ??
+					guide.verdict?.headline ??
+						guide.summary ??
 						guide.goal ??
 						"Read the changes, evidence and final checks before deciding.",
 				).slice(0, 320)}
@@ -467,7 +469,7 @@ function ReviewDecisions({
 }: DecisionProps & { controller: FeedbackController }) {
 	const toast = useToast(),
 		navigate = useNavigate(),
-		action = useAction(`review/${run.id}`, controller.context),
+		{ action, approve } = useApproval(run, controller),
 		[validationError, setValidationError] = useFormState(
 			controller.context,
 			"",
@@ -492,7 +494,11 @@ function ReviewDecisions({
 				guide
 					? {
 							revision: reviewRevision(run) || "historical",
-							goal: guide.goal ?? guide.summary ?? "Review guide",
+							goal:
+								guide.verdict?.headline ??
+								guide.goal ??
+								guide.summary ??
+								"Review guide",
 							identity,
 						}
 					: undefined,
@@ -625,29 +631,11 @@ function ReviewDecisions({
 									busy || !matching || (!waiting && !finished(run.status))
 								}
 								onClick={() => {
+									if (waiting) return approve();
 									if (!matching || action.isPending || !controller.lock())
 										return;
-									if (!waiting) {
-										onSettled();
-										controller.unlock();
-										return;
-									}
-									void action
-										.mutateAsync({
-											path: `/api/runs/${run.id}/review`,
-											body: {
-												reviewId: gate.id,
-												headSha: gate.headSha,
-												decision: "approve",
-											},
-										})
-										.then(() =>
-											toast({
-												text: "Approved — Bob is checking merge criteria",
-											}),
-										)
-										.catch(() => {})
-										.finally(() => controller.unlock());
+									onSettled();
+									controller.unlock();
 								}}
 							>
 								{waiting
