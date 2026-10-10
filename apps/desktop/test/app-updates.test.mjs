@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import {
+	existsSync,
+	lstatSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
@@ -10,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { gzipSync } from "node:zlib";
 import { fileRecord, jsonBytes } from "../../../scripts/lib/binary-release.mjs";
 import { preparedFixture } from "../../../scripts/tests/prepared-fixture.mjs";
 import { keys, signBytes } from "../../../scripts/tests/release-fixtures.mjs";
@@ -118,6 +121,47 @@ test("complete app archive preserves framework symlinks and modes; traversal/spe
 				]),
 			/cycle/,
 		);
+	} finally {
+		rmSync(w, { recursive: true, force: true });
+	}
+});
+test("intermediate directory symlinks resolve before ..; actual outside sentinel cannot be packed or extracted", () => {
+	const w = work();
+	try {
+		const app = join(w, "app"),
+			inside = Buffer.from("INSIDE");
+		mkdirSync(join(app, "A", "B"), { recursive: true });
+		mkdirSync(join(app, "C"));
+		writeFileSync(join(w, "sentinel"), "OUTSIDE");
+		writeFileSync(join(app, "A", "sentinel"), inside);
+		symlinkSync("../../C", join(app, "A", "B", "L"));
+		symlinkSync("L/../../sentinel", join(app, "A", "B", "X"));
+		assert.equal(readFileSync(join(app, "A", "B", "X"), "utf8"), "OUTSIDE");
+		assert.throws(() => tree(app), /escapes/);
+		assert.throws(() => packApp(app), /escapes/);
+		const entries = [
+				{ path: "A", kind: "directory" },
+				{ path: "A/B", kind: "directory" },
+				{ path: "C", kind: "directory" },
+				{ path: "A/B/L", kind: "link", link: "../../C" },
+				{ path: "A/B/X", kind: "link", link: "L/../../sentinel" },
+				{
+					path: "A/sentinel",
+					kind: "file",
+					mode: 0o644,
+					size: inside.length,
+					sha256: digest(inside),
+				},
+			],
+			index = Buffer.from(JSON.stringify(entries)),
+			length = Buffer.alloc(4);
+		length.writeUInt32BE(index.length);
+		const archive = gzipSync(
+			Buffer.concat([Buffer.from("BOBSAPP1"), length, index, inside]),
+		);
+		assert.throws(() => unpackApp(archive, join(w, "unpacked")), /escapes/);
+		assert.equal(existsSync(join(w, "unpacked")), false);
+		assert.equal(readFileSync(join(w, "sentinel"), "utf8"), "OUTSIDE");
 	} finally {
 		rmSync(w, { recursive: true, force: true });
 	}
@@ -486,3 +530,55 @@ test("forged staged fingerprint/receipt never executes, including self-consisten
 		rmSync(f.w, { recursive: true, force: true });
 	}
 });
+
+for (const replacement of [
+	"foreign-bytes",
+	"foreign-symlink",
+	"foreign-dangling-symlink",
+])
+	test(`interrupted recovery preserves ${replacement} on repeated attempts; authenticated missing/restored installs still recover`, async () => {
+		const f = setup();
+		try {
+			f.manager.configure({ channel: "nightly" }, 0);
+			await f.manager.tick();
+			const state = read(f.manager.file),
+				t = state.transaction,
+				snapshot = read(t.snapshot);
+			t.phase = "recovery-required";
+			delete t.release;
+			save(f.manager.file, state);
+			f.life.rollback = DesktopAppLifecycle.prototype.rollback.bind(f.life);
+			rmSync(f.install);
+			const foreign = join(f.w, "foreign.AppImage");
+			writeFileSync(foreign, "FOREIGN_OWNER_APP", { mode: 0o755 });
+			if (replacement === "foreign-dangling-symlink")
+				symlinkSync(join(f.w, "missing"), f.install);
+			else if (replacement === "foreign-symlink")
+				symlinkSync(foreign, f.install);
+			else writeFileSync(f.install, "FOREIGN_OWNER_APP", { mode: 0o755 });
+			for (let n = 0; n < 2; n++) {
+				await assert.rejects(
+					() => f.manager.recover("operation owner stopped"),
+					/Unexpected current app/,
+				);
+				if (replacement === "foreign-dangling-symlink")
+					assert.equal(lstatSync(f.install).isSymbolicLink(), true);
+				else assert.equal(readFileSync(f.install, "utf8"), "FOREIGN_OWNER_APP");
+				assert.equal(readFileSync(snapshot.previous, "utf8"), "old");
+				assert.equal(existsSync(`${f.install}.bobs-failed-${t.id}`), false);
+				assert.equal(f.manager.status().transaction.phase, "recovery-required");
+			}
+			// Model interruption between the two install renames. Restore only the
+			// authenticated retained prior app when current is absent.
+			rmSync(f.install);
+			await f.manager.recover("operation owner stopped");
+			assert.equal(readFileSync(f.install, "utf8"), "old");
+			assert.equal(f.manager.status().transaction.phase, "rolled-back");
+			// A retry after restoration also must preserve an unexpected new owner.
+			writeFileSync(f.install, "FOREIGN_OWNER_APP");
+			await assert.rejects(() => f.life.rollback(t), /Unexpected current app/);
+			assert.equal(readFileSync(f.install, "utf8"), "FOREIGN_OWNER_APP");
+		} finally {
+			rmSync(f.w, { recursive: true, force: true });
+		}
+	});

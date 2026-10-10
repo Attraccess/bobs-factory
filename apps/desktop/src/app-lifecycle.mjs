@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
 	cpSync,
 	existsSync,
+	lstatSync,
 	mkdirSync,
 	readFileSync,
 	renameSync,
@@ -25,6 +26,15 @@ export function save(file, value) {
 		flush: true,
 	});
 	renameSync(`${file}.tmp`, file);
+}
+function appPathPresent(path) {
+	try {
+		lstatSync(path);
+		return true;
+	} catch (error) {
+		if (error.code === "ENOENT") return false;
+		throw error;
+	}
 }
 export const read = (file) => JSON.parse(readFileSync(file, "utf8"));
 export function processStamp(pid) {
@@ -258,6 +268,7 @@ export class DesktopAppLifecycle {
 		);
 		if (appFingerprint(s.replacement, this.target) !== metadata.fingerprint)
 			throw Error("Copied app integrity failure");
+		save(t.snapshot, { ...s, candidateProof: proof.proof });
 		renameSync(this.install, s.previous);
 		renameSync(s.replacement, this.install);
 		save(this.receipt, {
@@ -333,6 +344,40 @@ export class DesktopAppLifecycle {
 		}
 		throw Error("Candidate shell readiness timed out");
 	}
+	assertRecoveryInstall(transaction, snapshot) {
+		if (!appPathPresent(this.install)) {
+			if (!appPathPresent(snapshot.previous))
+				throw Error("Recovery app is missing");
+			return;
+		}
+		let expected = snapshot.receipt.fingerprint;
+		if (appPathPresent(snapshot.previous)) {
+			// A crash can precede installation.json's candidate receipt write.
+			// Authenticate the transaction proof instead of trusting that mutable
+			// receipt, a local fingerprint, or whichever bytes now occupy install.
+			const proof =
+				snapshot.candidateProof ??
+				read(
+					join(
+						dirname(transaction.staged.executable),
+						this.target.startsWith("darwin") ? ".." : ".",
+						"verified.json",
+					),
+				).proof;
+			expected = verifyAppProof(
+				proof,
+				transaction.candidate,
+				this.services,
+			).fingerprint;
+		}
+		if (
+			installationKind(this.install, this.target) !== "bob-owned" ||
+			appFingerprint(this.install, this.target) !== expected
+		)
+			throw Error(
+				"Unexpected current app; preserve installation and inspect recovery ownership/integrity",
+			);
+	}
 	async rollback(transaction) {
 		let s = read(transaction.snapshot);
 		if (
@@ -342,6 +387,7 @@ export class DesktopAppLifecycle {
 			s.replacement !== `${this.install}.bobs-candidate-${transaction.id}`
 		)
 			throw Error("Recovery installation/snapshot identity mismatch");
+		this.assertRecoveryInstall(transaction, s);
 		if (s.launchPending && !s.child) {
 			const health = join(this.directory, `health-${s.healthToken}.json`);
 			for (let n = 0; n < 100 && !existsSync(health); n++) await sleep();
@@ -406,17 +452,34 @@ export class DesktopAppLifecycle {
 		);
 		if (s.receipt.fingerprint !== previousMetadata.fingerprint)
 			throw Error("Previous app receipt fingerprint mismatch");
-		if (existsSync(s.previous)) {
+		if (appPathPresent(s.previous)) {
+			const previous = lstatSync(s.previous);
+			if (
+				previous.uid !== process.getuid() ||
+				(this.target.startsWith("darwin")
+					? !previous.isDirectory()
+					: !previous.isFile())
+			)
+				throw Error(
+					"Previous app ownership/type changed; preserve recovery paths",
+				);
 			if (appFingerprint(s.previous, this.target) !== s.receipt.fingerprint)
 				throw Error("Previous app integrity failure");
-			if (existsSync(this.install))
+			this.assertRecoveryInstall(transaction, s);
+			if (appPathPresent(this.install)) {
+				if (appPathPresent(`${this.install}.bobs-failed-${transaction.id}`))
+					throw Error("Retained failed app requires inspection");
 				renameSync(
 					this.install,
 					`${this.install}.bobs-failed-${transaction.id}`,
 				);
+			}
 			renameSync(s.previous, this.install);
 		}
-		if (appFingerprint(this.install, this.target) !== s.receipt.fingerprint)
+		if (
+			installationKind(this.install, this.target) !== "bob-owned" ||
+			appFingerprint(this.install, this.target) !== s.receipt.fingerprint
+		)
 			throw Error("Cannot verify previous app");
 		save(this.receipt, s.receipt);
 		if (processStamp(this.uiPid) !== this.uiStamp) {

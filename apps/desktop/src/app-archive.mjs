@@ -72,7 +72,8 @@ export function validateEntries(entries) {
 			(typeof e.link !== "string" ||
 				e.link.startsWith("/") ||
 				e.link.includes("\\") ||
-				!safe(posix.normalize(posix.join(posix.dirname(e.path), e.link))))
+				e.link.includes("\0") ||
+				e.link.length === 0)
 		)
 			throw Error("App link escapes archive");
 	}
@@ -80,37 +81,40 @@ export function validateEntries(entries) {
 		for (let p = posix.dirname(e.path); p !== "."; p = posix.dirname(p))
 			if (byPath.get(p)?.kind !== "directory")
 				throw Error("App entry beneath link or missing directory");
-	function resolveTarget(target) {
-		// Framework links often target Versions/Current/foo, where Current is
-		// itself a directory link. Resolve entirely within the signed inventory.
-		for (let hop = 0; hop < 100; hop++) {
-			if (!safe(target)) throw Error("App link escapes archive");
-			const parts = target.split("/");
-			let followed = false;
-			for (let index = 0; index < parts.length; index++) {
-				const path = parts.slice(0, index + 1).join("/"),
-					entry = byPath.get(path);
-				if (!entry) throw Error("App link target absent");
-				if (entry.kind === "link") {
-					target = posix.normalize(
-						posix.join(
-							posix.dirname(path),
-							entry.link,
-							...parts.slice(index + 1),
-						),
-					);
-					followed = true;
-					break;
-				}
-				if (index < parts.length - 1 && entry.kind !== "directory")
-					throw Error("App link traverses a file");
+	function resolveTarget(entry) {
+		// Resolve in filesystem order: a symlink's components must be expanded
+		// before later .. components are applied. Lexical normalization changes
+		// the meaning of paths such as L/../.. and can hide an outside target.
+		const resolved =
+			posix.dirname(entry.path) === "."
+				? []
+				: posix.dirname(entry.path).split("/");
+		let pending = entry.link.split("/"),
+			hops = 0;
+		while (pending.length) {
+			const component = pending.shift();
+			if (!component || component === ".") continue;
+			if (component === "..") {
+				if (!resolved.length) throw Error("App link escapes archive");
+				resolved.pop();
+				continue;
 			}
-			if (!followed) return;
+			const path = [...resolved, component].join("/"),
+				next = byPath.get(path);
+			if (!next) throw Error("App link target absent");
+			if (next.kind === "link") {
+				if (++hops > 100) throw Error("App link cycle or excessive chain");
+				pending = [...next.link.split("/"), ...pending];
+			} else {
+				if (pending.length && next.kind !== "directory")
+					throw Error("App link traverses a file");
+				resolved.push(component);
+			}
 		}
-		throw Error("App link cycle or excessive chain");
+		if (!resolved.length) throw Error("App link target absent");
 	}
-	for (const e of entries.filter((x) => x.kind === "link"))
-		resolveTarget(posix.normalize(posix.join(posix.dirname(e.path), e.link)));
+	for (const entry of entries.filter((x) => x.kind === "link"))
+		resolveTarget(entry);
 }
 // Bob's framed gzip archive retains complete signed app bytes, Unix modes and internal
 // framework symlinks. No external tar/zip extraction, headers or path interpretation.
