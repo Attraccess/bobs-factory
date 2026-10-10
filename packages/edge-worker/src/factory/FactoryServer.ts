@@ -613,6 +613,7 @@ export class FactoryServer {
 					workflow,
 					triggerOrigin,
 					error,
+					ticketSync,
 					reviewGate,
 					outputs,
 					history,
@@ -629,6 +630,13 @@ export class FactoryServer {
 					workflow: workflow.id,
 					triggerOrigin,
 					error,
+					ticketSync: ticketSync && {
+						error: ticketSync.error,
+						receipts: ticketSync.receipts.map(({ delivered, superseded }) => ({
+							delivered,
+							superseded,
+						})),
+					},
 					reviewGate,
 					hasGuide: Boolean(outputs.guide),
 					history: history.map(({ step, at, call }) => ({ step, at, call })),
@@ -894,13 +902,53 @@ export class FactoryServer {
 				});
 			},
 		);
+
+		this.app.post<{ Params: { id: string } }>(
+			"/api/runs/:id/external-reverify",
+			(request, reply) => {
+				const session = this.auth.session(
+					tokenFor(request),
+					originFor(request)!,
+				)!;
+				runtime.reverifyExternal(request.params.id, session.credential);
+				return reply.code(202).send({ accepted: true });
+			},
+		);
+		this.app.post<{ Params: { id: string } }>(
+			"/api/runs/:id/external-recovery",
+			(request, reply) => {
+				const body = z
+					.object({
+						requestId: z.string().min(1).max(100),
+						contract: z.unknown(),
+						reviewedDigest: z.string().regex(/^[a-f0-9]{64}$/),
+					})
+					.parse(request.body);
+				const session = this.auth.session(
+					tokenFor(request),
+					originFor(request)!,
+				)!;
+				runtime.recoverExternal(
+					request.params.id,
+					body.requestId,
+					body.contract,
+					body.reviewedDigest,
+					session.credential,
+				);
+				return reply.code(202).send({ accepted: true });
+			},
+		);
 		this.app.post<{ Params: { id: string } }>(
 			"/api/runs/:id/review",
 			(request, reply) => {
 				const decision = z
 					.object({
 						reviewId: z.string().min(1),
-						headSha: z.string().min(1),
+						headSha: z.string(),
+						externalDigest: z
+							.string()
+							.regex(/^[a-f0-9]{64}$/)
+							.optional(),
 						decision: z.enum(["approve", "reject"]),
 						feedback: z.string().trim().max(100000).optional(),
 					})

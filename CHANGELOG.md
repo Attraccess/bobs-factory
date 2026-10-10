@@ -12,6 +12,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Integrate external ticket delivery with main’s shared operator recovery and run-age scheduling, preserving conflict-safe retries and acceptance bindings ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).
+
+- Preserve verified ticket evidence and snapshot-bound approval when mixed delivery uses the new review brief; retain pending-tracking settlement guards during integration ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).
+
+- Show ticket synchronization failures in the review guide, explain pending tracking, and withhold Settle in the review, Run story and Today’s keyboard shortcut until tracking succeeds ([#80](https://github.com/JappyJan/bobs-factory/pull/80)).
+
+- Update the complete routing-prompt test expectation for external and mixed delivery capabilities, restoring the CI prompt check ([#80](https://github.com/JappyJan/bobs-factory/pull/80)).
+
 - Include instance/run context and recovery guidance in operator MCP errors, and report overlapping connection edits as configuration conflicts. ([#81](https://github.com/jappyjan/bobs-factory/pull/81))
 
 - Use the operating system's temporary directory for operator MCP test fixtures and allow the reload-failure check to finish its bounded wait, so recovery and integration checks run in CI on Linux as well as macOS. ([#81](https://github.com/jappyjan/bobs-factory/pull/81))
@@ -37,6 +45,8 @@ All notable changes to this project will be documented in this file.
 - Draft PR delivery no longer fails on every retry when a repository's commit hooks run long or failing full-suite checks; Factory's own commit skips commit hooks while implementation checks, review and CI keep owning verification. Push hooks such as Git LFS still run. ([#59](https://github.com/jappyjan/bobs-factory/pull/59), [F1 delivery validation](apps/f1/test-drives/2026-10-09-delivery-commit-hooks.md))
 
 ### Changed
+
+- Standard Factory can deliver authorized Linear and Taskbot ticket changes through independent verification, human acceptance and a final state check. Retries preserve intervening edits and shared relationships; mixed feedback renews contracts and retains confirmed repository merges. Background tracking preserves completion proof during rereads and blocks closure on drift or lost access. Failed external publication supports audited recovery ([Taskbot #95](https://taskbot.apps.janjaap.de/p/bobs-factory/t/95), [#80](https://github.com/JappyJan/bobs-factory/pull/80)).
 
 - Prioritize eligible jobs from older workflow runs within instance capacity, preserving interactive positions, background turns and restart ordering ([#72](https://github.com/jappyjan/bobs-factory/pull/72), [Taskbot #89](https://taskbot.apps.janjaap.de/p/bobs-factory/t/89)).
 - Clear private dashboard content and unsent edits on connection loss, verify the session again after reconnecting, and document protected remote access, passkey management and mobile rollout checks. ([Taskbot #40](https://taskbot.apps.janjaap.de/p/bobs-factory/t/40), [#71](https://github.com/JappyJan/bobs-factory/pull/71))

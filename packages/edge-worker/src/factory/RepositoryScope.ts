@@ -266,7 +266,9 @@ export function repositoryRun(
 }
 
 export function repositoryScopeInstructions(run: FactoryRun): string {
-	return `Repository scope (retained for every workflow step): ${JSON.stringify(runRepositories(run))}. Work inside each listed workspace. A grouped workspace is a parent directory, not a Git repository. Review and validate changes in every affected repository. Runtime publication creates one PR or merge request in each changed repository, using its own base branch, provider and exact revision. Unchanged repositories remain context. Human approval binds all delivered revisions and completion requires confirmed merge of every delivery.`;
+	if (run.delivery?.contract.mode === "external")
+		return `Repository scope retained as context: ${JSON.stringify(runRepositories(run))}. The accepted task delivers external ticket changes. Do not make artificial repository changes, commit, push, publish a PR or merge. External completion requires independent verification, human acceptance of the current digest and a final state check.`;
+	return `Repository scope (retained for every workflow step): ${JSON.stringify(runRepositories(run))}. Work inside each listed workspace. A grouped workspace is a parent directory, not a Git repository. Review and validate changes in every affected repository. Runtime publication creates one PR or merge request in each changed repository, using its own base branch, provider and exact revision. Unchanged repositories remain context. For repository delivery, human approval binds all delivered revisions and completion requires confirmed merge of every repository delivery. External delivery is selected only by a reviewed delivery contract. Mixed delivery additionally requires verified external state, explicit acceptance and a final check.`;
 }
 
 /** Keep the established branch/result fields while requiring all successful deliveries. */

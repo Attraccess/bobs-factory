@@ -577,6 +577,14 @@ it("loads large artifacts lazily and persists view state without changing a run"
 		workflow: defaultWorkflows[1]!,
 	});
 	run.status = "completed";
+	run.ticketSync = {
+		error: "Ticket closure unavailable",
+		receipts: [
+			{ key: "pending", body: "z".repeat(250000) },
+			{ key: "delivered", body: "Saved update", delivered: true },
+			{ key: "superseded", body: "Old update", superseded: true },
+		],
+	};
 	run.outputs.custom = { summary: "Big evidence", notes: "x".repeat(250000) };
 	run.outputs.other = { summary: "Big evidence", notes: "y".repeat(250000) };
 	const server = new FactoryServer(runtime, {
@@ -591,6 +599,10 @@ it("loads large artifacts lazily and persists view state without changing a run"
 			await server.app.inject({ method: "GET", url: "/api/runs" })
 		).json();
 		expect(summary[0].outputs).toBeUndefined();
+		expect(summary[0].ticketSync).toEqual({
+			error: "Ticket closure unavailable",
+			receipts: [{}, { delivered: true }, { superseded: true }],
+		});
 		const detail = (
 			await server.app.inject({
 				method: "GET",

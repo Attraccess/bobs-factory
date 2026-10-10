@@ -176,6 +176,7 @@ import { DefaultSkillsDeployer } from "./DefaultSkillsDeployer.js";
 import { EgressProxy } from "./EgressProxy.js";
 import { nativeInfrastructureFailure } from "./factory/AgentInfrastructure.js";
 import { resolveAgentSettings } from "./factory/AgentSettings.js";
+import { TicketDelivery, type TicketTarget } from "./factory/Delivery.js";
 import {
 	executionCapabilities,
 	validateProfileRunner,
@@ -298,6 +299,10 @@ import {
 	type TakeoverPullRequest,
 	ticketIdentifier,
 } from "./factory/Takeover.js";
+import {
+	linearDeliveryAdapter,
+	taskbotDeliveryAdapter,
+} from "./factory/TicketDeliveryAdapters.js";
 import {
 	ensureTicketTranscript,
 	nativeAdapter,
@@ -7387,7 +7392,13 @@ ${taskSection}`;
 
 	private getFactoryRuntime(): WorkflowRuntime {
 		if (!this.factoryRuntime) {
+			const delivery = new TicketDelivery(
+				(run, target) => this.factoryDeliveryAdapter(run, target),
+				(run) =>
+					this.getFactoryRuntime().save(this.getFactoryRuntime().get(run.id)),
+			);
 			const tools = new FactoryTools({
+				ticketDelivery: delivery,
 				postComment: (id, body) =>
 					this.postFactoryComment(this.getFactoryRuntime().get(id), body),
 				mcp: (context, server, tool) =>
@@ -7703,6 +7714,12 @@ ${taskSection}`;
 			(run) => this.getFactoryRuntime().save(run),
 			(run, message) =>
 				this.getFactoryRuntime().log(run, "ticket-sync", message),
+			(run) =>
+				new TicketDelivery(
+					(r, t) => this.factoryDeliveryAdapter(r, t),
+					(r) =>
+						this.getFactoryRuntime().save(this.getFactoryRuntime().get(r.id)),
+				).finalCheck(run, true),
 		);
 		return this.ticketTracking;
 	}
@@ -7907,6 +7924,55 @@ ${taskSection}`;
 				await request(server, undefined, {}, signal);
 			},
 		};
+	}
+	private async factoryDeliveryAdapter(run: FactoryRun, target: TicketTarget) {
+		const config = await this.factoryMcpConfig(run);
+		if (target.provider === "linear") {
+			if (run.executionSnapshot?.identity || run.executionSnapshot?.tools)
+				throw new Error(
+					"Native Linear ticket delivery requires the retained Legacy integration binding; selected explicit profiles do not declare native tracker credentials. Use a reviewed Legacy run or restore a supported binding; native credentials will not be silently substituted.",
+				);
+			assertFactoryToolAllowed(
+				"mcp__linear__get_issue",
+				config.built.config.allowedTools,
+				config.built.config.disallowedTools,
+			);
+			assertFactoryToolAllowed(
+				"mcp__linear__save_issue",
+				config.built.config.allowedTools,
+				config.built.config.disallowedTools,
+			);
+			const tracker = this.issueTrackers.get(target.workspaceId);
+			if (!tracker) throw new Error("Accepted Linear workspace unavailable");
+			return linearDeliveryAdapter(target, tracker);
+		}
+		if (taskbotServer(target.instance, config.servers) !== target.server)
+			throw new Error("Accepted Taskbot instance/server mismatch");
+		const required = ["get_ticket", "update_ticket", "link", "unlink"];
+		const allowed = required.filter((tool) => {
+			try {
+				assertFactoryToolAllowed(
+					`mcp__${target.server}__${tool}`,
+					config.built.config.allowedTools,
+					config.built.config.disallowedTools,
+				);
+				return true;
+			} catch {
+				return false;
+			}
+		});
+		return taskbotDeliveryAdapter(
+			target,
+			(tool, args) =>
+				config.callTool(target.server, tool, args, AbortSignal.timeout(60000)),
+			[
+				...(allowed.includes("get_ticket") ? ["read" as const] : []),
+				...(allowed.includes("update_ticket") ? ["content" as const] : []),
+				...(allowed.includes("link") && allowed.includes("unlink")
+					? ["relationships" as const]
+					: []),
+			],
+		);
 	}
 	private async factoryTicketAdapter(run: FactoryRun): Promise<TicketAdapter> {
 		const ref = TicketReferenceSchema.parse(run.ticketReference);

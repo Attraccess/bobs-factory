@@ -563,6 +563,64 @@ export function BriefReview({
 					) : null}
 				</section>
 
+				{brief.externalResources && (
+					<section
+						className="brief-section"
+						aria-label="Verified ticket changes"
+					>
+						<h3>Verified ticket changes</h3>
+						<p>
+							Applied ticket changes remain after requesting corrections. Review
+							the before and after content and verified criteria.
+						</p>
+						{brief.externalResources.map((resource) => (
+							<p key={resource.key}>
+								<External href={resource.url}>{resource.key} ↗</External>
+							</p>
+						))}
+						{brief.externalChanges?.map((change, i) => (
+							<Commentable
+								key={change.id}
+								target={target(
+									`/externalChanges/${i}`,
+									change.target,
+									"Ticket change",
+									change.outcome,
+									6,
+									i,
+								)}
+							>
+								<h4>
+									{change.target}: {change.outcome}
+								</h4>
+								<h5>Before</h5>
+								<pre>{change.before}</pre>
+								<h5>After</h5>
+								<pre>{change.after}</pre>
+								<p>{change.limitation}</p>
+							</Commentable>
+						))}
+						{brief.externalCriteria?.map((criterion, i) => (
+							<Commentable
+								key={criterion.id}
+								target={target(
+									`/externalCriteria/${i}`,
+									criterion.criterion,
+									"Verified criterion",
+									criterion.observed,
+									6,
+									i + 100,
+								)}
+							>
+								<details>
+									<summary>✓ {criterion.criterion}</summary>
+									<pre>{criterion.observed}</pre>
+								</details>
+							</Commentable>
+						))}
+					</section>
+				)}
+
 				<details
 					className="brief-section brief-files"
 					aria-labelledby="brief-files"

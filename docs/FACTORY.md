@@ -1524,6 +1524,11 @@ stable run/milestone markers; attachments deduplicate by PR URL. Ambiguous write
 are reread before retrying; providers without idempotency cannot guarantee
 exactly-once delivery. Terminal tickets are retained for ownership review.
 
+Completed runs stay in attention while ticket synchronization has an error or
+undelivered, nonsuperseded receipts. Review and Run story settlement controls,
+including Today’s `e` shortcut, wait until tracking succeeds. The run list exposes
+compact tracking state so Today uses the same check as the detailed views.
+
 Native Linear requests, including lazy SDK relationship fetches, share a budget per
 credential/workspace. Provider rate-limit/reset responses delay subsequent requests.
 Activity and documentation-comment outboxes under
