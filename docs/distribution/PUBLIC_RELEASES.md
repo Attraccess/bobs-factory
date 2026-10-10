@@ -30,9 +30,11 @@ link, and refuses foreign executables or changed installed bytes. Shell settings
 are backed up before PATH changes; managed profiles are left to their owner.
 Installation and launch remain separate. Factory state, workflows/results,
 checkpoints, gates, worktrees, native session IDs and host credentials are never
-migrated or modified by release tooling. Worker restart, update polling, per-instance
-policy, pause/pin controls, desktop packages and package-manager delivery belong
-to their respective follow-up tickets (#118–#124).
+migrated or modified by release tooling. [Per-instance updates](UPDATES.md),
+[user-service lifecycle](SERVICES.md), [desktop packages and app updates](DESKTOP.md)
+and [package-manager entry points](PACKAGE_ENTRY_POINTS.md) document the integrated
+delivery mechanisms. Their native acceptance and publication gates remain separate
+from installer integrity; installation never silently enrolls a service.
 
 ## Frozen candidates and channels
 

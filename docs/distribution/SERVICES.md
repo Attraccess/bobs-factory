@@ -92,4 +92,6 @@ rollback can require operator reconciliation; it never reports a healthy restart
 worker while suppression is active. Closing the window keeps the worker running.
 
 These worker/frontend updates do not replace the Electron shell or its package.
-Full unattended desktop application updates remain a separate acceptance gap.
+The separate [complete-app updater](DESKTOP.md#complete-app-updates) implements
+shell replacement while retaining the worker. Signed macOS app activation and
+final-candidate native acceptance remain outstanding evidence gates.

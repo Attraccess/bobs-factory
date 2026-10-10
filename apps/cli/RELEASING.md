@@ -5,8 +5,9 @@ operator tooling is preserved under `scripts/archive` for historical context,
 not supported fork publishing. Build the candidate using
 [the binary contract and validation procedure](../../docs/distribution/README.md).
 
-The `release-channel.yml` workflow freezes eligible nightly source or the latest
-verified nightly source for stable promotion. `binary-build.yml` accepts that
+The `release-channel.yml` workflow freezes eligible nightly source or an explicitly
+selected complete signed published nightly's source for stable promotion.
+`binary-build.yml` accepts that
 frozen candidate JSON, including version override and separate reviewed tooling SHA. All four native-target jobs must pass. It only
 builds, validates and uploads CI artifacts; it never publishes or moves a tag.
 The implementation role does not create a release, PR or mark a PR ready.
@@ -16,7 +17,10 @@ license notice and native runtime receipt, plus prepared-agent/native-helper
 coverage. Preserve the reviewed SHA and immutable version; do not rebuild a
 reviewed candidate from a mutable branch. Verify the entire runtime payload under
 the canonical F1 policy before a release. Retain backups and the prior executable
-for manual rollback. Automatic updates are separate work. Publication defaults to disabled; nightlies
+for manual rollback. [Per-instance updates](../../docs/distribution/UPDATES.md)
+and [desktop app updates](../../docs/distribution/DESKTOP.md) use separate owned
+lifecycle mechanisms; this release procedure does not activate them.
+Publication defaults to disabled; nightlies
 require separate activation, signed manifests and complete evidence. Stable needs
 protected approval bound to its frozen candidate and exact signed asset digest.
 Use the retained prepared artifact to resume publication or retry only Pages

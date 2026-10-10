@@ -1,0 +1,53 @@
+{
+  "mode": "mock",
+  "testedCommit": "4a350aadd6d0176814819f52c72ded055ef96482",
+  "home": "/var/folders/_r/fld8l71j7ts635hlb5vtgnb80000gn/T/f1-update-lifecycle-a5TMT1",
+  "receipts": [
+    "busy update postponed without Stop",
+    "active capacity lease/controlled descendant postpones update and exits naturally without a signal",
+    "authenticated intake freeze and concurrent manual-policy cancellation",
+    "transaction-owned starting startup remains healthy under live writer contention without changing installed state",
+    "single controlled runtime replacement preserves native checkpoint, answer batch, review gate and frozen definitions",
+    "transaction-owned starting startup remains healthy under live writer contention without changing installed state",
+    "transaction-owned rollback startup remains healthy under live writer contention without changing installed state",
+    "failed trial rolls back retained runtime/run state without duplicate workers or accepting gates",
+    "answer continuation passes the preserved mock native session ID",
+    "independent instance settings and candidates"
+  ],
+  "peakWorkers": 1,
+  "calls": [
+    "freeze",
+    "release",
+    "freeze",
+    "release",
+    "freeze",
+    "release",
+    "freeze",
+    "stop",
+    "activate",
+    "start",
+    "health",
+    "release",
+    "freeze",
+    "stop",
+    "activate",
+    "start",
+    "health",
+    "rollback",
+    "release"
+  ],
+  "nativeResumes": [
+    {
+      "run": "update-question"
+    },
+    {
+      "run": "update-question",
+      "resumed": "mock-native-update-question"
+    }
+  ],
+  "limitations": [
+    "Controlled in-process supervisor and candidate, no native OS service restart",
+    "No live agents, signatures generated, release publication or production home access",
+    "Production service adapter and four-target final candidate native validation are separate evidence"
+  ]
+}

@@ -131,7 +131,11 @@ and stop workers/descendants before replacing the active executable. Verify one
 worker, preserved home/config and continuation after restart. To roll back, stop
 replacement consumers, point the executable link to the retained previous version
 and restore separately backed-up mutable state only if needed. Do not run old and
-new workers together. Automatic polling/updating is deferred.
+new workers together. The [per-instance updater](UPDATES.md) implements signed
+discovery, remembered stable/nightly policy and owned staged replacement with
+recovery. [User services](SERVICES.md) and [desktop app updates](DESKTOP.md)
+have separate lifecycle owners; rollout still requires genuine release evidence
+and protected signing.
 
 Bootstrap installs also keep an ownership record under
 `PREFIX/lib/bobs-factory/records/`. It records the exact release channel, version,

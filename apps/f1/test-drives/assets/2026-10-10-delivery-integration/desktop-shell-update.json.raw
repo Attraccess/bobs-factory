@@ -1,0 +1,13 @@
+{
+  "status": "passed",
+  "scope": "mocked F1; actual protected API/drain/leases/ownership + scripted UI processes; no native Electron/OS signing/provider claim",
+  "checks": [
+    "active lease defers app switch without signaling UI/worker",
+    "signed app activation retains exact worker PID/nonce and waiting checkpoints/definitions/outputs/config",
+    "interrupted complete-app switch recovers prior UI from signed receipt without worker resurrection",
+    "failed shell exits before rollback; worker and checkpoint bytes remain untouched; bad candidate suppressed",
+    "repeat tick never retries bad candidate; local shell settings independent from backend settings"
+  ],
+  "workerPidUnchanged": true,
+  "preservedStateSha256": "25fc2671d72f4f6499b5019ba8d6e2b168f1350710d5a0a15fc6e9a6716fbdb8"
+}

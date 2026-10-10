@@ -1,0 +1,46 @@
+[
+  {
+    "scenario": "update-lifecycle",
+    "command": [
+      "node",
+      "apps/f1/test-drives/assets/update-lifecycle.mjs"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 1.8,
+    "testedCommit": "4a350aadd6d0176814819f52c72ded055ef96482",
+    "agentMode": "mock"
+  },
+  {
+    "scenario": "update-maintenance",
+    "command": [
+      "node",
+      "apps/f1/test-drives/assets/update-maintenance.mjs"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 1.17,
+    "testedCommit": "4a350aadd6d0176814819f52c72ded055ef96482",
+    "agentMode": "mock"
+  },
+  {
+    "scenario": "desktop-service-lifecycle",
+    "command": [
+      "bun",
+      "apps/f1/test-drives/assets/desktop-service-lifecycle.mjs"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 0.46,
+    "testedCommit": "4a350aadd6d0176814819f52c72ded055ef96482",
+    "agentMode": "mock"
+  },
+  {
+    "scenario": "desktop-shell-update",
+    "command": [
+      "node",
+      "apps/f1/test-drives/assets/desktop-shell-update.mjs"
+    ],
+    "exitCode": 0,
+    "elapsedSeconds": 2.94,
+    "testedCommit": "4a350aadd6d0176814819f52c72ded055ef96482",
+    "agentMode": "mock"
+  }
+]
