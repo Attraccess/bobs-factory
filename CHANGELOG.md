@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Add receipt-checked native runtime removal and explicit update-policy handoff, isolate reusable `npx` trials with browser/headless launch and cleanup, and prepare Homebrew/AUR/private npm entry points only from verified immutable signed releases. Downloads retain publication availability gates. ([Taskbot bobs-factory #118](https://taskbot.apps.janjaap.de/p/bobs-factory/t/118), [#123](https://taskbot.apps.janjaap.de/p/bobs-factory/t/123), [#84](https://github.com/jappyjan/bobs-factory/pull/84))
+
 ### Added
 
 - Per-instance stable/nightly update settings, remembered manual/idle policies, pause/pin controls and authenticated check/stage/Install operations. Updates retain fenced process ownership and retryable exact maintenance-release receipts, drain accepted operator/ticket work and MCP transport descendants through closure, freeze live inspection and reboot dispatch during recovery while retaining stored-state reads, and keep explicit stable discovery separate from installer beta fallback before an owned supervisor may replace the runtime ([#119](https://taskbot.apps.janjaap.de/p/bobs-factory/t/119), [#120](https://taskbot.apps.janjaap.de/p/bobs-factory/t/120), [#86](https://github.com/jappyjan/bobs-factory/pull/86)).
@@ -16,6 +20,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve explicit stable channel selection and generated package channel identity through the npx bootstrap; on cancellation, stop and confirm the installer-owned process group before removing its temporary runtime or lock. ([Taskbot bobs-factory #118](https://taskbot.apps.janjaap.de/p/bobs-factory/t/118), [#123](https://taskbot.apps.janjaap.de/p/bobs-factory/t/123), [#84](https://github.com/jappyjan/bobs-factory/pull/84))
 - Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 
 - Integrate external ticket delivery with main’s shared operator recovery and run-age scheduling, preserving conflict-safe retries and acceptance bindings ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).
