@@ -27,6 +27,106 @@ afterEach(() => {
 		rmSync(root, { recursive: true, force: true });
 });
 
+it("retains operator connection repairs across local restart and preserves project identity", async () => {
+	const { EdgeWorker } = await import("bobs-factory-edge-worker");
+	const root = mkdtempSync(join(tmpdir(), "factory-local-repair-"));
+	roots.push(root);
+	const repo = join(root, "repo"),
+		home = join(root, "home");
+	mkdirSync(repo);
+	execFileSync("git", ["init", "-q", "-b", "main", repo]);
+	execFileSync("git", [
+		"-C",
+		repo,
+		"-c",
+		"user.name=Test",
+		"-c",
+		"user.email=test@example.test",
+		"commit",
+		"--allow-empty",
+		"-m",
+		"Fixture",
+	]);
+	execFileSync("git", [
+		"-C",
+		repo,
+		"remote",
+		"add",
+		"origin",
+		"git@github.com:example/fixture.git",
+	]);
+	const bin = join(root, "bin");
+	mkdirSync(bin);
+	for (const command of ["codex", "opencode"])
+		writeFileSync(join(bin, command), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+	vi.stubEnv("PATH", `${bin}:${process.env.PATH}`);
+	vi.spyOn(process, "once").mockReturnValue(process);
+	vi.spyOn(console, "log").mockImplementation(() => {});
+	const start = vi.fn().mockResolvedValue(undefined),
+		setConfigPath = vi.fn();
+	vi.mocked(EdgeWorker).mockImplementation(function () {
+		return {
+			start,
+			setConfigPath,
+			configureLocalRepository: vi.fn(async () => {}),
+		} as unknown as InstanceType<typeof EdgeWorker>;
+	});
+	const options = {
+		repo,
+		home,
+		port: "3457",
+		agent: "opencode",
+		model: "old-model",
+		open: false,
+	};
+	const signals = new Map(
+		["SIGINT", "SIGTERM"].map((signal) => [
+			signal,
+			new Set(process.listeners(signal)),
+		]),
+	);
+	const previousPort = process.env.BOBS_FACTORY_FACTORY_PORT;
+	try {
+		await launchLocal(options);
+		const path = join(home, "config.json");
+		const saved = JSON.parse(readFileSync(path, "utf8"));
+		Object.assign(saved.repositories[0], {
+			mcpConfigPath: [join(home, "repair.json")],
+			allowedTools: ["mcp__taskbot__get_ticket"],
+			disallowedTools: ["mcp__taskbot__delete_ticket"],
+		});
+		saved.strictMcpConfig = true;
+		saved.repositories[0].githubUrl = "https://github.com/example/fixture";
+		writeFileSync(path, JSON.stringify(saved));
+		await launchLocal({ ...options, agent: "codex", model: "new-model" });
+		const effective = vi.mocked(EdgeWorker).mock.calls.at(-1)?.[0];
+		expect(effective).toMatchObject({
+			defaultRunner: "codex",
+			codexDefaultModel: "new-model",
+			strictMcpConfig: true,
+		});
+		expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(effective);
+
+		expect(
+			vi.mocked(EdgeWorker).mock.calls.at(-1)?.[0].repositories[0],
+		).toMatchObject(saved.repositories[0]);
+		expect(setConfigPath).toHaveBeenLastCalledWith(path);
+		await launchLocal({ ...options, agent: "codex", model: undefined });
+		expect(
+			JSON.parse(readFileSync(path, "utf8")).codexDefaultModel,
+		).toBeUndefined();
+		expect(start).toHaveBeenCalledTimes(3);
+	} finally {
+		for (const [signal, before] of signals)
+			for (const listener of process.listeners(signal))
+				if (!before.has(listener)) process.removeListener(signal, listener);
+		if (previousPort === undefined)
+			delete process.env.BOBS_FACTORY_FACTORY_PORT;
+		else process.env.BOBS_FACTORY_FACTORY_PORT = previousPort;
+		vi.mocked(EdgeWorker).mockReset();
+	}
+});
+
 it("starts guided setup from any folder without Git, an agent or a repository", async () => {
 	const { EdgeWorker } = await import("bobs-factory-edge-worker");
 	const root = mkdtempSync(join(tmpdir(), "factory-first-launch-"));

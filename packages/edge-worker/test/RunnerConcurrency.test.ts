@@ -309,3 +309,108 @@ it("bounds background bypass while primary traffic remains queued", async () => 
 	await Promise.all([background, ...primary]);
 	expect(order.indexOf("background")).toBe(8);
 });
+
+it.each([
+	false,
+	true,
+])("retains interactive positions between workflow admissions (batch=%s)", async (batch) => {
+	const slots = new SessionSemaphore(1);
+	const blocker = await slots.acquireLease();
+	const order: string[] = [];
+	const enqueue = (id: string, createdAt?: string) =>
+		slots
+			.acquireLease(undefined, {
+				workflowRun: createdAt ? { identity: id, createdAt } : undefined,
+			})
+			.then((lease) => {
+				order.push(id);
+				return lease;
+			});
+	const newer = enqueue("new", "2026-10-09T00:00:00Z");
+	const interactive = enqueue("interactive");
+	const older = enqueue("old", "2026-10-08T00:00:00Z");
+	expect(order).toEqual([]);
+	if (batch) slots.setLimit(4);
+	else await blocker.release();
+	const oldLease = await older;
+	if (!batch) await oldLease.release();
+	const interactiveLease = await interactive;
+	if (!batch) await interactiveLease.release();
+	const newLease = await newer;
+	expect(order).toEqual(["old", "interactive", "new"]);
+	await Promise.all([
+		blocker.release(),
+		oldLease.release(),
+		interactiveLease.release(),
+		newLease.release(),
+	]);
+	expect(slots.active).toBe(0);
+});
+
+it("orders equal-age runs by identity and leaves by sequence, then fills spare slots", async () => {
+	const slots = new SessionSemaphore(1);
+	const blocker = await slots.acquireLease();
+	const order: string[] = [];
+	const enqueue = (
+		id: string,
+		run: string,
+		createdAt = "2026-10-08T00:00:00Z",
+	) =>
+		slots
+			.acquireLease(undefined, { workflowRun: { identity: run, createdAt } })
+			.then((lease) => {
+				order.push(id);
+				return lease;
+			});
+	const newest = enqueue("newest", "newest", "2026-10-09T00:00:00Z");
+	const b = enqueue("b", "b");
+	const a1 = enqueue("a1", "a");
+	const a2 = enqueue("a2", "a");
+	slots.setLimit(5);
+	const leases = await Promise.all([newest, b, a1, a2]);
+	expect(order).toEqual(["a1", "a2", "b", "newest"]);
+	await Promise.all([blocker.release(), ...leases.map((l) => l.release())]);
+});
+
+it("cancellation after a workflow exchange retains the interactive position", async () => {
+	const slots = new SessionSemaphore(1);
+	const blocker = await slots.acquireLease();
+	const abort = new AbortController();
+	const newer = slots.acquireLease(abort.signal, {
+		workflowRun: { identity: "new", createdAt: "2026-10-09T00:00:00Z" },
+	});
+	const rejection = expect(newer).rejects.toThrow();
+	const interactive = slots.acquireLease();
+	const old = slots.acquireLease(undefined, {
+		workflowRun: { identity: "old", createdAt: "2026-10-08T00:00:00Z" },
+	});
+	await blocker.release();
+	const admitted = await old;
+	abort.abort();
+	await rejection;
+	await admitted.release();
+	await (await interactive).release();
+	expect(slots.waiting).toBe(0);
+	expect(slots.active).toBe(0);
+});
+
+it("rejects conflicting ages while a run owns or waits for capacity", async () => {
+	const slots = new SessionSemaphore(1);
+	const workflow = { identity: "run", createdAt: "2026-10-09T00:00:00Z" };
+	const lease = await slots.acquireLease(undefined, { workflowRun: workflow });
+	await expect(
+		slots.acquireLease(undefined, {
+			workflowRun: { ...workflow, createdAt: "2026-10-08T00:00:00Z" },
+		}),
+	).rejects.toThrow(/Conflicting/);
+	const abort = new AbortController();
+	const pending = slots.acquireLease(abort.signal, { workflowRun: workflow });
+	const rejected = expect(pending).rejects.toThrow();
+	abort.abort();
+	await rejected;
+	await lease.release();
+	const next = await slots.acquireLease(undefined, {
+		workflowRun: { ...workflow, createdAt: "2026-10-08T00:00:00Z" },
+	});
+	await next.release();
+});

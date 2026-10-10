@@ -2386,6 +2386,11 @@ it("runs nested intensive fanout at limit one and cancels queued leaves without 
 		"parallel/0/a",
 		"parallel/1/b",
 	]);
+	for (const leaf of Object.values(run.capacityLeaves!))
+		expect(leaf.request?.workflowRun).toEqual({
+			identity: `${runtime.directory}:run:${run.id}`,
+			createdAt: run.createdAt,
+		});
 	runtime.stop(run.id);
 	await done;
 	await blocker.release();
@@ -3388,4 +3393,59 @@ it("waits for CI assistance and retries the existing fixer after an answer witho
 	expect(calls).toEqual(["ci-fix", "ci-fix"]);
 	expect(run.status).toBe("completed");
 	await runtime.shutdown();
+});
+
+it("passes original owning-run age to agents and intensive nested leaves", async () => {
+	const seen: ExecutionContext[] = [];
+	const capture = async (context: ExecutionContext) => {
+		seen.push(context);
+		return {};
+	};
+	const { runtime } = create({
+		agent: capture,
+		script: capture,
+		tool: capture,
+	});
+	const child = {
+		...workflow([
+			agent("agent"),
+			{
+				id: "tool",
+				name: "Tool",
+				type: "tool",
+				tool: "exec",
+				args: ["echo ok"],
+			},
+		]),
+		id: "age-child",
+	};
+	const parent = workflow(
+		[
+			{
+				id: "parallel",
+				name: "Parallel",
+				type: "fanout",
+				groups: [
+					[{ id: "call", name: "Call", type: "workflow", workflow: child.id }],
+					[{ id: "script", name: "Script", type: "script", script: "echo ok" }],
+				],
+			},
+		],
+		[child],
+	);
+	runtime.updateWorkflows([...defaultWorkflows, parent, child]);
+	const run = start(runtime, parent);
+	run.createdAt = "2026-10-01T00:00:00Z";
+	await runtime.launch(run);
+	expect(run.status).toBe("completed");
+	expect(seen.map((c) => c.step.id).sort()).toEqual([
+		"agent",
+		"script",
+		"tool",
+	]);
+	for (const context of seen)
+		expect(context.capacity?.workflowRun).toEqual({
+			identity: `${runtime.directory}:run:${run.id}`,
+			createdAt: "2026-10-01T00:00:00Z",
+		});
 });

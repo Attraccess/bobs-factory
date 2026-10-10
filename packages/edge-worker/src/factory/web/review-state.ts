@@ -6,6 +6,16 @@ export function signature(value: unknown) {
 	return (hash >>> 0).toString(36);
 }
 
+export function ticketTrackingPending(run: any): boolean {
+	return Boolean(
+		run.ticketSync?.error ||
+			run.ticketSync?.receipts?.some(
+				(receipt: { delivered?: boolean; superseded?: boolean }) =>
+					!receipt.delivered && !receipt.superseded,
+			),
+	);
+}
+
 export function guideRevision(run: any) {
 	return (
 		run.roleRevisions?.["pipeline/guide"] ??
@@ -15,7 +25,12 @@ export function guideRevision(run: any) {
 	);
 }
 export function reviewRevision(run: any) {
-	return run.reviewGate?.headSha ?? guideRevision(run)?.headSha ?? "";
+	return (
+		run.reviewGate?.externalDigest ??
+		run.reviewGate?.headSha ??
+		guideRevision(run)?.headSha ??
+		""
+	);
 }
 
 /** Preserve the progress identity used by both the preview and artifact reader. */
@@ -24,6 +39,8 @@ export function reviewKey(run: any, guide: unknown) {
 }
 
 export function guideMatchesGate(run: any) {
+	if (run.reviewGate?.mode === "external")
+		return run.outputs?.guide?.externalDigest === run.reviewGate.externalDigest;
 	const revision = guideRevision(run);
 	return !revision || revision.headSha === run.reviewGate?.headSha;
 }

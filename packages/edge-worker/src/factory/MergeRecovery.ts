@@ -20,7 +20,16 @@ export function pendingMergeConfirmation(
 		)?.next ??
 			step.next ??
 			steps[steps.indexOf(step) + 1]?.id ??
-			"end") === "end";
+			"end") === "end" ||
+		(step.tool === "merge" &&
+			run.delivery?.contract.mode === "mixed" &&
+			readPath(output, "merged") === true &&
+			step.branches.some(
+				(b) =>
+					b.when.path === "externalPending" &&
+					b.when.equals === true &&
+					b.next === "external-final",
+			));
 	const find = (
 		checkpoint: GraphCheckpoint | undefined,
 		steps: WorkflowStep[],

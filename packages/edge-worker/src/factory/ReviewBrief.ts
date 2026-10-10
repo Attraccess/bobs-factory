@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { externalGuideEvidence } from "./ExternalGuide.js";
 import type { Guide } from "./FactoryResults.js";
 import { BRIEF_CONTRACT } from "./GuideAuthoring.js";
 import { OutputValidationError } from "./OutputValidation.js";
@@ -248,10 +249,11 @@ export const ReviewBriefSchema = BriefObject.loose().superRefine((brief, ctx) =>
 export const GeneratedBriefSchema = BriefObject.strict().superRefine(
 	(brief, ctx) => refineBrief(brief, ctx),
 );
-export type ReviewBrief = z.infer<typeof BriefObject> & {
-	reviewFiles?: { snapshotId: string; baseSha: string; headSha: string };
-	requirementCoverage?: Guide["requirementCoverage"];
-};
+export type ReviewBrief = z.infer<typeof BriefObject> &
+	Partial<ReturnType<typeof externalGuideEvidence>> & {
+		reviewFiles?: { snapshotId: string; baseSha: string; headSha: string };
+		requirementCoverage?: Guide["requirementCoverage"];
+	};
 
 /** Authored text must not carry receipts; the runtime keeps those. */
 const LOCAL_PATH =
@@ -720,6 +722,30 @@ export function briefMarkdown(brief: ReviewBrief, headSha: string): string {
 			)
 			.join("\n\n")}`,
 	);
+	if (brief.externalResources)
+		sections.push(
+			`### Verified ticket changes
+${list(brief.externalResources.map((r) => `[${r.key}](${r.url})`))}
+
+${(brief.externalChanges ?? [])
+	.map(
+		(c) => `**${c.target}: ${c.outcome}**
+
+Before:
+\`\`\`json
+${c.before}
+\`\`\`
+After:
+\`\`\`json
+${c.after}
+\`\`\`
+${c.limitation}`,
+	)
+	.join("\n\n")}
+
+${list((brief.externalCriteria ?? []).map((c) => `✓ ${c.criterion}: ${c.observed}`))}`,
+		);
+
 	if (brief.yourCall.length)
 		sections.push(
 			`### Your call\n${brief.yourCall

@@ -1,3 +1,4 @@
+import { ExternalGuideSchema, externalGuideEvidence } from "./ExternalGuide.js";
 import { GeneratedGuideSchema, GuideSchema } from "./FactoryResults.js";
 import { legacyGuidePrompt } from "./legacyGuidePrompt.js";
 import {
@@ -22,6 +23,8 @@ export function validateGuideCoverage(
 	context: ExecutionContext,
 	value: unknown,
 ): void {
+	if (context.run.delivery?.contract.mode === "mixed")
+		ExternalGuideSchema.parse(externalGuideEvidence(context.run));
 	if (isReviewBrief(value)) {
 		validateBriefCoverage(context, value);
 		return;
@@ -222,7 +225,7 @@ export function validateGuide(context: ExecutionContext, value: unknown): void {
 	const authored = GeneratedBriefSchema.safeParse(value);
 	if (!authored.success) add(authored.error);
 	try {
-		validateBriefCoverage(context, value);
+		validateGuideCoverage(context, value);
 	} catch (error) {
 		add(error);
 	}
@@ -255,6 +258,11 @@ export function attachRequirementCoverage(
 	context: ExecutionContext,
 	value: unknown,
 ): unknown {
+	const external =
+		context.run.delivery?.contract.mode === "mixed"
+			? externalGuideEvidence(context.run)
+			: undefined;
+	if (external) value = { ...(value as Record<string, unknown>), ...external };
 	const aggregate = aggregateForContext(context);
 	if (!aggregate) return value;
 	const guide = isReviewBrief(value) ? value : GuideSchema.parse(value);

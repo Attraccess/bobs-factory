@@ -441,3 +441,39 @@ it("reports authoring and evidence problems in one correction round", () => {
 	expect(messages).toContain("Remove local absolute paths");
 	expect(messages).toContain("unexplained: src/Header.test.tsx");
 });
+
+it("publishes the verified ticket appendix with a mixed brief", () => {
+	const markdown = briefMarkdown(
+		{
+			...brief(),
+			deliveryMode: "mixed",
+			externalResources: [
+				{ key: "ticket", url: "https://tasks.example.com/t/1" },
+			],
+			externalChanges: [
+				{
+					id: "description",
+					target: "ticket",
+					outcome: "applied",
+					before: '{"description":"before"}',
+					after: '{"description":"after"}',
+					limitation: "No conditional writes",
+				},
+			],
+			externalCriteria: [
+				{
+					id: "content",
+					criterion: "Description updated",
+					passed: true,
+					observed: "after",
+				},
+			],
+		},
+		"head",
+	);
+	expect(markdown).toContain("### Verified ticket changes");
+	expect(markdown).toContain("[ticket](https://tasks.example.com/t/1)");
+	expect(markdown).toContain('{"description":"before"}');
+	expect(markdown).toContain('{"description":"after"}');
+	expect(markdown).toContain("✓ Description updated: after");
+});
