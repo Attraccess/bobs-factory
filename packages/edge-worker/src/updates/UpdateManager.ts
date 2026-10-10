@@ -283,8 +283,8 @@ export class UpdateManager {
 			observed.target === expected.target;
 		const shouldWrite = (state: UpdateState) => {
 			const transaction = state.transaction;
-			if (!terminal(transaction)) {
-				const owned = transaction!;
+			if (transaction) {
+				const owned = transaction;
 				if (
 					candidateKey(owned.candidate) !== candidateKey(owned.staged.candidate)
 				)
@@ -292,14 +292,19 @@ export class UpdateManager {
 						"Update transaction has inconsistent staged identity",
 					);
 				const phase = owned.phase;
-				const expected = ["starting", "health", "succeeded"].includes(phase)
-					? [owned.candidate]
-					: ["activating", "recovery-required"].includes(phase)
-						? [owned.previous, owned.candidate]
-						: [owned.previous];
+				const completedOutcome = owned.release?.outcome;
+				const expected = completedOutcome
+					? completedOutcome === "succeeded"
+						? [owned.candidate]
+						: [owned.previous]
+					: ["starting", "health", "succeeded"].includes(phase)
+						? [owned.candidate]
+						: ["activating", "recovery-required"].includes(phase)
+							? [owned.previous, owned.candidate]
+							: [owned.previous];
 				if (!expected.some(matches))
 					throw new Error(
-						`Installed runtime does not match update transaction phase ${phase}`,
+						`Installed runtime does not match update transaction ${completedOutcome ? `outcome ${completedOutcome}` : `phase ${phase}`}`,
 					);
 				return false;
 			}

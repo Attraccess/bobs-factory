@@ -529,3 +529,114 @@ it("rejects wrong phase identity, malformed identity and malformed state even un
 	writeFileSync(manager.file, "{}");
 	await expect(manager.observeInstalled(candidate)).rejects.toThrow();
 });
+
+const previousIdentity: InstalledUpdate = installed;
+const candidateIdentity: InstalledUpdate = {
+	version: candidate.version,
+	commit: candidate.commit,
+	target: candidate.target,
+};
+const identityOutcomes = ["succeeded", "rolled-back", "cancelled"] as const;
+const identityPhases = [
+	"activating",
+	"starting",
+	"health",
+	"rollback",
+	"recovery-required",
+	"succeeded",
+	"rolled-back",
+	"cancelled",
+] as const;
+
+it.each(
+	identityPhases.flatMap((phase) =>
+		identityOutcomes.map((outcome) => ({ phase, outcome })),
+	),
+)("uses completed $outcome receipt over transaction phase $phase", async ({
+	phase,
+	outcome,
+}) => {
+	const { manager } = await startingFixture();
+	const state = JSON.parse(readFileSync(manager.file, "utf8"));
+	state.transaction.phase = phase;
+	state.transaction.release = {
+		transactionId: state.transaction.id,
+		outcome,
+		status: "pending",
+	};
+	writeFileSync(manager.file, JSON.stringify(state));
+	const expected =
+		outcome === "succeeded" ? candidateIdentity : previousIdentity;
+	const incorrect =
+		outcome === "succeeded" ? previousIdentity : candidateIdentity;
+	const before = readFileSync(manager.file, "utf8");
+
+	await manager.observeInstalled(expected);
+	await expect(manager.observeInstalled(incorrect)).rejects.toThrow(
+		`outcome ${outcome}`,
+	);
+	expect(readFileSync(manager.file, "utf8")).toBe(before);
+});
+
+it.each(
+	identityOutcomes,
+)("retained $0 release result after failed acknowledgment resolves only its completed runtime", async (outcome) => {
+	const { manager, lifecycle } = fixture();
+	manager.configure({ channel: "nightly" }, 0);
+	await manager.check();
+	await manager.stage();
+	if (outcome === "rolled-back")
+		vi.mocked(lifecycle.health).mockRejectedValueOnce(
+			new Error("candidate health failed"),
+		);
+	if (outcome === "cancelled")
+		vi.mocked(lifecycle.isIdle).mockResolvedValueOnce(false);
+	vi.mocked(lifecycle.releaseMaintenance).mockRejectedValueOnce(
+		new Error("release acknowledgment lost"),
+	);
+	await manager.reconcile();
+
+	const state = manager.status();
+	expect(state.transaction?.phase).toBe("recovery-required");
+	expect(state.transaction?.release).toMatchObject({
+		outcome,
+		status: "pending",
+	});
+	const expected =
+		outcome === "succeeded" ? candidateIdentity : previousIdentity;
+	const incorrect =
+		outcome === "succeeded" ? previousIdentity : candidateIdentity;
+	const before = readFileSync(manager.file, "utf8");
+
+	await manager.observeInstalled(expected);
+	await expect(manager.observeInstalled(incorrect)).rejects.toThrow(
+		`outcome ${outcome}`,
+	);
+	expect(readFileSync(manager.file, "utf8")).toBe(before);
+});
+
+it("keeps phase allowances for unresolved recovery with no completed release outcome", async () => {
+	const { manager } = await startingFixture();
+	const state = JSON.parse(readFileSync(manager.file, "utf8"));
+	state.transaction.phase = "recovery-required";
+	delete state.transaction.release;
+	writeFileSync(manager.file, JSON.stringify(state));
+
+	await expect(
+		manager.observeInstalled(candidateIdentity),
+	).resolves.toBeUndefined();
+	await expect(
+		manager.observeInstalled(previousIdentity),
+	).resolves.toBeUndefined();
+});
+
+it("rejects a retained staged identity that differs from the transaction candidate", async () => {
+	const { manager } = await startingFixture();
+	const state = JSON.parse(readFileSync(manager.file, "utf8"));
+	state.transaction.staged.candidate.commit = "d".repeat(40);
+	writeFileSync(manager.file, JSON.stringify(state));
+
+	await expect(manager.observeInstalled(candidateIdentity)).rejects.toThrow(
+		"inconsistent staged identity",
+	);
+});

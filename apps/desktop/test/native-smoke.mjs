@@ -1,11 +1,20 @@
 // Actual Electron shell + native local runtime; CDP virtual authenticator, no provider.
 
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	readlinkSync,
+	realpathSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, Menu } from "electron";
 
+if (process.platform === "linux") app.disableHardwareAcceleration();
 const root = mkdtempSync(join(tmpdir(), "factory-electron-smoke-"));
 process.env.BOBS_FACTORY_DESKTOP_HOME = join(root, "home");
 process.env.BOBS_FACTORY_DESKTOP_PORT = "3973";
@@ -18,6 +27,7 @@ dialog.showErrorBox = (title, message) => {
 dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
 let workerPid;
 let reportedError;
+let screenshotUnavailable;
 dialog.showErrorBox = (title, message) => {
 	reportedError = `${title}: ${message}`;
 };
@@ -92,8 +102,15 @@ void (async () => {
 			"fetch('/api/config').then(r=>r.json())",
 		);
 		assert.equal(config.onboarding.required, true);
-		const screenshot = await dashboard.webContents.capturePage();
-		writeFileSync(join(root, "onboarding.png"), screenshot.toPNG());
+		try {
+			const screenshot = await dashboard.webContents.capturePage();
+			writeFileSync(join(root, "onboarding.png"), screenshot.toPNG());
+		} catch (error) {
+			if (process.platform !== "linux" || error.message !== "UnknownVizError")
+				throw error;
+			screenshotUnavailable =
+				"Xvfb compositor UnknownVizError; authenticated DOM and native menu checks continue";
+		}
 		dashboard.close();
 		assert.equal(dashboard.isDestroyed(), false);
 		assert.equal(dashboard.isVisible(), false);
@@ -125,10 +142,83 @@ void (async () => {
 		const { OwnedUpdateLifecycle } = await import(
 			"../../cli/dist/src/services/OwnedUpdateLifecycle.js"
 		);
-		const lifecycle = new OwnedUpdateLifecycle(
+		const { UpdateManager } = await import(
+			"../../../packages/edge-worker/dist/updates/UpdateManager.js"
+		);
+		const identity = JSON.parse(
+			readFileSync(
+				join(process.env.BOBS_FACTORY_DESKTOP_BINARY, "..", "build.json"),
+				"utf8",
+			),
+		);
+		class ConfirmationLifecycle extends OwnedUpdateLifecycle {
+			async isIdle() {
+				await super.isIdle();
+				confirm({ response: 1 });
+				await until(() => reportedError);
+				return false; // Controlled busy decision: no native replacement in this menu fixture.
+			}
+		}
+		const lifecycle = new ConfirmationLifecycle(
 			process.env.BOBS_FACTORY_DESKTOP_HOME,
 			Number(process.env.BOBS_FACTORY_DESKTOP_PORT),
 		);
+		// Own only this fixture's exact external supervisor while a controlled source is selected.
+		const supervisorLock = join(
+			lifecycle.home,
+			"runtime",
+			"update-supervisor.lock",
+		);
+		const supervisorRecord = () => {
+			try {
+				return JSON.parse(readlinkSync(supervisorLock));
+			} catch (error) {
+				if (error.code === "ENOENT") return;
+				throw error;
+			}
+		};
+		await until(() => supervisorRecord());
+		const supervisorOwner = supervisorRecord();
+		const { ownerAlive, workerOwner } = await import(
+			"../../cli/dist/src/services/InstanceLock.js"
+		);
+		assert.equal(supervisorOwner.home, lifecycle.home);
+		assert.equal(
+			supervisorOwner.executable,
+			realpathSync(lifecycle.runtimeLink),
+		);
+		assert.equal(supervisorOwner.owner, "desktop");
+		assert(ownerAlive(supervisorOwner));
+		process.kill(supervisorOwner.pid, "SIGTERM");
+		await until(() => !supervisorRecord());
+		const candidate = {
+			...identity,
+			version: "9.0.0-nightly.20261010.1",
+			channel: "nightly",
+			manifestSha256: "a".repeat(64),
+			publishedAt: new Date().toISOString(),
+		};
+		const manager = new UpdateManager(
+			process.env.BOBS_FACTORY_DESKTOP_HOME,
+			{
+				discover: async () => candidate,
+				stage: async () => ({
+					candidate,
+					executable: realpathSync(process.env.BOBS_FACTORY_DESKTOP_BINARY),
+					previousExecutable: realpathSync(
+						process.env.BOBS_FACTORY_DESKTOP_BINARY,
+					),
+				}),
+			},
+			lifecycle,
+			identity,
+		);
+		manager.configure(
+			{ channel: "nightly", policy: "idle-auto" },
+			manager.status().revision,
+		);
+		await manager.check();
+		await manager.stage();
 		let confirm, entered;
 		const shown = new Promise((resolve) => {
 			entered = resolve;
@@ -144,9 +234,8 @@ void (async () => {
 			.find((i) => i.label === "Stop local Factory…")
 			.click();
 		await shown;
-		await lifecycle.acquireMaintenance("native-menu-race");
-		confirm({ response: 1 });
-		await until(() => reportedError);
+		const postponed = await manager.reconcile();
+		assert.equal(postponed.transaction.phase, "cancelled");
 		assert.match(reportedError, /maintenance/);
 		assert.equal(getOwner().pid, workerPid);
 		assert.equal(
@@ -159,7 +248,7 @@ void (async () => {
 			),
 			false,
 		);
-		await lifecycle.releaseMaintenance("native-menu-race");
+
 		reportedError = undefined;
 		dialog.showMessageBox = async () => ({ response: 1 });
 		// Native menu confirms explicit Stop; UI close never did.
@@ -177,12 +266,20 @@ void (async () => {
 		workerPid = undefined;
 		await assert.rejects(lifecycle.start(), /Deliberate Stop/);
 		await lifecycle.restartCrashedDesktop();
-		assert.equal(
-			existsSync(
-				join(process.env.BOBS_FACTORY_DESKTOP_HOME, "runtime", "worker.lock"),
-			),
-			false,
+		execFileSync(
+			lifecycle.runtimeLink,
+			[
+				"--home",
+				lifecycle.home,
+				"--port",
+				process.env.BOBS_FACTORY_DESKTOP_PORT,
+				"service",
+				"updates-run",
+				"--once",
+			],
+			{ encoding: "utf8", timeout: 15000 },
 		);
+		assert.equal(workerOwner(lifecycle.home), undefined);
 		console.log(
 			JSON.stringify(
 				{
@@ -198,6 +295,7 @@ void (async () => {
 					confirmationMaintenanceRaceRejected: true,
 					stopSuppressesAutomaticRestart: true,
 					nativeCredentials: "not tested",
+					screenshotUnavailable,
 				},
 				null,
 				2,

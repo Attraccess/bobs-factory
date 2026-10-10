@@ -71,6 +71,8 @@ export class OwnedUpdateLifecycle {
 		port: number,
 	) {
 		this.manager = new ServiceLifecycle(home);
+		this.home = this.manager.home;
+		home = this.home;
 		this.client = new FactoryClient({
 			home,
 			port,
