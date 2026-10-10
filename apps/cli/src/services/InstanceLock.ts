@@ -173,6 +173,7 @@ export async function acquireInstanceLock(
 	const release = () => {
 		if (released) return;
 		released = true;
+		process.removeListener("exit", release);
 		if (readOwner(lock, home)?.nonce === owner.nonce) unlinkSync(lock);
 	};
 	process.once("exit", release);

@@ -71,20 +71,30 @@ const xml = (value: string) =>
 		.replaceAll("'", "&apos;");
 const systemd = (value: string) =>
 	`"${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"').replaceAll("%", "%%").replaceAll("$", "$$")}"`;
+export function updateServiceRecord(record: ServiceRecord): ServiceRecord {
+	return {
+		...record,
+		id: `${record.id}.updates`,
+		definition: record.definition.replace(/\.(plist|service)$/, ".updates.$1"),
+	};
+}
 function safe(value: string): string {
 	if (/[\0\r\n]/.test(value))
 		throw new Error("Service values cannot contain control characters");
 	return value;
 }
 
-export function serviceDefinition(record: ServiceRecord): string {
+export function serviceDefinition(
+	record: ServiceRecord,
+	updater = false,
+): string {
 	const args = [
 		record.executable,
 		"--home",
 		record.home,
 		"--no-open",
 		"service",
-		"run",
+		updater ? "updates-run" : "run",
 	];
 	for (const value of [...args, record.path]) safe(value);
 	if (record.platform === "darwin")
@@ -173,11 +183,11 @@ export class ServiceLifecycle {
 	private unit(r: ServiceRecord) {
 		return `${r.id}.service`;
 	}
-	private assertDefinition(r: ServiceRecord) {
+	private assertDefinition(r: ServiceRecord, updater = false) {
 		if (
 			!existsSync(r.definition) ||
 			lstatSync(r.definition).isSymbolicLink() ||
-			readFileSync(r.definition, "utf8") !== serviceDefinition(r)
+			readFileSync(r.definition, "utf8") !== serviceDefinition(r, updater)
 		)
 			throw new Error(
 				"Service definition missing or changed externally; refusing to manage it",
@@ -220,6 +230,11 @@ export class ServiceLifecycle {
 		mkdirSync(dirname(r.definition), { recursive: true, mode: 0o700 });
 		// Never overwrite a manual/external definition. Partial setup is retained for inspection.
 		writeFileSync(r.definition, serviceDefinition(r), {
+			flag: "wx",
+			mode: 0o600,
+		});
+		const updater = updateServiceRecord(r);
+		writeFileSync(updater.definition, serviceDefinition(updater, true), {
 			flag: "wx",
 			mode: 0o600,
 		});
@@ -289,6 +304,8 @@ export class ServiceLifecycle {
 		const r = this.record();
 		if (!r) throw new Error("No service installed for this home");
 		this.assertDefinition(r);
+		const updater = updateServiceRecord(r);
+		this.assertDefinition(updater, true);
 		if (action === "resume") {
 			if (r.desired !== "maintenance")
 				throw new Error("Service is not in maintenance");
@@ -328,6 +345,14 @@ export class ServiceLifecycle {
 				if (loaded.status === 0)
 					this.checked("launchctl", ["bootout", this.target(r)]);
 			} else this.checked("systemctl", ["--user", "stop", this.unit(r)]);
+			if (action !== "maintenance") {
+				if (r.platform === "linux")
+					this.checked("systemctl", ["--user", "stop", this.unit(updater)]);
+				else if (
+					this.run("launchctl", ["print", this.target(updater)]).status === 0
+				)
+					this.checked("launchctl", ["bootout", this.target(updater)]);
+			}
 			// Do not transfer ownership until graceful shutdown completed.
 			for (let attempt = 0; workerOwner(this.home) && attempt < 100; attempt++)
 				await new Promise((resolve) => setTimeout(resolve, 100));
@@ -357,6 +382,26 @@ export class ServiceLifecycle {
 					this.target(r),
 				]);
 			}
+			if (r.platform === "linux")
+				this.checked("systemctl", [
+					"--user",
+					r.startup ? "enable" : "disable",
+					this.unit(updater),
+				]);
+			else {
+				if (this.run("launchctl", ["print", this.target(updater)]).status === 0)
+					throw new Error(
+						"Stop updater before changing macOS login enrollment",
+					);
+				updater.startup = r.startup;
+				writeFileSync(updater.definition, serviceDefinition(updater, true), {
+					mode: 0o600,
+				});
+				this.checked("launchctl", [
+					r.startup ? "enable" : "disable",
+					this.target(updater),
+				]);
+			}
 			this.save(r);
 		}
 		if (action === "start" || action === "restart") {
@@ -382,12 +427,31 @@ export class ServiceLifecycle {
 				]);
 				this.checked("launchctl", ["kickstart", this.target(r)]);
 			}
+			if (r.platform === "linux")
+				this.checked("systemctl", ["--user", "start", this.unit(updater)]);
+			else if (
+				this.run("launchctl", ["print", this.target(updater)]).status !== 0
+			) {
+				this.checked("launchctl", ["enable", this.target(updater)]);
+				this.checked("launchctl", [
+					"bootstrap",
+					`gui/${this.uid}`,
+					updater.definition,
+				]);
+				this.checked("launchctl", ["kickstart", this.target(updater)]);
+			}
 		}
 		if (action === "remove") {
 			if (r.platform === "linux")
 				this.checked("systemctl", ["--user", "disable", this.unit(r)]);
 			// Retain definitions, service record, logs and all mutable/native state.
 			const backup = `${r.definition}.removed-${Date.now()}`;
+			if (r.platform === "linux")
+				this.checked("systemctl", ["--user", "disable", this.unit(updater)]);
+			renameSync(
+				updater.definition,
+				`${updater.definition}.removed-${Date.now()}`,
+			);
 			renameSync(r.definition, backup);
 			renameSync(this.recordPath, `${this.recordPath}.removed-${Date.now()}`);
 			if (r.platform === "linux")

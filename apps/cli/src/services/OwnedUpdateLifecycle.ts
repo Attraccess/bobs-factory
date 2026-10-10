@@ -19,7 +19,11 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { requestFactoryTerminalSession } from "bobs-factory-edge-worker";
 import { FactoryClient } from "../tui/client.js";
-import { ownerAlive, workerOwner } from "./InstanceLock.js";
+import {
+	acquireInstanceLock,
+	ownerAlive,
+	workerOwner,
+} from "./InstanceLock.js";
 import { ServiceLifecycle } from "./ServiceLifecycle.js";
 
 const runFile = promisify(execFile);
@@ -99,6 +103,9 @@ export class OwnedUpdateLifecycle {
 				"Update supervisor must be outside the worker being replaced",
 			);
 	}
+	get runtimeLink() {
+		return this.owner.executable;
+	}
 	private fence() {
 		return join(this.home, "runtime", "update-owner.json");
 	}
@@ -119,6 +126,22 @@ export class OwnedUpdateLifecycle {
 		}
 		this.transactionId = transactionId;
 		this.save({ transactionId, preservation: this.preservation });
+		const current = workerOwner(this.home);
+		if (!current || !ownerAlive(current)) {
+			if (!this.preservation)
+				throw new Error(
+					"Interrupted maintenance lacks a durable preservation receipt",
+				);
+			const marker = process.env.BOBS_FACTORY_WORKER_ID;
+			try {
+				const release = await acquireInstanceLock(this.home);
+				release();
+			} finally {
+				if (marker === undefined) delete process.env.BOBS_FACTORY_WORKER_ID;
+				else process.env.BOBS_FACTORY_WORKER_ID = marker;
+			}
+			return;
+		}
 		await this.client.post("/api/updates/maintenance", {
 			transactionId,
 			action: "begin",
@@ -292,9 +315,32 @@ export class OwnedUpdateLifecycle {
 				},
 			);
 			(await import("node:fs")).closeSync(log);
+			child.on("error", (error) =>
+				console.error(`Owned worker launch: ${error.message}`),
+			);
 			child.unref();
 		}
 	}
+	async restartCrashedDesktop() {
+		if (
+			this.owner.kind !== "desktop" ||
+			existsSync(this.fence()) ||
+			existsSync(join(this.home, "runtime", "desktop-stopped.json"))
+		)
+			return;
+		const current = workerOwner(this.home);
+		if (current && ownerAlive(current)) return;
+		const marker = process.env.BOBS_FACTORY_WORKER_ID;
+		try {
+			const release = await acquireInstanceLock(this.home);
+			release();
+		} finally {
+			if (marker === undefined) delete process.env.BOBS_FACTORY_WORKER_ID;
+			else process.env.BOBS_FACTORY_WORKER_ID = marker;
+		}
+		await this.start();
+	}
+
 	async health(candidate: LifecycleCandidate) {
 		for (let attempt = 0; attempt < 100; attempt++) {
 			try {

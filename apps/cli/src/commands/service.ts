@@ -12,6 +12,7 @@ import {
 	type ServiceAction,
 	ServiceLifecycle,
 } from "../services/ServiceLifecycle.js";
+import { runUpdateSupervisor } from "../services/UpdateSupervisor.js";
 import { StartCommand } from "./StartCommand.js";
 export function addServiceCommands(program: Command) {
 	const service = program
@@ -65,6 +66,20 @@ export function addServiceCommands(program: Command) {
 				console.log(JSON.stringify(await lifecycle().action(action), null, 2)),
 			);
 	}
+	service
+		.command("updates-run", { hidden: true })
+		.option("--once", "One supervisor tick")
+		.action(async (opts: { once?: boolean }) =>
+			console.log(
+				JSON.stringify(
+					await runUpdateSupervisor(
+						lifecycle().home,
+						Number(program.opts().port ?? 3457),
+						opts.once,
+					),
+				),
+			),
+		);
 	service
 		.command("validate-state", { hidden: true })
 		.action(() =>
