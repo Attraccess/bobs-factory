@@ -1,5 +1,10 @@
 import { useSyncExternalStore } from "react";
-import { onConnectionLost } from "./auth-state";
+import {
+	accessRequired,
+	accessState,
+	checkAccess,
+	onConnectionLost,
+} from "./auth-state";
 import { loadRestoration, preserveForUpdate } from "./restoration";
 
 declare const __FACTORY_BUILD__: string;
@@ -55,6 +60,8 @@ export function usePwa() {
 export function disconnected(
 	message = "The factory connection is unavailable.",
 ) {
+	if (accessState().status === "authenticated")
+		accessRequired("Factory is offline. Reconnect to sign in.");
 	if (state.status === "mismatch") return;
 	change({
 		status: "offline",
@@ -130,7 +137,7 @@ let refresh: (() => Promise<void>) | undefined;
 let reconnecting: Promise<void> | undefined;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleRetry() {
-	// Retries start with the running app; the UI stays mounted while they run.
+	// Retries keep the public shell available while private views are cleared.
 	if (!refresh || retryTimer || state.status !== "offline") return;
 	retryTimer = setTimeout(() => {
 		retryTimer = undefined;
@@ -153,6 +160,8 @@ async function attemptReconnect() {
 	change({ retrying: true });
 	if (await checkVersion()) {
 		try {
+			if (outage) await checkAccess();
+			if (pwaState().status === "offline") return;
 			await refresh?.();
 			authoritativeReady();
 		} catch (error) {

@@ -10,11 +10,13 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Keep Settings passkey enrollment mounted while verification rotates the browser session; reconnect the live stream with the new cookie and ignore late responses from the old session. ([#71](https://github.com/JappyJan/bobs-factory/pull/71))
 - Release Factory delivery ownership after publication instead of waiting on ticket synchronization or independent review/QA. Reserve affected repositories, protect shared QA resources, refresh queued fixers and revalidate merge attempts while preserving pending documentation and approval gates. ([Taskbot #126](https://taskbot.apps.janjaap.de/p/bobs-factory/t/126), [#77](https://github.com/jappyjan/bobs-factory/pull/77), [F1 validation](apps/f1/test-drives/2026-10-09-delivery-boundaries.md))
 - Route recorded QA product failures to the existing visual fixer even when a reviewer reports a failed or blocked review; require fresh QA and a completed review before approval. Clarify that review completion describes execution, not a passing product. ([#78](https://github.com/jappyjan/bobs-factory/pull/78), [F1 validation](apps/f1/test-drives/2026-10-09-qa-product-failure-routing.md))
 
 - Reject incomplete or mismatched signed beta inventories before Nix unpacks an archive. Require all four targets and their validation receipts, with unique valid records matching the signed manifest ([#70](https://github.com/jappyjan/bobs-factory/pull/70)).
 - Route unresolved review-guide requirements and delivery gaps back through the existing fixer, with a resumable assistance wait after unsuccessful correction; retain evidence and explicit human approval. ([#76](https://github.com/jappyjan/bobs-factory/pull/76), [F1 recovery validation](apps/f1/test-drives/2026-10-09-guide-gap-recovery.md))
+
 - Accept GitHub owner and repository capitalization differences when publishing, inspecting and merging pull requests, so retries can reuse a draft PR created before a delivery failure. ([#75](https://github.com/jappyjan/bobs-factory/pull/75))
 
 - Allow slow Codex thread startup and resume to finish within a bounded three-minute deadline, and preserve conversation checkpoints and correction budgets if setup still times out. ([#67](https://github.com/jappyjan/bobs-factory/pull/67))
@@ -31,6 +33,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Prioritize eligible jobs from older workflow runs within instance capacity, preserving interactive positions, background turns and restart ordering ([#72](https://github.com/jappyjan/bobs-factory/pull/72), [Taskbot #89](https://taskbot.apps.janjaap.de/p/bobs-factory/t/89)).
+- Clear private dashboard content and unsent edits on connection loss, verify the session again after reconnecting, and document protected remote access, passkey management and mobile rollout checks. ([Taskbot #40](https://taskbot.apps.janjaap.de/p/bobs-factory/t/40), [#71](https://github.com/JappyJan/bobs-factory/pull/71))
+
 - Default Codex execution to full host access so installed shell commands, process inspection and local browsers can run; preserve explicit `workspace-write` and `read-only` settings and managed tool-source conflict checks. ([#69](https://github.com/jappyjan/bobs-factory/pull/69))
 
 - Use mocked agent protocol checks for every release; live provider tests are manual-only and require explicit approval for the specific test. ([#61](https://github.com/jappyjan/bobs-factory/pull/61))
