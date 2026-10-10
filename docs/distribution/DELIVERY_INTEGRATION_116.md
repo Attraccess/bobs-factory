@@ -1,6 +1,7 @@
 # Taskbot 116 integration handoff
 
-The combined draft integrates PR84–90 on current main without closing or merging
+[Draft PR91](https://github.com/jappyjan/bobs-factory/pull/91) integrates PR84–90
+on current main without closing or merging
 the original lanes. See the [combined verification record](../../apps/f1/test-drives/2026-10-10-delivery-integration.md)
 for exact heads, child mapping, conflict handling, commands and scoped receipts.
 
