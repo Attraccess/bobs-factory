@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- Bundle standard workflows independently of model preferences. Add private Factory/Takeover forks, recoverable legacy migration, and disabling that interrupts work while preserving progress for individual Resume. Simple cannot be forked. Preserve existing delivery, operator recovery and older-run priority; recover interrupted backups and remove deleted-fork metadata. ([#83](https://github.com/jappyjan/bobs-factory/pull/83); [Taskbot #129](https://taskbot.apps.janjaap.de/p/bobs-factory/t/129); [validation](apps/f1/test-drives/2026-10-10-workflow-catalog.md))
+- Bundle standard workflows independently of model preferences. Add private Factory/Takeover forks, recoverable legacy migration, and disabling that interrupts work while preserving progress for individual Resume. Simple cannot be forked. Preserve existing delivery, operator recovery and older-run priority; recover interrupted backups and remove deleted-fork metadata. Save the selected chat model before execution and preserve it through the production runner factory on Resume. ([#83](https://github.com/jappyjan/bobs-factory/pull/83); [Taskbot #129](https://taskbot.apps.janjaap.de/p/bobs-factory/t/129); [validation](apps/f1/test-drives/2026-10-10-workflow-catalog.md))
 
 ### Added
 

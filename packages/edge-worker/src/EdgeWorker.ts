@@ -1641,7 +1641,7 @@ export class EdgeWorker extends EventEmitter {
 					runnerType,
 					{
 						...config,
-						model: this.getDefaultModelForRunner(runnerType),
+						model: config.model ?? this.getDefaultModelForRunner(runnerType),
 						fallbackModel: this.getDefaultFallbackModelForRunner(runnerType),
 					},
 					signal,
