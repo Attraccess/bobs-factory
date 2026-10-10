@@ -1,6 +1,11 @@
 import { feedbackPolicyInstructions } from "./FeedbackPolicy.js";
-import { guideMapInstructions } from "./GuideAuthoring.js";
+import {
+	BRIEF_CONTRACT,
+	briefPrompt,
+	briefVideoInstructions,
+} from "./GuideAuthoring.js";
 import { takeoverLaunchFields } from "./LaunchFields.js";
+import { legacyGuidePrompt } from "./legacyGuidePrompt.js";
 import { legacyScreenshotSteps } from "./legacyScreenshotSteps.js";
 import { QA_CONTRACT } from "./Qa.js";
 import { reviewFixInstructions } from "./ReviewRecovery.js";
@@ -148,19 +153,11 @@ Open the actual selected screenshots. Return acceptedScreenshots:[{area,state,im
 					" Include independently generated visual-gate findings as well as reviewer findings. Preserve stable dispositions. Rejected complaints require concrete evidence and reviewer reassessment; rejection cannot waive a failed required criterion. After corrections the pipeline returns through code review, CI, QA scope, execution, review and gate. Failed criteria must be retested before the human guide.",
 				{ next: "code-review", qaContract: QA_CONTRACT },
 			),
-			agent(
-				"guide",
-				"Prepare human review guide",
-				`Write a complete, guided human review of the WHOLE PR at the current revision, including work that existed before takeover and every accepted iteration. This is a product walkthrough, not a recap of the last fix. Consume the QA results in capture explicitly: map executed story/criterion evidence to requirement and chapter evidence. A passed label alone cannot support a requirement. Disclose blocked checks, fixture/tooling limitations, consequential findings and retained nonblocking observations. First read /progress/reviewScope, the clarified requirements, decisions, accepted plan and cumulative capture inventory through factory-context. Inspect the actual base-to-head PR diff, grouping changes by feature/purpose rather than file or review iteration. The first guide always covers the entire feature. Put the core behavior first, consequences next, and supporting changes last.
-Return {"goal":"user goal, at most 30 words","summary":"whole-PR outcome, at most 30 words","decision":{"status":"ready or needs-attention or blocked","summary":"at most 30 words"},"chapters":[{"id":"stable-feature-id","title":"short feature name","summary":"what changed and why, at most 40 words","before":"short original behavior","after":"short new behavior","requirementIndexes":[0],"files":["exact changed repository-relative file"],"screenshots":[{"area":"exact capture area","state":"exact capture state","caption":"what the human should notice"}],"diagrams":[{"title":"how this feature works","steps":[{"label":"short stage","detail":"one short sentence"}]}],"reviewChecks":["specific, short thing to verify"],"risks":["material limitation of this feature"],"evidence":["technical references/test receipts for expandable details"]}],"requirements":[{"criterion":"complete original acceptance criterion","status":"supported or gap or unverified or waived","evidence":["actual evidence"]}],"behavior":[{"scenario":"...","before":"...","after":"..."}],"checks":["actual checks, distinguish current-head CI from earlier local test receipts"],"risks":["material limitations and retained disagreements"],"reviewInstructions":["short final decision checks"]}.
-Produce a small set of cohesive chapters (usually 4-10), one changed thing per chapter. Each requirement must be assigned to at least one chapter using zero-based requirementIndexes. Account for all changed files in chapter files, including tests/migrations/docs and inherited takeover work; supporting files may share a chapter. Use exact relative paths, no globs. Use real cumulative screenshots attached to their relevant chapter, not arbitrary first images or local Markdown image URLs. Keep the whole accepted inventory discoverable, but choose only the useful captures for each chapter. Explain nonvisual processing with a short flow diagram where it helps (e.g. input -> captured terms -> billing -> receipt); diagrams describe the product, not the factory pipeline. No decorative diagrams or invented evidence. Use everyday words; IDs, SHAs, long code descriptions and raw receipts belong in expandable evidence. Disclose fixture/hardware limitations and rejected scope complaints clearly.
-On repeats, update affected chapters and retain unchanged feature chapters, requirements and evidence. A short revision summary may supplement a complete previous guide ONLY when a previous guide was actually human-reviewed and the actual change is a verified typo/documentation-only correction of at most 10 lines with no behavior, visual, dependency or configuration change. Never replace full feature coverage with the revision delta. Set revisionSummary=true and previousHeadSha only for that case, and put its short delta in revisionNote while summary still describes the entire feature. Require fresh explicit human approval of the current revision. Do not modify product code, recapture screenshots, rerun implementation or merge. Human-only merge blockers are remaining human actions, not unsupported implementation requirements.
-Every new guide MUST also include purpose-written compact content: tldr (nonblank, <=90 characters); decision.summaryShort (<=160 characters); every chapter has tldr (<=70), beforeShort and afterShort (<=50 each), risk:{level:"low"|"medium"|"high",text:<=70 characters}, keyChecks:[{do:<=60 characters,expect:<=60 characters}] (1-3 pairs). Do not truncate long prose to produce these fields. Missing fields block publication and require guide-only output correction even with an older accepted prompt. Keep full explanations in the existing fields for expandable detail.
-${guideMapInstructions}
-Optional chapter flow:{title,steps:[{label,detail}]} has 2-8 stages (label <=60, detail <=300 characters), and systemPartIds references whole-guide system:{lanes:[{id,name}],parts:[{id,label,laneId,status:"new"|"changed"|"unchanged"|"legacy"}],before:[{source,target,label?,weak?}],after:[{source,target,label?,weak?}]}. IDs are stable and unique. Connection identity is its directed source/target pair; combine multiple labels for one pair. Lanes/part labels <=60, connection labels <=50 characters; use 1-3 word labels. Screenshot references may include device:"Desktop"|"Mobile"|"Email"|"Reader" and language only when known from accepted evidence. Do not author reviewFiles; the runtime binds the exact whole-PR snapshot.
-`,
-				{ next: "handoff", qaContract: QA_CONTRACT },
-			),
+			agent("guide", "Prepare human review brief", briefPrompt, {
+				next: "handoff",
+				qaContract: QA_CONTRACT,
+				guideContract: BRIEF_CONTRACT,
+			}),
 			tool("handoff", "Verify revision and hand off", "handoff", {
 				branches: [{ when: { path: "fix", equals: true }, next: "ci-fix" }],
 				next: "human-review",
@@ -206,7 +203,10 @@ for (const step of pipeline.steps) {
 	Object.assign(step, { videoContract: "video-v1" });
 	if ("prompt" in step) {
 		previousVideoPrompts.set(step.id, step.prompt);
-		step.prompt += videoPrompts[step.id] ?? "";
+		step.prompt +=
+			"guideContract" in step
+				? briefVideoInstructions
+				: (videoPrompts[step.id] ?? "");
 	}
 }
 
@@ -247,6 +247,7 @@ function installSpecialists(steps: Record<string, any>[]) {
 			step.prompt += inventoryQaInstructions;
 		if (
 			step.id === "guide" &&
+			!step.guideContract &&
 			!step.prompt.includes(inventoryGuideInstructions)
 		)
 			step.prompt += inventoryGuideInstructions;
@@ -307,11 +308,13 @@ export const defaultWorkflows = validateWorkflows([
 /** Upgrade the original flat Factory definition without losing customized roles. */
 const legacyVisualPrompts: Record<string, string[]> = {
 	guide: [
-		// Recognize the QA stock guide saved before compact content was required.
-		defaultWorkflows
-			.find((workflow) => workflow.id === "factory-pipeline")!
-			.steps.find((step) => step.id === "guide")!
-			.prompt!.split("\nEvery new guide MUST")[0]!,
+		// Chapter-guide stock prompts, as saved by each earlier release.
+		legacyGuidePrompt + videoPrompts.guide + inventoryGuideInstructions,
+		legacyGuidePrompt + videoPrompts.guide,
+		legacyGuidePrompt + inventoryGuideInstructions,
+		legacyGuidePrompt,
+		// The QA stock guide saved before compact content was required.
+		legacyGuidePrompt.split("\nEvery new guide MUST")[0]!,
 		`Write a complete, guided human review of the WHOLE PR at the current revision, including work that existed before takeover and every accepted iteration. This is a product walkthrough, not a recap of the last fix. First read /progress/reviewScope, the clarified requirements, decisions, accepted plan and cumulative capture inventory through factory-context. Inspect the actual base-to-head PR diff, grouping changes by feature/purpose rather than file or review iteration. The first guide always covers the entire feature. Put the core behavior first, consequences next, and supporting changes last.
 Return {"goal":"user goal, at most 30 words","summary":"whole-PR outcome, at most 30 words","decision":{"status":"ready or needs-attention or blocked","summary":"at most 30 words"},"chapters":[{"id":"stable-feature-id","title":"short feature name","summary":"what changed and why, at most 40 words","before":"short original behavior","after":"short new behavior","requirementIndexes":[0],"files":["exact changed repository-relative file"],"screenshots":[{"area":"exact capture area","state":"exact capture state","caption":"what the human should notice"}],"diagrams":[{"title":"how this feature works","steps":[{"label":"short stage","detail":"one short sentence"}]}],"reviewChecks":["specific, short thing to verify"],"risks":["material limitation of this feature"],"evidence":["technical references/test receipts for expandable details"]}],"requirements":[{"criterion":"complete original acceptance criterion","status":"supported or gap or unverified or waived","evidence":["actual evidence"]}],"behavior":[{"scenario":"...","before":"...","after":"..."}],"checks":["actual checks, distinguish current-head CI from earlier local test receipts"],"risks":["material limitations and retained disagreements"],"reviewInstructions":["short final decision checks"]}.
 Produce a small set of cohesive chapters (usually 4-10), one changed thing per chapter. Each requirement must be assigned to at least one chapter using zero-based requirementIndexes. Account for all changed files in chapter files, including tests/migrations/docs and inherited takeover work; supporting files may share a chapter. Use exact relative paths, no globs. Use real cumulative screenshots attached to their relevant chapter, not arbitrary first images or local Markdown image URLs. Keep the whole accepted inventory discoverable, but choose only the useful captures for each chapter. Explain nonvisual processing with a short flow diagram where it helps (e.g. input -> captured terms -> billing -> receipt); diagrams describe the product, not the factory pipeline. No decorative diagrams or invented evidence. Use everyday words; IDs, SHAs, long code descriptions and raw receipts belong in expandable evidence. Disclose fixture/hardware limitations and rejected scope complaints clearly.
@@ -443,6 +446,9 @@ export function upgradeWorkflows(value: unknown): unknown {
 					qaContract: stock.qaContract,
 					...(stock.videoContract
 						? { videoContract: stock.videoContract }
+						: {}),
+					...(stock.guideContract
+						? { guideContract: stock.guideContract }
 						: {}),
 					branches: structuredClone(
 						step.id === "handoff" ? (step.branches ?? []) : stock.branches,

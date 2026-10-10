@@ -73,7 +73,7 @@ export function Hero() {
 					<span className="rounded-full bg-ink px-2.5 py-0.5 font-mono text-[11px] text-white">
 						NEW
 					</span>
-					Guided review guides with real screenshots
+					Review briefs: proof for every requirement
 				</motion.div>
 
 				<h1 className="mx-auto mt-8 max-w-5xl font-display text-[clamp(2.9rem,8.4vw,7.2rem)] font-extrabold leading-[0.92] tracking-[-0.05em]">
@@ -107,7 +107,7 @@ export function Hero() {
 				>
 					Bob is a cheerful little software factory that runs on your machine.
 					He clarifies, plans, codes, reviews his own work, babysits CI,
-					screenshots the UI and writes you a guided review —{" "}
+					screenshots the UI and writes you a review brief —{" "}
 					<strong className="text-ink">then waits for your click.</strong>
 				</motion.p>
 

@@ -28,6 +28,7 @@ export function artifactType(v: any) {
 	)
 		return "screenshots";
 	if (keys.has("goal") && keys.has("decision")) return "guide";
+	if (keys.has("verdict") && keys.has("requirements")) return "guide";
 	if (keys.has("decisions")) return "decisions";
 	if (keys.has("completed") && keys.has("remaining")) return "assessment";
 	if (keys.has("identifier") && keys.has("description")) return "ticket";

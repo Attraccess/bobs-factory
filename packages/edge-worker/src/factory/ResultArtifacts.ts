@@ -60,6 +60,45 @@ export async function resolveRoleResult(
 			return output;
 		const guide = structuredClone(output) as Record<string, unknown>;
 		const files = context.progress?.reviewScope?.files;
+		if (context.step.guideContract) {
+			const since = guide.sinceLastReview as { changes?: unknown } | undefined;
+			const groups: [string, unknown][] = [
+				["requirements", guide.requirements],
+				["beyondAsk", guide.beyondAsk],
+				["sinceLastReview/changes", since?.changes],
+			];
+			for (const [name, items] of groups) {
+				if (!Array.isArray(items)) continue;
+				for (const [index, item] of items.entries()) {
+					if (
+						!item ||
+						typeof item !== "object" ||
+						!Object.hasOwn(item, "fileIndexes")
+					)
+						continue;
+					const indexes = item.fileIndexes;
+					if (
+						!files ||
+						Object.hasOwn(item, "files") ||
+						!Array.isArray(indexes) ||
+						indexes.some(
+							(i) => !Number.isInteger(i) || i < 0 || i >= files.length,
+						) ||
+						new Set(indexes).size !== indexes.length
+					)
+						throw new OutputValidationError(output, [
+							{
+								path: `/${name}/${index}/fileIndexes`,
+								message:
+									"Choose unique valid indexes from /progress/reviewScope/files instead of files; unknown or duplicate indexes cannot explain a file",
+							},
+						]);
+					item.files = indexes.map((i: number) => files[i]);
+					delete item.fileIndexes;
+				}
+			}
+			return guide;
+		}
 		const scope = guide.scope as Record<string, unknown> | undefined;
 		const chapters = guide.chapters;
 		if (Array.isArray(chapters))

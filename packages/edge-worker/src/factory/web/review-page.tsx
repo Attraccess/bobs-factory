@@ -60,7 +60,9 @@ export function ReviewPage({
 			</nav>
 			<header className="run-header">
 				<div>
-					<small className="muted">REVIEW GUIDE</small>
+					<small className="muted">
+						{guide?.contract === "brief-v1" ? "REVIEW BRIEF" : "REVIEW GUIDE"}
+					</small>
 					<h1 ref={heading} tabIndex={-1}>
 						{run.title}
 					</h1>
