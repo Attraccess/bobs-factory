@@ -1,0 +1,78 @@
+{
+	"schemaVersion": 1,
+	"purpose": "Verified upstream preparation only; not candidate evidence or a licensing approval",
+	"retrievedAt": "2026-10-10",
+	"implementationBase": "58cb5e40a5f47bd9508f99c49067c5bc458a8dcc",
+	"bunVersion": "1.4.2",
+	"bunRevision": "744846f844374847c902b5e7fd59b4342a51ef99",
+	"webkitRevision": "2e2aa2290fac856d6f451ceacb58f7f5b44dd057",
+	"tinyccRevision": "05f0fafaa3be31e31d7b4b5c17dc60f62c991171",
+	"records": [
+		{
+			"file": "bun-source.tar.gz",
+			"source": "https://codeload.github.com/oven-sh/bun/tar.gz/744846f844374847c902b5e7fd59b4342a51ef99",
+			"sha256": "25e09a8804535b8fbea1dad9f95af8402fc9133d28127d5594ff00df1549590e",
+			"size": 64602344
+		},
+		{
+			"file": "tinycc-source.tar.gz",
+			"source": "https://codeload.github.com/oven-sh/tinycc/tar.gz/05f0fafaa3be31e31d7b4b5c17dc60f62c991171",
+			"sha256": "50750680312923a59fdd36ae41f7091d8e35e51909d0e0b25b0b33ea9534bc08",
+			"size": 1036641
+		},
+		{
+			"file": "bun-LICENSE.md",
+			"source": "https://raw.githubusercontent.com/oven-sh/bun/744846f844374847c902b5e7fd59b4342a51ef99/LICENSE.md",
+			"sha256": "b9caf52728691b4057e371232c221a132883198be2f3d2ddf92c90404c984b1a",
+			"size": 5613
+		},
+		{
+			"file": "webkit-build.ts",
+			"source": "https://raw.githubusercontent.com/oven-sh/bun/744846f844374847c902b5e7fd59b4342a51ef99/scripts/build/deps/webkit.ts",
+			"sha256": "21d397951be3ac93def2fea1756c4815e9ace068a6a01a8530c1f0c65ac4b343",
+			"size": 21353
+		},
+		{
+			"file": "tinycc-build.ts",
+			"source": "https://raw.githubusercontent.com/oven-sh/bun/744846f844374847c902b5e7fd59b4342a51ef99/scripts/build/deps/tinycc.ts",
+			"sha256": "2dfa447e46b8f8ff9a0327e49892869fcea201074e6dd8eff6abbe0f88879298",
+			"size": 3088
+		},
+		{
+			"file": "tinycc-tcc.h.patch",
+			"source": "https://raw.githubusercontent.com/oven-sh/bun/744846f844374847c902b5e7fd59b4342a51ef99/patches/tinycc/tcc.h.patch",
+			"sha256": "5233fc1dd66f8738a8656b220d4bc3713a83594124dac6a12837ed5a9c277254",
+			"size": 191
+		},
+		{
+			"file": "webkit-COPYING.LIB",
+			"source": "https://raw.githubusercontent.com/oven-sh/WebKit/2e2aa2290fac856d6f451ceacb58f7f5b44dd057/Source/JavaScriptCore/COPYING.LIB",
+			"sha256": "5094ecb9c9dcd0eadc34f3c11511d9b5535063032bc150164ecd1a5d5a445547",
+			"size": 25584
+		},
+		{
+			"file": "tinycc-COPYING",
+			"source": "https://raw.githubusercontent.com/oven-sh/tinycc/05f0fafaa3be31e31d7b4b5c17dc60f62c991171/COPYING",
+			"sha256": "512d2d21b6b3384ba64781abb0208a1b87740bc31e2df48e2b206ddb7e4d5779",
+			"size": 26428
+		}
+	],
+	"missing": [
+		{
+			"file": "webkit-source.tar.gz",
+			"source": "https://codeload.github.com/oven-sh/WebKit/tar.gz/2e2aa2290fac856d6f451ceacb58f7f5b44dd057",
+			"observed": "HTTP 422: Content creation is blocked; no source hash claimed",
+			"alternateSource": "https://api.github.com/repos/oven-sh/WebKit/tarball/2e2aa2290fac856d6f451ceacb58f7f5b44dd057",
+			"alternateObserved": "HTTP 422; 32-byte ASCII error body, not accepted as source"
+		},
+		{
+			"input": "Exact frozen candidate.json and matching native runtime/executable hashes"
+		},
+		{
+			"input": "Four native compiler/config/object/link-response archives and actual relink logs"
+		},
+		{
+			"input": "Complete linked-dependency/payload review and real licensingAndSource receipt"
+		}
+	]
+}
