@@ -13,6 +13,7 @@ import {
 	accessRequired,
 	accessState,
 	checkAccess,
+	rotateSession,
 } from "../src/factory/web/auth-state.js";
 import {
 	api,
@@ -121,6 +122,11 @@ it("preserves consecutive permission revocations after failed refreshes and a la
 		"fetch",
 		vi.fn(async (_path: string, options: RequestInit = {}) => {
 			if (_path === "/api/version") return version();
+			if (_path === "/api/auth/status")
+				return factoryResponse({
+					authenticated: true,
+					expires: Date.now() + 60000,
+				});
 			if (options.method === "PUT") {
 				const saved = JSON.parse(options.body as string);
 				writes.push(saved.workflows);
@@ -168,6 +174,7 @@ it("preserves consecutive permission revocations after failed refreshes and a la
 			"Config refresh unavailable",
 		);
 		staleRead!(factoryResponse(initial));
+		await checkAccess();
 		await checkVersion();
 		authoritativeReady();
 		await oldRead;
@@ -219,7 +226,7 @@ it("blocks offline and stale writes without sending a mutation", async () => {
 	disconnected();
 	await expect(
 		api("/api/runs", { method: "POST", body: "{}" }),
-	).rejects.toThrow("paused");
+	).rejects.toThrow("Sign in required");
 	expect(fetch).not.toHaveBeenCalled();
 	vi.stubGlobal(
 		"fetch",
@@ -457,6 +464,13 @@ it("classifies QA before screenshot artifacts, including previews, and renders z
 
 it("refreshes review deep links and their current gate before enabling writes", async () => {
 	disconnected();
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () =>
+			factoryResponse({ authenticated: true, expires: Date.now() + 60000 }),
+		),
+	);
+	await checkAccess();
 	vi.stubGlobal("location", { hash: "#/runs/run/review" });
 	const fetch = vi.fn(async (path: string) =>
 		path === "/api/version"
@@ -501,6 +515,44 @@ it("handles 401 before version errors, clears sensitive caches and prevents late
 	expect(accessState().status).toBe("required");
 });
 
+it("ignores old-cookie denials after passkey verification while retaining private state", async () => {
+	client.setQueryData(["run", "private"], { transcript: "private content" });
+	let respond!: (response: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(
+			() =>
+				new Promise<Response>((resolve) => {
+					respond = resolve;
+				}),
+		),
+	);
+	const late = api("/api/runs");
+	await rotateSession(async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				factoryResponse({ authenticated: true, expires: Date.now() + 120000 }),
+			),
+		);
+		await checkAccess();
+	});
+	respond(factoryResponse({}, { status: 401 }));
+	await expect(late).rejects.toThrow("Session changed");
+	expect(accessState().status).toBe("authenticated");
+	expect(client.getQueryData(["run", "private"])).toEqual({
+		transcript: "private content",
+	});
+	// A denial sent with the current cookie must still clear private content.
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(async () => factoryResponse({}, { status: 401 })),
+	);
+	await expect(api("/api/runs")).rejects.toThrow("Sign in required");
+	expect(accessState().status).toBe("required");
+	expect(client.getQueryData(["run", "private"])).toBeUndefined();
+});
+
 it("keeps credential management mounted during verified-session refresh, but clears private state on denial", async () => {
 	client.setQueryData(["run", "private"], { transcript: "private content" });
 	let respond!: (response: Response) => void;
@@ -536,26 +588,53 @@ it("keeps credential management mounted during verified-session refresh, but cle
 	expect(accessState().status).toBe("required");
 });
 
-it("keeps the signed-in UI and its data through connection loss, unloading only on a definitive denial", async () => {
-	client.setQueryData(["run", "draft"], { input: "unsent" });
+it("clears private state after failed access checks and restores only a verified session", async () => {
 	for (const failure of [
 		() => Promise.reject(new TypeError("Failed to fetch")),
 		() => Promise.resolve(factoryResponse({}, { status: 502 })),
 	]) {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () =>
+				factoryResponse({ authenticated: true, expires: Date.now() + 60000 }),
+			),
+		);
+		await checkAccess();
+		client.setQueryData(["run", "draft"], { input: "unsent" });
 		vi.stubGlobal("fetch", vi.fn(failure));
-		const check = checkAccess();
-		expect(accessState().status).toBe("authenticated");
-		await check;
-		expect(accessState().status).toBe("authenticated");
+		await checkAccess();
+		expect(accessState().status).toBe("required");
 		expect(pwaState().status).toBe("offline");
-		expect(client.getQueryData(["run", "draft"])).toEqual({ input: "unsent" });
+		expect(client.getQueryData(["run", "draft"])).toBeUndefined();
 	}
-
 	vi.stubGlobal(
 		"fetch",
-		vi.fn(async () => factoryResponse({ authenticated: false })),
+		vi.fn(async () =>
+			factoryResponse({ authenticated: true, expires: Date.now() + 60000 }),
+		),
 	);
 	await checkAccess();
-	expect(accessState().status).toBe("required");
+	expect(accessState().status).toBe("authenticated");
 	expect(client.getQueryData(["run", "draft"])).toBeUndefined();
+});
+
+it("discards private caches and late reads when the connection is lost", async () => {
+	client.setQueryData(["run", "private"], { transcript: "private content" });
+	let complete!: (response: Response) => void;
+	vi.stubGlobal(
+		"fetch",
+		vi.fn(
+			async () =>
+				new Promise<Response>((resolve) => {
+					complete = resolve;
+				}),
+		),
+	);
+	const late = api("/api/runs");
+	while (!complete) await new Promise((resolve) => setTimeout(resolve, 0));
+	disconnected();
+	complete(factoryResponse([{ transcript: "late private content" }]));
+	await expect(late).rejects.toThrow("Session changed");
+	expect(accessState().status).toBe("required");
+	expect(client.getQueryData(["run", "private"])).toBeUndefined();
 });

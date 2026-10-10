@@ -21,6 +21,7 @@ import {
 	accessSignal,
 	accessState,
 	onAccessLost,
+	onSessionRotation,
 } from "./auth-state";
 import { useFormState } from "./form-state";
 import {
@@ -59,51 +60,72 @@ export function useLiveUpdates() {
 	const cache = useQueryClient();
 	const [error, setError] = useState<string>();
 	useEffect(() => {
-		const controller = new AbortController();
-		void fetchEventSource("/api/events", {
-			signal: controller.signal,
-			async onopen(response) {
-				await validateLiveConnection(response);
-				setError(undefined);
-				// A new connection can have missed events while offline or in the background.
-				void cache.invalidateQueries({ queryKey: ["runs"] });
-				void cache.invalidateQueries({ queryKey: ["config"] });
-				void cache.invalidateQueries({ queryKey: ["run"] });
-				void cache.invalidateQueries({ queryKey: ["transcript"] });
-			},
-			onmessage(event) {
-				if (event.event !== "change") return;
-				const change = JSON.parse(event.data);
-				void cache.invalidateQueries({ queryKey: ["runs"] });
-				if (change.config)
+		let controller: AbortController;
+		const connect = () => {
+			const connection = new AbortController();
+			controller = connection;
+			void fetchEventSource("/api/events", {
+				signal: connection.signal,
+				async onopen(response) {
+					if (connection.signal.aborted) {
+						await response.body?.cancel();
+						return;
+					}
+					await validateLiveConnection(response);
+					if (connection.signal.aborted) return;
+					setError(undefined);
+					// A new connection can have missed events while offline or in the background.
+					void cache.invalidateQueries({ queryKey: ["runs"] });
 					void cache.invalidateQueries({ queryKey: ["config"] });
-				for (const id of change.ids ?? []) {
-					void cache.invalidateQueries({ queryKey: ["run", id] });
-					void cache.invalidateQueries({ queryKey: ["transcript", id] });
-				}
-			},
-			onclose() {
-				throw new Error("Live connection closed");
-			},
-			onerror(cause) {
-				if (
-					accessState().status !== "authenticated" ||
-					pwaState().status === "mismatch"
-				)
-					throw cause; // Await an explicit update; do not accumulate rejected SSE streams.
-				disconnected();
-				if (!controller.signal.aborted)
-					setError(
-						cause instanceof Error
-							? cause.message
-							: "Live connection unavailable",
-					);
-				return 2000;
-			},
-		}).catch(() => {
-			/* Aborted during unmount; library reconnects other failures. */
+					void cache.invalidateQueries({ queryKey: ["run"] });
+					void cache.invalidateQueries({ queryKey: ["transcript"] });
+				},
+				onmessage(event) {
+					if (event.event !== "change") return;
+					const change = JSON.parse(event.data);
+					void cache.invalidateQueries({ queryKey: ["runs"] });
+					if (change.config)
+						void cache.invalidateQueries({ queryKey: ["config"] });
+					for (const id of change.ids ?? []) {
+						void cache.invalidateQueries({ queryKey: ["run", id] });
+						void cache.invalidateQueries({ queryKey: ["transcript", id] });
+					}
+				},
+				onclose() {
+					throw new Error("Live connection closed");
+				},
+				onerror(cause) {
+					if (
+						connection.signal.aborted ||
+						accessState().status !== "authenticated" ||
+						pwaState().status === "mismatch"
+					)
+						throw cause; // Await an explicit update; do not accumulate rejected SSE streams.
+					disconnected();
+					if (!connection.signal.aborted)
+						setError(
+							cause instanceof Error
+								? cause.message
+								: "Live connection unavailable",
+						);
+					return 2000;
+				},
+			}).catch(() => {
+				/* Aborted during unmount; library reconnects other failures. */
+			});
+		};
+		connect();
+		let mounted = true;
+		const unsubscribe = onSessionRotation(() => {
+			controller.abort();
+			void cache.cancelQueries();
+			return () => {
+				if (mounted && accessState().status === "authenticated") connect();
+			};
 		});
 		return () => {
+			mounted = false;
+			unsubscribe();
 			controller.abort();
 		};
 	}, [cache]);
@@ -169,11 +191,11 @@ export async function api<T = any>(
 				"X-Factory-Build": uiBuild,
 			},
 		});
+		if (epoch !== accessGeneration()) throw new Error("Session changed");
 		if (response.status === 401) {
 			accessRequired("Your session expired. Sign in again.");
 			throw new Error("Sign in required");
 		}
-		if (epoch !== accessGeneration()) throw new Error("Session changed");
 		const responseBuild = response.headers.get("X-Factory-Build");
 		if (!responseBuild) {
 			const message =
