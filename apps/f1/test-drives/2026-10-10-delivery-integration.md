@@ -142,37 +142,27 @@ authenticated provider continuation, physical passkeys or native OS service star
 Older four-target/native proofs stay bound to their original source and bytes.
 This report is no automatic fullPayloadF1/licensingAndSource release PASS.
 
-## Native evidence supplement — exact candidate and current pending head
+## Native evidence supplement — successful corrected-source candidate
 
-The historical unsigned native candidate `1.0.0-nightly.20261010.15` is source/tooling
-`1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32`, digest
-`d053b7c2993931d93c88754fe7922e3c3c0352f2cb3bb18201584d2a7b2dea7f`, run
-[38085071118](https://github.com/jappyjan/bobs-factory/actions/runs/38085071118).
-All four binary and all four desktop jobs succeeded. Downloaded binary manifests
-matched the actual archive bytes; desktop assets matched their build inventories,
-and the runtime archives reused in desktop jobs matched the binary artifacts.
-Target receipts, artifact IDs/container digests, native notice hashes, job links,
-cleanup results and platform observations are preserved in
-[FINAL_NATIVE_116](../../docs/distribution/FINAL_NATIVE_116.md) and its
-[artifact index](../../docs/distribution/evidence/taskbot116-final-native/artifact-index.json).
+The push-triggered [run 38086228778](https://github.com/jappyjan/bobs-factory/actions/runs/38086228778) passed freeze plus all four binary and all four desktop jobs. Its source/tooling is `b82c37c4fb9a3e18d1cb222c6d56d3fef852096f`, version `1.0.0-nightly.20261010.21`, digest `ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec`, committed package `1.0.0-beta`, Bun 1.4.2/Node 24.18.0. This includes the reviewed `ad6f0f85` trigger fix integrated as `22e8b08d`; workflow blob `dd1e7d78d4a32a303147ac1c84cdb428dde23e00` is identical at the fix, integration, candidate source and documentation head `2673564a`. Later commits change only documentation/raw evidence.
 
-This does not certify the current PR head. The exact reviewed desktop workflow
-fix `ad6f0f8553f9c6df26591fc033764bf4bc354712` was integrated and pushed with the
-report changelog follow-up at `b82c37c4fb9a3e18d1cb222c6d56d3fef852096f`.
-Subsequent PR commits only update documentation/evidence and did not trigger
-another native run.
-The push-triggered native run [38086228778](https://github.com/jappyjan/bobs-factory/actions/runs/38086228778)
-had a successful freeze, two Linux binary passes and two active macOS binary jobs
-at the latest coordinator observation. CI [38086231619](https://github.com/jappyjan/bobs-factory/actions/runs/38086231619)
-was active on Node 22/24. This new candidate's final identity and all-target
-receipts remain pending and must not be relabeled with the `1fa3ba1b` evidence.
-Linux Electron receipt stdout in the historical run contains DBus error lines
-before its JSON payload; those raw bytes are retained and called out in the native
-report rather than normalized.
+All eight actual artifacts were downloaded outside Git. Binary archives and all desktop installer/update assets match manifests/build inventories; desktop jobs reuse byte-identical native runtime archives. Compact raw manifests/build inventories/freeze/service/Electron/shell-update receipts, hashes, verified runtime archive-member inventories and job/artifact provenance are assembled separately in the [source-b82 index](../../../docs/distribution/evidence/taskbot116-source-b82/artifact-index.json). Earlier source `1fa3ba1b` version `.15` evidence retains its own [unchanged index](../../../docs/distribution/evidence/taskbot116-final-native/artifact-index.json); all 53 prior-candidate files and 101 historical lane assets are byte-identical.
 
-Read-only Taskbot child snapshot: #117 `done`; #118 and #123 `in_review`; #119,
-#120, #121, #122 and #124 `in_progress`; parent #116 remains `in_progress`.
-No Taskbot status or acceptance field was changed. Native source/relink/licensing,
-publisher trust/signing/rollout, signed Mac acceptance, real operator/platform
-acceptance and GitGuardian disposition remain open as listed in
-[the final native handoff](../../docs/distribution/FINAL_NATIVE_116.md).
+Both Linux actual unsigned AppImage/Electron shell-update/failed-health rollback receipts pass same-worker PID/nonce and waiting-checkpoint preservation, candidate stop before rollback, bad-candidate suppression and cleanup with no surviving fixture PIDs. Scope remains test-only RSA/simulated outer trust and Xvfb without sandbox, with no real provider or Apple signing. Four-target Electron CDP virtual-auth/service receipts pass; native credentials, physical passkeys and signed Mac activation remain unproven. Linux DBus pre-JSON diagnostics are retained byte-for-byte, and the carefully parsed trailing receipts both report `passed: true`; no production defect is inferred. Packaged Factory/Electron 44.7 notices do not complete licensing acceptance.
+
+Node 22/24 both pass for source `b82c37c4` in [38086231619](https://github.com/jappyjan/bobs-factory/actions/runs/38086231619) and documentation head `2673564a` in [38086852959](https://github.com/jappyjan/bobs-factory/actions/runs/38086852959). Later documentation CI is not implied by these results. GitGuardian check `114315123906` fails with four generic findings across 97 commits and zero annotations; incidents `38083768`/`38084076` reference historical F1 maintenance evidence. No private disposition is available and findings are not assumed synthetic/classified.
+
+The legacy `v1.0.0-beta` prerelease exists; new stable/nightly/native-desktop channels/catalogs are not activated. Full pinned WebKit (official HTTP 422), all-four native object/config/link-response/relink inputs and independent `licensingAndSource` remain UNASSEMBLED. Real trust/signing, Apple, catalog/npm ownership/public activation, physical-provider/minimum-platform/reboot and GitGuardian operator gates remain open in [FINAL_NATIVE_116](../../../docs/distribution/FINAL_NATIVE_116.md).
+
+This supplement assembles completed evidence; it does not run a new F1/native/signed23 matrix or create a release acceptance PASS. The changed documentation/evidence needs direct JSON/link/hash checks and normal hooks. Per-child acceptance was reread; no ticket status is changed:
+
+| Child | Status | Actual evidence | Remaining acceptance |
+| --- | --- | --- | --- |
+| [#117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117) stable/nightly publication | `done` | Frozen identity and all four native artifact pairs passed; publication mechanism independently reviewed. | Genuine publisher pin, protected signing, complete source/relink/licensing receipt and authorized six-hour nightly rollout/stable promotion; demonstrate public complete-target discovery and failed-publication recovery. |
+| [#118](https://taskbot.apps.janjaap.de/p/bobs-factory/t/118) verified installer/bootstrap | `in_review` | Four native controlled-download installer receipts passed integrity, identity, repeat-install, removal/state and ownership guards. | Genuinely trusted published stable/nightly bootstrap on clean supported-minimum hosts; unavailable/offline/interrupted staging and saved-policy handoff across upgrades with host prerequisites/credentials intact. |
+| [#119](https://taskbot.apps.janjaap.de/p/bobs-factory/t/119) safe update/restart/recovery | `in_progress` | Combined mock runtime/drain/recovery evidence and both actual Linux shell-upgrade/failed-health rollback receipts passed. Shell replacement kept the worker unchanged. | Authentically signed runtime replacement with real provider/native conversation continuation, interruption/reboot recovery and remote-instance isolation; preserve config, accepted results, drafts, waiting gates and native stores under supported ownership. |
+| [#120](https://taskbot.apps.janjaap.de/p/bobs-factory/t/120) nightly subscription/update policy | `in_progress` | Controlled defaults, both overrides, pause/pin, queued-consent reconciliation and independent shell/backend policy evidence passed. | Published install → subscribe → later nightly automatic-idle update and stable manual/override flows; offline/coalescing, durable settings across entry points, pause/pin and safe compatibility-checked stable return on real installations. |
+| [#121](https://taskbot.apps.janjaap.de/p/bobs-factory/t/121) native desktop | `in_progress` | Four unsigned packaged targets; Electron CDP virtual enrollment/login/logout, close/reopen same worker and explicit Stop passed. Linux AppImage update/rollback passed under test trust. | Signed/notarized macOS DMG drag/open and first-launch onboarding; genuine signed app activation/rollback; physical passkeys/native credentials, local/remote attachment and real provider continuation; explicit supported minimum OS/libc/CPU matrix and mismatch behavior. |
+| [#122](https://taskbot.apps.janjaap.de/p/bobs-factory/t/122) headless/service delivery | `in_progress` | Native disposable user-service ownership receipts and controlled protected remote/API lifecycle evidence passed; backend does not depend on a desktop window. | Second physical headless host controlled from another machine, same-user service restart/reboot and real credential/provider access; connection loss, busy/idle runtime updates and native continuation under actual launchd/systemd constraints. |
+| [#123](https://taskbot.apps.janjaap.de/p/bobs-factory/t/123) installation entry points | `in_review` | DMG, AppImage, DEB and Mac complete-app archive hashes verified; controlled trial/recipe and ownership checks passed. | Choose/verify Homebrew tap or catalog, AUR maintainers and Bob-owned minimal npm launcher identity; publish only genuine signed eligible assets, then clean-machine install/trial/open/upgrade/remove and ownership-conflict acceptance for each advertised entry point. Upstream monorepo npm remains retired. |
+| [#124](https://taskbot.apps.janjaap.de/p/bobs-factory/t/124) startup/service lifecycle | `in_progress` | Disposable install/status/start/stop/restart/remove, close/reopen and Stop-versus-maintenance receipts passed. | Isolated login/reboot/logout/lingering, enable/disable, crash/backoff and interrupted-setup acceptance; deliberate PM2/manual/Nix adoption/migration without duplicate workers; workflow/native-session/waiting-gate recovery. macOS GUI LaunchAgent does not prove pre-login keychain access. |

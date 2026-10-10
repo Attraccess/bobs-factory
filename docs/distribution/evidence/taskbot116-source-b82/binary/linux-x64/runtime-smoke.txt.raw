@@ -1,0 +1,6 @@
+1.0.0-nightly.20261010.21
+Startup 1: guided setup without an agent; unauthenticated API 401; authenticated API 200
+Startup 1: runtime identity matches build.json on /version and /api/version
+Startup 2: guided setup without an agent; unauthenticated API 401; authenticated API 200
+Startup 2: runtime identity matches build.json on /version and /api/version
+Binary startup/assets/protected API/MCP/shutdown/restart smoke passed

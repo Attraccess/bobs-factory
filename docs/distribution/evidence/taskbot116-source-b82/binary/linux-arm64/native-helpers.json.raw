@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "product": "bobs-factory",
+  "validation": "native-helpers",
+  "status": "passed",
+  "version": "1.0.0-nightly.20261010.21",
+  "candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+  "workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+  "commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+  "target": "linux-arm64",
+  "dirty": false,
+  "resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+  "executableSha256": "f211479c82733e2c466e5f80ef7f8ffef77b305aafb069e4907c85a2d935a6f8",
+  "platform": {
+    "os": "linux",
+    "arch": "arm64",
+    "release": "6.17.0-1022-azure",
+    "systemVersion": "Ubuntu 24.04.5 LTS",
+    "cpuModel": "unknown",
+    "libc": "glibc 2.39"
+  },
+  "scope": {
+    "transport": "controlled-local-https",
+    "credentials": "synthetic-scoped",
+    "agentInference": "none"
+  },
+  "checks": {
+    "gitCredentialScoped": "passed",
+    "gitCredentialForeignRejected": "passed",
+    "restApiScoped": "passed",
+    "graphqlApiScoped": "passed",
+    "apiForeignRejected": "passed",
+    "missingCredentialNoFallback": "passed",
+    "http201CiRetry": "passed",
+    "helperWithoutPath": "passed",
+    "cursorPermission": "passed"
+  },
+  "requestCount": 4
+}

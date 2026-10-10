@@ -1,0 +1,2467 @@
+{
+	"schemaVersion": 1,
+	"generatedAt": "2026-10-10T21:33:32.463425+00:00",
+	"sourceScope": "exact source-b82 candidate; later documentation commits do not change its native payload",
+	"candidate": {
+		"schemaVersion": 1,
+		"product": "bobs-factory",
+		"repository": "jappyjan/bobs-factory",
+		"channel": "nightly",
+		"version": "1.0.0-nightly.20261010.21",
+		"tag": "v1.0.0-nightly.20261010.21",
+		"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+		"committedVersion": "1.0.0-beta",
+		"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+		"recipe": {
+			"schemaVersion": 1,
+			"toolingSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+			"bun": "1.4.2",
+			"node": "24.18.0",
+			"versionOverride": "1.0.0-nightly.20261010.21"
+		},
+		"targets": ["darwin-arm64", "darwin-x64", "linux-x64", "linux-arm64"],
+		"sequence": 21
+	},
+	"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+	"nativeRun": {
+		"id": 38086228778,
+		"attempt": 1,
+		"headSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+		"status": "completed",
+		"conclusion": "success",
+		"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778"
+	},
+	"workflowBlob": "dd1e7d78d4a32a303147ac1c84cdb428dde23e00",
+	"freezeJob": {
+		"id": 114313189484,
+		"run_id": 38086228778,
+		"workflow_name": "Prepare unsigned desktop candidate",
+		"head_branch": "delivery/taskbot-116-integration",
+		"run_url": "https://api.github.com/repos/jappyjan/bobs-factory/actions/runs/38086228778",
+		"run_attempt": 1,
+		"node_id": "CR_kwDOU7nq-c8AAAAanZjYbA",
+		"head_sha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+		"url": "https://api.github.com/repos/jappyjan/bobs-factory/actions/jobs/114313189484",
+		"html_url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/job/114313189484",
+		"status": "completed",
+		"conclusion": "success",
+		"created_at": "2026-10-10T21:04:39Z",
+		"started_at": "2026-10-10T21:04:42Z",
+		"completed_at": "2026-10-10T21:04:54Z",
+		"name": "freeze",
+		"steps": [
+			{
+				"name": "Set up job",
+				"status": "completed",
+				"conclusion": "success",
+				"number": 1,
+				"started_at": "2026-10-10T21:04:43Z",
+				"completed_at": "2026-10-10T21:04:44Z"
+			},
+			{
+				"name": "Run actions/checkout@v7",
+				"status": "completed",
+				"conclusion": "success",
+				"number": 2,
+				"started_at": "2026-10-10T21:04:44Z",
+				"completed_at": "2026-10-10T21:04:47Z"
+			},
+			{
+				"name": "Run actions/setup-node@v7",
+				"status": "completed",
+				"conclusion": "success",
+				"number": 3,
+				"started_at": "2026-10-10T21:04:47Z",
+				"completed_at": "2026-10-10T21:04:52Z"
+			},
+			{
+				"name": "Freeze exact unsigned preparation source/tooling",
+				"status": "completed",
+				"conclusion": "success",
+				"number": 4,
+				"started_at": "2026-10-10T21:04:52Z",
+				"completed_at": "2026-10-10T21:04:52Z"
+			},
+			{
+				"name": "Post Run actions/setup-node@v7",
+				"status": "completed",
+				"conclusion": "success",
+				"number": 7,
+				"started_at": "2026-10-10T21:04:52Z",
+				"completed_at": "2026-10-10T21:04:52Z"
+			},
+			{
+				"name": "Post Run actions/checkout@v7",
+				"status": "completed",
+				"conclusion": "success",
+				"number": 8,
+				"started_at": "2026-10-10T21:04:52Z",
+				"completed_at": "2026-10-10T21:04:52Z"
+			},
+			{
+				"name": "Complete job",
+				"status": "completed",
+				"conclusion": "success",
+				"number": 9,
+				"started_at": "2026-10-10T21:04:52Z",
+				"completed_at": "2026-10-10T21:04:52Z"
+			}
+		],
+		"check_run_url": "https://api.github.com/repos/jappyjan/bobs-factory/check-runs/114313189484",
+		"labels": ["ubuntu-24.04"],
+		"runner_id": 1000003247,
+		"runner_name": "GitHub Actions 1000003247",
+		"runner_group_id": 0,
+		"runner_group_name": "GitHub Actions"
+	},
+	"historicalCandidateIndex": "../taskbot116-final-native/artifact-index.json",
+	"targets": {
+		"darwin-arm64": {
+			"binary": {
+				"artifact": {
+					"id": 11682123495,
+					"name": "bobs-factory-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1",
+					"sizeInBytes": 65829971,
+					"digest": "sha256:37dc491f3213c719839d6b89c05c9a2ae75bbb34a5218f0ce07c20e6afbc23f5",
+					"createdAt": "2026-10-10T21:07:03Z",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/artifacts/11682123495",
+					"containerDigestScope": "GitHub API metadata; downloaded extracted payload files independently hashed"
+				},
+				"job": {
+					"id": 114313238650,
+					"name": "binary / binary (darwin-arm64, macos-15)",
+					"conclusion": "success",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/job/114313238650"
+				},
+				"archive": {
+					"schemaVersion": 1,
+					"product": "bobs-factory",
+					"version": "1.0.0-nightly.20261010.21",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"committedVersion": "1.0.0-beta",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"dirty": false,
+					"target": "darwin-arm64",
+					"file": "bobs-factory-1.0.0-nightly.20261010.21-darwin-arm64.tar.gz",
+					"size": 32587783,
+					"sha256": "02ab491ad4f2c64136f324502796f96ce737338aeb9530afcda39961f8bcbfec",
+					"actualSize": 32587783,
+					"actualSha256": "02ab491ad4f2c64136f324502796f96ce737338aeb9530afcda39961f8bcbfec",
+					"verified": true
+				},
+				"verifiedArchiveInventory": [
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-arm64",
+						"size": 0,
+						"type": "directory"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-arm64/LICENSE",
+						"size": 11357,
+						"type": "file",
+						"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-arm64/NOTICE",
+						"size": 173,
+						"type": "file",
+						"sha256": "88cfe660584636c41d3ad4a7193db4de35c0ccfccc53cc47524afe131097248d"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-arm64/bobs-factory",
+						"size": 101641074,
+						"type": "file",
+						"sha256": "1a66bd81f84f7a382ded69db2b588f3ff0a69b08228695124ef834bc35cb9d10"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-arm64/THIRD_PARTY_NOTICES.txt",
+						"size": 2066100,
+						"type": "file",
+						"sha256": "866b01d036da496d54ecc7ceb1fc7e1a09c2bc8e0d86bc1fc0c56f908e7e6f87"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-arm64/build.json",
+						"size": 764,
+						"type": "file",
+						"sha256": "855e97ec640831849e28548918c7c2989da225a615c62529fa6b0bbd20007aff"
+					}
+				],
+				"identity": {
+					"schemaVersion": 1,
+					"product": "bobs-factory",
+					"version": "1.0.0-nightly.20261010.21",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"committedVersion": "1.0.0-beta",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"dirty": false,
+					"target": "darwin-arm64",
+					"tooling": {
+						"bun": "1.4.2"
+					},
+					"executable": {
+						"file": "bobs-factory",
+						"size": 101641074,
+						"sha256": "1a66bd81f84f7a382ded69db2b588f3ff0a69b08228695124ef834bc35cb9d10"
+					},
+					"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+					"validation": "pending runtime smoke",
+					"requirements": "macOS; native target smoke required"
+				},
+				"receipts": {
+					"prepared-agent-boundaries": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "prepared-agent-boundaries",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "darwin-arm64",
+						"dirty": false,
+						"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+						"executableSha256": "1a66bd81f84f7a382ded69db2b588f3ff0a69b08228695124ef834bc35cb9d10",
+						"scope": {
+							"agents": "synthetic-sdk-and-mocked-adapters",
+							"authenticatedProviders": false,
+							"agentInference": "none"
+						},
+						"compiledCursorIpcCreateResume": "passed",
+						"adapterCheckout": {
+							"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+							"dirty": false
+						},
+						"adapters": {
+							"claude": {
+								"status": "passed",
+								"passed": 61,
+								"skipped": 0,
+								"files": [
+									"ClaudeRunner.test.ts",
+									"env-isolation.test.ts",
+									"spawn-claude-code-process.test.ts",
+									"pending-work-lifecycle.test.ts"
+								],
+								"reportSha256": "79b85b06233e66273bd8c7ddedbf48cdf9f6f85446ae84f1ea35d49c8cfc74f9"
+							},
+							"codex": {
+								"status": "passed",
+								"passed": 77,
+								"skipped": 0,
+								"files": [
+									"AppServerCodexBackend.test.ts",
+									"appServerProcess.test.ts",
+									"CodexRunner.startup.test.ts",
+									"CodexRunner.streaming.test.ts",
+									"CodexRunner.mcp-config.test.ts"
+								],
+								"reportSha256": "24079d0ea95aec6ba32bea69479259687b6d7fa5dc2b214ca06ed3d7ce3fd40f"
+							},
+							"gemini": {
+								"status": "passed",
+								"passed": 65,
+								"skipped": 1,
+								"files": ["GeminiRunner.test.ts", "SimpleGeminiRunner.test.ts"],
+								"reportSha256": "7fe64ad08ae92b266487dde347d37a3955588a20a6924cf9d9d7aa928c3f420c"
+							},
+							"opencode": {
+								"status": "passed",
+								"passed": 21,
+								"skipped": 0,
+								"files": [
+									"OpenCodeRunner.test.ts",
+									"OpenCodeRunner.environment.test.ts",
+									"formatter.replay.test.ts"
+								],
+								"reportSha256": "1de0ccb917126acd6ab48f1aec2f39af7bab7455044fe41f8319004b0e83e441"
+							},
+							"cursor": {
+								"status": "passed",
+								"passed": 8,
+								"skipped": 0,
+								"files": [
+									"prepared-sdk.test.ts",
+									"CursorWorkerRunner.test.ts",
+									"CursorRunner.environment.test.ts"
+								],
+								"reportSha256": "d067b712eb6d14a6f77e6b66c0da5c9c3f3310ab41cf6c5ca4f962c078185ecd"
+							}
+						}
+					},
+					"native-helpers": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "native-helpers",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "darwin-arm64",
+						"dirty": false,
+						"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+						"executableSha256": "1a66bd81f84f7a382ded69db2b588f3ff0a69b08228695124ef834bc35cb9d10",
+						"platform": {
+							"os": "darwin",
+							"arch": "arm64",
+							"release": "24.6.0",
+							"systemVersion": "15.7.9",
+							"cpuModel": "Apple M1 (Virtual)",
+							"libc": "not-applicable"
+						},
+						"scope": {
+							"transport": "controlled-local-https",
+							"credentials": "synthetic-scoped",
+							"agentInference": "none"
+						},
+						"checks": {
+							"gitCredentialScoped": "passed",
+							"gitCredentialForeignRejected": "passed",
+							"restApiScoped": "passed",
+							"graphqlApiScoped": "passed",
+							"apiForeignRejected": "passed",
+							"missingCredentialNoFallback": "passed",
+							"http201CiRetry": "passed",
+							"helperWithoutPath": "passed",
+							"cursorPermission": "passed"
+						},
+						"requestCount": 4
+					},
+					"public-installer": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "public-installer",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "darwin-arm64",
+						"scope": "native-archive-controlled-downloads",
+						"checks": {
+							"badSignaturePreservesInstallation": "passed",
+							"ownershipReceipt": "passed",
+							"foreignRemovalRefused": "passed",
+							"ownedRemovalRetainsState": "passed",
+							"reinstallAfterRemoval": "passed",
+							"channelResolution": "passed",
+							"exactVersion": "passed",
+							"repeatInstall": "passed",
+							"badHashPreservesInstallation": "passed",
+							"badSizePreservesInstallation": "passed",
+							"badSourcePreservesInstallation": "passed",
+							"unavailableTargetPreservesInstallation": "passed"
+						}
+					}
+				},
+				"rawFiles": [
+					{
+						"file": "build.json.raw",
+						"size": 764,
+						"sha256": "855e97ec640831849e28548918c7c2989da225a615c62529fa6b0bbd20007aff",
+						"path": "binary/darwin-arm64/build.json.raw",
+						"downloadedPath": "bobs-factory-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/bobs-factory-1.0.0-nightly.20261010.21-darwin-arm64/build.json"
+					},
+					{
+						"file": "manifest.json.raw",
+						"size": 556,
+						"sha256": "f13a67f2031bea124da37f37bb7effb959d4368d6543fe994bee87caeea5f806",
+						"path": "binary/darwin-arm64/manifest.json.raw",
+						"downloadedPath": "bobs-factory-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/bobs-factory-1.0.0-nightly.20261010.21-darwin-arm64.manifest.json"
+					},
+					{
+						"file": "prepared-agent-boundaries.json.raw",
+						"size": 2564,
+						"sha256": "73783b69bd47d6819ee7acb5a4231482fb3f08e09df4476bb06057832fecd3d2",
+						"path": "binary/darwin-arm64/prepared-agent-boundaries.json.raw",
+						"downloadedPath": "bobs-factory-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/prepared-agent-boundaries.json"
+					},
+					{
+						"file": "native-helpers.json.raw",
+						"size": 1265,
+						"sha256": "4c76b301b35f618dd16332326ff0f8e9b216d4f8a28ae536f394d93573d7012f",
+						"path": "binary/darwin-arm64/native-helpers.json.raw",
+						"downloadedPath": "bobs-factory-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/native-helpers.json"
+					},
+					{
+						"file": "public-installer.json.raw",
+						"size": 953,
+						"sha256": "d61f55f173943cb4aa7dae901e8fa28342a3a91c5cc494d57f319ea18ebd221d",
+						"path": "binary/darwin-arm64/public-installer.json.raw",
+						"downloadedPath": "bobs-factory-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/public-installer.json"
+					},
+					{
+						"file": "runtime-smoke.txt.raw",
+						"size": 426,
+						"sha256": "267a90b501289dff0e5f54371c3d654f89b028ea7107c440c559351ff5c1b460",
+						"path": "binary/darwin-arm64/runtime-smoke.txt.raw",
+						"downloadedPath": "bobs-factory-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/runtime-smoke.txt"
+					}
+				],
+				"licenseInventory": [
+					{
+						"file": "LICENSE",
+						"size": 11357,
+						"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+					},
+					{
+						"file": "NOTICE",
+						"size": 173,
+						"sha256": "88cfe660584636c41d3ad4a7193db4de35c0ccfccc53cc47524afe131097248d"
+					},
+					{
+						"file": "THIRD_PARTY_NOTICES.txt",
+						"size": 2066100,
+						"sha256": "866b01d036da496d54ecc7ceb1fc7e1a09c2bc8e0d86bc1fc0c56f908e7e6f87"
+					}
+				]
+			},
+			"desktop": {
+				"artifact": {
+					"id": 11682473066,
+					"name": "desktop-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"sizeInBytes": 369528651,
+					"digest": "sha256:715f4fbafc56f7604f3ac911d0a13fedff4bc64d39597b7b9ceda5a29bae2fb8",
+					"createdAt": "2026-10-10T21:10:23Z",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/artifacts/11682473066",
+					"containerDigestScope": "GitHub API metadata; downloaded extracted payload files independently hashed"
+				},
+				"job": {
+					"id": 114313825577,
+					"name": "desktop (darwin-arm64, macos-15)",
+					"conclusion": "success",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/job/114313825577"
+				},
+				"identity": {
+					"version": "1.0.0-nightly.20261010.21",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"runtimeArchiveSharedWithBinary": true,
+					"actualRuntimeArchiveSha256": "02ab491ad4f2c64136f324502796f96ce737338aeb9530afcda39961f8bcbfec"
+				},
+				"installerAndUpdateAssets": [
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-mac-arm64.dmg",
+						"size": 166726506,
+						"sha256": "59af7fdd75c759967214c93ab23dfd55356ae01732849d2bb214bf01ec299dba",
+						"actualSize": 166726506,
+						"actualSha256": "59af7fdd75c759967214c93ab23dfd55356ae01732849d2bb214bf01ec299dba",
+						"verified": true
+					},
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-mac-arm64.bobsapp.gz",
+						"size": 170975798,
+						"sha256": "4056539ae1f655ebaec30903b2c909b2ca4352df1cb08fe2cf7150898256f29a",
+						"actualSize": 170975798,
+						"actualSha256": "4056539ae1f655ebaec30903b2c909b2ca4352df1cb08fe2cf7150898256f29a",
+						"verified": true
+					},
+					{
+						"file": "desktop-update-darwin-arm64.json",
+						"size": 1153,
+						"sha256": "2d4e3db0d0b84b3593736f545485267adcb1b0a309ce67ad0b1ddb0f753d481e",
+						"actualSize": 1153,
+						"actualSha256": "2d4e3db0d0b84b3593736f545485267adcb1b0a309ce67ad0b1ddb0f753d481e",
+						"verified": true
+					}
+				],
+				"electronNotices": {
+					"status": "passed",
+					"electronLicenses": {
+						"schemaVersion": 1,
+						"product": "electron",
+						"version": "44.7.0",
+						"files": [
+							{
+								"file": "LICENSE",
+								"size": 1096,
+								"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+							},
+							{
+								"file": "LICENSES.chromium.html",
+								"size": 20115518,
+								"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+							}
+						]
+					},
+					"installers": [
+						{
+							"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-mac-arm64.dmg",
+							"size": 166726506,
+							"sha256": "59af7fdd75c759967214c93ab23dfd55356ae01732849d2bb214bf01ec299dba",
+							"electronLicenses": {
+								"schemaVersion": 1,
+								"product": "electron",
+								"version": "44.7.0",
+								"files": [
+									{
+										"file": "LICENSE",
+										"size": 1096,
+										"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+									},
+									{
+										"file": "LICENSES.chromium.html",
+										"size": 20115518,
+										"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+									}
+								]
+							}
+						}
+					],
+					"update": {
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-mac-arm64.bobsapp.gz",
+						"size": 170975798,
+						"sha256": "4056539ae1f655ebaec30903b2c909b2ca4352df1cb08fe2cf7150898256f29a",
+						"electronLicenses": {
+							"schemaVersion": 1,
+							"product": "electron",
+							"version": "44.7.0",
+							"files": [
+								{
+									"file": "LICENSE",
+									"size": 1096,
+									"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+								},
+								{
+									"file": "LICENSES.chromium.html",
+									"size": 20115518,
+									"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+								}
+							]
+						}
+					}
+				},
+				"osSigning": "unsigned",
+				"buildValidation": "native install/auth/lifecycle receipts required",
+				"nativeElectron": {
+					"passed": true,
+					"platform": "darwin",
+					"arch": "arm64",
+					"electron": "44.7.0",
+					"fixture": "/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/factory-electron-smoke-Er4eID",
+					"auth": "CDP virtual authenticator enrollment/login/logout",
+					"closedWindowKeepsWorker": true,
+					"reopenSamePid": true,
+					"explicitStop": true,
+					"confirmationMaintenanceRaceRejected": true,
+					"stopSuppressesAutomaticRestart": true,
+					"nativeCredentials": "not tested",
+					"nonJsonPrefixLines": []
+				},
+				"nativeService": {
+					"passed": true,
+					"home": "/private/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/factory-native-service-sLJ43V",
+					"platform": "darwin",
+					"initialPid": 30567,
+					"recoveredPid": 30937,
+					"assertions": [
+						"opt-in install",
+						"enable/disable",
+						"manager PID and executable/home health",
+						"crash backoff restart",
+						"maintenance suppression/resume",
+						"deliberate Stop",
+						"restart",
+						"retained remove"
+					],
+					"notValidated": [
+						"login/logout/reboot",
+						"remote host",
+						"physical passkey",
+						"signed publication"
+					]
+				},
+				"linuxShellUpdateReceipt": null,
+				"rawFiles": [
+					{
+						"file": "desktop-build.json.raw",
+						"size": 3935,
+						"sha256": "a29f285e874ce2e1e39335302340180baf441df66e927eb60b99979fd35e762c",
+						"path": "desktop/darwin-arm64/desktop-build.json.raw",
+						"downloadedPath": "desktop-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/desktop-build.json"
+					},
+					{
+						"file": "native-service-receipt.json.raw",
+						"size": 458,
+						"sha256": "ba65dabab30711b8a048ed46b1a3e562aca7d90bd0ed68917dbd0d898dfefe60",
+						"path": "desktop/darwin-arm64/native-service-receipt.json.raw",
+						"downloadedPath": "desktop-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-service-receipt.json"
+					},
+					{
+						"file": "native-electron-receipt.json.raw",
+						"size": 456,
+						"sha256": "b1a72842e05126190d76a76bf9245314602180a40b864ff3261fb5d39aa69c8d",
+						"path": "desktop/darwin-arm64/native-electron-receipt.json.raw",
+						"downloadedPath": "desktop-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-electron-receipt.json"
+					},
+					{
+						"file": "desktop-update-darwin-arm64.json.raw",
+						"size": 1153,
+						"sha256": "2d4e3db0d0b84b3593736f545485267adcb1b0a309ce67ad0b1ddb0f753d481e",
+						"path": "desktop/darwin-arm64/desktop-update-darwin-arm64.json.raw",
+						"downloadedPath": "desktop-darwin-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/desktop-update-darwin-arm64.json"
+					}
+				]
+			}
+		},
+		"darwin-x64": {
+			"binary": {
+				"artifact": {
+					"id": 11682007647,
+					"name": "bobs-factory-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1",
+					"sizeInBytes": 70191021,
+					"digest": "sha256:9db20a9244b42d8de7be67e752ce97a4672cf3929149c92a4129bf70a8069437",
+					"createdAt": "2026-10-10T21:07:54Z",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/artifacts/11682007647",
+					"containerDigestScope": "GitHub API metadata; downloaded extracted payload files independently hashed"
+				},
+				"job": {
+					"id": 114313238644,
+					"name": "binary / binary (darwin-x64, macos-15-intel)",
+					"conclusion": "success",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/job/114313238644"
+				},
+				"archive": {
+					"schemaVersion": 1,
+					"product": "bobs-factory",
+					"version": "1.0.0-nightly.20261010.21",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"committedVersion": "1.0.0-beta",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"dirty": false,
+					"target": "darwin-x64",
+					"file": "bobs-factory-1.0.0-nightly.20261010.21-darwin-x64.tar.gz",
+					"size": 35002322,
+					"sha256": "216cc56ce97a6b66f37b15d2d96d7136fccc6375be6ae51489267dc92f7e4274",
+					"actualSize": 35002322,
+					"actualSha256": "216cc56ce97a6b66f37b15d2d96d7136fccc6375be6ae51489267dc92f7e4274",
+					"verified": true
+				},
+				"verifiedArchiveInventory": [
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-x64",
+						"size": 0,
+						"type": "directory"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-x64/LICENSE",
+						"size": 11357,
+						"type": "file",
+						"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-x64/NOTICE",
+						"size": 173,
+						"type": "file",
+						"sha256": "88cfe660584636c41d3ad4a7193db4de35c0ccfccc53cc47524afe131097248d"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-x64/bobs-factory",
+						"size": 108441872,
+						"type": "file",
+						"sha256": "087ee6c64f3c53a499d0ad88b102a8cae97e2f2a0bea2f10a8ddf29f644d4843"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-x64/THIRD_PARTY_NOTICES.txt",
+						"size": 2066100,
+						"type": "file",
+						"sha256": "866b01d036da496d54ecc7ceb1fc7e1a09c2bc8e0d86bc1fc0c56f908e7e6f87"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-darwin-x64/build.json",
+						"size": 762,
+						"type": "file",
+						"sha256": "d8fcc06a8d5cb5554dde4d1e9861b9841175159381bfa3cce586786b5f9b8693"
+					}
+				],
+				"identity": {
+					"schemaVersion": 1,
+					"product": "bobs-factory",
+					"version": "1.0.0-nightly.20261010.21",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"committedVersion": "1.0.0-beta",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"dirty": false,
+					"target": "darwin-x64",
+					"tooling": {
+						"bun": "1.4.2"
+					},
+					"executable": {
+						"file": "bobs-factory",
+						"size": 108441872,
+						"sha256": "087ee6c64f3c53a499d0ad88b102a8cae97e2f2a0bea2f10a8ddf29f644d4843"
+					},
+					"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+					"validation": "pending runtime smoke",
+					"requirements": "macOS; native target smoke required"
+				},
+				"receipts": {
+					"prepared-agent-boundaries": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "prepared-agent-boundaries",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "darwin-x64",
+						"dirty": false,
+						"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+						"executableSha256": "087ee6c64f3c53a499d0ad88b102a8cae97e2f2a0bea2f10a8ddf29f644d4843",
+						"scope": {
+							"agents": "synthetic-sdk-and-mocked-adapters",
+							"authenticatedProviders": false,
+							"agentInference": "none"
+						},
+						"compiledCursorIpcCreateResume": "passed",
+						"adapterCheckout": {
+							"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+							"dirty": false
+						},
+						"adapters": {
+							"claude": {
+								"status": "passed",
+								"passed": 61,
+								"skipped": 0,
+								"files": [
+									"ClaudeRunner.test.ts",
+									"env-isolation.test.ts",
+									"spawn-claude-code-process.test.ts",
+									"pending-work-lifecycle.test.ts"
+								],
+								"reportSha256": "7191509269bdba875b5a8f130af13b27d46d675020e15c65fcfc3466902e916e"
+							},
+							"codex": {
+								"status": "passed",
+								"passed": 77,
+								"skipped": 0,
+								"files": [
+									"AppServerCodexBackend.test.ts",
+									"appServerProcess.test.ts",
+									"CodexRunner.startup.test.ts",
+									"CodexRunner.streaming.test.ts",
+									"CodexRunner.mcp-config.test.ts"
+								],
+								"reportSha256": "c6cd49cc114581b6fac304c7e31bc1da78bd911d5b723f16b20236311d2a5b79"
+							},
+							"gemini": {
+								"status": "passed",
+								"passed": 65,
+								"skipped": 1,
+								"files": ["GeminiRunner.test.ts", "SimpleGeminiRunner.test.ts"],
+								"reportSha256": "3275c554662a334ff81cef9f7b7eafa85f17de3832c552d8285b7f3ef7a43065"
+							},
+							"opencode": {
+								"status": "passed",
+								"passed": 21,
+								"skipped": 0,
+								"files": [
+									"OpenCodeRunner.test.ts",
+									"OpenCodeRunner.environment.test.ts",
+									"formatter.replay.test.ts"
+								],
+								"reportSha256": "8c9e4b8fc907ff5ab8ead863cd7ed76335aec97fab3177b8d2b1fb93c2b41665"
+							},
+							"cursor": {
+								"status": "passed",
+								"passed": 8,
+								"skipped": 0,
+								"files": [
+									"prepared-sdk.test.ts",
+									"CursorWorkerRunner.test.ts",
+									"CursorRunner.environment.test.ts"
+								],
+								"reportSha256": "3ce56dee7afae249d7d032605f688c32fae97a13d6138741777edf604795ca5d"
+							}
+						}
+					},
+					"native-helpers": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "native-helpers",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "darwin-x64",
+						"dirty": false,
+						"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+						"executableSha256": "087ee6c64f3c53a499d0ad88b102a8cae97e2f2a0bea2f10a8ddf29f644d4843",
+						"platform": {
+							"os": "darwin",
+							"arch": "x64",
+							"release": "24.6.0",
+							"systemVersion": "15.7.9",
+							"cpuModel": "Intel(R) Core(TM) i7-8700B CPU @ 3.20GHz",
+							"libc": "not-applicable"
+						},
+						"scope": {
+							"transport": "controlled-local-https",
+							"credentials": "synthetic-scoped",
+							"agentInference": "none"
+						},
+						"checks": {
+							"gitCredentialScoped": "passed",
+							"gitCredentialForeignRejected": "passed",
+							"restApiScoped": "passed",
+							"graphqlApiScoped": "passed",
+							"apiForeignRejected": "passed",
+							"missingCredentialNoFallback": "passed",
+							"http201CiRetry": "passed",
+							"helperWithoutPath": "passed",
+							"cursorPermission": "passed"
+						},
+						"requestCount": 4
+					},
+					"public-installer": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "public-installer",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "darwin-x64",
+						"scope": "native-archive-controlled-downloads",
+						"checks": {
+							"badSignaturePreservesInstallation": "passed",
+							"ownershipReceipt": "passed",
+							"foreignRemovalRefused": "passed",
+							"ownedRemovalRetainsState": "passed",
+							"reinstallAfterRemoval": "passed",
+							"channelResolution": "passed",
+							"exactVersion": "passed",
+							"repeatInstall": "passed",
+							"badHashPreservesInstallation": "passed",
+							"badSizePreservesInstallation": "passed",
+							"badSourcePreservesInstallation": "passed",
+							"unavailableTargetPreservesInstallation": "passed"
+						}
+					}
+				},
+				"rawFiles": [
+					{
+						"file": "build.json.raw",
+						"size": 762,
+						"sha256": "d8fcc06a8d5cb5554dde4d1e9861b9841175159381bfa3cce586786b5f9b8693",
+						"path": "binary/darwin-x64/build.json.raw",
+						"downloadedPath": "bobs-factory-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/bobs-factory-1.0.0-nightly.20261010.21-darwin-x64/build.json"
+					},
+					{
+						"file": "manifest.json.raw",
+						"size": 552,
+						"sha256": "769d87051951a37a26df6703530321f63c56eb100789205ed3f942371a67bde3",
+						"path": "binary/darwin-x64/manifest.json.raw",
+						"downloadedPath": "bobs-factory-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/bobs-factory-1.0.0-nightly.20261010.21-darwin-x64.manifest.json"
+					},
+					{
+						"file": "prepared-agent-boundaries.json.raw",
+						"size": 2562,
+						"sha256": "d64924e4ede29b2279c38defa7901388a2c3eb25f3036e89449362a89e2b56c6",
+						"path": "binary/darwin-x64/prepared-agent-boundaries.json.raw",
+						"downloadedPath": "bobs-factory-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/prepared-agent-boundaries.json"
+					},
+					{
+						"file": "native-helpers.json.raw",
+						"size": 1283,
+						"sha256": "e257b31ac65f92959dd01adf37b2df0052da4007ddfbe26433fa60916c7d40a3",
+						"path": "binary/darwin-x64/native-helpers.json.raw",
+						"downloadedPath": "bobs-factory-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/native-helpers.json"
+					},
+					{
+						"file": "public-installer.json.raw",
+						"size": 951,
+						"sha256": "bb636dbc99958ee69dbc13ce19dc472dc4d44348a29491dd816c952d53f4f09a",
+						"path": "binary/darwin-x64/public-installer.json.raw",
+						"downloadedPath": "bobs-factory-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/public-installer.json"
+					},
+					{
+						"file": "runtime-smoke.txt.raw",
+						"size": 426,
+						"sha256": "267a90b501289dff0e5f54371c3d654f89b028ea7107c440c559351ff5c1b460",
+						"path": "binary/darwin-x64/runtime-smoke.txt.raw",
+						"downloadedPath": "bobs-factory-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/runtime-smoke.txt"
+					}
+				],
+				"licenseInventory": [
+					{
+						"file": "LICENSE",
+						"size": 11357,
+						"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+					},
+					{
+						"file": "NOTICE",
+						"size": 173,
+						"sha256": "88cfe660584636c41d3ad4a7193db4de35c0ccfccc53cc47524afe131097248d"
+					},
+					{
+						"file": "THIRD_PARTY_NOTICES.txt",
+						"size": 2066100,
+						"sha256": "866b01d036da496d54ecc7ceb1fc7e1a09c2bc8e0d86bc1fc0c56f908e7e6f87"
+					}
+				]
+			},
+			"desktop": {
+				"artifact": {
+					"id": 11682293543,
+					"name": "desktop-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"sizeInBytes": 382515107,
+					"digest": "sha256:e6917a5f7f09934bbc98fa6879d8d86e21d1e15179b770c37d11f3730baff77c",
+					"createdAt": "2026-10-10T21:13:24Z",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/artifacts/11682293543",
+					"containerDigestScope": "GitHub API metadata; downloaded extracted payload files independently hashed"
+				},
+				"job": {
+					"id": 114313825696,
+					"name": "desktop (darwin-x64, macos-15-intel)",
+					"conclusion": "success",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/job/114313825696"
+				},
+				"identity": {
+					"version": "1.0.0-nightly.20261010.21",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"runtimeArchiveSharedWithBinary": true,
+					"actualRuntimeArchiveSha256": "216cc56ce97a6b66f37b15d2d96d7136fccc6375be6ae51489267dc92f7e4274"
+				},
+				"installerAndUpdateAssets": [
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-mac-x64.dmg",
+						"size": 172850518,
+						"sha256": "c1e726977350e4d7489616cb8ea25c5bc3d4379eef4260b3380d9ff43bcaa321",
+						"actualSize": 172850518,
+						"actualSha256": "c1e726977350e4d7489616cb8ea25c5bc3d4379eef4260b3380d9ff43bcaa321",
+						"verified": true
+					},
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-mac-x64.bobsapp.gz",
+						"size": 175415065,
+						"sha256": "c05d4f67eee52c2e3e513835998924ddfec55defdbf96ad00e66201dc1308bf7",
+						"actualSize": 175415065,
+						"actualSha256": "c05d4f67eee52c2e3e513835998924ddfec55defdbf96ad00e66201dc1308bf7",
+						"verified": true
+					},
+					{
+						"file": "desktop-update-darwin-x64.json",
+						"size": 1149,
+						"sha256": "ddddf00ede227567fc143430493dbbb559f0ec25a6d827e54d39d4acaef441c4",
+						"actualSize": 1149,
+						"actualSha256": "ddddf00ede227567fc143430493dbbb559f0ec25a6d827e54d39d4acaef441c4",
+						"verified": true
+					}
+				],
+				"electronNotices": {
+					"status": "passed",
+					"electronLicenses": {
+						"schemaVersion": 1,
+						"product": "electron",
+						"version": "44.7.0",
+						"files": [
+							{
+								"file": "LICENSE",
+								"size": 1096,
+								"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+							},
+							{
+								"file": "LICENSES.chromium.html",
+								"size": 20115518,
+								"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+							}
+						]
+					},
+					"installers": [
+						{
+							"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-mac-x64.dmg",
+							"size": 172850518,
+							"sha256": "c1e726977350e4d7489616cb8ea25c5bc3d4379eef4260b3380d9ff43bcaa321",
+							"electronLicenses": {
+								"schemaVersion": 1,
+								"product": "electron",
+								"version": "44.7.0",
+								"files": [
+									{
+										"file": "LICENSE",
+										"size": 1096,
+										"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+									},
+									{
+										"file": "LICENSES.chromium.html",
+										"size": 20115518,
+										"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+									}
+								]
+							}
+						}
+					],
+					"update": {
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-mac-x64.bobsapp.gz",
+						"size": 175415065,
+						"sha256": "c05d4f67eee52c2e3e513835998924ddfec55defdbf96ad00e66201dc1308bf7",
+						"electronLicenses": {
+							"schemaVersion": 1,
+							"product": "electron",
+							"version": "44.7.0",
+							"files": [
+								{
+									"file": "LICENSE",
+									"size": 1096,
+									"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+								},
+								{
+									"file": "LICENSES.chromium.html",
+									"size": 20115518,
+									"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+								}
+							]
+						}
+					}
+				},
+				"osSigning": "unsigned",
+				"buildValidation": "native install/auth/lifecycle receipts required",
+				"nativeElectron": {
+					"passed": true,
+					"platform": "darwin",
+					"arch": "x64",
+					"electron": "44.7.0",
+					"fixture": "/var/folders/20/jp1_0n3n7kndh6rnbqb5344m0000gn/T/factory-electron-smoke-Q58rsN",
+					"auth": "CDP virtual authenticator enrollment/login/logout",
+					"closedWindowKeepsWorker": true,
+					"reopenSamePid": true,
+					"explicitStop": true,
+					"confirmationMaintenanceRaceRejected": true,
+					"stopSuppressesAutomaticRestart": true,
+					"nativeCredentials": "not tested",
+					"nonJsonPrefixLines": []
+				},
+				"nativeService": {
+					"passed": true,
+					"home": "/private/var/folders/20/jp1_0n3n7kndh6rnbqb5344m0000gn/T/factory-native-service-akjb0C",
+					"platform": "darwin",
+					"initialPid": 40969,
+					"recoveredPid": 41162,
+					"assertions": [
+						"opt-in install",
+						"enable/disable",
+						"manager PID and executable/home health",
+						"crash backoff restart",
+						"maintenance suppression/resume",
+						"deliberate Stop",
+						"restart",
+						"retained remove"
+					],
+					"notValidated": [
+						"login/logout/reboot",
+						"remote host",
+						"physical passkey",
+						"signed publication"
+					]
+				},
+				"linuxShellUpdateReceipt": null,
+				"rawFiles": [
+					{
+						"file": "desktop-build.json.raw",
+						"size": 3921,
+						"sha256": "87f4773c89e5c3b56c20c16c08465bf05fece11f2f8f96a816c0e3f988f2ee0d",
+						"path": "desktop/darwin-x64/desktop-build.json.raw",
+						"downloadedPath": "desktop-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/desktop-build.json"
+					},
+					{
+						"file": "native-service-receipt.json.raw",
+						"size": 458,
+						"sha256": "cb18a4d9a62ca77bb2c8375b280f0abbb4d3ed6932b4a72e3b0d024b32a26e09",
+						"path": "desktop/darwin-x64/native-service-receipt.json.raw",
+						"downloadedPath": "desktop-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-service-receipt.json"
+					},
+					{
+						"file": "desktop-update-darwin-x64.json.raw",
+						"size": 1149,
+						"sha256": "ddddf00ede227567fc143430493dbbb559f0ec25a6d827e54d39d4acaef441c4",
+						"path": "desktop/darwin-x64/desktop-update-darwin-x64.json.raw",
+						"downloadedPath": "desktop-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/desktop-update-darwin-x64.json"
+					},
+					{
+						"file": "native-electron-receipt.json.raw",
+						"size": 454,
+						"sha256": "05ff885a8ca92eb0f415ed807bd95354961dac5319f8b611421f8aa14a733fa1",
+						"path": "desktop/darwin-x64/native-electron-receipt.json.raw",
+						"downloadedPath": "desktop-darwin-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-electron-receipt.json"
+					}
+				]
+			}
+		},
+		"linux-x64": {
+			"binary": {
+				"artifact": {
+					"id": 11682662326,
+					"name": "bobs-factory-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1",
+					"sizeInBytes": 86717041,
+					"digest": "sha256:8a2b9153853a422d60afeb0eec8dcb7648968827ec609fabb7385c9db9060c77",
+					"createdAt": "2026-10-10T21:06:17Z",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/artifacts/11682662326",
+					"containerDigestScope": "GitHub API metadata; downloaded extracted payload files independently hashed"
+				},
+				"job": {
+					"id": 114313238604,
+					"name": "binary / binary (linux-x64, ubuntu-24.04)",
+					"conclusion": "success",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/job/114313238604"
+				},
+				"archive": {
+					"schemaVersion": 1,
+					"product": "bobs-factory",
+					"version": "1.0.0-nightly.20261010.21",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"committedVersion": "1.0.0-beta",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"dirty": false,
+					"target": "linux-x64",
+					"file": "bobs-factory-1.0.0-nightly.20261010.21-linux-x64.tar.gz",
+					"size": 43233224,
+					"sha256": "d75afb47d49de95e87832c9eb987277375de8d112d794e041534883dda7b6c62",
+					"actualSize": 43233224,
+					"actualSha256": "d75afb47d49de95e87832c9eb987277375de8d112d794e041534883dda7b6c62",
+					"verified": true
+				},
+				"verifiedArchiveInventory": [
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-x64",
+						"size": 0,
+						"type": "directory"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-x64/NOTICE",
+						"size": 173,
+						"type": "file",
+						"sha256": "88cfe660584636c41d3ad4a7193db4de35c0ccfccc53cc47524afe131097248d"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-x64/LICENSE",
+						"size": 11357,
+						"type": "file",
+						"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-x64/build.json",
+						"size": 761,
+						"type": "file",
+						"sha256": "ea31e0ec819d8cce1ed27c5c3f677a4f4b309d3c390705a6f5f6d5628f459f5c"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-x64/THIRD_PARTY_NOTICES.txt",
+						"size": 2066100,
+						"type": "file",
+						"sha256": "cc423e80bad92c026680fa78282aee4e23fd0a28d2129bf86102cc3e6403e986"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-x64/bobs-factory",
+						"size": 120428000,
+						"type": "file",
+						"sha256": "144e32d1894e912072948379210eb1f6e30c688be8aeeee7f8b2d21e27b50caa"
+					}
+				],
+				"identity": {
+					"schemaVersion": 1,
+					"product": "bobs-factory",
+					"version": "1.0.0-nightly.20261010.21",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"committedVersion": "1.0.0-beta",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"dirty": false,
+					"target": "linux-x64",
+					"tooling": {
+						"bun": "1.4.2"
+					},
+					"executable": {
+						"file": "bobs-factory",
+						"size": 120428000,
+						"sha256": "144e32d1894e912072948379210eb1f6e30c688be8aeeee7f8b2d21e27b50caa"
+					},
+					"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+					"validation": "pending runtime smoke",
+					"requirements": "glibc; native target smoke required"
+				},
+				"receipts": {
+					"prepared-agent-boundaries": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "prepared-agent-boundaries",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "linux-x64",
+						"dirty": false,
+						"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+						"executableSha256": "144e32d1894e912072948379210eb1f6e30c688be8aeeee7f8b2d21e27b50caa",
+						"scope": {
+							"agents": "synthetic-sdk-and-mocked-adapters",
+							"authenticatedProviders": false,
+							"agentInference": "none"
+						},
+						"compiledCursorIpcCreateResume": "passed",
+						"adapterCheckout": {
+							"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+							"dirty": false
+						},
+						"adapters": {
+							"claude": {
+								"status": "passed",
+								"passed": 61,
+								"skipped": 0,
+								"files": [
+									"ClaudeRunner.test.ts",
+									"env-isolation.test.ts",
+									"spawn-claude-code-process.test.ts",
+									"pending-work-lifecycle.test.ts"
+								],
+								"reportSha256": "8fd05152497f91f543b8382c0ec819931341de9774a3b852d6ab5fe1024bb0b9"
+							},
+							"codex": {
+								"status": "passed",
+								"passed": 77,
+								"skipped": 0,
+								"files": [
+									"AppServerCodexBackend.test.ts",
+									"appServerProcess.test.ts",
+									"CodexRunner.startup.test.ts",
+									"CodexRunner.streaming.test.ts",
+									"CodexRunner.mcp-config.test.ts"
+								],
+								"reportSha256": "0407be204981ae00b78a72c64ed209572250cfdce2cf0f32cbb94d315072b1ff"
+							},
+							"gemini": {
+								"status": "passed",
+								"passed": 65,
+								"skipped": 1,
+								"files": ["GeminiRunner.test.ts", "SimpleGeminiRunner.test.ts"],
+								"reportSha256": "a3c2f83c57dade0b0190433f241e601b30799bb8fe6dc114f3c948490a7abce3"
+							},
+							"opencode": {
+								"status": "passed",
+								"passed": 21,
+								"skipped": 0,
+								"files": [
+									"OpenCodeRunner.test.ts",
+									"OpenCodeRunner.environment.test.ts",
+									"formatter.replay.test.ts"
+								],
+								"reportSha256": "2ff51d12ef8114ad20528a0f3ae4e58a9a01e033abe2a9027f28c726448599df"
+							},
+							"cursor": {
+								"status": "passed",
+								"passed": 8,
+								"skipped": 0,
+								"files": [
+									"prepared-sdk.test.ts",
+									"CursorWorkerRunner.test.ts",
+									"CursorRunner.environment.test.ts"
+								],
+								"reportSha256": "9c61ef61e432c985b76f53c71ddbd1916a02066b2ab32540eee51f95d9aae458"
+							}
+						}
+					},
+					"native-helpers": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "native-helpers",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "linux-x64",
+						"dirty": false,
+						"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+						"executableSha256": "144e32d1894e912072948379210eb1f6e30c688be8aeeee7f8b2d21e27b50caa",
+						"platform": {
+							"os": "linux",
+							"arch": "x64",
+							"release": "6.17.0-1022-azure",
+							"systemVersion": "Ubuntu 24.04.5 LTS",
+							"cpuModel": "AMD EPYC 9V45 96-Core Processor",
+							"libc": "glibc 2.39"
+						},
+						"scope": {
+							"transport": "controlled-local-https",
+							"credentials": "synthetic-scoped",
+							"agentInference": "none"
+						},
+						"checks": {
+							"gitCredentialScoped": "passed",
+							"gitCredentialForeignRejected": "passed",
+							"restApiScoped": "passed",
+							"graphqlApiScoped": "passed",
+							"apiForeignRejected": "passed",
+							"missingCredentialNoFallback": "passed",
+							"http201CiRetry": "passed",
+							"helperWithoutPath": "passed",
+							"cursorPermission": "passed"
+						},
+						"requestCount": 4
+					},
+					"public-installer": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "public-installer",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "linux-x64",
+						"scope": "native-archive-controlled-downloads",
+						"checks": {
+							"badSignaturePreservesInstallation": "passed",
+							"ownershipReceipt": "passed",
+							"foreignRemovalRefused": "passed",
+							"ownedRemovalRetainsState": "passed",
+							"reinstallAfterRemoval": "passed",
+							"channelResolution": "passed",
+							"exactVersion": "passed",
+							"repeatInstall": "passed",
+							"badHashPreservesInstallation": "passed",
+							"badSizePreservesInstallation": "passed",
+							"badSourcePreservesInstallation": "passed",
+							"unavailableTargetPreservesInstallation": "passed"
+						}
+					}
+				},
+				"rawFiles": [
+					{
+						"file": "build.json.raw",
+						"size": 761,
+						"sha256": "ea31e0ec819d8cce1ed27c5c3f677a4f4b309d3c390705a6f5f6d5628f459f5c",
+						"path": "binary/linux-x64/build.json.raw",
+						"downloadedPath": "bobs-factory-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/bobs-factory-1.0.0-nightly.20261010.21-linux-x64/build.json"
+					},
+					{
+						"file": "manifest.json.raw",
+						"size": 550,
+						"sha256": "eb485921ea88cb1d27291cc5a9bb662711223ab9050d73b731aa232f5b0f90e0",
+						"path": "binary/linux-x64/manifest.json.raw",
+						"downloadedPath": "bobs-factory-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/bobs-factory-1.0.0-nightly.20261010.21-linux-x64.manifest.json"
+					},
+					{
+						"file": "prepared-agent-boundaries.json.raw",
+						"size": 2561,
+						"sha256": "77f5f79a5336d4f9bbcd39cf5fc4912c78900db7cd08e980f2130d808cda3543",
+						"path": "binary/linux-x64/prepared-agent-boundaries.json.raw",
+						"downloadedPath": "bobs-factory-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/prepared-agent-boundaries.json"
+					},
+					{
+						"file": "native-helpers.json.raw",
+						"size": 1291,
+						"sha256": "4d9c2da918cc5e5dd4cd3441ffeb434070ad55028e669e676556001166a2de19",
+						"path": "binary/linux-x64/native-helpers.json.raw",
+						"downloadedPath": "bobs-factory-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/native-helpers.json"
+					},
+					{
+						"file": "public-installer.json.raw",
+						"size": 950,
+						"sha256": "6e6f6538611a7c48c3980d47f512d282c86a4e35def5b5bebba51c39153bf6b4",
+						"path": "binary/linux-x64/public-installer.json.raw",
+						"downloadedPath": "bobs-factory-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/public-installer.json"
+					},
+					{
+						"file": "runtime-smoke.txt.raw",
+						"size": 426,
+						"sha256": "267a90b501289dff0e5f54371c3d654f89b028ea7107c440c559351ff5c1b460",
+						"path": "binary/linux-x64/runtime-smoke.txt.raw",
+						"downloadedPath": "bobs-factory-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/runtime-smoke.txt"
+					}
+				],
+				"licenseInventory": [
+					{
+						"file": "LICENSE",
+						"size": 11357,
+						"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+					},
+					{
+						"file": "NOTICE",
+						"size": 173,
+						"sha256": "88cfe660584636c41d3ad4a7193db4de35c0ccfccc53cc47524afe131097248d"
+					},
+					{
+						"file": "THIRD_PARTY_NOTICES.txt",
+						"size": 2066100,
+						"sha256": "cc423e80bad92c026680fa78282aee4e23fd0a28d2129bf86102cc3e6403e986"
+					}
+				]
+			},
+			"desktop": {
+				"artifact": {
+					"id": 11682198644,
+					"name": "desktop-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"sizeInBytes": 352342557,
+					"digest": "sha256:f4df3a16952f852faa9dff83662ea0cce76b4fce1aa84443970f1cf559229a21",
+					"createdAt": "2026-10-10T21:12:21Z",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/artifacts/11682198644",
+					"containerDigestScope": "GitHub API metadata; downloaded extracted payload files independently hashed"
+				},
+				"job": {
+					"id": 114313825609,
+					"name": "desktop (linux-x64, ubuntu-24.04)",
+					"conclusion": "success",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/job/114313825609"
+				},
+				"identity": {
+					"version": "1.0.0-nightly.20261010.21",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"runtimeArchiveSharedWithBinary": true,
+					"actualRuntimeArchiveSha256": "d75afb47d49de95e87832c9eb987277375de8d112d794e041534883dda7b6c62"
+				},
+				"installerAndUpdateAssets": [
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-x64.AppImage",
+						"size": 173057173,
+						"sha256": "5a23cbbc464aa33b21ae99fcf94a6f8e7794f7e573e7b294426120ac306c7e02",
+						"actualSize": 173057173,
+						"actualSha256": "5a23cbbc464aa33b21ae99fcf94a6f8e7794f7e573e7b294426120ac306c7e02",
+						"verified": true
+					},
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-x64.deb",
+						"size": 136880416,
+						"sha256": "4f7dd545dc68a85a3dcc9a00de48b1c96a6d718d3e35b5edf4dd7ea0cdeb7cd3",
+						"actualSize": 136880416,
+						"actualSha256": "4f7dd545dc68a85a3dcc9a00de48b1c96a6d718d3e35b5edf4dd7ea0cdeb7cd3",
+						"verified": true
+					},
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-x64.AppImage",
+						"size": 173057173,
+						"sha256": "5a23cbbc464aa33b21ae99fcf94a6f8e7794f7e573e7b294426120ac306c7e02",
+						"actualSize": 173057173,
+						"actualSha256": "5a23cbbc464aa33b21ae99fcf94a6f8e7794f7e573e7b294426120ac306c7e02",
+						"verified": true
+					},
+					{
+						"file": "desktop-update-linux-x64.json",
+						"size": 1151,
+						"sha256": "3e6d93e72c3013b1949752ba2f3716308f020cc1d26b65d22078bb1ee28e547b",
+						"actualSize": 1151,
+						"actualSha256": "3e6d93e72c3013b1949752ba2f3716308f020cc1d26b65d22078bb1ee28e547b",
+						"verified": true
+					}
+				],
+				"electronNotices": {
+					"status": "passed",
+					"electronLicenses": {
+						"schemaVersion": 1,
+						"product": "electron",
+						"version": "44.7.0",
+						"files": [
+							{
+								"file": "LICENSE",
+								"size": 1096,
+								"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+							},
+							{
+								"file": "LICENSES.chromium.html",
+								"size": 20115518,
+								"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+							}
+						]
+					},
+					"installers": [
+						{
+							"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-x64.AppImage",
+							"size": 173057173,
+							"sha256": "5a23cbbc464aa33b21ae99fcf94a6f8e7794f7e573e7b294426120ac306c7e02",
+							"electronLicenses": {
+								"schemaVersion": 1,
+								"product": "electron",
+								"version": "44.7.0",
+								"files": [
+									{
+										"file": "LICENSE",
+										"size": 1096,
+										"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+									},
+									{
+										"file": "LICENSES.chromium.html",
+										"size": 20115518,
+										"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+									}
+								]
+							}
+						},
+						{
+							"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-x64.deb",
+							"size": 136880416,
+							"sha256": "4f7dd545dc68a85a3dcc9a00de48b1c96a6d718d3e35b5edf4dd7ea0cdeb7cd3",
+							"electronLicenses": {
+								"schemaVersion": 1,
+								"product": "electron",
+								"version": "44.7.0",
+								"files": [
+									{
+										"file": "LICENSE",
+										"size": 1096,
+										"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+									},
+									{
+										"file": "LICENSES.chromium.html",
+										"size": 20115518,
+										"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+									}
+								]
+							}
+						}
+					],
+					"update": {
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-x64.AppImage",
+						"size": 173057173,
+						"sha256": "5a23cbbc464aa33b21ae99fcf94a6f8e7794f7e573e7b294426120ac306c7e02",
+						"electronLicenses": {
+							"schemaVersion": 1,
+							"product": "electron",
+							"version": "44.7.0",
+							"files": [
+								{
+									"file": "LICENSE",
+									"size": 1096,
+									"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+								},
+								{
+									"file": "LICENSES.chromium.html",
+									"size": 20115518,
+									"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+								}
+							]
+						}
+					}
+				},
+				"osSigning": "not-applicable",
+				"buildValidation": "native install/auth/lifecycle receipts required",
+				"nativeElectron": {
+					"passed": true,
+					"platform": "linux",
+					"arch": "x64",
+					"electron": "44.7.0",
+					"fixture": "/tmp/factory-electron-smoke-2l5NK8",
+					"auth": "CDP virtual authenticator enrollment/login/logout",
+					"closedWindowKeepsWorker": true,
+					"reopenSamePid": true,
+					"explicitStop": true,
+					"confirmationMaintenanceRaceRejected": true,
+					"stopSuppressesAutomaticRestart": true,
+					"nativeCredentials": "not tested",
+					"nonJsonPrefixLines": [
+						"[5519:1010/211055.138162:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+						"[5519:1010/211055.159423:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+						"[5519:1010/211055.190315:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+						"[5519:1010/211055.190397:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+						"[5519:1010/211055.195391:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+						"[5519:1010/211056.498988:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")"
+					]
+				},
+				"nativeService": {
+					"passed": true,
+					"home": "/tmp/factory-native-service-qc7vuk",
+					"platform": "linux",
+					"initialPid": 4801,
+					"recoveredPid": 5147,
+					"assertions": [
+						"opt-in install",
+						"enable/disable",
+						"manager PID and executable/home health",
+						"crash backoff restart",
+						"maintenance suppression/resume",
+						"deliberate Stop",
+						"restart",
+						"retained remove"
+					],
+					"notValidated": [
+						"login/logout/reboot",
+						"remote host",
+						"physical passkey",
+						"signed publication"
+					]
+				},
+				"linuxShellUpdateReceipt": {
+					"status": "passed",
+					"scope": "actual unsigned AppImage/Electron and native worker; controlled test-only RSA release and simulated outer release evidence; Xvfb --no-sandbox; no real provider or Apple signing",
+					"version": "1.0.0-nightly.20261010.21",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"target": "linux-x64",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"imageSha256": "5a23cbbc464aa33b21ae99fcf94a6f8e7794f7e573e7b294426120ac306c7e02",
+					"workerPidUnchanged": true,
+					"checks": [
+						"active-lease deferral",
+						"actual external Electron Node-mode helper entry",
+						"actual Electron exit before complete-app replacement",
+						"actual candidate health identity",
+						"same native worker PID/nonce",
+						"waiting workflow checkpoint byte preservation",
+						"actual candidate stop before rollback",
+						"failed candidate suppression"
+					],
+					"cleanup": {
+						"passed": true,
+						"survivingPids": [],
+						"roots": ["/tmp/native-shell-KKKZBO"]
+					},
+					"fixtureReceiptSha256": "8f59d45f94777b6e8cda7ad694024be3c5f205885b4ae399a657779a311d9063",
+					"cleanupVerifierSha256": "6f52f20d7863ed869617553c367e0db286afad7a15c9df6c4d439e19e0927129"
+				},
+				"rawFiles": [
+					{
+						"file": "desktop-build.json.raw",
+						"size": 4894,
+						"sha256": "dc1db68960680d62ff022afe016cf09e1248ed822b4ad9f981ffefe6aff9ea04",
+						"path": "desktop/linux-x64/desktop-build.json.raw",
+						"downloadedPath": "desktop-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/desktop-build.json"
+					},
+					{
+						"file": "native-service-receipt.json.raw",
+						"size": 403,
+						"sha256": "3a63cac4abc3637b7d19137e1671688253ac7dff4b8a4c19c1a9c1176475fd59",
+						"path": "desktop/linux-x64/native-service-receipt.json.raw",
+						"downloadedPath": "desktop-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-service-receipt.json"
+					},
+					{
+						"file": "native-shell-update-receipt.json.raw",
+						"size": 1223,
+						"sha256": "b88cd429812494e5e4e1e528f4d8a5d42810cdc05a8ad9df32e30400f3e86cf2",
+						"path": "desktop/linux-x64/native-shell-update-receipt.json.raw",
+						"downloadedPath": "desktop-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-shell-update-receipt.json"
+					},
+					{
+						"file": "native-electron-receipt.json.raw",
+						"size": 1497,
+						"sha256": "f558f03ddd86c5fa531fdd5e930d7487b7f191bfecc34a648c64ce9e8e9fa7f9",
+						"path": "desktop/linux-x64/native-electron-receipt.json.raw",
+						"downloadedPath": "desktop-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-electron-receipt.json"
+					},
+					{
+						"file": "native-shell-update-pending.json.raw",
+						"size": 915,
+						"sha256": "8f59d45f94777b6e8cda7ad694024be3c5f205885b4ae399a657779a311d9063",
+						"path": "desktop/linux-x64/native-shell-update-pending.json.raw",
+						"downloadedPath": "desktop-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-shell-update-pending.json"
+					},
+					{
+						"file": "desktop-update-linux-x64.json.raw",
+						"size": 1151,
+						"sha256": "3e6d93e72c3013b1949752ba2f3716308f020cc1d26b65d22078bb1ee28e547b",
+						"path": "desktop/linux-x64/desktop-update-linux-x64.json.raw",
+						"downloadedPath": "desktop-linux-x64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/desktop-update-linux-x64.json"
+					}
+				]
+			}
+		},
+		"linux-arm64": {
+			"binary": {
+				"artifact": {
+					"id": 11681708067,
+					"name": "bobs-factory-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1",
+					"sizeInBytes": 87208903,
+					"digest": "sha256:eea23d59c00a52a03d9f6bc16d905f9147e79104f9a6c19054faaedb89473e26",
+					"createdAt": "2026-10-10T21:06:23Z",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/artifacts/11681708067",
+					"containerDigestScope": "GitHub API metadata; downloaded extracted payload files independently hashed"
+				},
+				"job": {
+					"id": 114313238622,
+					"name": "binary / binary (linux-arm64, ubuntu-24.04-arm)",
+					"conclusion": "success",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/job/114313238622"
+				},
+				"archive": {
+					"schemaVersion": 1,
+					"product": "bobs-factory",
+					"version": "1.0.0-nightly.20261010.21",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"committedVersion": "1.0.0-beta",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"dirty": false,
+					"target": "linux-arm64",
+					"file": "bobs-factory-1.0.0-nightly.20261010.21-linux-arm64.tar.gz",
+					"size": 43213238,
+					"sha256": "c8f276447a1d846e0e82b6dbb501097d4471d0253ea3f4db61bdaebabfe9826a",
+					"actualSize": 43213238,
+					"actualSha256": "c8f276447a1d846e0e82b6dbb501097d4471d0253ea3f4db61bdaebabfe9826a",
+					"verified": true
+				},
+				"verifiedArchiveInventory": [
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-arm64",
+						"size": 0,
+						"type": "directory"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-arm64/THIRD_PARTY_NOTICES.txt",
+						"size": 2066100,
+						"type": "file",
+						"sha256": "d123ec1608e9cbedcbedb8346c59d28cf0615d961e460926192c0047a0f47c55"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-arm64/build.json",
+						"size": 763,
+						"type": "file",
+						"sha256": "ff0c0d7e1f0486c06791b28ed57f870fe9bb5d0f79925e4c2aeae1d310cd2f58"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-arm64/LICENSE",
+						"size": 11357,
+						"type": "file",
+						"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-arm64/NOTICE",
+						"size": 173,
+						"type": "file",
+						"sha256": "88cfe660584636c41d3ad4a7193db4de35c0ccfccc53cc47524afe131097248d"
+					},
+					{
+						"path": "bobs-factory-1.0.0-nightly.20261010.21-linux-arm64/bobs-factory",
+						"size": 120375592,
+						"type": "file",
+						"sha256": "f211479c82733e2c466e5f80ef7f8ffef77b305aafb069e4907c85a2d935a6f8"
+					}
+				],
+				"identity": {
+					"schemaVersion": 1,
+					"product": "bobs-factory",
+					"version": "1.0.0-nightly.20261010.21",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"committedVersion": "1.0.0-beta",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"dirty": false,
+					"target": "linux-arm64",
+					"tooling": {
+						"bun": "1.4.2"
+					},
+					"executable": {
+						"file": "bobs-factory",
+						"size": 120375592,
+						"sha256": "f211479c82733e2c466e5f80ef7f8ffef77b305aafb069e4907c85a2d935a6f8"
+					},
+					"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+					"validation": "pending runtime smoke",
+					"requirements": "glibc; native target smoke required"
+				},
+				"receipts": {
+					"prepared-agent-boundaries": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "prepared-agent-boundaries",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "linux-arm64",
+						"dirty": false,
+						"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+						"executableSha256": "f211479c82733e2c466e5f80ef7f8ffef77b305aafb069e4907c85a2d935a6f8",
+						"scope": {
+							"agents": "synthetic-sdk-and-mocked-adapters",
+							"authenticatedProviders": false,
+							"agentInference": "none"
+						},
+						"compiledCursorIpcCreateResume": "passed",
+						"adapterCheckout": {
+							"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+							"dirty": false
+						},
+						"adapters": {
+							"claude": {
+								"status": "passed",
+								"passed": 61,
+								"skipped": 0,
+								"files": [
+									"ClaudeRunner.test.ts",
+									"env-isolation.test.ts",
+									"spawn-claude-code-process.test.ts",
+									"pending-work-lifecycle.test.ts"
+								],
+								"reportSha256": "9b6ac7b7f7af55db550e40fe280840ea358a22ab83e4c6efa6c8a9874e6cd603"
+							},
+							"codex": {
+								"status": "passed",
+								"passed": 77,
+								"skipped": 0,
+								"files": [
+									"AppServerCodexBackend.test.ts",
+									"appServerProcess.test.ts",
+									"CodexRunner.startup.test.ts",
+									"CodexRunner.streaming.test.ts",
+									"CodexRunner.mcp-config.test.ts"
+								],
+								"reportSha256": "3d5aad6ff8b6d11faa3f517049f5a1c0009394750428dfc85426c5235bd105a8"
+							},
+							"gemini": {
+								"status": "passed",
+								"passed": 65,
+								"skipped": 1,
+								"files": ["GeminiRunner.test.ts", "SimpleGeminiRunner.test.ts"],
+								"reportSha256": "7dcfe1b23681ced3ee21b1b0d4d1dea287465d135744779477f4bfa5657b51f8"
+							},
+							"opencode": {
+								"status": "passed",
+								"passed": 21,
+								"skipped": 0,
+								"files": [
+									"OpenCodeRunner.test.ts",
+									"OpenCodeRunner.environment.test.ts",
+									"formatter.replay.test.ts"
+								],
+								"reportSha256": "7712a96fac7df70512fa2c1a59edc13805b847fbf08b9ef7d725d9a96c86223f"
+							},
+							"cursor": {
+								"status": "passed",
+								"passed": 8,
+								"skipped": 0,
+								"files": [
+									"prepared-sdk.test.ts",
+									"CursorWorkerRunner.test.ts",
+									"CursorRunner.environment.test.ts"
+								],
+								"reportSha256": "abfe061e9610bb78c40ebbc16657643fd0f9284c29ce7698881974660b0f292f"
+							}
+						}
+					},
+					"native-helpers": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "native-helpers",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "linux-arm64",
+						"dirty": false,
+						"resourceDigest": "bd149e2fef4875deea3fa94383210e885c80625c149115de1d85f9a2ffdb39f2",
+						"executableSha256": "f211479c82733e2c466e5f80ef7f8ffef77b305aafb069e4907c85a2d935a6f8",
+						"platform": {
+							"os": "linux",
+							"arch": "arm64",
+							"release": "6.17.0-1022-azure",
+							"systemVersion": "Ubuntu 24.04.5 LTS",
+							"cpuModel": "unknown",
+							"libc": "glibc 2.39"
+						},
+						"scope": {
+							"transport": "controlled-local-https",
+							"credentials": "synthetic-scoped",
+							"agentInference": "none"
+						},
+						"checks": {
+							"gitCredentialScoped": "passed",
+							"gitCredentialForeignRejected": "passed",
+							"restApiScoped": "passed",
+							"graphqlApiScoped": "passed",
+							"apiForeignRejected": "passed",
+							"missingCredentialNoFallback": "passed",
+							"http201CiRetry": "passed",
+							"helperWithoutPath": "passed",
+							"cursorPermission": "passed"
+						},
+						"requestCount": 4
+					},
+					"public-installer": {
+						"schemaVersion": 1,
+						"product": "bobs-factory",
+						"validation": "public-installer",
+						"status": "passed",
+						"version": "1.0.0-nightly.20261010.21",
+						"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+						"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+						"target": "linux-arm64",
+						"scope": "native-archive-controlled-downloads",
+						"checks": {
+							"badSignaturePreservesInstallation": "passed",
+							"ownershipReceipt": "passed",
+							"foreignRemovalRefused": "passed",
+							"ownedRemovalRetainsState": "passed",
+							"reinstallAfterRemoval": "passed",
+							"channelResolution": "passed",
+							"exactVersion": "passed",
+							"repeatInstall": "passed",
+							"badHashPreservesInstallation": "passed",
+							"badSizePreservesInstallation": "passed",
+							"badSourcePreservesInstallation": "passed",
+							"unavailableTargetPreservesInstallation": "passed"
+						}
+					}
+				},
+				"rawFiles": [
+					{
+						"file": "build.json.raw",
+						"size": 763,
+						"sha256": "ff0c0d7e1f0486c06791b28ed57f870fe9bb5d0f79925e4c2aeae1d310cd2f58",
+						"path": "binary/linux-arm64/build.json.raw",
+						"downloadedPath": "bobs-factory-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/bobs-factory-1.0.0-nightly.20261010.21-linux-arm64/build.json"
+					},
+					{
+						"file": "manifest.json.raw",
+						"size": 554,
+						"sha256": "742fb4cb887606576df40d17b7438ed2424ecbde640e28c8fcc1eb5c199a48b5",
+						"path": "binary/linux-arm64/manifest.json.raw",
+						"downloadedPath": "bobs-factory-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/bobs-factory-1.0.0-nightly.20261010.21-linux-arm64.manifest.json"
+					},
+					{
+						"file": "prepared-agent-boundaries.json.raw",
+						"size": 2563,
+						"sha256": "71f911a9c66eb5992842f2950dfe331fe8dd9a1b3fed58e327e00cc4ec65142e",
+						"path": "binary/linux-arm64/prepared-agent-boundaries.json.raw",
+						"downloadedPath": "bobs-factory-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/prepared-agent-boundaries.json"
+					},
+					{
+						"file": "native-helpers.json.raw",
+						"size": 1271,
+						"sha256": "b383da4cfbbaa91bff3c56188c5501c7bfd646da92ab5d4f4cdc8714d11ea964",
+						"path": "binary/linux-arm64/native-helpers.json.raw",
+						"downloadedPath": "bobs-factory-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/native-helpers.json"
+					},
+					{
+						"file": "public-installer.json.raw",
+						"size": 952,
+						"sha256": "245208c25eab2148d95747c29f9e8b85b815bbdce71b5af16cb32ca461985db1",
+						"path": "binary/linux-arm64/public-installer.json.raw",
+						"downloadedPath": "bobs-factory-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/public-installer.json"
+					},
+					{
+						"file": "runtime-smoke.txt.raw",
+						"size": 426,
+						"sha256": "267a90b501289dff0e5f54371c3d654f89b028ea7107c440c559351ff5c1b460",
+						"path": "binary/linux-arm64/runtime-smoke.txt.raw",
+						"downloadedPath": "bobs-factory-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec-1/runtime-smoke.txt"
+					}
+				],
+				"licenseInventory": [
+					{
+						"file": "LICENSE",
+						"size": 11357,
+						"sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+					},
+					{
+						"file": "NOTICE",
+						"size": 173,
+						"sha256": "88cfe660584636c41d3ad4a7193db4de35c0ccfccc53cc47524afe131097248d"
+					},
+					{
+						"file": "THIRD_PARTY_NOTICES.txt",
+						"size": 2066100,
+						"sha256": "d123ec1608e9cbedcbedb8346c59d28cf0615d961e460926192c0047a0f47c55"
+					}
+				]
+			},
+			"desktop": {
+				"artifact": {
+					"id": 11682588144,
+					"name": "desktop-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"sizeInBytes": 346584345,
+					"digest": "sha256:efe8dde887b7c8e2368935fbab38cd1e050e38ab89bbffe01e042a7631707452",
+					"createdAt": "2026-10-10T21:12:58Z",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/artifacts/11682588144",
+					"containerDigestScope": "GitHub API metadata; downloaded extracted payload files independently hashed"
+				},
+				"job": {
+					"id": 114313825654,
+					"name": "desktop (linux-arm64, ubuntu-24.04-arm)",
+					"conclusion": "success",
+					"url": "https://github.com/jappyjan/bobs-factory/actions/runs/38086228778/job/114313825654"
+				},
+				"identity": {
+					"version": "1.0.0-nightly.20261010.21",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"workflowSha": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"runtimeArchiveSharedWithBinary": true,
+					"actualRuntimeArchiveSha256": "c8f276447a1d846e0e82b6dbb501097d4471d0253ea3f4db61bdaebabfe9826a"
+				},
+				"installerAndUpdateAssets": [
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-arm64.AppImage",
+						"size": 174324258,
+						"sha256": "8e890c7539e6b176462d36a1d3f467667be6f529daf7c2404903ce6e812a4a91",
+						"actualSize": 174324258,
+						"actualSha256": "8e890c7539e6b176462d36a1d3f467667be6f529daf7c2404903ce6e812a4a91",
+						"verified": true
+					},
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-arm64.deb",
+						"size": 129931284,
+						"sha256": "4b4b7ce1922a9631732f2a551415cbc6b0ee1c6ae7739dc29e65d338c0e85936",
+						"actualSize": 129931284,
+						"actualSha256": "4b4b7ce1922a9631732f2a551415cbc6b0ee1c6ae7739dc29e65d338c0e85936",
+						"verified": true
+					},
+					{
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-arm64.AppImage",
+						"size": 174324258,
+						"sha256": "8e890c7539e6b176462d36a1d3f467667be6f529daf7c2404903ce6e812a4a91",
+						"actualSize": 174324258,
+						"actualSha256": "8e890c7539e6b176462d36a1d3f467667be6f529daf7c2404903ce6e812a4a91",
+						"verified": true
+					},
+					{
+						"file": "desktop-update-linux-arm64.json",
+						"size": 1155,
+						"sha256": "384a71eb62cc1b458613847c84f431600c84641b360c86432beae21d6be70012",
+						"actualSize": 1155,
+						"actualSha256": "384a71eb62cc1b458613847c84f431600c84641b360c86432beae21d6be70012",
+						"verified": true
+					}
+				],
+				"electronNotices": {
+					"status": "passed",
+					"electronLicenses": {
+						"schemaVersion": 1,
+						"product": "electron",
+						"version": "44.7.0",
+						"files": [
+							{
+								"file": "LICENSE",
+								"size": 1096,
+								"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+							},
+							{
+								"file": "LICENSES.chromium.html",
+								"size": 20115518,
+								"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+							}
+						]
+					},
+					"installers": [
+						{
+							"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-arm64.AppImage",
+							"size": 174324258,
+							"sha256": "8e890c7539e6b176462d36a1d3f467667be6f529daf7c2404903ce6e812a4a91",
+							"electronLicenses": {
+								"schemaVersion": 1,
+								"product": "electron",
+								"version": "44.7.0",
+								"files": [
+									{
+										"file": "LICENSE",
+										"size": 1096,
+										"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+									},
+									{
+										"file": "LICENSES.chromium.html",
+										"size": 20115518,
+										"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+									}
+								]
+							}
+						},
+						{
+							"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-arm64.deb",
+							"size": 129931284,
+							"sha256": "4b4b7ce1922a9631732f2a551415cbc6b0ee1c6ae7739dc29e65d338c0e85936",
+							"electronLicenses": {
+								"schemaVersion": 1,
+								"product": "electron",
+								"version": "44.7.0",
+								"files": [
+									{
+										"file": "LICENSE",
+										"size": 1096,
+										"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+									},
+									{
+										"file": "LICENSES.chromium.html",
+										"size": 20115518,
+										"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+									}
+								]
+							}
+						}
+					],
+					"update": {
+						"file": "bobs-factory-desktop-1.0.0-nightly.20261010.21-linux-arm64.AppImage",
+						"size": 174324258,
+						"sha256": "8e890c7539e6b176462d36a1d3f467667be6f529daf7c2404903ce6e812a4a91",
+						"electronLicenses": {
+							"schemaVersion": 1,
+							"product": "electron",
+							"version": "44.7.0",
+							"files": [
+								{
+									"file": "LICENSE",
+									"size": 1096,
+									"sha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d"
+								},
+								{
+									"file": "LICENSES.chromium.html",
+									"size": 20115518,
+									"sha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
+								}
+							]
+						}
+					}
+				},
+				"osSigning": "not-applicable",
+				"buildValidation": "native install/auth/lifecycle receipts required",
+				"nativeElectron": {
+					"passed": true,
+					"platform": "linux",
+					"arch": "arm64",
+					"electron": "44.7.0",
+					"fixture": "/tmp/factory-electron-smoke-aFGf0k",
+					"auth": "CDP virtual authenticator enrollment/login/logout",
+					"closedWindowKeepsWorker": true,
+					"reopenSamePid": true,
+					"explicitStop": true,
+					"confirmationMaintenanceRaceRejected": true,
+					"stopSuppressesAutomaticRestart": true,
+					"nativeCredentials": "not tested",
+					"nonJsonPrefixLines": [
+						"[5688:1010/211137.399745:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+						"[5688:1010/211137.447713:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+						"[5688:1010/211137.484295:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+						"[5688:1010/211137.484957:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")",
+						"[5688:1010/211137.492538:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: ",
+						"[5688:1010/211138.886756:ERROR:dbus/bus.cc:406] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are \"tcp\" and on UNIX \"unix\")"
+					]
+				},
+				"nativeService": {
+					"passed": true,
+					"home": "/tmp/factory-native-service-qo5ANG",
+					"platform": "linux",
+					"initialPid": 5013,
+					"recoveredPid": 5331,
+					"assertions": [
+						"opt-in install",
+						"enable/disable",
+						"manager PID and executable/home health",
+						"crash backoff restart",
+						"maintenance suppression/resume",
+						"deliberate Stop",
+						"restart",
+						"retained remove"
+					],
+					"notValidated": [
+						"login/logout/reboot",
+						"remote host",
+						"physical passkey",
+						"signed publication"
+					]
+				},
+				"linuxShellUpdateReceipt": {
+					"status": "passed",
+					"scope": "actual unsigned AppImage/Electron and native worker; controlled test-only RSA release and simulated outer release evidence; Xvfb --no-sandbox; no real provider or Apple signing",
+					"version": "1.0.0-nightly.20261010.21",
+					"commit": "b82c37c4fb9a3e18d1cb222c6d56d3fef852096f",
+					"target": "linux-arm64",
+					"candidateDigest": "ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec",
+					"imageSha256": "8e890c7539e6b176462d36a1d3f467667be6f529daf7c2404903ce6e812a4a91",
+					"workerPidUnchanged": true,
+					"checks": [
+						"active-lease deferral",
+						"actual external Electron Node-mode helper entry",
+						"actual Electron exit before complete-app replacement",
+						"actual candidate health identity",
+						"same native worker PID/nonce",
+						"waiting workflow checkpoint byte preservation",
+						"actual candidate stop before rollback",
+						"failed candidate suppression"
+					],
+					"cleanup": {
+						"passed": true,
+						"survivingPids": [],
+						"roots": ["/tmp/native-shell-UZzX2e"]
+					},
+					"fixtureReceiptSha256": "85c692e23fb20eb86098eb2e1b209504f0fdfe0346bd6653586a5e1b97d8d011",
+					"cleanupVerifierSha256": "6f52f20d7863ed869617553c367e0db286afad7a15c9df6c4d439e19e0927129"
+				},
+				"rawFiles": [
+					{
+						"file": "desktop-build.json.raw",
+						"size": 4912,
+						"sha256": "172ac633575bae330da81fca3eb3048152199e7e0659678d4a3992b72c4a8273",
+						"path": "desktop/linux-arm64/desktop-build.json.raw",
+						"downloadedPath": "desktop-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/desktop-build.json"
+					},
+					{
+						"file": "native-service-receipt.json.raw",
+						"size": 403,
+						"sha256": "340149af52903a242423610176dfe0042a3839cf5a6d6d958a4da0420370a3b2",
+						"path": "desktop/linux-arm64/native-service-receipt.json.raw",
+						"downloadedPath": "desktop-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-service-receipt.json"
+					},
+					{
+						"file": "native-shell-update-receipt.json.raw",
+						"size": 1225,
+						"sha256": "5433719e8fbde768f8fc7e6d75f039e0fd66835a0ca4b935368d779cba74f8d4",
+						"path": "desktop/linux-arm64/native-shell-update-receipt.json.raw",
+						"downloadedPath": "desktop-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-shell-update-receipt.json"
+					},
+					{
+						"file": "native-electron-receipt.json.raw",
+						"size": 1499,
+						"sha256": "a6f96035e3bcea731ee1a4ca4695afbb1e2f5a53aa623196ef10c83cb0e153c9",
+						"path": "desktop/linux-arm64/native-electron-receipt.json.raw",
+						"downloadedPath": "desktop-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-electron-receipt.json"
+					},
+					{
+						"file": "native-shell-update-pending.json.raw",
+						"size": 917,
+						"sha256": "85c692e23fb20eb86098eb2e1b209504f0fdfe0346bd6653586a5e1b97d8d011",
+						"path": "desktop/linux-arm64/native-shell-update-pending.json.raw",
+						"downloadedPath": "desktop-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/native-shell-update-pending.json"
+					},
+					{
+						"file": "desktop-update-linux-arm64.json.raw",
+						"size": 1155,
+						"sha256": "384a71eb62cc1b458613847c84f431600c84641b360c86432beae21d6be70012",
+						"path": "desktop/linux-arm64/desktop-update-linux-arm64.json.raw",
+						"downloadedPath": "desktop-linux-arm64-ca323a599f606523965d996ff871eeee784d7f5a419ce9158675077b3e4e43ec/desktop/desktop-update-linux-arm64.json"
+					}
+				]
+			}
+		}
+	},
+	"rawMetadataFiles": [
+		{
+			"file": "run-38086231619.json.raw",
+			"size": 13045,
+			"sha256": "783a1d958554123cba264513a1176af5e76cfd722d5ae2aaebf4c8555a2840e9"
+		},
+		{
+			"file": "freeze.log.raw",
+			"size": 19866,
+			"sha256": "cd2c5f4972e024997f4c5c567afb521e5425bd794e00708ac6510a8284ed5fba"
+		},
+		{
+			"file": "gitguardian-annotations.json.raw",
+			"size": 2,
+			"sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+		},
+		{
+			"file": "artifacts.json.raw",
+			"size": 6339,
+			"sha256": "bac5e77a2300ecd393474a1e724db9e34484428efdc7db8ecb3e20890dd6561a"
+		},
+		{
+			"file": "candidate.json",
+			"size": 736,
+			"sha256": "2c3a7de82331a520c03feefa7a6afadfb4c174863adbc71348cc300064c17174"
+		},
+		{
+			"file": "candidate-log-line.txt.raw",
+			"size": 695,
+			"sha256": "5ac1343655c5f2175664bba260d83cadb9700ec29d032c3ad84a84d6dcc2d518"
+		},
+		{
+			"file": "jobs-38086231619.json.raw",
+			"size": 7434,
+			"sha256": "8988b16f9e41f261519184007947380c092fec90505e67b5e3f0ff86c0c145d9"
+		},
+		{
+			"file": "legacy-beta-release.json.raw",
+			"size": 49144,
+			"sha256": "52cb4837c562e88cb1e25579fc7ded6f9f14f51f98e77ab287dc1f7bb44ea0ff"
+		},
+		{
+			"file": "run.json.raw",
+			"size": 13256,
+			"sha256": "c4f37ef5a3dd16dc5543d81d831c29d8a1e2448065b5afbe8a7c1dd3ef54120a"
+		},
+		{
+			"file": "jobs-38086852959.json.raw",
+			"size": 7434,
+			"sha256": "9d749cbfca212d23f21a2fe72a290ed8a4e9c493df70b29ecc7de53d5509fbe4"
+		},
+		{
+			"file": "run-38086852959.json.raw",
+			"size": 13046,
+			"sha256": "e431bce767ad9ca89cd4f5642ad32abbf8f8f49773b838231b7cff68ec30d1a5"
+		},
+		{
+			"file": "gitguardian-check.json.raw",
+			"size": 10025,
+			"sha256": "17130faeaea37bd2d8affc3e68899500337ba6225892a7f4bd025623dcf7dc21"
+		},
+		{
+			"file": "jobs.json.raw",
+			"size": 38766,
+			"sha256": "02f1c1a12404c19a9bc9d47899e536ae734b26aaa03865c14a9eba2cb1acf591"
+		}
+	],
+	"preservation": {
+		"historicalLaneAssets": 101,
+		"priorCandidateFiles": 53,
+		"baseline": "2673564a38202e258b20c2627eae7121e4e5d556",
+		"allByteIdentical": true,
+		"sha256Inventory": {
+			"docs/distribution/evidence/taskbot116-final-native/run-38086228778-initial.json.raw": "924de72e2044e1574f5d10b839c9e336a0183894a1bd32dd858ba1f7df5c9710",
+			"docs/distribution/evidence/taskbot116-final-native/run-38085071118.json.raw": "0f03c657a1950022f520093a40ce07786afe44ef565aff682dbd34a6f678776d",
+			"docs/distribution/evidence/taskbot116-final-native/artifacts-38085071118.json.raw": "36c271befe78ff476f294047500de8cd52a2668cee71a573c05174b1aeea3e96",
+			"docs/distribution/evidence/taskbot116-final-native/run-38085618280.json.raw": "3678c9f8167d6f733e2baaa85010f15d0a1f3a150b174c20b027b317472b2d38",
+			"docs/distribution/evidence/taskbot116-final-native/run-initial.json": "d1d02d823c4ab9e4a3b8bbd9e4c77ebdc3d3b55b4595a983c072033dee5736da",
+			"docs/distribution/evidence/taskbot116-final-native/candidate.json": "7f957318c9e27248cb889516fc3a929bd80835ca6250e1bf2355be74136c0012",
+			"docs/distribution/evidence/taskbot116-final-native/jobs-38085071118.json.raw": "954bb00573a80554b6c709baf782da812b53bedc96f2c806765cb5624b66d67f",
+			"docs/distribution/evidence/taskbot116-final-native/artifact-index.json": "6008f553bee59cb4da832dfac727316bd1f597564e5caddb3635ac81589e2de9",
+			"docs/distribution/evidence/taskbot116-final-native/run-38086231619-initial.json.raw": "f907451a4fe29c0772434455ab700cd345b513c108e772169e136eec0ef34b62",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-arm64/native-helpers.json.raw": "1dcb15601a9cf537e24f589a7d16a494d1be925cccfb3777130f1c61aba5eafd",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-arm64/manifest.json.raw": "cb81a50d3819038eed0a05a05bfee6412665aa67a2f0f587b47471a61cb7695b",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-arm64/runtime-smoke.txt.raw": "badf79a89712a5d799758e47d707afa7bb52d80b3aa9ecd5dfc4b984038eecc6",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-arm64/build.json.raw": "880622ceba97d3c78769c893cf572b48deaebbb979e1db854f60a0cff93bbd5d",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-arm64/public-installer.json.raw": "716a0758d2be96388f2e25e905af343c5d01808ae40efd664e97b3006e3b9048",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-arm64/prepared-agent-boundaries.json.raw": "065474677c5e25a3da268e4db731d209abadb960077f27e755d29a5588f5f5df",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-x64/native-helpers.json.raw": "f12a67c026699c2d132c554a41387b3eb9eeda8e8ebcfdbe1d4861fb922cc85b",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-x64/manifest.json.raw": "dd264ffae87786fc5c4bf78fa1aa114d423ac2e0069dc3c90cd432d6e71fe4ca",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-x64/runtime-smoke.txt.raw": "badf79a89712a5d799758e47d707afa7bb52d80b3aa9ecd5dfc4b984038eecc6",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-x64/build.json.raw": "00239c62970eda0e1e8367221817f7c5bad762ebcfdb5f13fdf73ef07d0a0c70",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-x64/public-installer.json.raw": "726b58c730d2e8d4f10b810af33dce458ad82df45d9da3b2843ff6fcb08c0121",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-x64/prepared-agent-boundaries.json.raw": "2976687780f72cc4044713535a89f0777d0ab6fe7c2c7a7c1427b6a5365178c9",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-arm64/native-helpers.json.raw": "99f4f84223a4d657fa55e54aa400ebc8d475c185c554bdb48b512e313e581771",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-arm64/manifest.json.raw": "a015f609db42b5b1ff39ad432cf8baf546c937ba5bcff4f8207230966de5d6c1",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-arm64/runtime-smoke.txt.raw": "badf79a89712a5d799758e47d707afa7bb52d80b3aa9ecd5dfc4b984038eecc6",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-arm64/build.json.raw": "cb0589fcf263742f7402511972bfc1a39de4bf4c2794a3ee0b307664a2754fc7",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-arm64/public-installer.json.raw": "6ce0ba36bb62b46a3cc26323967451107f63db95ba365cf1e97874801a5eb312",
+			"docs/distribution/evidence/taskbot116-final-native/binary/darwin-arm64/prepared-agent-boundaries.json.raw": "8cda46537a0e85d35c20d22926884fa980a8482acb2eff96c760b4e7934c5cb0",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-x64/native-helpers.json.raw": "4b11c3c05ba88e4597beda95f001b8de06480605150b635dca78b8ddace2081a",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-x64/manifest.json.raw": "2a3aadccae8dcad35eddd46ec3403a5d14adbaf4e04ff3eca8273fe4857057eb",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-x64/runtime-smoke.txt.raw": "badf79a89712a5d799758e47d707afa7bb52d80b3aa9ecd5dfc4b984038eecc6",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-x64/build.json.raw": "52d8800e854bf16f4015d0d181629f48d6fd9be495bd0dd4693f96229e948c51",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-x64/public-installer.json.raw": "6add9c763792cbe87c9f7bead187fab88e10951cdf9caad907abc013d78fdc61",
+			"docs/distribution/evidence/taskbot116-final-native/binary/linux-x64/prepared-agent-boundaries.json.raw": "feac7d8a3f100ea5a6ebaf585117f472b512d50528b4e04e16eaf6f87274bab8",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-arm64/desktop-build.json.raw": "f033383596d753e90d394073238a5991f9daad563f2d6c3c81735c425646cf67",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-arm64/desktop-update-linux-arm64.json.raw": "f110ea609d387e31d6e07006a59971de4decfded5bc24751af5286d5a2da9902",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-arm64/native-shell-update-pending.json.raw": "4651055fcb85de9fd33c96b2c868425bea278667649f5300d75aeaa9be848767",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-arm64/native-service-receipt.json.raw": "d8ecbf02e74d6060b4f8796842d9c8e1e2c72e890e278ce076d0aa47a31f72dc",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-arm64/native-shell-update-receipt.json.raw": "a321bcebe6efa8f07fb4e528b93ecfc8337f557ae9e3a957a5d8ad2182bb682a",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-arm64/native-electron-receipt.json.raw": "2a2f473fe3977046ec0c3970d885a7580d5efeb9c7b30e85a5714dce2b48796c",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/darwin-x64/desktop-build.json.raw": "887268f5fec003450e026df52531d254db7c6d4f627eae98d3c3fba54b3ff9fc",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/darwin-x64/native-service-receipt.json.raw": "91ea95fa3c6ea780722bcb40e0f1df6b392de838566479e5f9fa12cd103deee0",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/darwin-x64/desktop-update-darwin-x64.json.raw": "4b61930237469929ed209213e7c06b5f5687a5d1d4457a7da62f442da8f9e635",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/darwin-x64/native-electron-receipt.json.raw": "7a073a1071c3880627a0942800f7f9f2c516b28637d67f0b7117285574038f63",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/darwin-arm64/desktop-build.json.raw": "180a165b245b02038317a25cf50d2558b433ce162869239d9dcade88400694c7",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/darwin-arm64/desktop-update-darwin-arm64.json.raw": "d32525f517c375f529c03e50252cd42ed7e75a7f7fbdbbd561fdacff96c122c8",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/darwin-arm64/native-service-receipt.json.raw": "b1c2ac270d25b2cbe242ba6744bce7103d797dff5cb0f8cc61afccc38436bb15",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/darwin-arm64/native-electron-receipt.json.raw": "7795a62e2f8e6ae8c65b9e4df69d97810880bfec7d6cb7fd4135d532cfd4ebd7",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-x64/desktop-build.json.raw": "10c1c7a9e5f547587b1001c17590196eba963baae204a7f37bf530e58f83553d",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-x64/desktop-update-linux-x64.json.raw": "e891bd5565b1ae786d7d636be61beab41d5c5fb42a5229fdd5d27e835a084f19",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-x64/native-shell-update-pending.json.raw": "f7e5fad1eb39596cbe1d946ea6f9d5219f026a01413ac537e68767b2d35c04a7",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-x64/native-service-receipt.json.raw": "5cde550e870d2b421abb4e9d6c4467f2cff38ba9eb6dd6d4522f9636ad3f626f",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-x64/native-shell-update-receipt.json.raw": "1273c7610472af667386ccad2bd27d9e9946bea3cefc40e002cf7b79e6ab66a1",
+			"docs/distribution/evidence/taskbot116-final-native/desktop/linux-x64/native-electron-receipt.json.raw": "683b12bc32850ff833fb758909c6547298e3047d1e33b32338779d42874eba93",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/darwin-x64/desktop-update-darwin-x64.json.raw": "65f214db1f935e406060a2bdfea0078bd0178f5d5404cca72025006f0538c7f5",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/darwin-x64/desktop-build.json": "722ce469f86e07176312765d29211215a44a28d2e774f23be9dee5a7abed87e1",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-x64/desktop-update-linux-x64.json.raw": "9a078b8cb400c39398e1573505c70c75bfcd86ebb93ed91c4f5433343fe2bb9c",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/passed-aa0ad-startup-contention.json": "b459e711e26eb0de310522f9a3bf2ea6bc92f1ed14f40b2ceab10667dfe6153d",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/linux-arm64/native-service-receipt.json.raw": "f71706900c6907e025fcb951a23e6b1af946e7c9c6e11862ac1268b6fac6a2cd",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-service-integration/onboarding.png": "72a51dfa2ab0e85f7c14045614b3016078eccf3bfa7a192eb095f729bebac927",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-f1.json.raw": "f0d3572e889f8e1abe836978d579f311ab4dfa7f86ff1ec52ac408745552b09f",
+			"apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/receipt-validation.json": "3b42918a213f97b749d642a8d027c19c2bbe192d9c3fbfef796d83385eba0d0a",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/darwin-arm64/desktop-build.json": "6bd699e695cfa6ed2ccc8f787623a9aaf46ad4df5ae8a8653f0e044a7f8d3ddc",
+			"apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/receipt-regressions.txt": "5e5968dba1a6b2e46423f1e66797fc2411c5413617c2e04f91769e46ae5a8d63",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-linux-arm64-unfenced-drain-failed.log": "c9f826e23e467927169da4558b3f6e78e2830dfaa2090286ec935b6a0f69f7e9",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-f1.json.raw": "2a6c4d5407f9b2870c65753c7eebe0d4b8dbcdbbd1736a8c5eb3c4c674f75d48",
+			"apps/f1/test-drives/assets/2026-10-10-update-transport-drain/update-lifecycle.json": "ecca4f5f050da4868e4020ffc1a58ee0304cb5135fed23d38c64440917f961d3",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/linux-arm64/desktop-build.json.raw": "83345db507321029c5ea9e75d5a806c56b5fcc06a8c6618a5b5e4006e35acf75",
+			"apps/f1/test-drives/assets/update-lifecycle.mjs": "382b899de8d7b35ee2439efc626a7a489a87ae623ede4b6f22999f0dfd0fcfa8",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/harness-error-aa0ad-first-attempt.json": "567b6be244060b4b1bb7b3b3d4898678e82c7a6410a27f7a62773b4b5c75dce8",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/darwin-x64/native-electron-receipt.json": "f0c299dd814da712f0c2ed5b5834cb152d94f7a9ceb6ab5103444d18a1b5ae86",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/failed-2e47-startup-contention.json": "99fecac95ce5e31613465a9d015073653a2b06a7d55f73d2210d26a542744ea9",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/linux-x64/native-shell-update-receipt.json.raw": "d88b4122934234d7d702879f61b597b07c946695e896c1668ebc50b99ebbd8ff",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/linux-x64/native-service-receipt.json": "d0d4056a6ab5c52ef97b70ebd5881af1dd86f780995c670288fcd8c9349cc1bf",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/linux-x64/native-electron-receipt.json": "b0cd80bc38297ae1635399797ebf1988b275f3550aa8686430b8a433050a378c",
+			"apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/onboarding.png": "1712c1d1f3d371f79a1845de17cdc398ae0613585b4cfd87b5287b4f43bf54f1",
+			"apps/f1/test-drives/assets/2026-10-10-update-startup-contention/update-lifecycle.json": "863ca25341ec0c5c192f5255963006d7ee6ca00452e58849b4edab4d3d4dd224",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/darwin-arm64/native-electron-receipt.json.raw": "0c4067e89a3b0030f205e1d20e53759d3951ea63e5ee9adba7acc5689014ea2b",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-x64/native-shell-update-receipt.json.raw": "230ef6c80e9b2eabf8134735c94a23e2b960061728106024775cb06b6a46c8ac",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/darwin-arm64/desktop-update-darwin-arm64.json.raw": "d89ed5eae9c7154ad48d2d053d58c0c70b656835e5b397a4cbb317b9421a493e",
+			"apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/cleanup-validation.json": "97eea3d47fab7aab69d90791ff3f70d4cbf9548b664857dc786e58909fc946ed",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/darwin-x64/desktop-build.json.raw": "b163e6087a16e669d10ca8436e48a1f4a4c93ca42871af2ba87ce35901aa6ef2",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/linux-arm64/native-electron-receipt.json.raw": "8eeb4a08165e93a9bb8aab3dd069c64b632a199f6182db384670cb252f728109",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-service-integration/desktop-build.json": "1c385c26f5ab48c159cccf4cae4fceacd0bb87256c9818a73a6d3aef47b318fc",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-arm64/desktop-build.json.raw": "aa276018d9a65f3ec590dd9edf2b4bc83c8cd5b72962df547a072104a939905e",
+			"apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/cleanup-development-argv-fail.json": "ec6f0e39d5a0c261fd1e708ef0ef7e11fc0d3a3610b33dd698ed35a5987323d2",
+			"apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/corrected-native-acceptance.json": "9bfc07873dbbca29eeac324f6e04629f2d549511b03e03a8dc84644def15332a",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/linux-arm64/native-service-receipt.json": "22d5ed53106399be244c0fee72af8afa1749d0b3f097fda46d90318647132740",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/darwin-x64/native-electron-receipt.json.raw": "ae8dda73c8266b28a7f1555be2d26dcae14f87aa11d15f77f017dadd2f119be2",
+			"apps/f1/test-drives/assets/desktop-service-lifecycle.mjs": "0bf571491c47101fdea9beddf57c2004bf6b24c837b44df11cb7b43cfb619c28",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/darwin-x64/native-service-receipt.json": "688182f20ad69f01841cec5beb42bbb62d8a13cb46c7ddcddaa2aa8633a960c6",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-arm64/desktop-update-linux-arm64.json.raw": "3c8203da757e4c94a4c450243d38601f875eebf6afc7e965c50395aef5846f11",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-x64/native-service-receipt.json.raw": "1890b4983de34efde4f27d4bac5b18f465f055f32af4ea3691f7acd106474c50",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-x64/native-electron-receipt.json.raw": "3d9fa6da2f079b3c2ccdecefcd6c5668e853ef2c6397cd649ec85cb24699298a",
+			"apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/native-acceptance.json": "addf36b67a489de427cca5ba6ee1c04030e75d3ec24fc1e8c1b0738bba61a1f5",
+			"apps/f1/test-drives/assets/2026-10-10-update-safety-corrections/update-maintenance.json": "ceb79e562cc8040e1da657df5c702bd915628ae7b08776ad799314dfe0edcbce",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/darwin-arm64/native-service-receipt.json.raw": "1cbd01197f632f2c7d0c4baada9de67b3a2aeef42e7de897b62606d94f56ef78",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/darwin-x64/desktop-build.json.raw": "7777f6bb5dd155a5f2e286dd336b2737622ee0ea0d9b87a3f83458475f9a6d41",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/darwin-x64/native-electron-stdout.log": "7f4a264c4aca22eb25b9634240679141196ac7e307980411941cd5d55126c72c",
+			"apps/f1/test-drives/assets/desktop-shell-update.mjs": "3e871e7944e7689619d9f1a03aa5c72f3274ff5802ef2bf6fe4dc51a73cbbbf1",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/linux-x64/desktop-build.json": "148bae114e826ca90d96341e159378f403b6ee4501bc844b4b48778218944e54",
+			"apps/f1/test-drives/assets/2026-10-10-update-startup-contention/update-maintenance.json": "c33eb0d83e3933c47bbe207212db648db60e47e1a943604c647381a8d73f4ef5",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/linux-x64/native-service-receipt.json.raw": "ab177c70dd10b1c1793e85b3c0e6f2f2ab413aa981dd32bf09df3af142e24409",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/linux-arm64/native-electron-stdout.log": "b82997d4cb6de97335b738a042dcfaca9b48947382cd4ba17b0b586a56e1c25a",
+			"apps/f1/test-drives/assets/2026-10-10-update-startup-contention/native-startup-historical-fail.json": "99fecac95ce5e31613465a9d015073653a2b06a7d55f73d2210d26a542744ea9",
+			"apps/f1/test-drives/assets/2026-10-10-update-startup-contention/native-startup-pass.json": "8cd7f75bdcede452550ccd4b78cba6adba1cfde8a4e1a32195ae43fcbfa01578",
+			"apps/f1/test-drives/assets/2026-10-10-update-lifecycle/update-lifecycle.json": "ff1278e916b4d280363b52d8bfc88b8ad23610b428a8c19f61bb7073fc91c522",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-arm64/native-shell-update-receipt.json.raw": "8193a4daa90fbce02d939f8484abb2adad52d7380ad556c96d6190588022caa8",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-x64/desktop-build.json.raw": "3af55b697d7844ce68c560b3b06472a5b66a2487ebc2dc96118b273ed08b9dde",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/passed-aa0ad-maintained-startup-contention.json": "1d079e03de288b38d25e0a08d36a85c373bbb34da4c350678ec8c9c53e35885b",
+			"apps/f1/test-drives/assets/2026-10-10-update-startup-contention/original-native-startup-pass.json": "d687d6732f8fb4de2a9ef14256fa96050865ead9a8bb3a7e6f2a4d03ea5421ed",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/linux-x64/native-electron-receipt.json.raw": "3715c84e09046c66a4ef8ae3077c9cf278a70eec704fc695e45bba77d223ec70",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/darwin-arm64/native-service-receipt.json.raw": "6187401bc9d06ad88a4fddf380a07f7b655054c43674b9ffd9de503005ede5a2",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/58cb5e40-focused.log": "4c281bc63871700963ff3076e6550dd9c93ce5bf96a824dcb84cc6b0959e3264",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/linux-arm64/native-shell-update-receipt.json.raw": "d88b4122934234d7d702879f61b597b07c946695e896c1668ebc50b99ebbd8ff",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/darwin-x64/native-service-receipt.json.raw": "63d59f8a8ff6a7f05057e2f8f88022aea83cc49fc516b7e2923cde22d7e1afef",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/darwin-arm64/native-service-receipt.json": "19b7c6b75c468b3026848639fab3e099de09087e21c81b78418de5f851a21599",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/linux-arm64/desktop-build.json": "d3f220e1b0d8768962c307d52f35be087e37c59d9d6001dbbb96a24954e45a4c",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-service-integration/native-electron.json": "3611f94599fc51249b0d07b7ae20457ad63d2fd5a64714af82e87565d884cd34",
+			"apps/f1/test-drives/assets/2026-10-10-update-transport-drain/update-maintenance.json": "287c6be45ddae74f913db5cfba8e33c7648f144d74aa5cea11777c2944c35b24",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/passed-round3-harness-regressions.json": "da34dea09da9eb864df7c1496423571d2f154ba7c18c17111db5a704f213a5db",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/linux-x64/native-electron-stdout.log": "731e5f1ebc8acd85f368f6edf3e1d85d729bd3dcc080a7ce1a51204860f4571a",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/darwin-arm64/native-electron-receipt.json": "e2b1e028564f22b16a2f0a216c258de99c98455b902937274b813f86cf31cd1e",
+			"apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/cleanup-development-alias-fail.json": "6419efbba09159c9417cdfc51ac3f4d49250b0e6d0a6b20306edca07aef2d2ed",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/passed-aa0ad-signed-delivery.json": "d3a563a7b7801d9816255ecb2ab3cdc742758edc0331f36fd6237d4268e1a04a",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/passed-aa0ad-focused-startup-contention.json": "7fd4cffd686b9d26b59f4393b7c9a4dec933ca14f956d0cecb1f60b028120705",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/provisional-2e47-trial-coexistence.json": "127184b83547a04a77bac34dde1d371eda2d4532a1a82b84bbe0aa44a9fab74a",
+			"apps/f1/test-drives/assets/2026-10-10-update-lifecycle/settings.png": "83aad84a38e5bd022640f5ed28f78baad86315f19c2671094f1bbcdc492fe765",
+			"apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/cleanup-regressions.txt": "18fc971e17f8339d1d297f3bed74896ee3b3e9390cf4a03c2feaa2f43c6c164c",
+			"apps/f1/test-drives/assets/update-maintenance.mjs": "86114239fc06dbaa577c6fc12cb3980e9a14565ef1f14da28abb2e6b279cee9d",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/133c2fcd-linux-x64-preparation-failed.log": "0ab033faec35ae2f6e9217682a9a7027cb18f5d0fb6ec57db905bbfcd256e114",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/fef29b88-f1.json.raw": "9274d0fa4c547d5c6225d1dfb9c46cc957b7a10b3f0cf134a3146d680fdf3d79",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/linux-arm64/native-electron-receipt.json": "80a68eca7e15893dcdf5c4da4bfed27888e3a85adda1ae1f2871be6af2ca14ff",
+			"apps/f1/test-drives/assets/2026-10-10-update-outcome-startup/update-lifecycle.json": "d72017db0cd877f978cfa880acaf1e8e15c6e76833ddf533bbd0ee7bb0177319",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-arm64/native-electron-receipt.json.raw": "daa6d60191bbc218de93cf97d0cab0cfc37dab0df5c456ce3440ca3e5628078b",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/linux-arm64/native-service-receipt.json.raw": "d221b0276874963d42e2b6594f6038492e41d503d1d8d834777ace0662b03e46",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/passed-round2-harness-regressions.json": "59bfe4d0d88154f217b193d2ed2432a196b94a26d4e8376cda75b4816013081e",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/133c2fcd-focused.log": "55352b68b8cc65bd38995b2a9714ba9fb4f7fa38ab7946ff150a893270ed011c",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/58cb5e40-f1.json.raw": "16b4ac1f1f8869cb012363d520c1c424ca8e262903324aa6556805374bcd13a3",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/receipt-index.json": "4d8eea5f72778212f5abc2d9a2150ad773e50f89a150090e6131d04f58548b0b",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/58cb5e40-linux-arm64-failed.log": "0d58f01e03486b241b7f6fb36c4f232662bf2d3e57677a73ce2be213e37b638f",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-service-integration/native-update.json": "e76121e4c1dd7aa3a9c91848162014a3d1c030b344aa374867382fdc2237be3b",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/fef29b88-linux-x64-failed.log": "e17dd84c4fd677a1d26826e8c79f7ede8c845a6b82903e023f94dd18c567e815",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/darwin-arm64/native-electron-receipt.json.raw": "f2c9b7e5f15a295596f97cd266cb2c36fc93ca6522c43667ea332907efd04383",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-ed7-native/darwin-arm64/native-electron-stdout.log": "9d04c2c0c5a6099c35c393499e0298f7329040d24bf4c74c1248842f8e898049",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/failed-2e47-signed-delivery.json": "ef32925efd0a41aec1adb92335c6a05685cff0336d7bbb0c599062a4ccd21df0",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/linux-x64/desktop-build.json.raw": "a2d917c2bcc281b7e774115338256488d4181602345c5baeba2e0d9bba4533d8",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/darwin-arm64/desktop-build.json.raw": "6c89ca3f4e21b75a7b6ac409bfe18f19c8ddeb2625e0962286dbc96b03353c54",
+			"apps/f1/test-drives/assets/2026-10-10-signed-delivery/passed-aa0ad-harness-regressions.json": "2f81c989cf1bdbb136b4c36a58f5e126c748fee139fcaa24b0904c446fdb9f7c",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/darwin-arm64/desktop-build.json.raw": "5a0d6907838599ee3fd5fea3c496e1023b231ae04cf8500b75f6f7c2d5afeb43",
+			"apps/f1/test-drives/assets/2026-10-10-update-safety-corrections/update-lifecycle.json": "de2b4f6a94b0344b754e36b9f2ba176dfeb73bed1d724ac073aab94d020d03d7",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/workflow-results.json": "a3e698ff1b91e69f63b0f0ac0ac953d7e8a284c53009b836c6940342b5eda4d5",
+			"apps/f1/test-drives/assets/2026-10-10-update-outcome-startup/native-rollback-outcome.json": "285d68f82fbeceba23e93b2ac606c6cf914e8cc7b024a0136285424305fe48e7",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/03abb4a7-native/darwin-x64/native-service-receipt.json.raw": "e2be81b0b223a41c14fc254d75db9c8075acaa88be7ec1136dbe15eca273e14e",
+			"apps/f1/test-drives/assets/2026-10-10-desktop-shell-update/b6917edb-native/darwin-x64/native-electron-receipt.json.raw": "94fa9ee0ce5570c6b954ee3c951139b553e82fac2d4e4d357ee70d61c9a44326"
+		}
+	}
+}
