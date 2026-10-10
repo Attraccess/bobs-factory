@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { operatorTools } from "bobs-factory-mcp-tools";
+import type { UpdateDrain } from "../updates/UpdateDrain.js";
 import type { ChatState } from "./SessionChat.js";
 import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 
@@ -49,6 +52,8 @@ export function operatorError(
 	};
 }
 const operatorRecovery: Record<string, string> = {
+	update_maintenance:
+		"Wait for this instance to finish its update/recovery, then inspect the run before retrying the action.",
 	not_found:
 		"Use MCP tools/list to discover available operations and list_runs to find a run ID on this instance.",
 	invalid_request:
@@ -108,6 +113,10 @@ export class OperatorService {
 		readonly runtime: WorkflowRuntime,
 		readonly hooks: OperatorHooks,
 		readonly instance: string,
+		private readonly updateDrain?: Pick<
+			UpdateDrain,
+			"active" | "enter" | "leave"
+		>,
 	) {}
 	private run(id: string) {
 		const run = this.runtime.runs.get(id);
@@ -241,6 +250,34 @@ export class OperatorService {
 		};
 	}
 	async call(name: string, input: unknown, scopes: readonly string[]) {
+		const tool = operatorTools.find((t) => t.name === name);
+		if (!tool || tool.scope === "inspect")
+			return this.dispatch(name, input, scopes);
+		if (
+			this.updateDrain?.active() ||
+			existsSync(
+				join(this.runtime.directory, "..", "updates", "maintenance.json"),
+			)
+		)
+			throw new OperatorError(
+				"update_maintenance",
+				"Factory update maintenance; retry after restart",
+			);
+		const operation = {};
+		// Admission and accounting precede every await. Calls already admitted
+		// finish naturally; inspect cannot report idle until their final mutation.
+		this.updateDrain?.enter(operation);
+		try {
+			return await this.dispatch(name, input, scopes);
+		} finally {
+			this.updateDrain?.leave(operation);
+		}
+	}
+	private async dispatch(
+		name: string,
+		input: unknown,
+		scopes: readonly string[],
+	) {
 		const tool = operatorTools.find((t) => t.name === name);
 		if (!tool) throw new OperatorError("not_found", "Operator tool not found");
 		if (!scopes.includes(tool.scope))

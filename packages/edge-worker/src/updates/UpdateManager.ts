@@ -14,6 +14,8 @@ import {
 import { join, resolve } from "node:path";
 import { factoryRuntimeIdentity } from "bobs-factory-core";
 import { z } from "zod";
+import { compareReleaseVersions } from "../../../../scripts/lib/binary-release.mjs";
+import { UpdateOperationLock } from "./UpdateOperationLock.js";
 
 export const UpdateSettingsSchema = z
 	.object({
@@ -66,31 +68,50 @@ const StagedSchema = z.object({
 	previousExecutable: z.string(),
 });
 export type StagedUpdate = z.infer<typeof StagedSchema>;
-const TransactionSchema = z.object({
-	id: z.string(),
-	candidate: CandidateSchema,
-	staged: StagedSchema,
-	previous: InstalledSchema,
-	snapshot: z.string().optional(),
-	revision: z.number().int(),
-	phase: z.enum([
-		"draining",
-		"preflight",
-		"snapshot",
-		"stopping",
-		"activating",
-		"starting",
-		"health",
-		"rollback",
-		"recovery-required",
-		"succeeded",
-		"rolled-back",
-		"cancelled",
-	]),
-	switchStarted: z.boolean().default(false),
-	startedAt: z.string(),
-	error: z.string().optional(),
-});
+const OutcomeSchema = z.enum(["succeeded", "rolled-back", "cancelled"]);
+const TransactionSchema = z
+	.object({
+		id: z.string(),
+		candidate: CandidateSchema,
+		staged: StagedSchema,
+		previous: InstalledSchema,
+		snapshot: z.string().optional(),
+		revision: z.number().int(),
+		phase: z.enum([
+			"draining",
+			"preflight",
+			"snapshot",
+			"stopping",
+			"activating",
+			"starting",
+			"health",
+			"rollback",
+			"recovery-required",
+			"succeeded",
+			"rolled-back",
+			"cancelled",
+		]),
+		switchStarted: z.boolean().default(false),
+		startedAt: z.string(),
+		error: z.string().optional(),
+		release: z
+			.object({
+				transactionId: z.string(),
+				outcome: OutcomeSchema,
+				status: z.enum(["pending", "acknowledged"]),
+			})
+			.optional(),
+	})
+	.superRefine((transaction, ctx) => {
+		if (
+			transaction.release &&
+			transaction.release.transactionId !== transaction.id
+		)
+			ctx.addIssue({
+				code: "custom",
+				message: "Maintenance release must belong to its transaction",
+			});
+	});
 export type UpdateTransaction = z.infer<typeof TransactionSchema>;
 const StateSchema = z.object({
 	schemaVersion: z.literal(1),
@@ -159,12 +180,13 @@ export function candidateKey(candidate: UpdateCandidate) {
 const now = () => new Date().toISOString();
 const terminal = (transaction?: UpdateTransaction) =>
 	!transaction ||
-	["succeeded", "rolled-back", "cancelled"].includes(transaction.phase);
+	(["succeeded", "rolled-back", "cancelled"].includes(transaction.phase) &&
+		transaction.release?.status === "acknowledged");
 
 /** Per-home durable state. Short sync writes serialize policy/consent independently
- * of network/staging. Long operations use a second lock; locks left by a crash are
- * deliberately not reclaimed by PID guessing. recover() requires explicit operator
- * confirmation that the recorded operation owner is stopped.
+ * of network/staging. Long operations use a fenced owner lock with a nonce and process start identity.
+ * recover() requires explicit operator confirmation, then verifies stale ownership
+ * under an exclusive reclaim guard. Legacy live PID-only records fail closed.
  */
 export class UpdateManager {
 	readonly directory: string;
@@ -303,30 +325,17 @@ export class UpdateManager {
 		);
 	}
 	private downgrade(installed: InstalledUpdate, candidate: UpdateCandidate) {
+		// Returning from nightly to stable remains an intentional channel change.
 		if (
 			installed.version.includes("-nightly.") &&
 			candidate.channel === "stable"
 		)
 			return true;
-		if (!/^\d+\.\d+\.\d+(?:-|$)/.test(installed.version)) return true;
-		const core = (version: string) =>
-			version.split("-")[0]!.split(".").map(BigInt);
-		const old = core(installed.version),
-			next = core(candidate.version);
-		if (old.length !== 3 || next.length !== 3) return true;
-		for (let index = 0; index < 3; index++) {
-			if (next[index]! < old[index]!) return true;
-			if (next[index]! > old[index]!) return false;
-		}
-		if (
-			candidate.channel === "nightly" &&
-			installed.version.includes("-nightly.")
-		)
-			return (
-				BigInt(candidate.version.split(".").at(-1)!) <
-				BigInt(installed.version.split(".").at(-1)!)
-			);
-		return false;
+		try {
+			return compareReleaseVersions(candidate.version, installed.version) < 0;
+		} catch {
+			return true;
+		} // Unknown development/legacy identity requires consent.
 	}
 	private authorized(state: UpdateState, candidate: UpdateCandidate) {
 		return (
@@ -419,30 +428,16 @@ export class UpdateManager {
 		});
 		return this.status();
 	}
-	private async operation<T>(work: () => Promise<T>): Promise<T> {
+	private async operation<T>(
+		work: () => Promise<T>,
+		recover = false,
+	): Promise<T> {
 		this.read();
 		mkdirSync(this.directory, { recursive: true, mode: 0o700 });
-		const file = join(this.directory, "operation.lock");
-		try {
-			writeFileSync(
-				file,
-				JSON.stringify({
-					pid: process.pid,
-					id: randomUUID(),
-					startedAt: now(),
-				}),
-				{ flag: "wx", mode: 0o600 },
-			);
-		} catch {
-			throw new Error(
-				"An update operation owns this instance; inspect its result or recover the interrupted owner.",
-			);
-		}
-		try {
-			return await work();
-		} finally {
-			unlinkSync(file);
-		}
+		return new UpdateOperationLock(join(this.directory, "operation.lock")).run(
+			work,
+			recover,
+		);
 	}
 	async stage() {
 		return this.operation(async () => {
@@ -493,7 +488,45 @@ export class UpdateManager {
 		this.change((state) => {
 			if (!state.transaction) throw new Error("Missing update transaction");
 			Object.assign(state.transaction, extra, { phase });
+			this.prepareRelease(state.transaction);
 		});
+	}
+	private prepareRelease(transaction: UpdateTransaction) {
+		const outcome = OutcomeSchema.safeParse(transaction.phase);
+		if (outcome.success)
+			transaction.release = {
+				transactionId: transaction.id,
+				outcome: outcome.data,
+				status: "pending",
+			};
+	}
+	private async releaseMaintenance(transactionId: string) {
+		// Persist before the external call, including migration of legacy terminal
+		// records. A crash or lost response must retry only this exact release.
+		this.change((state) => {
+			const transaction = state.transaction;
+			if (!transaction || transaction.id !== transactionId)
+				throw new Error("Maintenance transaction changed");
+			if (!transaction.release) this.prepareRelease(transaction);
+			if (!transaction.release)
+				throw new Error("Maintenance release has no completed outcome");
+		});
+		const transaction = this.read().transaction!;
+		if (transaction.release!.status === "acknowledged") return;
+		try {
+			await this.lifecycle!.releaseMaintenance(transactionId);
+			this.change((state) => {
+				if (state.transaction?.id !== transactionId)
+					throw new Error("Maintenance transaction changed");
+				state.transaction.phase = state.transaction.release!.outcome;
+				state.transaction.release!.status = "acknowledged";
+			});
+		} catch (error) {
+			this.phase("recovery-required", {
+				error: `Maintenance release failed: ${(error as Error).message}`,
+			});
+			throw error;
+		}
 	}
 	async reconcile() {
 		if (!this.lifecycle)
@@ -538,51 +571,54 @@ export class UpdateManager {
 						error:
 							"Waiting for active work/descendant leases to drain; update remains pending.",
 					});
-					return this.status();
+				} else {
+					const eligible = () => {
+						if (!this.authorized(this.read(), transaction.candidate))
+							throw new Error(
+								"Update activation cancelled by current policy/candidate.",
+							);
+					};
+					eligible();
+					this.phase("preflight");
+					const preflight = await lifecycle.preflight(
+						transaction.staged,
+						transaction.previous,
+					);
+					if (preflight.stateCompatible !== true)
+						throw new Error(
+							"Candidate state compatibility is not established.",
+						);
+					eligible();
+					this.phase("snapshot");
+					const snapshot = await lifecycle.snapshot(transaction.id);
+					eligible();
+					// This short write is the atomic authorization boundary. A policy mutation
+					// can occur during any preceding await, but never slip between authorization
+					// and committing the stopping phase.
+					this.change((current) => {
+						if (!this.authorized(current, transaction.candidate))
+							throw new Error(
+								"Update activation cancelled by current policy/candidate.",
+							);
+						current.transaction!.snapshot = snapshot;
+						current.transaction!.phase = "stopping";
+						current.transaction!.switchStarted = true;
+					});
+					await lifecycle.stop();
+					this.phase("activating");
+					await lifecycle.activate(transaction.staged);
+					this.phase("starting");
+					await lifecycle.start();
+					this.phase("health");
+					await lifecycle.health(transaction.candidate);
+					this.change((current) => {
+						current.installed = transaction.candidate;
+						current.transaction!.phase = "succeeded";
+						this.prepareRelease(current.transaction!);
+						delete current.pending;
+						delete current.error;
+					});
 				}
-				const eligible = () => {
-					if (!this.authorized(this.read(), transaction.candidate))
-						throw new Error(
-							"Update activation cancelled by current policy/candidate.",
-						);
-				};
-				eligible();
-				this.phase("preflight");
-				const preflight = await lifecycle.preflight(
-					transaction.staged,
-					transaction.previous,
-				);
-				if (preflight.stateCompatible !== true)
-					throw new Error("Candidate state compatibility is not established.");
-				eligible();
-				this.phase("snapshot");
-				const snapshot = await lifecycle.snapshot(transaction.id);
-				eligible();
-				// This short write is the atomic authorization boundary. A policy mutation
-				// can occur during any preceding await, but never slip between authorization
-				// and committing the stopping phase.
-				this.change((current) => {
-					if (!this.authorized(current, transaction.candidate))
-						throw new Error(
-							"Update activation cancelled by current policy/candidate.",
-						);
-					current.transaction!.snapshot = snapshot;
-					current.transaction!.phase = "stopping";
-					current.transaction!.switchStarted = true;
-				});
-				await lifecycle.stop();
-				this.phase("activating");
-				await lifecycle.activate(transaction.staged);
-				this.phase("starting");
-				await lifecycle.start();
-				this.phase("health");
-				await lifecycle.health(transaction.candidate);
-				this.change((current) => {
-					current.installed = transaction.candidate;
-					current.transaction!.phase = "succeeded";
-					delete current.pending;
-					delete current.error;
-				});
 			} catch (error) {
 				const current = this.read().transaction!;
 				const message = (error as Error).message;
@@ -609,6 +645,7 @@ export class UpdateManager {
 						this.change((value) => {
 							value.installed = transaction.previous;
 							value.transaction!.phase = "rolled-back";
+							this.prepareRelease(value.transaction!);
 							value.badCandidates = [
 								...new Set([
 									...value.badCandidates,
@@ -628,7 +665,7 @@ export class UpdateManager {
 			} finally {
 				if (maintenance) {
 					try {
-						await lifecycle.releaseMaintenance(transaction.id);
+						await this.releaseMaintenance(transaction.id);
 					} catch (error) {
 						this.phase("recovery-required", {
 							error: `Maintenance release failed: ${(error as Error).message}`,
@@ -648,23 +685,17 @@ export class UpdateManager {
 			);
 		if (!this.lifecycle)
 			throw new Error("Recovery needs the owned lifecycle supervisor.");
-		const lock = join(this.directory, "operation.lock");
-		if (existsSync(lock)) {
-			const owner = z
-				.object({ pid: z.number().int().positive() })
-				.parse(JSON.parse(readFileSync(lock, "utf8")));
-			try {
-				process.kill(owner.pid, 0);
-				throw new Error(
-					"Recorded update owner is still running; recovery cannot steal its operation.",
-				);
-			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-			}
-			unlinkSync(lock);
-		}
 		return this.operation(async () => {
 			const transaction = this.read().transaction;
+			if (
+				transaction &&
+				(transaction.release?.status === "pending" ||
+					(OutcomeSchema.safeParse(transaction.phase).success &&
+						!transaction.release))
+			) {
+				await this.releaseMaintenance(transaction.id);
+				return this.status();
+			}
 			if (!terminal(transaction)) {
 				await this.lifecycle!.acquireMaintenance(transaction!.id);
 				if (!transaction!.switchStarted)
@@ -678,6 +709,7 @@ export class UpdateManager {
 						this.change((state) => {
 							state.installed = transaction!.previous;
 							state.transaction!.phase = "rolled-back";
+							this.prepareRelease(state.transaction!);
 							state.badCandidates = [
 								...new Set([
 									...state.badCandidates,
@@ -693,10 +725,10 @@ export class UpdateManager {
 						throw error;
 					}
 				}
-				await this.lifecycle!.releaseMaintenance(transaction!.id);
+				await this.releaseMaintenance(transaction!.id);
 			}
 			return this.status();
-		});
+		}, true);
 	}
 	/** Supervisor timer: 15-minute release checks, capped exponential offline
 	 * backoff; pending candidates coalesce to the current signed channel target. */

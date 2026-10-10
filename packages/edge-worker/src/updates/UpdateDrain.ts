@@ -154,8 +154,16 @@ export class UpdateDrain {
 		if (!this.active()) return;
 		if (this.transaction() !== transactionId)
 			throw new Error("Maintenance transaction mismatch");
-		const phase = new UpdateManager(this.home).status().transaction?.phase;
-		if (!phase || !["succeeded", "rolled-back", "cancelled"].includes(phase))
+		const transaction = new UpdateManager(this.home).status().transaction;
+		const phase =
+			transaction?.release?.status === "pending"
+				? transaction.release.outcome
+				: transaction?.phase;
+		if (
+			transaction?.id !== transactionId ||
+			!phase ||
+			!["succeeded", "rolled-back", "cancelled"].includes(phase)
+		)
 			throw new Error("Finish health/rollback before releasing maintenance");
 		await this.capacity.resumeAdmissionsAfterUpdate(transactionId);
 		unlinkSync(this.file);

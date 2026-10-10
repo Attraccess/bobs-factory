@@ -47,7 +47,7 @@ export function githubClient(
 export function discoverReleases(
 	client: ReleaseClient,
 	keys: Record<string, unknown>,
-	options?: { selectedOnly?: boolean },
+	options?: { selectedOnly?: boolean; allowBetaFallback?: boolean },
 ): Promise<{
 	stable: VerifiedRelease | null;
 	nightly: VerifiedRelease | null;
