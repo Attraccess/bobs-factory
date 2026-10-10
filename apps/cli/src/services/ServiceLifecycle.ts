@@ -12,6 +12,7 @@ import {
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import {
+	acquireInstanceLock,
 	acquireRuntimeOperation,
 	canonicalHome,
 	ownerAlive,
@@ -438,8 +439,20 @@ export class ServiceLifecycle {
 					this.checked("launchctl", ["bootout", this.target(updater)]);
 			}
 			// Do not transfer ownership until graceful shutdown completed.
-			for (let attempt = 0; workerOwner(this.home) && attempt < 100; attempt++)
+			for (let attempt = 0; attempt < 100; attempt++) {
+				const retained = workerOwner(this.home);
+				if (!retained) break;
+				if (!ownerAlive(retained)) {
+					// Native managers may terminate startup before its exit handler exists.
+					// Atomic reclamation rechecks identity and drains only its marked descendants.
+					const releaseStopped = await acquireInstanceLock(this.home, {
+						markWorker: false,
+					});
+					releaseStopped();
+					break;
+				}
 				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
 			if (workerOwner(this.home))
 				throw new Error(
 					"Worker shutdown still owns this home; wait for graceful drain and retry. Replacement is forbidden.",

@@ -99,7 +99,7 @@ async function drain(nonce: string) {
 /** Atomic identity records and recursively recoverable fences prevent double takeover. */
 export async function acquireInstanceLock(
 	home: string,
-	options: { name?: string; worker?: boolean } = {},
+	options: { name?: string; worker?: boolean; markWorker?: boolean } = {},
 ): Promise<() => void> {
 	home = canonicalHome(home);
 	const runtime = join(home, "runtime");
@@ -167,7 +167,7 @@ export async function acquireInstanceLock(
 	await claim(lock, true);
 	// Every worker subprocess inherits this marker, including detached/reparented helpers.
 	// MachineCapacity independently reconciles execution lease markers before admission.
-	if (options.worker !== false)
+	if (options.worker !== false && options.markWorker !== false)
 		process.env.BOBS_FACTORY_WORKER_ID = owner.nonce;
 	let released = false;
 	const release = () => {
