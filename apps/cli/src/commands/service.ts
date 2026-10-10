@@ -9,6 +9,10 @@ import type { Command } from "commander";
 import { Application } from "../Application.js";
 import { launchLocal } from "../local.js";
 import {
+	allowDesktopStart,
+	stopDesktop,
+} from "../services/DesktopLifecycle.js";
+import {
 	type ServiceAction,
 	ServiceLifecycle,
 } from "../services/ServiceLifecycle.js";
@@ -68,6 +72,16 @@ export function addServiceCommands(program: Command) {
 				console.log(JSON.stringify(await lifecycle().action(action), null, 2)),
 			);
 	}
+	service
+		.command("allow-desktop-start", { hidden: true })
+		.action(() => allowDesktopStart(lifecycle().home));
+	service
+		.command("stop-desktop", { hidden: true })
+		.requiredOption("--expected-nonce <nonce>")
+		.requiredOption("--executable <path>")
+		.action((opts: { expectedNonce: string; executable: string }) =>
+			stopDesktop(lifecycle().home, opts.expectedNonce, opts.executable),
+		);
 	service
 		.command("updates-run", { hidden: true })
 		.option("--once", "One supervisor tick")

@@ -116,7 +116,7 @@ After freezing a corrected clean combined tree, prepare native fixtures once:
 pnpm install --frozen-lockfile
 node scripts/prepare-signed-delivery-fixture.mjs /tmp/signed-delivery-BUILD_SHA
 node scripts/tests/signed-delivery-runtime.mjs /tmp/signed-delivery-BUILD_SHA /tmp/signed-delivery-BUILD_SHA/receipts
-node scripts/tests/native-update-startup-contention.mjs /tmp/signed-delivery-BUILD_SHA/build-stable/bobs-factory-1.0.0-darwin-arm64/bobs-factory /tmp/signed-delivery-BUILD_SHA/startup-contention.json
+node scripts/tests/integration-native-startup-contention.mjs /tmp/signed-delivery-BUILD_SHA/build-stable/bobs-factory-1.0.0-darwin-arm64/bobs-factory /tmp/signed-delivery-BUILD_SHA/startup-contention.json
 ```
 
 The preparer requires an empty external output and clean source/tooling. It builds

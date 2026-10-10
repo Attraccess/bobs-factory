@@ -9,16 +9,16 @@ import {
 	rmSync,
 	writeFileSync,
 } from "node:fs";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import {
+	ownerAlive,
+	workerOwner,
+} from "../../apps/cli/dist/src/services/InstanceLock.js";
 import { UpdateManager } from "../../packages/edge-worker/dist/updates/UpdateManager.js";
 import { jsonBytes, sha256 } from "../lib/binary-release.mjs";
 
-const [executableArg, outputArg] = process.argv.slice(2);
-assert(executableArg && outputArg, "Supply NATIVE_EXECUTABLE and RECEIPT");
-const executable = resolve(executableArg),
-	output = resolve(outputArg);
+const [executable, output] = process.argv.slice(2).map((v) => resolve(v));
 assert(
 	executable && output,
 	"Usage: node native-update-startup-contention.mjs NATIVE_EXECUTABLE RECEIPT",
@@ -38,32 +38,27 @@ const candidate = {
 };
 const manager = new UpdateManager(home, undefined, undefined, b);
 manager.configure({ channel: candidate.channel }, 0);
-const listener = createServer();
-await new Promise((done) => listener.listen(0, "127.0.0.1", done));
-const port = listener.address().port;
-await new Promise((done) => listener.close(done));
 const journal = JSON.parse(readFileSync(join(home, "updates/state.json")));
-journal.installed = { ...b, version: "0.0.1", commit: "a".repeat(40) };
 journal.transaction = {
 	id: "controlled-startup-contention",
 	candidate,
 	staged: { candidate, executable, previousExecutable: executable },
-	previous: journal.installed,
+	previous: b,
 	revision: journal.revision,
 	phase: "starting",
 	switchStarted: true,
 	startedAt: new Date().toISOString(),
 };
 writeFileSync(join(home, "updates/state.json"), jsonBytes(journal));
+const expectedJournal = readFileSync(join(home, "updates/state.json"));
 writeFileSync(join(home, "config.json"), jsonBytes({ repositories: [] }));
-const before = readFileSync(join(home, "updates/state.json"), "utf8");
 const lock = join(home, "updates/state.lock");
 writeFileSync(lock, String(process.pid), { flag: "wx" });
 let stderr = "",
 	stdout = "";
 const child = spawn(
 	executable,
-	["--home", home, "--port", String(port), "--no-open", "local"],
+	["--home", home, "--port", "19691", "--no-open", "local"],
 	{ env, stdio: ["ignore", "pipe", "pipe"] },
 );
 child.stdout.on("data", (b) => (stdout += b));
@@ -73,30 +68,43 @@ const close = new Promise((r) =>
 );
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let healthy = false,
+	journalUnchanged = false,
 	exit;
 try {
-	// The live fixture owns this writer lock; only that owner removes it.
+	// Hold the exact live caller's lock across worker ownership and FactoryServer
+	// construction. Remove only our own unchanged record after the bounded hold.
+	for (let n = 0; n < 100 && !workerOwner(home) && child.exitCode === null; n++)
+		await wait(20);
 	await wait(500);
 	assert.equal(readFileSync(lock, "utf8"), String(process.pid));
 	rmSync(lock);
 	for (let n = 0; n < 100 && child.exitCode === null; n++) {
 		try {
-			if ((await fetch(`http://127.0.0.1:${port}/api/auth/status`)).ok) {
+			if ((await fetch("http://localhost:19691/api/auth/status")).ok) {
 				healthy = true;
 				break;
 			}
 		} catch {}
 		await wait(50);
 	}
-	exit = { code: child.exitCode, signal: child.signalCode };
-	assert.equal(
-		readFileSync(join(home, "updates/state.json"), "utf8"),
-		before,
-		"Startup must preserve the supervisor transaction and installed view",
+	journalUnchanged = readFileSync(join(home, "updates/state.json")).equals(
+		expectedJournal,
 	);
+	if (healthy)
+		assert.equal(
+			journalUnchanged,
+			true,
+			"Startup must preserve the supervisor transaction bytes",
+		);
+	exit = { code: child.exitCode, signal: child.signalCode };
 } finally {
 	if (child.exitCode === null) child.kill("SIGTERM");
 	await close;
+	const owner = workerOwner(home);
+	assert(
+		!owner || !ownerAlive(owner),
+		"No isolated worker may survive regression cleanup",
+	);
 	// Retain diagnosis without enrollment codes or any credential material.
 	const error = stderr
 		.split("\n")
@@ -113,11 +121,10 @@ try {
 			executableSha256: b.executable.sha256,
 			home,
 			healthy,
-			installedStateUnchanged:
-				readFileSync(join(home, "updates/state.json"), "utf8") === before,
+			journalUnchanged,
 			exit,
 			error,
-			passed: healthy,
+			passed: healthy && journalUnchanged,
 			purpose:
 				"native replacement startup under bounded live updater state-lock contention",
 		}),

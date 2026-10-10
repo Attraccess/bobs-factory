@@ -69,3 +69,27 @@ lifetime; verified stale worker ownership and marked descendants are reconciled
 before replacement. Native launchd/systemd crash/startup validation remains a
 required platform receipt; generating definitions or mocked manager calls does
 not establish it.
+
+### Update ownership and deliberate Stop
+
+Permission to run a user service does not authorize replacement of its executable.
+An installer-managed `PREFIX/bin/bobs-factory` link requires the matching
+`PREFIX/lib/bobs-factory/records/bobs-factory-VERSION-TARGET.json` receipt and
+canonical owned version layout. Installation binds that receipt's hash in the
+service record; maintenance admission revalidates it. Desktop ownership similarly
+binds its original per-home runtime receipt. Generic package-manager links and
+ordinary executables can run through supported owner controls, but receive no
+automatic update companion or executable replacement capability. Changed receipts,
+external link targets and mismatched retained update identities fail closed.
+
+Desktop Stop confirms in the UI, then the native runtime rechecks the maintenance
+fence, executable, process start stamp and worker nonce under the same per-home
+`lifecycle-operation.lock` used by updater admission and startup. Linux resolves
+`/proc/PID/exe`; macOS resolves the full process command. Stop durably saves intent
+before graceful shutdown. Automatic startup, crash recovery and rollback cannot
+clear that intent. Only explicit reopen outside maintenance clears it. A stopped
+rollback can require operator reconciliation; it never reports a healthy restarted
+worker while suppression is active. Closing the window keeps the worker running.
+
+These worker/frontend updates do not replace the Electron shell or its package.
+Full unattended desktop application updates remain a separate acceptance gap.

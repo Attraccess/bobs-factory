@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import {
 	closeSync,
 	existsSync,
@@ -7,12 +7,11 @@ import {
 	readFileSync,
 	readlinkSync,
 	realpathSync,
-	rmSync,
-	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import {
 	app,
 	BrowserWindow,
@@ -43,6 +42,7 @@ let window,
 	selected,
 	quitting = false;
 let runtimeBinary = binary;
+const runRuntime = promisify(execFile);
 // One application process; the worker also independently locks its canonical home.
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -181,6 +181,12 @@ async function local() {
 		if (!existsSync(binary))
 			throw new Error("Packaged Factory runtime is missing");
 		runtimeBinary = desktopExecutable(home, dirname(binary));
+		await runRuntime(runtimeBinary, [
+			"--home",
+			home,
+			"service",
+			"allow-desktop-start",
+		]);
 		mkdirSync(join(home, "runtime"), { recursive: true, mode: 0o700 });
 		const log = openSync(
 			join(home, "runtime", "desktop-worker.log"),
@@ -207,7 +213,7 @@ async function local() {
 			).executable;
 		await waitForFactory();
 	}
-	rmSync(join(home, "runtime", "desktop-stopped.json"), { force: true });
+
 	const log = openSync(
 		join(home, "runtime", "desktop-updates.log"),
 		"a",
@@ -324,24 +330,6 @@ async function stopLocal() {
 		throw new Error(
 			"This worker is independently owned; use its service/foreground controls",
 		);
-	// PID-only signaling is unsafe. Prove the live process command/home before signaling.
-	const { execFileSync } = await import("node:child_process");
-	const command = execFileSync(
-		"/bin/ps",
-		["-p", String(o.pid), "-o", "comm="],
-		{ encoding: "utf8" },
-	).trim();
-	const stamp = execFileSync(
-		"/bin/ps",
-		["-p", String(o.pid), "-o", "lstart="],
-		{ encoding: "utf8" },
-	).trim();
-	if (
-		stamp !== o.processStamp ||
-		realpathSync(command) !== o.executable ||
-		owner()?.nonce !== o.nonce
-	)
-		throw new Error("Worker identity changed; refusing shutdown");
 	const { response } = await dialog.showMessageBox({
 		type: "warning",
 		buttons: ["Cancel", "Stop Factory"],
@@ -352,25 +340,19 @@ async function stopLocal() {
 			"Running work is shut down through the normal worker lifecycle. Saved checkpoints remain in the same home. Closing the window keeps jobs running.",
 	});
 	if (response !== 1) return;
-	if (owner()?.nonce !== o.nonce) throw new Error("Worker identity changed");
-	writeFileSync(
-		join(home, "runtime", "desktop-stopped.json"),
-		JSON.stringify({ stoppedAt: new Date().toISOString() }),
-		{ mode: 0o600 },
-	);
-	process.kill(o.pid, "SIGTERM");
-	for (let n = 0; n < 300; n++) {
-		if (!owner()) {
-			dialog.showMessageBox({
-				message: "Factory stopped. Open local Factory to start it again.",
-			});
-			return;
-		}
-		await new Promise((resolve) => setTimeout(resolve, 200));
-	}
-	throw new Error(
-		"Worker still owns this home. No replacement was started; inspect its logs",
-	);
+	await runRuntime(runtimeBinary, [
+		"--home",
+		home,
+		"service",
+		"stop-desktop",
+		"--expected-nonce",
+		o.nonce,
+		"--executable",
+		runtimeBinary,
+	]);
+	await dialog.showMessageBox({
+		message: "Factory stopped. Open local Factory to start it again.",
+	});
 }
 function installMenu() {
 	Menu.setApplicationMenu(

@@ -1,4 +1,5 @@
 import {
+	mkdirSync,
 	mkdtempSync,
 	readFileSync,
 	realpathSync,
@@ -91,7 +92,36 @@ describe("user service ownership", () => {
 		expect(restored.record()!.desired).toBe("running");
 	});
 	it("keeps the external updater alive during worker maintenance and stops both deliberately", async () => {
-		const { manager, executable, calls } = fixture();
+		const { manager, root, calls } = fixture();
+		const prefix = join(root, "installer"),
+			name = "bobs-factory-1.0.0-linux-x64";
+		mkdirSync(join(prefix, "bin"), { recursive: true });
+		mkdirSync(join(prefix, "lib", "bobs-factory", name), { recursive: true });
+		mkdirSync(join(prefix, "lib", "bobs-factory", "records"));
+		const target = join(prefix, "lib", "bobs-factory", name, "bobs-factory");
+		writeFileSync(target, "fixture");
+		const identity = {
+			product: "bobs-factory",
+			version: "1.0.0",
+			target: "linux-x64",
+			commit: "a".repeat(40),
+		};
+		writeFileSync(
+			join(prefix, "lib", "bobs-factory", name, "build.json"),
+			JSON.stringify(identity),
+		);
+		writeFileSync(
+			join(prefix, "lib", "bobs-factory", "records", `${name}.json`),
+			JSON.stringify({
+				...identity,
+				schemaVersion: 1,
+				owner: "bobs-factory-installer",
+				source: "archive",
+				channel: "stable",
+			}),
+		);
+		const executable = join(prefix, "bin", "bobs-factory");
+		symlinkSync(target, executable);
 		manager.install(executable);
 		const updater = updateServiceRecord(manager.record()!);
 		expect(readFileSync(updater.definition, "utf8")).toContain('"updates-run"');

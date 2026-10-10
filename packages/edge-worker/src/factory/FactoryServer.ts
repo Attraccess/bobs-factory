@@ -125,10 +125,12 @@ export class FactoryServer {
 						)
 					: undefined,
 			);
-		if (factoryRuntimeIdentity.packaged)
-			updates.observeInstalled(factoryRuntimeIdentity);
 		this.auth = new FactoryAuth(runtime.directory, access);
 		this.app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
+		if (factoryRuntimeIdentity.packaged)
+			this.app.addHook("onReady", async () => {
+				await updates.observeInstalled(factoryRuntimeIdentity);
+			});
 		registerVideoRoutes(this.app, runtime);
 		this.app.setErrorHandler((error, _request, reply) =>
 			reply.code(error instanceof z.ZodError ? 400 : 409).send({
