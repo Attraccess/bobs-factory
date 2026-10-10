@@ -1,0 +1,45 @@
+{
+	"testedRevision": "a7ce8d035e85cd5a9a1c9569d2650ee8c9d60603",
+	"mode": "mock",
+	"finding": "QA-CHAT-NATIVE-THREAD-RECOVERY",
+	"fixture": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-native-thread-fix/production-chat-f1.ts",
+	"fixtureSha256": "fa6f306b4e46f114ca72eb5c1c248a9f818b7bf2a9270ae05c8f60ace5fcddbf",
+	"productionComponents": [
+		"ChatSessionHandler",
+		"RunnerConfigBuilder",
+		"RunnerSelectionService",
+		"EdgeWorker chat runner factory",
+		"protected HTTP Resume",
+		"workflow catalog block recovery",
+		"runner capacity"
+	],
+	"simulatedComponents": [
+		"provider execution",
+		"chat transport",
+		"background titles"
+	],
+	"checks": {
+		"focusedTests": {
+			"passed": 30,
+			"files": 4,
+			"log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-native-thread-fix/unit-tests.log"
+		},
+		"F1": {
+			"exitCode": 0,
+			"log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-native-thread-fix/f1.log"
+		},
+		"buildAndTypes": {
+			"exitCode": 0,
+			"log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-native-thread-fix/build-types-commit.log"
+		},
+		"lint": {
+			"exitCode": 0,
+			"existingWarnings": 19,
+			"log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-native-thread-fix/lint.log"
+		}
+	},
+	"sourceSha256": {
+		"packages/edge-worker/src/ChatSessionHandler.ts": "e0c72ad1c29642e76f65e6f638827fc7d1d4b9a45565ac4f77c2a79bd5c4902a",
+		"packages/edge-worker/test/ChatSessionHandler.model-recovery.test.ts": "5b06f916cbb0ba62c4392a88c061e6e095a0ef845941a662f83ac15c0d1da574"
+	}
+}
