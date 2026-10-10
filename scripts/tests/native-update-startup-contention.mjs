@@ -50,6 +50,7 @@ journal.transaction = {
 	startedAt: new Date().toISOString(),
 };
 writeFileSync(join(home, "updates/state.json"), jsonBytes(journal));
+const expectedJournal = readFileSync(join(home, "updates/state.json"));
 writeFileSync(join(home, "config.json"), jsonBytes({ repositories: [] }));
 const lock = join(home, "updates/state.lock");
 writeFileSync(lock, String(process.pid), { flag: "wx" });
@@ -67,6 +68,7 @@ const close = new Promise((r) =>
 );
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let healthy = false,
+	journalUnchanged = false,
 	exit;
 try {
 	// Hold the exact live caller's lock across worker ownership and FactoryServer
@@ -85,6 +87,15 @@ try {
 		} catch {}
 		await wait(50);
 	}
+	journalUnchanged = readFileSync(join(home, "updates/state.json")).equals(
+		expectedJournal,
+	);
+	if (healthy)
+		assert.equal(
+			journalUnchanged,
+			true,
+			"Startup must preserve the supervisor transaction bytes",
+		);
 	exit = { code: child.exitCode, signal: child.signalCode };
 } finally {
 	if (child.exitCode === null) child.kill("SIGTERM");
@@ -110,9 +121,10 @@ try {
 			executableSha256: b.executable.sha256,
 			home,
 			healthy,
+			journalUnchanged,
 			exit,
 			error,
-			passed: healthy,
+			passed: healthy && journalUnchanged,
 			purpose:
 				"native replacement startup under bounded live updater state-lock contention",
 		}),
