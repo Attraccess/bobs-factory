@@ -7,7 +7,8 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | Contract | Maintained producer / consumer | New representation | Explicit migration |
 | --- | --- | --- | --- |
 | Executable / service | CLI, launcher, install / service docs | `bobs-factory` | Replace approved service command; no alias |
-| Owned packages | manifests, imports, filters, lockfile | `bobs-factory-*`, private | Build-time only |
+| Workspace packages | manifests, imports, filters, lockfile | `bobs-factory-*`, private | Build-time only; upstream monorepo npm publishing stays retired |
+| Public trial launcher | Proposed npm package `bobs-factory-trial`, website download guide | Small `npx` launcher for stable/nightly verified native artifacts; npm/Node required for launcher only | Registry name was unclaimed when checked on 2026-10-10; confirm authenticated project ownership before publishing. Never publish workspace packages or bypass signed release verification |
 | Product environment | CLI, worker, runners, capacity, helpers | `BOBS_FACTORY_*` | Rename keys, refuse collisions; keep provider keys |
 | Home configuration | application, worker, config | `factoryHome`, `~/.bobs-factory` | Transform config field and owned paths only |
 | Persistence | worker state, factory runs / chats / evidence | `<home>/state`, `<home>/factory` | Preserve versions, IDs, receipts, gates, accepted definitions |

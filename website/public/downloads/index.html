@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#faf9f6" />
+		<title>Download Bob’s Factory</title>
+		<style>
+			:root { color-scheme: light; font-family: system-ui, sans-serif; color: #211b2e; background: #faf9f6; }
+			body { max-width: 760px; margin: 0 auto; padding: 56px 24px; line-height: 1.6; }
+			a { color: #5740a5; }
+			h1 { font-size: clamp(2rem, 6vw, 3.4rem); line-height: 1.1; }
+			section { border-top: 1px solid #ded9e7; padding: 20px 0; }
+			.status { color: #665d70; font-size: .92rem; }
+			code { overflow-wrap: anywhere; }
+			li { margin: .45rem 0; }
+		</style>
+	</head>
+	<body>
+		<p><a href="../">Bob’s Factory</a></p>
+		<h1>Downloads and installation</h1>
+		<p>Choose an installation path for the way you run Bob. Each path is listed with its current availability; unpublished packages are not download links.</p>
+
+		<section>
+			<h2>Verified command-line install</h2>
+			<p>Available for macOS Apple Silicon/Intel and Linux ARM64/x64 with glibc. The bootstrap verifies the signed release before installing an immutable version under your user prefix. It does not install or start a service.</p>
+			<pre><code>curl -fsSL https://jappyjan.github.io/bobs-factory/install.sh | sh</code></pre>
+			<p><a href="https://github.com/jappyjan/bobs-factory/blob/main/docs/distribution/PUBLIC_RELEASES.md">Channel, version, trust and recovery guide</a></p>
+			<p class="status">A channel is installable only after a complete signed release is published. The bootstrap reports unavailable channels otherwise.</p>
+		</section>
+
+		<section>
+			<h2>Native desktop app</h2>
+			<p class="status">Not available yet. The macOS DMG/Applications workflow and Linux desktop packages depend on the native app and real release assets. No terminal setup is claimed for this path.</p>
+		</section>
+
+		<section>
+			<h2>Homebrew</h2>
+			<p class="status">No Bob’s Factory stable or nightly cask is published yet. The official cask command will be listed here after a real cask and release asset are available.</p>
+		</section>
+
+		<section>
+			<h2>Linux packages</h2>
+			<p class="status">AppImage, DEB and AUR stable/nightly packages are not published yet. Current verified Linux downloads are the CLI archives installed by the bootstrap above.</p>
+		</section>
+
+		<section>
+			<h2>Temporary npx trial</h2>
+			<p class="status">A Bob-owned npm launcher is not published yet. The package name and account ownership must be verified before publishing. npm/Node will be required for the launcher only; the native Factory runtime itself does not require Node, npm or Bun.</p>
+		</section>
+
+		<section>
+			<h2>Prerequisites</h2>
+			<p>Git and the coding agent you choose are prepared separately and remain host-owned. Some agents have their own runtime and login requirements. See the <a href="https://github.com/jappyjan/bobs-factory/blob/main/docs/SELF_HOSTING.md">self-hosting guide</a>.</p>
+		</section>
+	</body>
+</html>

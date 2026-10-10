@@ -165,7 +165,11 @@ verify "$work/$manifest" "$(field "$work/target.json" manifestSha256)" "$(number
 verify "$work/$verifier" "$(field "$work/verifier.json" sha256)" "$(number "$work/verifier.json" size)"
 [ "$(field "$work/$manifest" commit)" = "$commit" ] || fail 'Archive source does not match the release.'
 [ "$(field "$work/$manifest" version)" = "$release_version" ] || fail 'Archive version does not match the release.'
-sh "$work/$verifier" "$work/$archive" "$work/$manifest" "$prefix"
+key_id=$(cat "$work/release.json.key-id")
+BOBS_FACTORY_INSTALL_CHANNEL="$release_channel" \
+BOBS_FACTORY_INSTALL_SOURCE=bootstrap \
+BOBS_FACTORY_INSTALL_KEY_ID="$key_id" \
+  sh "$work/$verifier" "$work/$archive" "$work/$manifest" "$prefix"
 
 shell_quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 bin=$(shell_quote "$prefix/bin")

@@ -83,6 +83,24 @@ if [ -e "$versions/$name" ] || [ -L "$versions/$name" ]; then
 else
   mv "$stage/$name" "$versions/$name"
 fi
+channel=${BOBS_FACTORY_INSTALL_CHANNEL:-manual}
+source=${BOBS_FACTORY_INSTALL_SOURCE:-archive}
+key_id=${BOBS_FACTORY_INSTALL_KEY_ID:-}
+case "$channel" in stable|nightly|beta|manual) ;; *) echo 'Invalid installer channel' >&2; exit 1;; esac
+case "$source" in bootstrap|archive) ;; *) echo 'Invalid installer source' >&2; exit 1;; esac
+if [ -n "$key_id" ]; then
+  printf '%s' "$key_id" | LC_ALL=C grep -Eq '^[a-z0-9][a-z0-9-]{0,63}$' || { echo 'Invalid publisher key identifier' >&2; exit 1; }
+fi
+mkdir -p "$versions/records"
+record="$versions/records/$name.json"
+record_stage="$stage/$name.install.json"
+printf '{\n  "schemaVersion": 1,\n  "product": "bobs-factory",\n  "owner": "bobs-factory-installer",\n  "source": "%s",\n  "channel": "%s",\n  "version": "%s",\n  "target": "%s",\n  "commit": "%s",\n  "publisherKeyId": "%s"\n}\n' \
+  "$source" "$channel" "$version" "$target" "$commit" "$key_id" > "$record_stage"
+if [ -e "$record" ]; then
+  diff -q "$record_stage" "$record" >/dev/null || { echo 'Existing installer ownership record differs; refusing to replace it' >&2; exit 1; }
+else
+  mv "$record_stage" "$record"
+fi
 if [ -L "$prefix/bin/bobs-factory" ] && [ "$(readlink "$prefix/bin/bobs-factory")" != "$versions/$name/bobs-factory" ]; then
   readlink "$prefix/bin/bobs-factory" > "$stage/previous-link"
   mv -f "$stage/previous-link" "$versions/previous-link"

@@ -20,6 +20,8 @@ curl -fsSL https://jappyjan.github.io/bobs-factory/install.sh | sh
 The installer selects a verified public release. Before the first stable release,
 it selects the latest verified beta and labels it as a prerelease. See
 [release availability](https://jappyjan.github.io/bobs-factory/releases/latest.json).
+The maintained [downloads page](https://jappyjan.github.io/bobs-factory/downloads/)
+lists available and planned installation paths without advertising unpublished packages.
 
 The installer detects your platform, checks the download and installs it under
 `~/.local`, preserving earlier versions and your state. It configures PATH for

@@ -253,6 +253,21 @@ test("anonymous install configures PATH once, retains old version, and safely re
 	try {
 		let result = f.install();
 		assert.equal(result.status, 0, result.stderr);
+		const ownershipRecord = join(
+			f.prefix,
+			`lib/bobs-factory/records/bobs-factory-0.2.73-${native}.json`,
+		);
+		assert.deepEqual(JSON.parse(readFileSync(ownershipRecord, "utf8")), {
+			schemaVersion: 1,
+			product: "bobs-factory",
+			owner: "bobs-factory-installer",
+			source: "bootstrap",
+			channel: "stable",
+			version: "0.2.73",
+			target: native,
+			commit,
+			publisherKeyId: "fixture",
+		});
 		const before = readFileSync(f.profile, "utf8");
 		execFileSync("sh", ["-n", f.profile]);
 		const path = execFileSync(
@@ -291,6 +306,10 @@ test("anonymous install configures PATH once, retains old version, and safely re
 			"repeat must not append PATH repeatedly",
 		);
 		assert.match(readlinkSync(join(f.prefix, "bin/bobs-factory")), /0\.2\.74/);
+		assert.ok(
+			readFileSync(ownershipRecord, "utf8").includes('"version": "0.2.73"'),
+			"upgrading retains the prior version's ownership record",
+		);
 	} finally {
 		f.cleanup();
 	}

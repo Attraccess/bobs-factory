@@ -1,0 +1,22 @@
+{
+	"name": "bobs-factory-trial",
+	"version": "0.1.0",
+	"description": "Temporary npx launcher for verified Bob's Factory releases",
+	"type": "module",
+	"bin": {
+		"bobs-factory-trial": "./bin/bobs-factory-trial.mjs"
+	},
+	"engines": {
+		"node": ">=20"
+	},
+	"license": "Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/jappyjan/bobs-factory.git",
+		"directory": "distribution/npm/bobs-factory-trial"
+	},
+	"homepage": "https://jappyjan.github.io/bobs-factory/downloads/",
+	"files": [
+		"bin/"
+	]
+}
