@@ -79,6 +79,7 @@ function buildVariant(record, output, file) {
 		join(app, "desktop-identity.json"),
 		JSON.stringify({
 			version: record.candidate.version,
+			channel: record.candidate.channel,
 			commit: record.candidate.commit,
 			target,
 		}),

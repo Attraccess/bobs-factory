@@ -27,6 +27,7 @@ import {
 	installationKind,
 	verifyAppProof,
 } from "../src/app-source.mjs";
+import { appUpdates } from "../src/app-updates.mjs";
 import * as services from "../src/update-services.mjs";
 
 const work = () => mkdtempSync(join(tmpdir(), "bob-shell-test-"));
@@ -42,6 +43,35 @@ const candidate = {
 	manifestSha256: "a".repeat(64),
 	publishedAt: "2026-10-10T00:00:00Z",
 };
+test("first nightly shell subscribes to nightly idle-auto; saved stable/manual choices survive reopening a nightly app", async () => {
+	const w = work(),
+		home = join(w, "home"),
+		install = join(w, "Bob.AppImage");
+	try {
+		writeFileSync(install, "fixture");
+		const options = {
+			home,
+			install,
+			target: identity.target,
+			identity: { ...identity, version: candidate.version, channel: "nightly" },
+			port: 3457,
+			services,
+		};
+		const updates = await appUpdates(options);
+		assert.equal(updates.status().settings.channel, "nightly");
+		assert.equal(updates.status().effectivePolicy, "idle-auto");
+		await updates.action(
+			"configure",
+			{ channel: "stable", policy: "manual" },
+			updates.status().revision,
+		);
+		const reopened = await appUpdates(options);
+		assert.equal(reopened.status().settings.channel, "stable");
+		assert.equal(reopened.status().effectivePolicy, "manual");
+	} finally {
+		rmSync(w, { recursive: true, force: true });
+	}
+});
 test("complete app archive preserves framework symlinks and modes; traversal/special ancestry fails before extraction", () => {
 	const w = work();
 	try {

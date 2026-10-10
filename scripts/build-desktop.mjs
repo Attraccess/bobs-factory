@@ -78,7 +78,12 @@ try {
 	);
 	writeFileSync(
 		join(app, "desktop-identity.json"),
-		JSON.stringify({ version: candidate.candidate.version, commit, target }),
+		JSON.stringify({
+			version: candidate.candidate.version,
+			commit,
+			target,
+			channel: candidate.candidate.channel,
+		}),
 	);
 	execFileSync(
 		"pnpm",

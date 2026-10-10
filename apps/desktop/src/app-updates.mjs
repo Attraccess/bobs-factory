@@ -22,6 +22,10 @@ export async function appUpdates({
 		undefined,
 		identity,
 	);
+	// The downloaded channel is the initial shell subscription. Once persisted,
+	// settings remain the operator's choice across app/channel changes.
+	if (!existsSync(manager.file) && identity.channel === "nightly")
+		manager.configure({ channel: "nightly" }, 0);
 	await manager.observeInstalled(identity);
 	const options = {
 		home,
