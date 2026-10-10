@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import type {
 	ReleaseAsset,
 	ReleaseClient,
+	VerifiedRelease,
 } from "../../../scripts/lib/github-release.mjs";
 import { PublishedUpdateSource } from "../src/updates/PublishedUpdateSource.js";
 
@@ -55,4 +56,45 @@ it("reauthenticates staging with compiled publisher pins before writing or execu
 	} finally {
 		rmSync(home, { recursive: true, force: true });
 	}
+});
+
+it("rejects canonical beta fallback instead of relabeling its signed channel", () => {
+	const source = new PublishedUpdateSource(
+		"/unused",
+		"/unused/previous",
+		"darwin-arm64",
+	);
+	const verified: VerifiedRelease = {
+		release: {
+			id: 1,
+			tag_name: "v1.0.0-beta",
+			published_at: "2026-10-10T16:00:00.000Z",
+			assets: [],
+		},
+		manifest: {
+			version: "1.0.0-beta",
+			channel: "beta",
+			commit: "a".repeat(40),
+			tag: "v1.0.0-beta",
+			verifier: { file: "unused", size: 1, sha256: "b".repeat(64) },
+			targets: {
+				"darwin-arm64": {
+					archive: "unused",
+					archiveSha256: "b".repeat(64),
+					archiveSize: 1,
+					manifest: "unused",
+					manifestSha256: "b".repeat(64),
+					manifestSize: 1,
+				},
+			},
+		},
+		manifestSha256: "c".repeat(64),
+	};
+	// Tests the conversion boundary only; does not claim signature evidence.
+	expect(() => (source as any).candidate(verified, "stable")).toThrow(
+		"Signed release belongs to another channel",
+	);
+	expect(() => (source as any).candidate(verified, "nightly")).toThrow(
+		"another channel",
+	);
 });

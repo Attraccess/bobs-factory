@@ -47,6 +47,8 @@ export class PublishedUpdateSource implements UpdateSource {
 		value: VerifiedRelease,
 		channel: UpdateSettings["channel"],
 	): UpdateCandidate {
+		if (value.manifest.channel !== channel)
+			throw new Error("Signed release belongs to another channel.");
 		if (!value.manifest.targets[this.target])
 			throw new Error(`Release has no ${this.target} artifact`);
 		return {
@@ -66,13 +68,13 @@ export class PublishedUpdateSource implements UpdateSource {
 				release,
 				this.keys,
 			);
-			const nightly = verified.manifest.channel === "nightly";
-			if (nightly !== (settings.channel === "nightly"))
+			if (verified.manifest.channel !== settings.channel)
 				throw new Error("Pinned version belongs to another channel.");
 			return this.candidate(verified, settings.channel);
 		}
 		const state = await discoverReleases(this.client, this.keys, {
 			selectedOnly: true,
+			allowBetaFallback: false,
 		});
 		const value = settings.channel === "nightly" ? state.nightly : state.stable;
 		return value ? this.candidate(value, settings.channel) : undefined;

@@ -201,7 +201,7 @@ it("serializes concurrent activation and restores the previous worker after fail
 		return true;
 	});
 	const active = manager.reconcile();
-	await Promise.resolve();
+	await vi.waitFor(() => expect(lifecycle.isIdle).toHaveBeenCalled());
 	await expect(
 		new UpdateManager(home, undefined, lifecycle).reconcile(),
 	).rejects.toThrow("owns");
@@ -329,5 +329,106 @@ it("maintenance acquisition uncertainty and release failures remain recoverable"
 	await manager.reconcile();
 	expect(manager.status().transaction?.phase).toBe("recovery-required");
 	await manager.recover("operation owner stopped");
-	expect(manager.status().transaction?.phase).toBe("rolled-back");
+	expect(manager.status().transaction?.phase).toBe("succeeded");
+	expect(lifecycle.rollback).not.toHaveBeenCalled();
+});
+
+it("retries failed exact release after recovery without repeating rollback or changing owner", async () => {
+	const { manager, lifecycle } = fixture();
+	manager.configure({ channel: "nightly" }, 0);
+	await manager.check();
+	await manager.stage();
+	vi.mocked(lifecycle.acquireMaintenance).mockRejectedValueOnce(
+		new Error("Lost acknowledgement"),
+	);
+	await manager.reconcile();
+	const id = manager.status().transaction!.id;
+	vi.mocked(lifecycle.releaseMaintenance).mockRejectedValueOnce(
+		new Error("release failed"),
+	);
+	await expect(manager.recover("operation owner stopped")).rejects.toThrow(
+		"release failed",
+	);
+	expect(manager.status().transaction).toMatchObject({
+		id,
+		phase: "recovery-required",
+		release: { transactionId: id, outcome: "cancelled", status: "pending" },
+	});
+	await expect(manager.reconcile()).rejects.toThrow("recovery");
+	await manager.recover("operation owner stopped");
+	expect(lifecycle.releaseMaintenance).toHaveBeenNthCalledWith(1, id);
+	expect(lifecycle.releaseMaintenance).toHaveBeenNthCalledWith(2, id);
+	expect(manager.status().transaction?.release?.status).toBe("acknowledged");
+	expect(lifecycle.acquireMaintenance).toHaveBeenCalledTimes(2);
+	expect(lifecycle.rollback).not.toHaveBeenCalled();
+});
+it.each([
+	"succeeded",
+	"rolled-back",
+	"cancelled",
+])("recovers interrupted/legacy %s release and preserves completed outcome", async (phase) => {
+	const { manager, home, lifecycle } = fixture();
+	manager.configure({ channel: "nightly" }, 0);
+	await manager.check();
+	await manager.stage();
+	await manager.reconcile();
+	const state = JSON.parse(readFileSync(manager.file, "utf8"));
+	const id = state.transaction.id;
+	state.transaction.phase = phase;
+	delete state.transaction.release; // pre-acknowledgement schema-1 migration
+	writeFileSync(manager.file, JSON.stringify(state));
+	vi.mocked(lifecycle.releaseMaintenance).mockClear();
+	vi.mocked(lifecycle.acquireMaintenance).mockClear();
+	const restarted = new UpdateManager(home, undefined, lifecycle);
+	await expect(restarted.reconcile()).rejects.toThrow("recovery");
+	await restarted.recover("operation owner stopped");
+	await restarted.recover("operation owner stopped");
+	expect(lifecycle.releaseMaintenance).toHaveBeenCalledExactlyOnceWith(id);
+	expect(lifecycle.acquireMaintenance).not.toHaveBeenCalled();
+	expect(lifecycle.rollback).not.toHaveBeenCalled();
+	expect(restarted.status().transaction).toMatchObject({
+		phase,
+		release: { transactionId: id, outcome: phase, status: "acknowledged" },
+	});
+});
+it("recovers a lost release response by retrying only the durable release intent", async () => {
+	const { manager, home, lifecycle } = fixture();
+	manager.configure({ channel: "nightly" }, 0);
+	await manager.check();
+	await manager.stage();
+	vi.mocked(lifecycle.releaseMaintenance).mockImplementationOnce(async (id) => {
+		const state = JSON.parse(readFileSync(manager.file, "utf8"));
+		expect(state.transaction.release).toEqual({
+			transactionId: id,
+			outcome: "succeeded",
+			status: "pending",
+		});
+		throw new Error("acknowledgement lost after external release");
+	});
+	await manager.reconcile();
+	await new UpdateManager(home, undefined, lifecycle).recover(
+		"operation owner stopped",
+	);
+	expect(manager.status().transaction?.phase).toBe("succeeded");
+	expect(lifecycle.stop).toHaveBeenCalledTimes(1);
+	expect(lifecycle.releaseMaintenance).toHaveBeenCalledTimes(2);
+	expect(lifecycle.rollback).not.toHaveBeenCalled();
+});
+it.each([
+	{ version: "1.0.0-beta", channel: "stable" as const },
+	{ version: "1.0.0-nightly.20261010.100", channel: "nightly" as const },
+])("requires exact consent for same-core prerelease downgrade to $version", async ({
+	version,
+	channel,
+}) => {
+	const value = { ...candidate, version, channel };
+	const { manager, calls } = fixture(value);
+	manager.configure({ channel, policy: "idle-auto" }, 0);
+	await manager.check();
+	await manager.stage();
+	await manager.reconcile();
+	expect(calls).toEqual([]);
+	manager.requestInstall(candidateKey(value), 1);
+	await manager.reconcile();
+	expect(calls).toContain("activate");
 });

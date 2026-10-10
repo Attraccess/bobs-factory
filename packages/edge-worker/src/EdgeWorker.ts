@@ -836,8 +836,10 @@ export class EdgeWorker extends EventEmitter {
 			this.runnerSlots,
 			() =>
 				this.computeStatus() === "busy" ||
-				Boolean(this.ticketTracking?.isBusy()),
-			() => this.recoverFactoryRuns(),
+				Boolean(this.ticketTracking?.isBusy()) ||
+				this.inFlightTicketStarts.size > 0 ||
+				this.preparationStarts.size > 0,
+			() => this.recoverAfterUpdate(),
 			() =>
 				this.getAllKnownSessions()
 					.map((session) => ({
@@ -1304,6 +1306,7 @@ export class EdgeWorker extends EventEmitter {
 				},
 			},
 			grants.instance(),
+			this.updateDrain,
 		);
 		this.operatorServer = new OperatorServer(grants, service);
 		await this.operatorServer.start();
@@ -5590,7 +5593,14 @@ ${taskSection}`;
 			throw new Error("This ticket launch was stopped");
 	}
 
+	private recoverAfterUpdate(): void {
+		if (this.updateDrain?.active()) return;
+		this.recoverFactoryRuns();
+		this.recoverPendingTicketLaunches();
+	}
+
 	private recoverPendingTicketLaunches(): void {
+		if (this.updateDrain?.active()) return;
 		for (const receipt of this.getLaunchAdmission().values()) {
 			if (receipt.phase === "pending") {
 				void this.startAcceptedTicketLaunch(receipt, [
@@ -5787,11 +5797,14 @@ ${taskSection}`;
 		repos: RepositoryConfig[],
 	): Promise<void> {
 		if (
+			this.updateDrain?.active() ||
 			this.inFlightTicketStarts.has(receipt.key) ||
 			receipt.phase === "settled"
 		)
 			return;
 		this.inFlightTicketStarts.add(receipt.key);
+		const operation = {};
+		this.updateDrain?.enter(operation);
 		const { webhook } = receipt;
 		this.pendingTriggerOrigins.set(receipt.sessionId, receipt.origin);
 		try {
@@ -5817,8 +5830,12 @@ ${taskSection}`;
 				`${error instanceof Error ? error.message : String(error)}${phase === "recovery" ? " Startup was interrupted; ownership is retained to prevent duplicate work. Inspect the existing session, or send stop before launching a new session." : " Check the workflow ID, labels, default and ticket-assignment permission in Recipes; no fallback was launched."}`,
 			);
 		} finally {
-			this.inFlightTicketStarts.delete(receipt.key);
-			await this.savePersistedState();
+			try {
+				await this.savePersistedState();
+			} finally {
+				this.inFlightTicketStarts.delete(receipt.key);
+				this.updateDrain?.leave(operation);
+			}
 		}
 	}
 
