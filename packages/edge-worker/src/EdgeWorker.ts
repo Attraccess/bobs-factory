@@ -370,6 +370,7 @@ import { LinearActivitySink } from "./sinks/LinearActivitySink.js";
 import { ToolPermissionResolver } from "./ToolPermissionResolver.js";
 import type { AgentSessionData, EdgeWorkerEvents } from "./types.js";
 import { UserAccessControl } from "./UserAccessControl.js";
+import { UpdateDrain } from "./updates/UpdateDrain.js";
 import { ZulipChatAdapter } from "./ZulipChatAdapter.js";
 
 export declare interface EdgeWorker {
@@ -442,6 +443,7 @@ export class EdgeWorker extends EventEmitter {
 	/** @internal - Exposed for testing only */
 	public repositoryRouter: RepositoryRouter; // Repository routing and selection
 	private gitService: GitService;
+	private updateDrain?: UpdateDrain;
 	private activeWebhookCount = 0; // Track number of webhooks currently being processed
 	// GitHub webhook handlers share a PR worktree, so only one may run per PR.
 	private activeGitHubPrSessions = new Set<string>();
@@ -827,8 +829,60 @@ export class EdgeWorker extends EventEmitter {
 	 * Start the edge worker
 	 */
 	async start(): Promise<void> {
-		await this.runnerSlots.ready();
 		const factory = this.getFactoryRuntime();
+		this.updateDrain = new UpdateDrain(
+			this.factoryHome,
+			factory,
+			this.runnerSlots,
+			() =>
+				this.computeStatus() === "busy" ||
+				Boolean(this.ticketTracking?.isBusy()) ||
+				this.inFlightTicketStarts.size > 0 ||
+				this.preparationStarts.size > 0,
+			() => this.recoverAfterUpdate(),
+			() =>
+				this.getAllKnownSessions()
+					.map((session) => ({
+						id: session.id,
+						workspace: session.workspace.path,
+						claude: session.claudeSessionId,
+						codex: session.codexSessionId,
+						cursor: session.cursorSessionId,
+						gemini: session.geminiSessionId,
+						opencode: session.opencodeSessionId,
+						executionSnapshot: session.metadata?.executionSnapshot,
+						pendingExecution: session.metadata?.pendingExecution,
+						pendingChatMessages: session.metadata?.pendingChatMessages,
+					}))
+					.sort((a, b) => a.id.localeCompare(b.id)),
+			(active) => this.getTicketTracking().setUpdateMaintenance(active),
+		);
+		const intake = (request: { method: string; url: string }) =>
+			!["GET", "HEAD"].includes(request.method) &&
+			(/^\/(?:linear|github|gitlab|slack|zulip)-webhook(?:\?|$)/.test(
+				request.url,
+			) ||
+				/^\/webhook(?:\?|$)/.test(request.url) ||
+				request.url.startsWith("/cli/") ||
+				request.url.startsWith("/api/update/"));
+		const application = this.sharedApplicationServer.getFastifyInstance();
+		application.addHook("onRequest", async (request, reply) => {
+			if (!intake(request)) return;
+			if (this.updateDrain?.active())
+				return reply
+					.code(503)
+					.header("Retry-After", "30")
+					.send({ error: "Factory update maintenance; retry after restart" });
+			this.updateDrain?.enter(request);
+		});
+		application.addHook("onResponse", async (request) => {
+			this.updateDrain?.leave(request);
+		});
+		application.addHook("onError", async (request) => {
+			this.updateDrain?.leave(request);
+		});
+
+		await this.runnerSlots.ready();
 		await this.runnerSlots.reconcileQueue((identity) => {
 			const prefix = `${factory.directory}:run:`;
 			if (!identity.startsWith(prefix)) return false;
@@ -1008,6 +1062,7 @@ export class EdgeWorker extends EventEmitter {
 			this.factoryPush ??= new FactoryPush(this.factoryHome);
 			this.factoryServer = new FactoryServer(this.getFactoryRuntime(), {
 				onboarding: this.localSetup,
+				updateDrain: this.updateDrain,
 				push: this.factoryPush,
 				capacity: this.runnerSlots,
 				deliveryStatus: () =>
@@ -1159,30 +1214,47 @@ export class EdgeWorker extends EventEmitter {
 				message: (id, text, messageId) =>
 					this.sendFactoryChat(id, text, messageId),
 				stop: (id) => this.stopFactoryOperatorRun(id),
-				mcp: async (run) => {
-					const resolved = await this.factoryMcpConfig(run);
-					let configRevision: string | undefined,
-						configurationError: string | undefined;
-					try {
-						configRevision = configuration.revision(run);
-					} catch {
-						configurationError = "unsupported_source";
-					}
-					return {
-						instance: grants.instance(),
-						configRevision,
-						configurationError,
-						...inspectOperatorTransport(run, resolved),
-					};
+				mcp: (run) =>
+					this.runnerSlots.run(
+						async () => {
+							const resolved = await this.factoryMcpConfig(run);
+							let configRevision: string | undefined,
+								configurationError: string | undefined;
+							try {
+								configRevision = configuration.revision(run);
+							} catch {
+								configurationError = "unsupported_source";
+							}
+							return {
+								instance: grants.instance(),
+								configRevision,
+								configurationError,
+								...inspectOperatorTransport(run, resolved),
+							};
+						},
+						AbortSignal.timeout(15000),
+						{
+							identity: `${this.factoryHome}:operator-inspect:${run.id}:${randomUUID()}`,
+						},
+					),
+				check: (run, server) => {
+					const signal = AbortSignal.timeout(15000);
+					return this.runnerSlots.run(
+						async () => ({
+							instance: grants.instance(),
+							...(await checkOperatorTransport(
+								run,
+								await this.factoryMcpConfig(run),
+								server,
+								signal,
+							)),
+						}),
+						signal,
+						{
+							identity: `${this.factoryHome}:operator-check:${run.id}:${randomUUID()}`,
+						},
+					);
 				},
-				check: async (run, server) => ({
-					instance: grants.instance(),
-					...(await checkOperatorTransport(
-						run,
-						await this.factoryMcpConfig(run),
-						server,
-					)),
-				}),
 				sanitize: (text) => {
 					const sources: unknown[] = [
 						{
@@ -1251,6 +1323,7 @@ export class EdgeWorker extends EventEmitter {
 				},
 			},
 			grants.instance(),
+			this.updateDrain,
 		);
 		this.operatorServer = new OperatorServer(grants, service);
 		await this.operatorServer.start();
@@ -1381,6 +1454,10 @@ export class EdgeWorker extends EventEmitter {
 			this.sharedApplicationServer.getFastifyInstance(),
 			this.factoryHome,
 			() => process.env.BOBS_FACTORY_API_KEY || "",
+			(work) =>
+				this.runnerSlots.run(work, AbortSignal.timeout(30000), {
+					identity: `${this.factoryHome}:dashboard-mcp-check:${randomUUID()}`,
+				}),
 		);
 
 		// Register config update routes
@@ -5537,7 +5614,14 @@ ${taskSection}`;
 			throw new Error("This ticket launch was stopped");
 	}
 
+	private recoverAfterUpdate(): void {
+		if (this.updateDrain?.active()) return;
+		this.recoverFactoryRuns();
+		this.recoverPendingTicketLaunches();
+	}
+
 	private recoverPendingTicketLaunches(): void {
+		if (this.updateDrain?.active()) return;
 		for (const receipt of this.getLaunchAdmission().values()) {
 			if (receipt.phase === "pending") {
 				void this.startAcceptedTicketLaunch(receipt, [
@@ -5734,11 +5818,14 @@ ${taskSection}`;
 		repos: RepositoryConfig[],
 	): Promise<void> {
 		if (
+			this.updateDrain?.active() ||
 			this.inFlightTicketStarts.has(receipt.key) ||
 			receipt.phase === "settled"
 		)
 			return;
 		this.inFlightTicketStarts.add(receipt.key);
+		const operation = {};
+		this.updateDrain?.enter(operation);
 		const { webhook } = receipt;
 		this.pendingTriggerOrigins.set(receipt.sessionId, receipt.origin);
 		try {
@@ -5764,8 +5851,12 @@ ${taskSection}`;
 				`${error instanceof Error ? error.message : String(error)}${phase === "recovery" ? " Startup was interrupted; ownership is retained to prevent duplicate work. Inspect the existing session, or send stop before launching a new session." : " Check the workflow ID, labels, default and ticket-assignment permission in Recipes; no fallback was launched."}`,
 			);
 		} finally {
-			this.inFlightTicketStarts.delete(receipt.key);
-			await this.savePersistedState();
+			try {
+				await this.savePersistedState();
+			} finally {
+				this.inFlightTicketStarts.delete(receipt.key);
+				this.updateDrain?.leave(operation);
+			}
 		}
 	}
 
@@ -7814,102 +7905,110 @@ ${taskSection}`;
 				}
 			}
 		}
-		const request = async (
+		const request = (
 			serverName: string,
 			tool: string | undefined,
 			args: Record<string, unknown>,
 			signal: AbortSignal,
-		) => {
-			if (tool !== undefined)
-				assertFactoryToolAllowed(
-					`mcp__${serverName}__${tool}`,
-					built.config.allowedTools,
-					built.config.disallowedTools,
-				);
-			const server = servers[serverName];
-			if (!server || server.type === "sdk")
-				throw new Error(
-					`MCP server ${serverName} is not configured as a process/HTTP transport`,
-				);
-			const transport =
-				"url" in server && server.headers
-					? {
-							...server,
-							headers: Object.fromEntries(
-								Object.entries(server.headers ?? {}).map(([key, value]) => [
-									key,
-									value.replace(
-										/\$\{([A-Z][A-Z0-9_]*)\}/g,
-										(_match, name: string) => {
-											const secret = built.config.childEnvironment
-												? built.config.childEnvironment[name]
-												: process.env[name];
-											if (!secret)
-												throw new OperatorError(
-													"missing_authentication",
-													"A configured header credential reference is unavailable in the accepted execution environment",
-												);
-											return secret;
-										},
+		) =>
+			this.runnerSlots.run(
+				async () => {
+					if (tool !== undefined)
+						assertFactoryToolAllowed(
+							`mcp__${serverName}__${tool}`,
+							built.config.allowedTools,
+							built.config.disallowedTools,
+						);
+					const server = servers[serverName];
+					if (!server || server.type === "sdk")
+						throw new Error(
+							`MCP server ${serverName} is not configured as a process/HTTP transport`,
+						);
+					const transport =
+						"url" in server && server.headers
+							? {
+									...server,
+									headers: Object.fromEntries(
+										Object.entries(server.headers ?? {}).map(([key, value]) => [
+											key,
+											value.replace(
+												/\$\{([A-Z][A-Z0-9_]*)\}/g,
+												(_match, name: string) => {
+													const secret = built.config.childEnvironment
+														? built.config.childEnvironment[name]
+														: process.env[name];
+													if (!secret)
+														throw new OperatorError(
+															"missing_authentication",
+															"A configured header credential reference is unavailable in the accepted execution environment",
+														);
+													return secret;
+												},
+											),
+										]),
 									),
-								]),
-							),
-						}
-					: server;
+								}
+							: server;
 
-			try {
-				const nativeConfig = {
-					...built.config,
-					workingDirectory: run.workspace || repository.repositoryPath,
-				};
-				const directConfig =
-					"command" in server
-						? { ...server, env: { ...server.env, ...executionEnvironment() } }
-						: transport;
-				if (tool === undefined) {
-					if (runnerType === "codex" && "url" in server)
-						await listCodexMcpTools(
-							nativeConfig,
-							serverName,
-							transport,
-							signal,
+					try {
+						const nativeConfig = {
+							...built.config,
+							workingDirectory: run.workspace || repository.repositoryPath,
+						};
+						const directConfig =
+							"command" in server
+								? {
+										...server,
+										env: { ...server.env, ...executionEnvironment() },
+									}
+								: transport;
+						if (tool === undefined) {
+							if (runnerType === "codex" && "url" in server)
+								await listCodexMcpTools(
+									nativeConfig,
+									serverName,
+									transport,
+									signal,
+								);
+							else
+								await listConfiguredTools(
+									directConfig,
+									signal,
+									run.workspace || repository.repositoryPath,
+									built.config.childEnvironment,
+								);
+							return;
+						}
+						const result =
+							runnerType === "codex" && "url" in server
+								? await callCodexMcpTool(
+										nativeConfig,
+										serverName,
+										transport,
+										tool,
+										args,
+										signal,
+									)
+								: await callConfiguredTool(
+										directConfig,
+										tool,
+										args,
+										signal,
+										run.workspace || repository.repositoryPath,
+										built.config.childEnvironment,
+									);
+						return execution
+							? JSON.parse(execution.redact(JSON.stringify(result)))
+							: result;
+					} catch (error) {
+						throw new Error(
+							execution ? execution.redact(String(error)) : String(error),
 						);
-					else
-						await listConfiguredTools(
-							directConfig,
-							signal,
-							run.workspace || repository.repositoryPath,
-							built.config.childEnvironment,
-						);
-					return;
-				}
-				const result =
-					runnerType === "codex" && "url" in server
-						? await callCodexMcpTool(
-								nativeConfig,
-								serverName,
-								transport,
-								tool,
-								args,
-								signal,
-							)
-						: await callConfiguredTool(
-								directConfig,
-								tool,
-								args,
-								signal,
-								run.workspace || repository.repositoryPath,
-								built.config.childEnvironment,
-							);
-				return execution
-					? JSON.parse(execution.redact(JSON.stringify(result)))
-					: result;
-			} catch (error) {
-				throw new Error(
-					execution ? execution.redact(String(error)) : String(error),
-				);
-			}
-		};
+					}
+				},
+				signal,
+				{ identity: `${this.factoryHome}:mcp:${run.id}:${randomUUID()}` },
+			);
 		return {
 			built,
 			servers,
@@ -9712,6 +9811,7 @@ ${taskSection}`;
 	}
 
 	private recoverFactoryRuns(): void {
+		if (this.updateDrain?.active()) return;
 		const runtime = this.getFactoryRuntime();
 		for (const run of runtime.runs.values()) {
 			void this.recoverFactoryTicketTracking(run);

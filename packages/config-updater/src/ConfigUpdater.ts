@@ -48,6 +48,9 @@ export class ConfigUpdater {
 		fastify: FastifyInstance,
 		factoryHome: string,
 		getApiKey: () => string,
+		private readonly executeTransport: <T>(
+			work: () => Promise<T>,
+		) => Promise<T> = (work) => work(),
 	) {
 		this.fastify = fastify;
 		this.factoryHome = factoryHome;
@@ -241,7 +244,7 @@ export class ConfigUpdater {
 	private async handleTestMcpRoute(
 		payload: TestMcpPayload,
 	): Promise<ApiResponse> {
-		return handleTestMcp(payload);
+		return this.executeTransport(() => handleTestMcp(payload));
 	}
 
 	/**

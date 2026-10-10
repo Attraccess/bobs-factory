@@ -5,6 +5,7 @@ import {
 } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { executionEnvironment } from "bobs-factory-core";
 import type { ApiResponse, TestMcpPayload } from "../types.js";
 
 const TEST_TIMEOUT_MS = 25_000; // 25s (edge request timeout is 30s)
@@ -77,6 +78,7 @@ async function testStdioMcp(payload: TestMcpPayload): Promise<ApiResponse> {
 			env[key] = value;
 		}
 	}
+	Object.assign(env, executionEnvironment());
 
 	const transport = new StdioClientTransport({
 		command: payload.command!,

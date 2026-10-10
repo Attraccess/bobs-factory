@@ -7,8 +7,14 @@ import { AgentSettings } from "./forms";
 import { Onboarding } from "./onboarding";
 import { revisionOf } from "./restoration";
 import { Button, useToast } from "./ui";
+import { UpdateSettings } from "./updates";
 
 const pages = [
+	{
+		id: "updates",
+		name: "Updates",
+		description: "Release channel, policy and pending installation",
+	},
 	{
 		id: "setup",
 		name: "Project setup",
@@ -79,6 +85,7 @@ export function Settings() {
 					)}
 					<ExecutionEditor key={page} config={config} page={page} />
 					{page === "access" && <AccessSettings />}
+					{page === "updates" && <UpdateSettings />}
 					{page === "capacity" && <MachineCapacitySettings config={config} />}
 					{page === "titles" && <RunTitleSettings config={config} />}
 				</div>

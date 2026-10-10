@@ -95,5 +95,23 @@ export {
 	DEFAULT_BLOCK_MESSAGE,
 	UserAccessControl,
 } from "./UserAccessControl.js";
+export { PublishedUpdateSource } from "./updates/PublishedUpdateSource.js";
+export type {
+	InstalledUpdate,
+	StagedUpdate,
+	UpdateCandidate,
+	UpdateLifecycle,
+	UpdateSettings,
+	UpdateSettingsPatch,
+	UpdateSource,
+	UpdateState,
+	UpdateTransaction,
+} from "./updates/UpdateManager.js";
+
+export {
+	candidateKey,
+	effectiveUpdatePolicy,
+	UpdateManager,
+} from "./updates/UpdateManager.js";
 export { WorktreeIncludeService } from "./WorktreeIncludeService.js";
 export { ZulipChatAdapter } from "./ZulipChatAdapter.js";
