@@ -69,6 +69,7 @@
 			],
 			"category": "Development",
 			"maintainer": "Bob's Factory contributors"
-		}
+		},
+		"icon": "../../packages/edge-worker/src/factory/web/icons/icon-512.png"
 	}
 }
