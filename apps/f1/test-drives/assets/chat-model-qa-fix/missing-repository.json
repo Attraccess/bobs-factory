@@ -1,0 +1,31 @@
+{
+	"executed": true,
+	"expected": "Failed recovery restores the durable block",
+	"before": {
+		"workflowIds": ["simple"],
+		"at": "2026-10-10T19:40:49.227Z",
+		"priorStatus": "active",
+		"reason": "Workflow disabled: simple. Progress retained. Enable it, then Resume this session individually."
+	},
+	"actual": {
+		"status": 409,
+		"response": {
+			"error": "Session repository is unavailable"
+		},
+		"block": {
+			"workflowIds": ["simple"],
+			"at": "2026-10-10T19:40:49.227Z",
+			"priorStatus": "active",
+			"reason": "Workflow disabled: simple. Progress retained. Enable it, then Resume this session individually."
+		},
+		"phase": "recovery",
+		"running": false
+	},
+	"pending": {
+		"body": "Failure recovery pending turn",
+		"attachmentManifest": "",
+		"commentAuthor": "Unknown",
+		"commentTimestamp": "2026-10-10T19:40:49.168Z"
+	},
+	"sessionId": "session-1"
+}

@@ -1,0 +1,65 @@
+{
+	"executed": true,
+	"recoveryOutcome": {
+		"expectedThread": "f1-mock-568bc053-3f41-4348-b757-e88c2460c75c",
+		"actualThread": "f1-mock-568bc053-3f41-4348-b757-e88c2460c75c",
+		"savedPreferences": {
+			"runner": "codex",
+			"model": "gpt-6.1-sol",
+			"reasoningEffort": "high",
+			"serviceTier": "fast"
+		},
+		"actualPreferences": {
+			"runner": "codex",
+			"model": "gpt-6.1-sol",
+			"reasoningEffort": "high",
+			"serviceTier": "fast"
+		},
+		"pending": {
+			"body": "Retained native input with attachment metadata",
+			"attachmentManifest": "Non-sensitive QA fixture attachment: note.txt",
+			"commentAuthor": "Unknown",
+			"commentTimestamp": "2026-10-10T19:40:49.008Z"
+		},
+		"retainedAttachment": true,
+		"recentRunnerConfigurations": [
+			{
+				"type": "codex",
+				"model": "gpt-6.1-sol",
+				"reasoningEffort": "high",
+				"serviceTier": "fast",
+				"workingDirectory": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-FZw3Du/worktrees/MANUAL-88e0e53d"
+			},
+			{
+				"type": "codex",
+				"model": "gpt-6.1-sol",
+				"reasoningEffort": "high",
+				"serviceTier": "fast",
+				"resume": "f1-mock-e4a2912c-5abe-435e-a4dd-ace0d3f9aa4f",
+				"workingDirectory": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-FZw3Du/worktrees/MANUAL-88e0e53d"
+			},
+			{
+				"type": "codex",
+				"model": "gpt-6.1-sol",
+				"reasoningEffort": "high",
+				"serviceTier": "fast",
+				"resume": "f1-mock-568bc053-3f41-4348-b757-e88c2460c75c",
+				"workingDirectory": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-FZw3Du/worktrees/DEF-1"
+			},
+			{
+				"type": "codex",
+				"model": "gpt-6.1-sol",
+				"reasoningEffort": "high",
+				"serviceTier": "fast",
+				"resume": "f1-mock-568bc053-3f41-4348-b757-e88c2460c75c",
+				"workingDirectory": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-FZw3Du/worktrees/DEF-1"
+			}
+		],
+		"recentInputs": [
+			"<context>\n  <repository>Catalog fixture</repository>\n  <working_directory>/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-FZw3Du/worktrees/MANUAL-88e0e53d</working_directory>\n  <base_branch>main</base_branch>\n</context>\n\n<linear_issue>\n  <id>issue-1</id>\n  <identifier>MANUAL-88e0e53d</identifier>\n  <title>manual-5618f21c-092f-4965-9b9c-1b2f88e0e53d</title>\n  <description>\nResume manual Simple through operator MCP\n  </description>\n  <state>Unknown</state>\n  <priority>0</priority>\n  <url>https://linear.app/test/issue/DEF-1</url>\n  <assignee>\n    <linear_display_name></linear_display_name>\n    <linear_profile_url></linear_profile_url>\n    <github_username></github_username>\n    <github_user_id></github_user_id>\n    <github_noreply_email></github_noreply_email>\n  </assignee>\n</linear_issue>\n\n<linear_comments>\n<comment_thread>\n\t<root_comment>\n\t\t<author>@Unknown</author>\n\t\t<timestamp>10/10/2026, 9:40:48 PM</timestamp>\n\t\t<content>\nContinue the same conversation\n\t\t</content>\n\t</root_comment>\n</comment_thread>\n\n<comment_thread>\n\t<root_comment>\n\t\t<author>@Unknown</author>\n\t\t<timestamp>10/10/2026, 9:40:48 PM</timestamp>\n\t\t<content>\nActive interrupted turn\n\t\t</content>\n\t</root_comment>\n</comment_thread>\n</linear_comments>\n\n<user_comment>\nResume manual Simple through operator MCP\n</user_comment>",
+			"The process restarted. Continue the interrupted task from this conversation and worktree; inspect previous results before repeating actions.",
+			"<new_comment>\n  <author>Unknown</author>\n  <timestamp>2026-10-10T19:40:49.008Z</timestamp>\n  <content>\nRetained native input with attachment metadata\n  </content>\n</new_comment>",
+			"<new_comment>\n  <author>Unknown</author>\n  <timestamp>2026-10-10T19:40:49.008Z</timestamp>\n  <content>\nRetained native input with attachment metadata\n  </content>\n</new_comment>\n\nNon-sensitive QA fixture attachment: note.txt"
+		]
+	}
+}
