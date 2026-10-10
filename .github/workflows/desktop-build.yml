@@ -117,4 +117,10 @@ jobs:
         if: always()
         with:
           name: desktop-${{ matrix.target }}-${{ fromJSON(needs.freeze.outputs.candidate_json).digest }}
-          path: ${{ runner.temp }}/desktop/
+          path: |
+            ${{ runner.temp }}/desktop/*.dmg
+            ${{ runner.temp }}/desktop/*.AppImage
+            ${{ runner.temp }}/desktop/*.deb
+            ${{ runner.temp }}/desktop/desktop-build.json
+            ${{ runner.temp }}/desktop/native-service-receipt.json
+            ${{ runner.temp }}/runtime/*.tar.gz

@@ -258,6 +258,39 @@ export class OwnedUpdateLifecycle {
 		);
 		return path;
 	}
+	private async stopDesktopOwner() {
+		const expected = workerOwner(this.home);
+		if (
+			!expected ||
+			expected.owner !== "desktop" ||
+			expected.executable !== realpathSync(this.owner.executable)
+		)
+			throw new Error("Desktop worker ownership mismatch");
+		if (ownerAlive(expected)) {
+			try {
+				process.kill(expected.pid, "SIGTERM");
+			} catch (error) {
+				if (ownerAlive(expected)) throw error;
+			}
+		}
+		for (let attempt = 0; attempt < 300; attempt++) {
+			const current = workerOwner(this.home);
+			if (!current) return;
+			if (current.nonce !== expected.nonce)
+				throw new Error(
+					"Worker owner changed during shutdown; replacement forbidden",
+				);
+			if (!ownerAlive(current)) {
+				const release = await acquireInstanceLock(this.home, {
+					markWorker: false,
+				});
+				release();
+				return;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 100));
+		}
+		throw new Error("Desktop worker still owns home; replacement forbidden");
+	}
 	async stop() {
 		if (!this.transactionId) throw new Error("Maintenance required");
 		const fresh = await this.client.get<Drain>("/api/updates/drain");
@@ -267,23 +300,7 @@ export class OwnedUpdateLifecycle {
 		)
 			throw new Error("Idle/preserved state changed before stop");
 		if (this.owner.kind === "service") await this.manager.action("maintenance");
-		else {
-			const owner = workerOwner(this.home);
-			if (
-				!owner ||
-				owner.owner !== "desktop" ||
-				!ownerAlive(owner) ||
-				owner.executable !== realpathSync(this.owner.executable)
-			)
-				throw new Error("Desktop worker ownership mismatch");
-			process.kill(owner.pid, "SIGTERM");
-			for (let attempt = 0; workerOwner(this.home) && attempt < 300; attempt++)
-				await new Promise((resolve) => setTimeout(resolve, 100));
-			if (workerOwner(this.home))
-				throw new Error(
-					"Desktop worker still owns home; replacement forbidden",
-				);
-		}
+		else await this.stopDesktopOwner();
 	}
 	private switchLink(executable: string) {
 		if (workerOwner(this.home))
@@ -432,18 +449,7 @@ export class OwnedUpdateLifecycle {
 		if (workerOwner(this.home)) {
 			if (this.owner.kind === "service")
 				await this.manager.action("maintenance");
-			else {
-				const owner = workerOwner(this.home)!;
-				if (
-					owner.owner !== "desktop" ||
-					!ownerAlive(owner) ||
-					owner.executable !== realpathSync(this.owner.executable)
-				)
-					throw new Error("Replacement owner changed; rollback blocked");
-				process.kill(owner.pid, "SIGTERM");
-				for (let i = 0; workerOwner(this.home) && i < 300; i++)
-					await new Promise((resolve) => setTimeout(resolve, 100));
-			}
+			else await this.stopDesktopOwner();
 		}
 		if (workerOwner(this.home))
 			throw new Error("Replacement exit not confirmed");

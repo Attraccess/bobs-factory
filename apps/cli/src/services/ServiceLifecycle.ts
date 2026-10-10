@@ -115,7 +115,13 @@ export function serviceDefinition(
 <key>StandardOutPath</key><string>${xml(join(record.home, "runtime", "service.log"))}</string>
 <key>StandardErrorPath</key><string>${xml(join(record.home, "runtime", "service-error.log"))}</string>
 </dict></plist>\n`;
-	return `[Unit]\nDescription=Bob's Factory (${record.id})\nStartLimitIntervalSec=120\nStartLimitBurst=3\n\n[Service]\nType=simple\nWorkingDirectory=${systemd(record.home)}\nExecStart=${args.map(systemd).join(" ")}\nEnvironment=${systemd(`BOBS_FACTORY_SERVICE_ID=${record.id}`)}\nEnvironment=${systemd(`PATH=${record.path}`)}\nRestart=on-failure\nRestartSec=10\nTimeoutStopSec=infinity\nSendSIGKILL=no\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n`;
+	// WorkingDirectory consumes a path verbatim (unlike ExecStart argument quoting).
+	// systemd trims line ends and treats a terminal backslash as continuation.
+	if (record.home.trimEnd() !== record.home || record.home.endsWith("\\"))
+		throw new Error(
+			"systemd service homes cannot end in whitespace or a backslash",
+		);
+	return `[Unit]\nDescription=Bob's Factory (${record.id})\nStartLimitIntervalSec=120\nStartLimitBurst=3\n\n[Service]\nType=simple\nWorkingDirectory=${record.home.replaceAll("%", "%%")}\nExecStart=${args.map(systemd).join(" ")}\nEnvironment=${systemd(`BOBS_FACTORY_SERVICE_ID=${record.id}`)}\nEnvironment=${systemd(`PATH=${record.path}`)}\nRestart=on-failure\nRestartSec=10\nTimeoutStopSec=infinity\nSendSIGKILL=no\nKillMode=mixed\n\n[Install]\nWantedBy=default.target\n`;
 }
 
 /** User-account services only. No sudo, shell interpolation, or credential copying. */

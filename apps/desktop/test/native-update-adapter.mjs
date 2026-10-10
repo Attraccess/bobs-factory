@@ -18,7 +18,10 @@ import { validateWorkflows } from "../../../packages/edge-worker/dist/factory/Wo
 import { WorkflowRuntime } from "../../../packages/edge-worker/dist/factory/WorkflowRuntime.js";
 import { UpdateManager } from "../../../packages/edge-worker/dist/updates/UpdateManager.js";
 import { localRepository } from "../../cli/dist/src/onboarding.js";
-import { workerOwner } from "../../cli/dist/src/services/InstanceLock.js";
+import {
+	ownerAlive,
+	workerOwner,
+} from "../../cli/dist/src/services/InstanceLock.js";
 import { OwnedUpdateLifecycle } from "../../cli/dist/src/services/OwnedUpdateLifecycle.js";
 import { runUpdateSupervisor } from "../../cli/dist/src/services/UpdateSupervisor.js";
 import { desktopExecutable } from "../src/local-runtime.mjs";
@@ -40,6 +43,7 @@ const candidate = {
 	publishedAt: new Date().toISOString(),
 };
 const receipts = [];
+const cleanupErrors = [];
 const crashChild = process.env.FACTORY_NATIVE_CRASH_HOME;
 for (const mode of crashChild
 	? ["success"]
@@ -312,7 +316,13 @@ for (const mode of crashChild
 		// This fixture only stops its own isolated native worker.
 		const owner = workerOwner(home);
 		if (owner) {
-			process.kill(owner.pid, "SIGTERM");
+			if (ownerAlive(owner)) {
+				try {
+					process.kill(owner.pid, "SIGTERM");
+				} catch (error) {
+					if (ownerAlive(owner)) cleanupErrors.push(error.message);
+				}
+			}
 			for (let n = 0; workerOwner(home) && n < 100; n++)
 				await new Promise((r) => setTimeout(r, 100));
 		}
@@ -354,12 +364,19 @@ if (!crashChild && !process.env.FACTORY_NATIVE_TEST_MODE) {
 	} finally {
 		const owner = workerOwner(home);
 		if (owner) {
-			process.kill(owner.pid, "SIGTERM");
+			if (ownerAlive(owner)) {
+				try {
+					process.kill(owner.pid, "SIGTERM");
+				} catch (error) {
+					if (ownerAlive(owner)) cleanupErrors.push(error.message);
+				}
+			}
 			for (let n = 0; workerOwner(home) && n < 100; n++)
 				await new Promise((r) => setTimeout(r, 100));
 		}
 	}
 }
+assert.deepEqual(cleanupErrors, [], "Fixture workers must cleanly stop");
 console.log(
 	JSON.stringify(
 		{
