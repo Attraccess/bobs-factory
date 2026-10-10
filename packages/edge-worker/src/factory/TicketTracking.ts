@@ -567,6 +567,17 @@ export function recordTicketMilestone(
 export class TicketTracking {
 	private queues = new Map<string, Promise<void>>();
 	private stopped = false;
+	private updateMaintenance = false;
+	isBusy(): boolean {
+		return this.queues.size > 0;
+	}
+	setUpdateMaintenance(active: boolean): void {
+		this.updateMaintenance = active;
+		if (active) {
+			for (const timer of this.retries.values()) clearTimeout(timer);
+			this.retries.clear();
+		}
+	}
 	private retries = new Map<string, ReturnType<typeof setTimeout>>();
 	stop(): void {
 		this.stopped = true;
@@ -586,7 +597,8 @@ export class TicketTracking {
 		await this.flush(run);
 	}
 	async flush(run: FactoryRun, reassess = false): Promise<void> {
-		if (!run.ticketReference || !run.ticketSync) return;
+		if (!run.ticketReference || !run.ticketSync || this.updateMaintenance)
+			return;
 		const ref = TicketReferenceSchema.parse(run.ticketReference);
 		const ticketKey =
 			ref.provider === "taskbot"
@@ -718,6 +730,7 @@ export class TicketTracking {
 		if (
 			pending &&
 			!this.stopped &&
+			!this.updateMaintenance &&
 			!pending.conflict &&
 			!this.retries.has(run.id)
 		) {
