@@ -23,11 +23,13 @@ import {
 	validateArchive,
 	validateArtifactZip,
 	validateBuildProvenance,
+	validateDesktopReceipt,
 	validateEvidence,
 	validateIdentity,
 	validateLatestVersion,
 	validateNativeHelpers,
 	validatePreparedAgentBoundaries,
+	validatePublicInstaller,
 	validatePublicRepository,
 	validateReleaseManifest,
 } from "./lib/binary-release.mjs";
@@ -38,6 +40,7 @@ import {
 } from "./lib/github-release.mjs";
 import { validatePreparedRelease } from "./lib/prepared-release.mjs";
 import { withPublicationLock } from "./lib/publication-lock.mjs";
+import { receiptArchive } from "./lib/receipt-archive.mjs";
 import {
 	candidateIdentity,
 	nightlyEligibility,
@@ -224,7 +227,16 @@ if (!values.resume) {
 			join(extracted, "runtime-smoke.txt"),
 			join(assets, `runtime-smoke-${target}.txt`),
 		);
-		for (const receipt of ["native-helpers", "prepared-agent-boundaries"])
+		validatePublicInstaller(
+			JSON.parse(readFileSync(join(extracted, "public-installer.json"))),
+			identity,
+			target,
+		);
+		for (const receipt of [
+			"native-helpers",
+			"prepared-agent-boundaries",
+			"public-installer",
+		])
 			copyFileSync(
 				join(extracted, `${receipt}.json`),
 				join(assets, `${receipt}-${target}.json`),
@@ -267,13 +279,10 @@ if (!values.resume) {
 		mkdirSync(dirname(destination), { recursive: true });
 		writeFileSync(destination, readFileSync(join(evidenceDirectory, file)));
 	}
-	execFileSync("tar", [
-		"-czf",
+	writeFileSync(
 		join(assets, "validation-receipts.tar.gz"),
-		"-C",
-		receiptsDirectory,
-		...[...receiptFiles].sort(),
-	]);
+		receiptArchive(receiptsDirectory, receiptFiles),
+	);
 	writeFileSync(
 		join(assets, "build-provenance.json"),
 		jsonBytes({
@@ -284,8 +293,42 @@ if (!values.resume) {
 		}),
 	);
 	copyFileSync(resolve(values.candidate), join(assets, "candidate.json"));
+	if (evidence.desktop) {
+		for (const item of evidence.desktop.artifacts ?? []) {
+			for (const record of [
+				item.archive,
+				item.updateMetadata,
+				item.validation,
+			]) {
+				requireValue(
+					/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(record?.file) &&
+						!existsSync(join(assets, record.file)),
+					"Unsafe or conflicting delivered desktop filename",
+				);
+				const actual = fileRecord(
+					join(evidenceDirectory, record.file),
+					record.file,
+				);
+				requireValue(
+					actual.sha256 === record.sha256 && actual.size === record.size,
+					"Delivered desktop integrity mismatch",
+				);
+				copyFileSync(
+					join(evidenceDirectory, record.file),
+					join(assets, record.file),
+				);
+			}
+			validateDesktopReceipt(
+				JSON.parse(readFileSync(join(assets, item.validation.file))),
+				identity,
+				item.target,
+			);
+		}
+	}
 	const release = validateReleaseManifest({
 		schemaVersion: 2,
+		publicInstallerValidation: 1,
+		...(evidence.desktop ? { desktop: evidence.desktop } : {}),
 		product: "bobs-factory",
 		repository: REPOSITORY,
 		status: "available",

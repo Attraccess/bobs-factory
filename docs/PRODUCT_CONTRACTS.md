@@ -17,8 +17,8 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | Stock skills / plugin | deployer, runner configs, instructions | `bobs-factory-skills`, `bobs-factory-skills-plugin` | Preserve custom skills and prompts |
 | Certificates / sandbox | worker home, runner environment | `<home>/certs`, `BOBS_FACTORY_*` | Preserve keys, normalize path fields |
 | Prepared Cursor SDK | binary runner / external Node host | `BOBS_FACTORY_CURSOR_SDK_PATH`, `BOBS_FACTORY_CURSOR_NODE` | Keep SDK/native files external; preserve native IDs |
-| Distribution | build, CI, installer, metadata | frozen stable/nightly candidates, four-target archives, signed schema-2 manifest + SHA-256 inventory | Stage replacement separately from mutable state; immutable schema-1 beta requires additive signed attestation |
-| Release discovery | installer, Pages, Nix, future updater | stable/default (authenticated beta fallback), explicit nightly, exact version; pinned RSA/SHA-256 keys | Preserve signed bytes; refresh trusted bootstrap for key rotation; no unsigned fallback |
+| Distribution | build, CI, installer, metadata | frozen stable/nightly candidates with explicitly selected signed nightly promotion sources, four-target archives, signed schema-2 manifest + SHA-256 inventory | Stage replacement separately from mutable state; immutable schema-1 beta requires additive signed attestation |
+| Release discovery | installer, Pages, Nix, future updater | stable/default (authenticated beta fallback only without an explicit channel), explicit stable/nightly, exact version; pinned RSA/SHA-256 keys | Preserve signed bytes; refresh trusted bootstrap for key rotation; no unsigned fallback |
 | Publication | release workflows, publisher | repository-wide lock; retained asset/approval digests and recovery receipts; ordering against complete published provider history | Publication disabled until protected key/rollout setup; stable approval binds exact signed bytes; unknown signing keys cannot hide newer stable releases or bypass nightly eligibility |
 | External wire protocol | upstream HTTP adapters / MCP contexts | `X-Cyrus-Team-Id`, `X-Cyrus-Config-Capabilities`, `x-cyrus-mcp-context-id` | Retain ASCII protocol names; no hosted enrollment |
 | Operator MCP | CLI, worker, operator grant store | `bobs-factory-operator`, `operator`, `operator-mcp`, `<home>/factory/operator` | Local owner grants; dashboard passkeys and accepted run profiles remain separate |
@@ -59,6 +59,12 @@ does not rewrite their fields or interpret them as native conversation records.
 The issued egress certificate keeps its existing `cyrus-egress-ca.pem` filename
 inside the new home. Migration preserves certificate/key bytes and system trust;
 this retained artifact name does not enable an old command or home fallback.
+
+Optional desktop artifacts must match the signed complete inventory, including
+candidate-bound validation receipts. New native builds also retain public installer
+validation against controlled downloads with synthetic signing keys. These receipts
+are tied to the frozen source, release version, tooling SHA and candidate digest;
+production signing and release approval remain separate gates.
 
 ## Factory external ticket delivery
 

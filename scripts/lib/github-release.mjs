@@ -307,3 +307,19 @@ export function requireVerifiedNightlyHistory(state) {
 	);
 	return last;
 }
+
+// Stable promotion is an operator selection, independent of nightly eligibility.
+export function selectVerifiedPromotionNightly(state, tag) {
+	requireValue(
+		tag?.startsWith("v") && releaseChannel(tag.slice(1)) === "nightly",
+		"Stable promotion requires --nightly-tag with an exact published nightly tag",
+	);
+	const selected = state.verified.filter(
+		(n) => n.manifest.tag === tag && n.manifest.channel === "nightly",
+	);
+	requireValue(
+		selected.length === 1,
+		"Stable promotion blocked: selected nightly is not a complete signed published release",
+	);
+	return selected[0];
+}

@@ -158,6 +158,24 @@ export function GetStarted() {
 							{selected.version} · public download · no GitHub sign-in
 						</p>
 					)}
+					{available && selected.commit && (
+						<p className="mt-2 text-sm text-ink-2">
+							Source commit:{" "}
+							<code className="break-all">{selected.commit}</code>
+						</p>
+					)}
+					{available && selected.version && (
+						<div className="mt-4">
+							<p className="text-sm text-ink-2">Install this exact version:</p>
+							<pre className="mt-2 whitespace-pre-wrap break-all text-xs">
+								<code>{installCommand(channel, selected.version)}</code>
+							</pre>
+							<CopyCommand
+								command={installCommand(channel, selected.version)}
+								label="Copy exact-version install command"
+							/>
+						</div>
+					)}
 					{available && selected.targets && (
 						<ul
 							className="mt-4 flex flex-wrap gap-3 text-sm"
@@ -173,6 +191,14 @@ export function GetStarted() {
 									</a>
 								</li>
 							))}
+							<li>
+								<a
+									className="underline"
+									href={`${REPO}/releases/download/${selected.tag}/release.json`}
+								>
+									Manifest and checksums
+								</a>
+							</li>
 						</ul>
 					)}
 					<Reveal delay={0.1} className="mt-8 flex flex-wrap gap-3">

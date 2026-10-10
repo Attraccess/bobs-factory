@@ -111,3 +111,9 @@ Prepare and authenticate the selected agent through its supported setup.
 See [distribution tooling](docs/distribution/README.md) for build, validation,
 publication, manual replacement and rollback. Workspace packages are private;
 upstream npm publication is retired. No upstream cloud enrollment is needed or supported.
+
+Verified channel publication uses immutable candidates and separate stable/nightly
+metadata. Scheduled automation stays disabled until separately authorized rollout;
+stable promotion selects an explicit published nightly and requires protected release
+approval. See [the public release operations](docs/distribution/PUBLIC_RELEASES.md) for preparation, real evidence,
+six-hour nightly eligibility, upload recovery and Pages-only retries.

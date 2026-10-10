@@ -426,7 +426,7 @@ test("publication lock rejects overlapping versions and releases after failure",
 });
 
 test("fresh preparation consumes exact artifact ZIPs and produces unsigned inspectable assets without mutations", () => {
-	const f = preparedFixture("nightly", { gitTooling: true });
+	const f = preparedFixture("nightly", { gitTooling: true, desktop: true });
 	try {
 		const zips = join(f.work, "zips");
 		mkdirSync(zips);
@@ -443,6 +443,7 @@ test("fresh preparation consumes exact artifact ZIPs and produces unsigned inspe
 				"runtime-smoke",
 				"native-helpers",
 				"prepared-agent-boundaries",
+				"public-installer",
 			])
 				copyFileSync(
 					join(
@@ -464,6 +465,7 @@ test("fresh preparation consumes exact artifact ZIPs and produces unsigned inspe
 					"runtime-smoke.txt",
 					"native-helpers.json",
 					"prepared-agent-boundaries.json",
+					"public-installer.json",
 				],
 				{ cwd: stage },
 			);
@@ -531,7 +533,14 @@ test("fresh preparation consumes exact artifact ZIPs and produces unsigned inspe
 		);
 		assert.equal(plan.candidateDigest, f.candidate.digest);
 		assert.match(plan.signature, /blocked/);
-		validatePreparedRelease(join(output, "assets"), f.candidate);
+		const prepared = validatePreparedRelease(
+			join(output, "assets"),
+			f.candidate,
+		);
+		assert.equal(
+			prepared.manifest.desktop.artifacts[0].validation.file,
+			"desktop-validation.json",
+		);
 	} finally {
 		f.cleanup();
 	}

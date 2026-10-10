@@ -28,7 +28,12 @@ import { keys, signBytes, testInstaller } from "./release-fixtures.mjs";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 export function preparedFixture(
 	channel = "nightly",
-	{ gitTooling = false, stableVersion = "1.0.0", sequence = 10 } = {},
+	{
+		gitTooling = false,
+		stableVersion = "1.0.0",
+		sequence = 10,
+		desktop = false,
+	} = {},
 ) {
 	const work = mkdtempSync(join(tmpdir(), "factory-publication-fixture-"));
 	const scripts = join(work, "scripts");
@@ -251,6 +256,34 @@ export function preparedFixture(
 			join(assets, `prepared-agent-boundaries-${target}.json`),
 			jsonBytes(prepared),
 		);
+		if (channel !== "beta")
+			writeFileSync(
+				join(assets, `public-installer-${target}.json`),
+				jsonBytes({
+					schemaVersion: 1,
+					product: "bobs-factory",
+					validation: "public-installer",
+					status: "passed",
+					version: identity.version,
+					commit: identity.commit,
+					target,
+					candidateDigest: candidate.digest,
+					workflowSha: identity.workflowSha,
+					scope: "native-archive-controlled-downloads",
+					checks: Object.fromEntries(
+						[
+							"channelResolution",
+							"exactVersion",
+							"repeatInstall",
+							"badHashPreservesInstallation",
+							"badSizePreservesInstallation",
+							"badSourcePreservesInstallation",
+							"unavailableTargetPreservesInstallation",
+							"badSignaturePreservesInstallation",
+						].map((c) => [c, "passed"]),
+					),
+				}),
+			);
 		writeFileSync(
 			join(assets, `runtime-smoke-${target}.txt`),
 			"Startup 1:\nStartup 2:\nBinary startup/assets/protected API/MCP/shutdown/restart smoke passed\n",
@@ -297,6 +330,47 @@ export function preparedFixture(
 			TARGETS.map((t) => [t, { nativeHelpers: gate, preparedAgents: gate }]),
 		),
 	};
+	if (desktop) {
+		writeFileSync(join(assets, "desktop.tar.gz"), "Simulated desktop archive");
+		writeFileSync(
+			join(assets, "desktop-update.json"),
+			"Simulated update metadata",
+		);
+		writeFileSync(
+			join(assets, "desktop-validation.json"),
+			jsonBytes({
+				product: "bobs-factory",
+				status: "passed",
+				version: identity.version,
+				commit: identity.commit,
+				channel,
+				target: "darwin-arm64",
+				candidateDigest: candidate.digest,
+				workflowSha: identity.workflowSha,
+			}),
+		);
+		evidence.desktop = {
+			schemaVersion: 1,
+			artifacts: [
+				{
+					version: identity.version,
+					commit: identity.commit,
+					channel,
+					target: "darwin-arm64",
+					platformRequirements: "Simulated macOS ARM64",
+					archive: fileRecord(join(assets, "desktop.tar.gz"), "desktop.tar.gz"),
+					updateMetadata: fileRecord(
+						join(assets, "desktop-update.json"),
+						"desktop-update.json",
+					),
+					validation: fileRecord(
+						join(assets, "desktop-validation.json"),
+						"desktop-validation.json",
+					),
+				},
+			],
+		};
+	}
 	writeFileSync(join(assets, "release-evidence.json"), jsonBytes(evidence));
 	writeFileSync(join(assets, "candidate.json"), jsonBytes(candidate));
 	const run = {
@@ -335,6 +409,7 @@ export function preparedFixture(
 		writeFileSync(join(assets, name), readFileSync(join(scripts, name)));
 	const manifest = {
 		schemaVersion: 2,
+		...(channel !== "beta" ? { publicInstallerValidation: 1 } : {}),
 		product: "bobs-factory",
 		repository: REPOSITORY,
 		status: "available",
@@ -352,6 +427,7 @@ export function preparedFixture(
 		),
 		source: sourceRecord,
 		targets,
+		...(desktop ? { desktop: evidence.desktop } : {}),
 		assets: readdirSync(assets)
 			.sort()
 			.map((f) => fileRecord(join(assets, f), f)),

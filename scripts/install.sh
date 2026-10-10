@@ -7,6 +7,7 @@ site=https://jappyjan.github.io/bobs-factory
 prefix=${BOBS_FACTORY_INSTALL_PREFIX:-"$HOME/.local"}
 version=
 channel=stable
+channel_explicit=false
 modify_path=true
 usage() {
   echo 'Usage: install.sh [--prefix DIRECTORY] [--version VERSION] [--channel stable|nightly] [--no-modify-path]'
@@ -15,7 +16,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --prefix|--version|--channel)
       [ "$#" -ge 2 ] || { usage >&2; exit 1; }
-      case "$1" in --prefix) prefix=$2;; --version) version=$2;; --channel) channel=$2;; esac
+      case "$1" in --prefix) prefix=$2;; --version) version=$2;; --channel) channel=$2; channel_explicit=true;; esac
       shift 2;;
     --no-modify-path) modify_path=false; shift;;
     --help) usage; exit 0;;
@@ -123,7 +124,11 @@ case "$release_version" in
   *-*) fail 'Unsupported release channel.';;
   *) release_channel=stable;;
 esac
-case "$channel:$release_channel" in stable:stable|stable:beta|nightly:nightly) ;; *) fail 'Requested channel does not match the signed version.';; esac
+case "$channel:$release_channel" in
+  stable:stable|nightly:nightly) ;;
+  stable:beta) [ "$channel_explicit" = false ] || fail 'Requested channel does not match the signed version.';;
+  *) fail 'Requested channel does not match the signed version.';;
+esac
 if [ "$schema" = 2 ]; then
   [ "$(field "$work/release.json" channel)" = "$release_channel" ] || fail 'Signed release channel mismatch.'
 else

@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Reconcile release tooling with the signed candidate contract, validate optional desktop assets and their receipts in the signed inventory, and add candidate-bound public installer smoke checks. Stable promotion selects an exact verified published nightly, explicit stable installs reject beta, and default installs retain beta compatibility. Downloads show source commits and exact-version commands ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 - Replace the chapter-based review guide with a requirement-first review brief. It quotes your original request, shows every interpretation Bob made and who decided it, gives each requirement one decisive proof (cropped screenshots, observed values, tests or code), asks only the questions that need your judgment, and lists what changed beyond the ask and what was not verified. Architecture changes get sequence diagrams of real flows plus endpoint, stored-data and dependency tables. Mark lines met or not met; objections become precise change-request feedback. Saved stock recipes upgrade automatically; running and historical runs keep their chapter guides ([#82](https://github.com/jappyjan/bobs-factory/pull/82), [F1 validation](apps/f1/test-drives/2026-10-10-review-brief.md)).
 
 - Prepare frozen stable and nightly binary candidates with signed channel discovery, exact-asset stable approval and recoverable publication. Check stable ordering against complete provider history, block nightly eligibility when the latest published nightly cannot be verified, authenticate efficient website discovery, and explain unavailable installer channels. Nightlies remain opt-in and publication stays disabled pending protected signing and rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117), [#70](https://github.com/jappyjan/bobs-factory/pull/70)).
@@ -17,6 +18,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Resume blocked Simple runs through the workflow engine from operator MCP. Show the blocked reason and an eligible Resume action in the terminal, refreshing availability when workflows are re-enabled ([#83](https://github.com/jappyjan/bobs-factory/pull/83)).
+- Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 
 - Integrate external ticket delivery with main’s shared operator recovery and run-age scheduling, preserving conflict-safe retries and acceptance bindings ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).
 
