@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Integrate installer, runtime update, desktop/service and source-intake delivery lanes with preserved historical evidence, combined mock lifecycle validation, a single unsigned native candidate shared by binary and desktop CI, explicit final native/operator release gates, and pinned Bun in recursive Node 22/24 CI tests; reconcile maintained documentation with the implemented update contracts ([Taskbot #116](https://taskbot.apps.janjaap.de/p/bobs-factory/t/116), [#91](https://github.com/jappyjan/bobs-factory/pull/91)).
+- Ensure desktop validation checks out the exact pushed source and reruns when its own workflow changes, while keeping PR and dispatch candidate identity checks intact ([Taskbot #116](https://taskbot.apps.janjaap.de/p/bobs-factory/t/116), [#91](https://github.com/jappyjan/bobs-factory/pull/91)).
 - Add receipt-checked native runtime removal and explicit update-policy handoff, isolate reusable `npx` trials with browser/headless launch and cleanup, and prepare Homebrew/AUR/private npm entry points only from verified immutable signed releases. Downloads retain publication availability gates. ([Taskbot bobs-factory #118](https://taskbot.apps.janjaap.de/p/bobs-factory/t/118), [#123](https://taskbot.apps.janjaap.de/p/bobs-factory/t/123), [#84](https://github.com/jappyjan/bobs-factory/pull/84))
 
 ### Added
