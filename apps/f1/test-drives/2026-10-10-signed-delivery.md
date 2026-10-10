@@ -95,6 +95,13 @@ activation was a fixture expectation error. Production correctly required explic
 downgrade consent. Corrected sequencing passed; the later constructor race above
 is independently reproducible and is retained as a product failure.
 
+A subsequent separate check on the same provisional2e47 native bytes passes the
+real HTTPS signed bootstrap into an actual trial worker beside an independently
+owned worker. Both own different state homes/PIDs. TERM of the just-spawned trial
+launcher cleans its temporary runtime and trial ownership, while the original
+worker retains the same PID. [Provisional coexistence receipt](assets/2026-10-10-signed-delivery/provisional-2e47-trial-coexistence.json).
+It is deliberately not relabeled as corrected final-flow or OS service evidence.
+
 ## Reproduction harness
 
 After freezing a corrected clean combined tree, prepare native fixtures once:
