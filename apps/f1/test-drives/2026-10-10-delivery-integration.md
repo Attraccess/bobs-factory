@@ -159,7 +159,9 @@ cleanup results and platform observations are preserved in
 This does not certify the current PR head. The exact reviewed desktop workflow
 fix `ad6f0f8553f9c6df26591fc033764bf4bc354712` was integrated and pushed with the
 report changelog follow-up at `b82c37c4fb9a3e18d1cb222c6d56d3fef852096f`.
-Its push-triggered native run [38086228778](https://github.com/jappyjan/bobs-factory/actions/runs/38086228778)
+The current PR head is `83e18ec4f351192e4465bea384ac532ff0d363c7`, a later
+documentation/evidence-only commit which did not trigger another native run.
+The push-triggered native run [38086228778](https://github.com/jappyjan/bobs-factory/actions/runs/38086228778)
 had a successful freeze, two Linux binary passes and two active macOS binary jobs
 at the latest coordinator observation. CI [38086231619](https://github.com/jappyjan/bobs-factory/actions/runs/38086231619)
 was active on Node 22/24. This new candidate's final identity and all-target
