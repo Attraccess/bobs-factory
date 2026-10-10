@@ -192,7 +192,8 @@ export class TodayApp {
 		} catch (error) {
 			this.loadError = (error as Error).message;
 		}
-		for (const id of ids) {
+		// Workflow availability changes eligibility without changing saved runs.
+		for (const id of config ? new Set([...ids, ...this.details.keys()]) : ids) {
 			if (this.details.has(id)) void this.loadDetail(id);
 			if (this.view === "run" && id === this.runId) void this.loadActivity(id);
 		}
@@ -548,6 +549,21 @@ export class TodayApp {
 		if (attention(run) !== "stuck")
 			return this.notify("Only stuck runs can be retried", true);
 		const detail = this.details.get(run.id);
+		if (run.workflowBlock || run.status === "blocked") {
+			if (!detail) {
+				this.ensureDetail(run);
+				return this.notify("Loading Resume availability…");
+			}
+			if (!detail.resumeEligible)
+				return this.notify(
+					"Resume is unavailable. Enable the workflow in Recipes and wait for execution to stop.",
+					true,
+				);
+			void this.perform("Resuming from saved progress", () =>
+				this.options.client.post(this.path(run, "resume")),
+			).catch(() => {});
+			return;
+		}
 		void this.perform(
 			detail?.iterationLimit
 				? "Continuing with 4 more passes"
@@ -907,7 +923,13 @@ export class TodayApp {
 		if (kind === "question")
 			return detail?.questions?.[0] ?? "Bob has a question for you.";
 		if (kind === "stuck")
-			return run.error?.split("\n")[0] ?? "The run stopped before finishing.";
+			return (
+				(
+					run.workflowBlock?.reason ??
+					detail?.workflowBlock?.reason ??
+					run.error
+				)?.split("\n")[0] ?? "The run stopped before finishing."
+			);
 		if (run.reviewGate?.status === "pending")
 			return run.reviewGate.url
 				? `Ready for review · ${run.reviewGate.url}`
@@ -945,7 +967,10 @@ export class TodayApp {
 				});
 		} else if (kind === "stuck") {
 			for (const line of wrap(
-				run.error ?? "The run stopped before finishing.",
+				run.workflowBlock?.reason ??
+					detail?.workflowBlock?.reason ??
+					run.error ??
+					"The run stopped before finishing.",
 				inner,
 			).slice(0, 3))
 				lines.push({ text: line, style: t.text });
@@ -967,6 +992,10 @@ export class TodayApp {
 			);
 			return `a answer${all ? " · y accept recommendations" : ""} · enter open · x stop`;
 		}
+		if (kind === "stuck" && (run.workflowBlock || run.status === "blocked"))
+			return detail?.resumeEligible
+				? "c resume · enter open"
+				: "Resume unavailable · enable workflow in Recipes and wait for execution to stop · enter open";
 		if (kind === "stuck")
 			return `c ${detail?.iterationLimit ? "continue (+4 passes)" : "retry step"} · enter open · s settle`;
 		if (run.reviewGate?.status === "pending")
@@ -1307,8 +1336,8 @@ export class TodayApp {
 		screen.fill(0, y, screen.w, 1, t.panel);
 		const keys =
 			this.view === "run"
-				? "esc back  j/k scroll  [ ] prev/next  a answer/approve  r changes  c retry  m message  s settle  x stop  o browser  ? help"
-				: "j/k move  enter open  n new run  a answer/approve  y accept  c retry  m message  s settle  ? help  q quit";
+				? "esc back  j/k scroll  [ ] prev/next  a answer/approve  r changes  c retry/resume  m message  s settle  x stop  o browser  ? help"
+				: "j/k move  enter open  n new run  a answer/approve  y accept  c retry/resume  m message  s settle  ? help  q quit";
 		screen.put(1, y, keys, t.secondary, screen.w - 2);
 		if (this.liveError && !this.live)
 			screen.put(
@@ -1415,7 +1444,10 @@ export class TodayApp {
 			["a", "answer a question · approve a review"],
 			["y", "accept all of Bob’s recommendations"],
 			["r", "request changes on a review"],
-			["c", "retry a stuck step · continue (+4 passes)"],
+			[
+				"c",
+				"resume an enabled blocked run · retry a stuck step · continue (+4 passes)",
+			],
 			["m", "message Bob · follow-up for finished runs"],
 			["s", "settle a finished run · bring a settled run back"],
 			["S", "show or hide Settled"],

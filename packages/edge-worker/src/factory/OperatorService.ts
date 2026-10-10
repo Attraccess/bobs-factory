@@ -96,7 +96,6 @@ export interface OperatorHooks {
 	chat?(id: string): ChatState;
 	message?(id: string, text: string, messageId?: string): void | Promise<void>;
 	stop(id: string): void;
-	resume?(id: string): void;
 	resumeEligible?(id: string): boolean;
 	mcp?(run: FactoryRun): Promise<unknown>;
 	check?(run: FactoryRun, server?: string): Promise<unknown>;
@@ -405,10 +404,9 @@ export class OperatorService {
 						"stale_state",
 						"Run changed during connectivity check. Inspect again.",
 					);
-				if (name === "resume_run" && run.workflowBlock) {
-					if (run.workflow.chat && this.hooks.resume) this.hooks.resume(run.id);
-					else this.runtime.resume(run.id);
-				} else this.retry(run.id);
+				if (name === "resume_run" && run.workflowBlock)
+					this.runtime.resume(run.id);
+				else this.retry(run.id);
 			} else if (name === "retry_ticket_sync") await this.retryTracking(run.id);
 			else if (name === "stop_run") this.stop(run.id);
 			else if (name === "answer_run") {

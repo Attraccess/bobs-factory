@@ -480,6 +480,58 @@ try {
 		console.log(
 			"PASS persisted blocked checkpoint, restart without auto-resume, retained question, queued native Simple interruption and individual conversation resume",
 		);
+		// Manual Simple is runtime-owned even though its runner uses a native conversation.
+		holdNative = true;
+		nativeStarted = false;
+		const manualSimple = await api(
+			"/api/runs",
+			"POST",
+			{
+				repositoryId: "repo",
+				workflow: "simple",
+				prompt: "Resume manual Simple through operator MCP",
+			},
+			202,
+		);
+		await until(
+			() => nativeStarted && runtime.isExecuting(manualSimple.id),
+			"manual Simple started",
+		);
+		const manualThread = runtime.get(manualSimple.id).simpleExecution?.agent
+			?.sessionId;
+		assert(manualThread);
+		await disable("simple");
+		holdNative = false;
+		await until(
+			() => !runtime.isExecuting(manualSimple.id),
+			"manual Simple stopped",
+		);
+		await enable("simple");
+		assert.equal(runtime.get(manualSimple.id).status, "blocked");
+		const operator = internal.operatorServer.service;
+		const accepted = await operator.call(
+			"resume_run",
+			{
+				runId: manualSimple.id,
+				expectedRevision: operator.inspect(manualSimple.id).revision,
+			},
+			["operate"],
+		);
+		assert.equal(accepted.accepted, true);
+		assert(!runtime.get(manualSimple.id).workflowBlock);
+		assert(!runtime.catalog.getBlock(manualSimple.id));
+		await until(
+			() => runtime.get(manualSimple.id).status === "completed",
+			"manual Simple completed after operator Resume",
+		);
+		assert.equal(
+			runtime.get(manualSimple.id).simpleExecution.agent.sessionId,
+			manualThread,
+		);
+		assert(observed.some((o) => o.resume === manualThread));
+		console.log(
+			"PASS operator Resume for manual Simple clears durable/runtime blocks and retains the native conversation",
+		);
 		// Leave a blocked run for browser evidence; another enabled recipe remains launchable.
 		await disable(waiting.id);
 		const exported = await api("/api/workflows/export");
@@ -513,6 +565,7 @@ try {
 						"blocked restart",
 						"native queue interruption",
 						"native Resume",
+						"operator manual Simple Resume",
 						"HTTP import/export",
 					],
 				},

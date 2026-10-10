@@ -1,6 +1,7 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import { TodayApp } from "./app.js";
 import { FactoryClient } from "./client.js";
 import { AnswerForm, LaunchForm } from "./forms.js";
 import { tuiPort } from "./index.js";
@@ -338,4 +339,57 @@ it("offers only enabled manual workflows with available dependencies", () => {
 			],
 		}).map((w) => w.id),
 	).toEqual(["local"]);
+});
+
+it("shows the blocked reason and resumes only eligible runs from the terminal", async () => {
+	const blocked = run("blocked", "blocked", {
+		workflowBlock: {
+			reason: "Workflow disabled: simple. Saved progress retained.",
+		},
+	});
+	let eligible = false;
+	let frame = "";
+	let changed: (change: { ids: string[]; config: boolean }) => void;
+	const post = vi.fn(async () => ({}));
+	const client = {
+		origin: "http://localhost:3457",
+		get: vi.fn(async (path: string) => {
+			if (path === "/api/config") return { repositories: [], workflows: [] };
+			if (path === "/api/runs") return [blocked];
+			return { ...blocked, resumeEligible: eligible };
+		}),
+		post,
+		events: (callback: typeof changed) => {
+			changed = callback;
+			return () => {};
+		},
+	} as unknown as FactoryClient;
+	const app = new TodayApp({
+		client,
+		theme: "dark",
+		sgr: () => "",
+		write: (value) => {
+			frame = value;
+		},
+		size: () => ({ columns: 120, rows: 32 }),
+		openUrl: async () => {},
+		quit: () => {},
+	});
+	app.start();
+	try {
+		await vi.waitFor(() => expect(frame).toContain("Resume unavailable"));
+		expect(frame).toContain(blocked.workflowBlock!.reason);
+		expect(frame).not.toContain("c retry step");
+		app.key({ name: "text", text: "c" });
+		expect(post).not.toHaveBeenCalled();
+		eligible = true;
+		changed!({ ids: [], config: true });
+		await vi.waitFor(() => expect(frame).toContain("c resume"));
+		app.key({ name: "text", text: "c" });
+		await vi.waitFor(() =>
+			expect(post).toHaveBeenCalledExactlyOnceWith("/api/runs/blocked/resume"),
+		);
+	} finally {
+		app.stop();
+	}
 });

@@ -56,6 +56,7 @@ export interface RunItem extends RunSummary {
 	workflow?: string;
 	step?: string;
 	error?: string;
+	workflowBlock?: { reason: string };
 	reviewGate?: { id?: string; headSha?: string; url?: string; status?: string };
 	titleGeneration?: { status?: string };
 }
@@ -73,6 +74,7 @@ export interface RunDetail extends Omit<RunItem, "workflow"> {
 	questionRecommendations?: Recommendation[];
 	questionBatchId?: string;
 	iterationLimit?: { step: string; visits: number; limit: number };
+	resumeEligible?: boolean;
 	chat?: {
 		enabled?: boolean;
 		available?: boolean;

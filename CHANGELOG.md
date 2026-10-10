@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Resume blocked Simple runs through the workflow engine from operator MCP. Show the blocked reason and an eligible Resume action in the terminal, refreshing availability when workflows are re-enabled ([#83](https://github.com/jappyjan/bobs-factory/pull/83)).
+
 - Integrate external ticket delivery with main’s shared operator recovery and run-age scheduling, preserving conflict-safe retries and acceptance bindings ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).
 
 - Preserve verified ticket evidence and snapshot-bound approval when mixed delivery uses the new review brief; retain pending-tracking settlement guards during integration ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).

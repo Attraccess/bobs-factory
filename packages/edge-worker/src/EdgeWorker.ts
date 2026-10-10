@@ -1172,9 +1172,6 @@ export class EdgeWorker extends EventEmitter {
 				chat: (id) => this.factoryChatState(id),
 				message: (id, text, messageId) =>
 					this.sendFactoryChat(id, text, messageId),
-				resume: (id) => {
-					this.resumeNativeWorkflow(id);
-				},
 				resumeEligible: (id) =>
 					!this.titleSession(id)?.agentRunner?.isRunning() &&
 					!this.preparationStarts.has(id) &&

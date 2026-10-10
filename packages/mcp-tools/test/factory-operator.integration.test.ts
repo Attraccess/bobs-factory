@@ -666,3 +666,35 @@ it("operator recovery respects disabled workflows and requires explicit individu
 	await vi.waitFor(() => expect(f.agent).toHaveBeenCalledOnce());
 	await f.runtime.shutdown();
 });
+
+it("resumes a chat-enabled saved Simple run through the runtime and reports unavailable recovery", async () => {
+	const f = fixture();
+	const simple = f.runtime.selectWorkflow([], "manual", "simple");
+	f.run.workflow = simple;
+	f.run.status = "running";
+	f.run.setupComplete = true;
+	const recovery = vi.fn(async () => {});
+	(f.runtime as any).hooks.simple = recovery;
+	f.service.hooks.chat = () => ({ enabled: true, available: false });
+	const c = await sdk(f);
+	f.runtime.setWorkflowEnabled("simple", false);
+	let result = await c.call("resume_run", {
+		runId: f.run.id,
+		expectedRevision: f.service.revision(f.run),
+	});
+	expect(result.error.code).toBe("invalid_state");
+	expect(recovery).not.toHaveBeenCalled();
+	f.runtime.setWorkflowEnabled("simple", true);
+	expect(f.run.status).toBe("blocked");
+	result = await c.call("resume_run", {
+		runId: f.run.id,
+		expectedRevision: f.service.revision(f.run),
+	});
+	expect(result.ok).toBe(true);
+	expect(result.result.accepted).toBe(true);
+	expect(f.run.workflowBlock).toBeUndefined();
+	expect(f.runtime.catalog.getBlock(f.run.id)).toBeUndefined();
+	await vi.waitFor(() => expect(recovery).toHaveBeenCalledOnce());
+	await vi.waitFor(() => expect(f.run.status).toBe("completed"));
+	await f.runtime.shutdown();
+});
