@@ -1,0 +1,18 @@
+{
+	"evidenceKind": "focused acceptance receipt lifecycle checks",
+	"basedOnCommit": "b00b73d8366d2ca20bf393be124b117ff7f84a98",
+	"passed": true,
+	"tests": 13,
+	"command": "node --test apps/desktop/test/acceptance-cleanup.test.mjs apps/desktop/test/contracts.test.mjs scripts/tests/desktop-runtime.test.mjs",
+	"sourceFiles": {
+		"apps/desktop/test/acceptance-cleanup.mjs": "41216e307650ebdf26328b91948f90353617780ae2daa3d5475d2e3bd661d128",
+		"apps/desktop/test/acceptance-cleanup.test.mjs": "02c28ed39b2e937a5aba8350695f76bf106808fe5f3b3c1cf12faf6d447142c6"
+	},
+	"outputSha256": "5e5968dba1a6b2e46423f1e66797fc2411c5413617c2e04f91769e46ae5a8d63",
+	"retainedNativeReceipt": {
+		"path": "apps/f1/test-drives/assets/2026-10-10-native-desktop-acceptance/corrected-native-acceptance.json",
+		"sha256": "9bfc07873dbbca29eeac324f6e04629f2d549511b03e03a8dc84644def15332a",
+		"generatingCleanupHelperSha256": "0d5893e4a95d3a58ef800c720ad470857730bd4bc0051057d8c4db1ae46f7d97"
+	},
+	"scope": "Receipt lifecycle only; this is not a new native drive and does not replace prior native evidence."
+}
