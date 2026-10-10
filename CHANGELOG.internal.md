@@ -6,7 +6,7 @@ This changelog documents internal development changes, refactors, tooling update
 
 ### Changed
 
-- Repair the website demo and screenshot capture: script requirement extraction and specialist reviewers, give the demo repository an `origin/main` base, trust the demo's own port and skip passkeys for the local scripted demo. Recapture the review screenshots for the review brief.
+- Repair the website demo and screenshot capture: script requirement extraction and specialist reviewers, give the demo repository an `origin/main` base, trust the demo's own port and skip passkeys for the local scripted demo. Recapture the review screenshots for the review brief ([#82](https://github.com/jappyjan/bobs-factory/pull/82)).
 
 - Add verified Bun Cargo production notices and their source provenance; omit macOS file metadata from source rebuild archives so the reviewed inventory is portable ([#58](https://github.com/jappyjan/bobs-factory/pull/58)).
 
