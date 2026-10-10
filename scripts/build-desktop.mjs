@@ -111,7 +111,7 @@ try {
 					output,
 					`bobs-factory-desktop-${candidate.candidate.version}-linux-${process.arch}.AppImage`,
 				);
-	const _update = prepareDesktopUpdate({
+	const update = prepareDesktopUpdate({
 		app: installedApp,
 		output,
 		candidate,
@@ -139,7 +139,7 @@ try {
 	}
 	writeFileSync(
 		join(output, "desktop-build.json"),
-		`${JSON.stringify({ schemaVersion: 1, product: "bobs-factory-desktop", candidateDigest: candidate.digest, version: candidate.candidate.version, commit, target, runtime: identity, assets, signing: "unsigned preparation only", validation: "native install/auth/lifecycle receipts required", publication: false }, null, 2)}\n`,
+		`${JSON.stringify({ schemaVersion: 1, product: "bobs-factory-desktop", candidateDigest: candidate.digest, version: candidate.candidate.version, commit, target, runtime: identity, assets, update, signing: "unsigned preparation only", validation: "native install/auth/lifecycle receipts required", publication: false }, null, 2)}\n`,
 	);
 } finally {
 	rmSync(runtime, { recursive: true, force: true });
