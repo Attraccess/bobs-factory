@@ -19,6 +19,7 @@ import { RefreshTokenCommand } from "./commands/RefreshTokenCommand.js";
 import { SelfAddRepoCommand } from "./commands/SelfAddRepoCommand.js";
 import { SelfAuthCommand } from "./commands/SelfAuthCommand.js";
 import { StartCommand } from "./commands/StartCommand.js";
+import { addServiceCommands } from "./commands/service.js";
 import { addUpdateCommands } from "./commands/update.js";
 import { gitCredential, githubApiRequest } from "./github.js";
 import { launchLocal } from "./local.js";
@@ -273,6 +274,7 @@ program
 		},
 	);
 
+addServiceCommands(program);
 addMigrationCommands(program);
 
 // Parse and execute

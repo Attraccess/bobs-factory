@@ -1,0 +1,66 @@
+name: Prepare unsigned desktop candidate
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_json:
+        description: Frozen candidate.json bytes (preparation only, never signing/publication)
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+          - target: darwin-x64
+            runner: macos-15-intel
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ fromJSON(inputs.candidate_json).candidate.workflowSha }}
+          path: tooling
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ fromJSON(inputs.candidate_json).candidate.commit }}
+          path: source
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24.18.0'
+          package-manager-cache: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.2'
+      - name: Verify frozen preparation identity
+        env:
+          CANDIDATE_JSON: ${{ inputs.candidate_json }}
+        run: |
+          node --input-type=module -e 'import {writeFileSync} from "node:fs"; import {validateCandidate} from "./tooling/scripts/lib/release-candidate.mjs"; const c=validateCandidate(JSON.parse(process.env.CANDIDATE_JSON)); if(c.candidate.workflowSha!==process.env.GITHUB_SHA)throw Error("Dispatch from frozen tooling ref");writeFileSync(process.env.RUNNER_TEMP+"/candidate.json",process.env.CANDIDATE_JSON)'
+          corepack enable
+          corepack prepare "$(node -p 'require("./source/package.json").packageManager')" --activate
+      - run: pnpm install --frozen-lockfile
+        working-directory: source
+      - run: pnpm --filter 'bobs-factory...' build
+        working-directory: source
+      - run: pnpm --filter bobs-factory-desktop test
+        working-directory: source
+      - name: Build matching native runtime and desktop installers
+        env:
+          VERSION: ${{ fromJSON(inputs.candidate_json).candidate.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          bun run tooling/scripts/build-binary.ts --source-root source --candidate "$RUNNER_TEMP/candidate.json" --release-version "$VERSION" --target "$TARGET" --output "$RUNNER_TEMP/runtime"
+          node tooling/scripts/build-desktop.mjs --source-root source --candidate "$RUNNER_TEMP/candidate.json" --runtime "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" --output "$RUNNER_TEMP/desktop"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: desktop-${{ matrix.target }}-${{ fromJSON(inputs.candidate_json).digest }}
+          path: ${{ runner.temp }}/desktop/

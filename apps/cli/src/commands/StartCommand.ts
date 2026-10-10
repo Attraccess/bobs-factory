@@ -1,4 +1,6 @@
 import type { EdgeConfig } from "bobs-factory-core";
+import { acquireInstanceLock } from "../services/InstanceLock.js";
+import { assertServiceLaunch } from "../services/ServiceLifecycle.js";
 import { BaseCommand } from "./ICommand.js";
 
 /**
@@ -7,6 +9,8 @@ import { BaseCommand } from "./ICommand.js";
 export class StartCommand extends BaseCommand {
 	async execute(_args: string[]): Promise<void> {
 		try {
+			assertServiceLaunch(this.app.factoryHome);
+			await acquireInstanceLock(this.app.factoryHome);
 			process.env.BOBS_FACTORY_FACTORY_PORT ??= "3457";
 			// Load edge configuration
 			const edgeConfig = this.app.config.load();
