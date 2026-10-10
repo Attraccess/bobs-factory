@@ -20,9 +20,16 @@ export const channels: Record<InstallChannel, PublicRelease> = {
 };
 export const release = channels.stable;
 export const releaseAvailable = release.status === "available";
-export const installCommand = (channel: InstallChannel, version?: string) =>
-	version
-		? `${INSTALL_COMMAND} -s -- --channel ${channel} --version ${version}`
-		: channel === "stable"
-			? INSTALL_COMMAND
-			: `${INSTALL_COMMAND} -s -- --channel nightly`;
+export const installCommand = (channel: InstallChannel, version?: string) => {
+	if (version) {
+		// Beta fallback uses the installer's default-channel compatibility.
+		const selection =
+			channel === "stable" && /-beta(?:\.|$)/.test(version)
+				? ""
+				: `--channel ${channel} `;
+		return `${INSTALL_COMMAND} -s -- ${selection}--version ${version}`;
+	}
+	return channel === "stable"
+		? INSTALL_COMMAND
+		: `${INSTALL_COMMAND} -s -- --channel nightly`;
+};
