@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Reconcile release tooling with the signed candidate contract, validate optional desktop assets and their receipts in the signed inventory, and add candidate-bound public installer smoke checks. Downloads show source commits and exact-version commands ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
+- Reconcile release tooling with the signed candidate contract, validate optional desktop assets and their receipts in the signed inventory, and add candidate-bound public installer smoke checks. Stable promotion selects an exact verified published nightly, explicit stable installs reject beta, and default installs retain beta compatibility. Downloads show source commits and exact-version commands ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 - Prepare frozen stable and nightly binary candidates with signed channel discovery, exact-asset stable approval and recoverable publication. Check stable ordering against complete provider history, block nightly eligibility when the latest published nightly cannot be verified, authenticate efficient website discovery, and explain unavailable installer channels. Nightlies remain opt-in and publication stays disabled pending protected signing and rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117), [#70](https://github.com/jappyjan/bobs-factory/pull/70)).
 
 ### Fixed

@@ -12,33 +12,35 @@ import { validatePreparedRelease } from "../lib/prepared-release.mjs";
 import { receiptArchive } from "../lib/receipt-archive.mjs";
 import { preparedFixture } from "./prepared-fixture.mjs";
 
-test("controlled installer smoke uses frozen release identity and preserves installation after failures", () => {
-	const f = preparedFixture();
-	try {
-		const result = spawnSync(
-			process.execPath,
-			["scripts/smoke-public-install.mjs", "--artifacts", f.assets],
-			{ encoding: "utf8" },
-		);
-		assert.equal(result.status, 0, result.stderr);
-		const receipt = JSON.parse(
-			readFileSync(join(f.assets, "public-installer.json")),
-		);
-		const target = `${process.platform}-${process.arch}`;
-		validatePublicInstaller(receipt, f.identity, target);
-		assert.throws(
-			() =>
-				validatePublicInstaller(
-					{ ...receipt, candidateDigest: "f".repeat(64) },
-					f.identity,
-					target,
-				),
-			/candidate-bound public installer/,
-		);
-	} finally {
-		f.cleanup();
-	}
-});
+for (const channel of ["nightly", "stable", "beta"]) {
+	test(`controlled ${channel} installer smoke uses frozen identity and preserves installation after failures`, () => {
+		const f = preparedFixture(channel);
+		try {
+			const result = spawnSync(
+				process.execPath,
+				["scripts/smoke-public-install.mjs", "--artifacts", f.assets],
+				{ encoding: "utf8" },
+			);
+			assert.equal(result.status, 0, result.stderr);
+			const receipt = JSON.parse(
+				readFileSync(join(f.assets, "public-installer.json")),
+			);
+			const target = `${process.platform}-${process.arch}`;
+			validatePublicInstaller(receipt, f.identity, target);
+			assert.throws(
+				() =>
+					validatePublicInstaller(
+						{ ...receipt, candidateDigest: "f".repeat(64) },
+						f.identity,
+						target,
+					),
+				/candidate-bound public installer/,
+			);
+		} finally {
+			f.cleanup();
+		}
+	});
+}
 
 test("prepared recovery rejects desktop validation for a different frozen candidate", () => {
 	const f = preparedFixture("nightly", { desktop: true });

@@ -7,6 +7,7 @@ import {
 	discoverReleases,
 	githubClient,
 	requireVerifiedNightlyHistory,
+	selectVerifiedPromotionNightly,
 } from "./lib/github-release.mjs";
 import {
 	freezeCandidate,
@@ -18,6 +19,7 @@ const { values } = parseArgs({
 	options: {
 		channel: { type: "string" },
 		version: { type: "string" },
+		"nightly-tag": { type: "string" },
 		output: { type: "string" },
 		"workflow-sha": { type: "string" },
 		sequence: { type: "string" },
@@ -28,13 +30,20 @@ requireValue(
 	["stable", "nightly"].includes(values.channel) && values.output,
 	"Provide --channel stable|nightly --output FILE",
 );
+requireValue(
+	values.channel === "stable"
+		? values["nightly-tag"]?.startsWith("v")
+		: !values["nightly-tag"],
+	"Provide --nightly-tag for stable promotion only",
+);
 if (existsSync(values.output)) {
 	const retained = validateCandidate(JSON.parse(readFileSync(values.output)));
 	requireValue(
 		retained.candidate.channel === values.channel &&
 			retained.candidate.workflowSha === values["workflow-sha"] &&
 			(values.channel !== "stable" ||
-				retained.candidate.version === values.version),
+				(retained.candidate.version === values.version &&
+					retained.candidate.promotion.tag === values["nightly-tag"])),
 		"Retry inputs differ from retained candidate",
 	);
 	console.log("Retained frozen candidate; no identity regenerated");
@@ -46,11 +55,7 @@ const mainSha = (await client.api("git/ref/heads/main")).object.sha;
 let commit = mainSha;
 let promotion;
 if (values.channel === "stable") {
-	requireValue(
-		state.nightly,
-		"Stable promotion blocked: no complete signed published nightly",
-	);
-	const n = state.nightly;
+	const n = selectVerifiedPromotionNightly(state, values["nightly-tag"]);
 	commit = n.manifest.commit;
 	promotion = {
 		channel: "nightly",

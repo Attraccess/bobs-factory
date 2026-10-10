@@ -21,7 +21,9 @@ curl -fsSL https://jappyjan.github.io/bobs-factory/install.sh | sh -s -- --chann
 ```
 
 Use `--version VERSION --channel stable|nightly` for an immutable exact version.
-The signed version must match the requested channel. `--prefix /absolute/path`
+The signed version must match the requested channel. Explicit `--channel stable`
+rejects beta; use the default channel (optionally with `--version VERSION`) for
+the authenticated beta compatibility fallback. `--prefix /absolute/path`
 and `--no-modify-path` retain their existing meaning. Installation keeps owned
 immutable versions and an atomic executable link, preserves the prior rollback
 link, and refuses foreign executables or changed installed bytes. Shell settings
@@ -43,9 +45,11 @@ provider release ID. Build run/attempt and provider artifact IDs are recorded in
 `build-provenance.json` after building; they never regenerate candidate identity.
 
 `release-channel.yml` polls hourly and supports manual preparation. It resolves
-main once for nightly or the latest complete signed published nightly once for
-stable promotion. Stable freezes that nightly's source even if main or nightly
-advances afterward. Stable bytes embed the requested stable version and require
+main once for nightly. Stable preparation requires the operator to supply an
+exact published `nightly_tag` in the workflow, or `--nightly-tag vVERSION` to
+`prepare-release-candidate.mjs`. The selected nightly must have a complete signed
+release; an older verified nightly remains selectable after a newer one appears.
+Stable freezes that nightly's source even if main or nightly advances afterward. Stable bytes embed the requested stable version and require
 new native builds and byte-bound validation. Source-only assessments can be
 reused only with a reviewed explanation of why they still apply.
 
@@ -60,7 +64,7 @@ nightly, and at least six hours since successful publication. The first nightly
 has no cooldown. Failed preparation does not reset the clock. A frozen candidate
 that no longer matches main skips publication. Eligibility is checked inside the
 repository publication lock and again immediately before making a draft public.
-Preparation and publication block if the highest published nightly sequence
+Nightly preparation and publication block if the highest published nightly sequence
 cannot be verified, including after signing-key rotation or with incomplete
 assets. They never substitute an older verified nightly to establish source,
 cooldown or sequence eligibility. Refresh trusted release tooling or repair the

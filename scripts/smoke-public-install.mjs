@@ -116,25 +116,19 @@ try {
 			encoding: "utf8",
 		});
 	const channel = releaseChannel(version);
-	const args =
-		channel === "beta"
-			? [
-					"--channel",
-					channel === "beta" ? "stable" : channel,
-					"--version",
-					version,
-				]
-			: ["--channel", channel];
-	for (const selected of [
-		args,
-		[
-			"--channel",
-			channel === "beta" ? "stable" : channel,
-			"--version",
-			version,
-		],
-		args,
-	]) {
+	const args = channel === "beta" ? [] : ["--channel", channel];
+	const exactArgs = [...args, "--version", version];
+	if (channel === "beta") {
+		for (const selected of [
+			["--channel", "stable"],
+			["--channel", "stable", "--version", version],
+		]) {
+			const result = install(...selected);
+			assert.notEqual(result.status, 0);
+			assert.match(result.stderr, /Requested channel/);
+		}
+	}
+	for (const selected of [args, exactArgs, args]) {
 		const result = install(...selected);
 		assert.equal(result.status, 0, result.stderr);
 		const installed = fileRecord(
@@ -154,30 +148,14 @@ try {
 	const good = structuredClone(manifest);
 	manifest.targets[target].archiveSha256 = "0".repeat(64);
 	updateManifest();
-	assert.notEqual(
-		install(
-			"--channel",
-			channel === "beta" ? "stable" : channel,
-			"--version",
-			version,
-		).status,
-		0,
-	);
+	assert.notEqual(install(...exactArgs).status, 0);
 	assert.equal(readlinkSync(join(prefix, "bin/bobs-factory")), link);
 	manifest.targets[target] = {
 		...good.targets[target],
 		archiveSize: good.targets[target].archiveSize + 1,
 	};
 	updateManifest();
-	assert.notEqual(
-		install(
-			"--channel",
-			channel === "beta" ? "stable" : channel,
-			"--version",
-			version,
-		).status,
-		0,
-	);
+	assert.notEqual(install(...exactArgs).status, 0);
 	assert.equal(readlinkSync(join(prefix, "bin/bobs-factory")), link);
 	const wrongSidecar = { ...sidecar, commit: "0".repeat(40) };
 	writeFileSync(
@@ -194,15 +172,7 @@ try {
 		manifestSize: wrongRecord.size,
 	};
 	updateManifest();
-	assert.notEqual(
-		install(
-			"--channel",
-			channel === "beta" ? "stable" : channel,
-			"--version",
-			version,
-		).status,
-		0,
-	);
+	assert.notEqual(install(...exactArgs).status, 0);
 	assert.equal(readlinkSync(join(prefix, "bin/bobs-factory")), link);
 	copyFileSync(
 		join(artifacts, `${name}.manifest.json`),
@@ -210,15 +180,7 @@ try {
 	);
 	delete manifest.targets[target];
 	updateManifest();
-	assert.notEqual(
-		install(
-			"--channel",
-			channel === "beta" ? "stable" : channel,
-			"--version",
-			version,
-		).status,
-		0,
-	);
+	assert.notEqual(install(...exactArgs).status, 0);
 	assert.equal(readlinkSync(join(prefix, "bin/bobs-factory")), link);
 	manifest.targets = good.targets;
 	updateManifest();
@@ -226,15 +188,7 @@ try {
 		join(downloads, "release.json.sig"),
 		Buffer.from("invalid-signature"),
 	);
-	assert.notEqual(
-		install(
-			"--channel",
-			channel === "beta" ? "stable" : channel,
-			"--version",
-			version,
-		).status,
-		0,
-	);
+	assert.notEqual(install(...exactArgs).status, 0);
 	assert.equal(readlinkSync(join(prefix, "bin/bobs-factory")), link);
 	writeFileSync(
 		join(artifacts, "public-installer.json"),
