@@ -72,6 +72,7 @@ try {
 			`--${process.arch}`,
 			`--config.directories.output=${output}`,
 			`--config.extraMetadata.version=${candidate.candidate.version}`,
+			`--config.artifactName=bobs-factory-desktop-${candidate.candidate.version}-${process.platform === "darwin" ? "mac" : "linux"}-${process.arch}.\${ext}`,
 		],
 		{
 			cwd: app,
@@ -91,6 +92,13 @@ try {
 		});
 	if (assets.length !== (process.platform === "darwin" ? 1 : 2))
 		throw new Error("Desktop installer inventory incomplete");
+	const extensions =
+		process.platform === "darwin" ? ["dmg"] : ["AppImage", "deb"];
+	for (const ext of extensions) {
+		const expected = `bobs-factory-desktop-${candidate.candidate.version}-${process.platform === "darwin" ? "mac" : "linux"}-${process.arch}.${ext}`;
+		if (!assets.some((asset) => asset.file === expected))
+			throw new Error(`Desktop asset contract mismatch: ${expected}`);
+	}
 	writeFileSync(
 		join(output, "desktop-build.json"),
 		`${JSON.stringify({ schemaVersion: 1, product: "bobs-factory-desktop", candidateDigest: candidate.digest, version: candidate.candidate.version, commit, target, runtime: identity, assets, signing: "unsigned preparation only", validation: "native install/auth/lifecycle receipts required", publication: false }, null, 2)}\n`,

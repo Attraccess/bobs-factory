@@ -68,8 +68,11 @@
 				"deb"
 			],
 			"category": "Development",
-			"maintainer": "Bob's Factory contributors"
+			"maintainer": "Bob's Factory contributors",
+			"executableName": "bobs-factory-desktop",
+			"syncDesktopName": true
 		},
 		"icon": "../../packages/edge-worker/src/factory/web/icons/icon-512.png"
-	}
+	},
+	"desktopName": "bobs-factory-desktop.desktop"
 }
