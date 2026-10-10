@@ -1,6 +1,6 @@
 # Taskbot 116 native evidence and remaining gates
 
-This is implementation validation for draft [PR #91](https://github.com/jappyjan/bobs-factory/pull/91), not release approval. The current integrated PR head is `83e18ec4f351192e4465bea384ac532ff0d363c7`. Workflow correction `ad6f0f8553f9c6df26591fc033764bf4bc354712` and its changelog follow-up were pushed as `b82c37c4fb9a3e18d1cb222c6d56d3fef852096f`; `83e18ec4` adds only this report and raw evidence. The exact `ad6f0f85` change received a scoped workflow review CLEAR; that clearance covers the workflow blob, not the full current source tree.
+This is implementation validation for draft [PR #91](https://github.com/jappyjan/bobs-factory/pull/91), not release approval. Workflow correction `ad6f0f8553f9c6df26591fc033764bf4bc354712` and its changelog follow-up were pushed as `b82c37c4fb9a3e18d1cb222c6d56d3fef852096f`; subsequent commits only add this report and raw evidence. Those docs-only updates did not trigger native validation. The exact `ad6f0f85` change received a scoped workflow review CLEAR; that clearance covers the workflow blob, not the full current source tree.
 
 ## Current head: native validation pending
 
