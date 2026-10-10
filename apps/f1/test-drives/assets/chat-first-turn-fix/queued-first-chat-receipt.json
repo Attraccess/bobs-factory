@@ -1,0 +1,206 @@
+{
+	"executed": true,
+	"mode": "mock",
+	"head": "ccc84e6bdd3faa7c27c3360840701f8b0f420ba9",
+	"result": "passed",
+	"results": [
+		{
+			"platform": "slack",
+			"sessionId": "slack-first-slack",
+			"queuedSnapshot": {
+				"limit": 1,
+				"active": 1,
+				"stopping": 0,
+				"queued": 2,
+				"requests": [
+					{
+						"id": "9bc3dd2b-0c65-4f94-81e7-01d8817f56e5",
+						"token": "ed7d6456-9fd9-44c5-96a1-6c21677fdd60",
+						"owner": {
+							"pid": 3324,
+							"start": "Sat Oct 10 23:09:43 2026",
+							"incarnation": "cf0eb4f8-785e-4362-ace8-1b309ee835e6"
+						},
+						"sequence": 1,
+						"admissionPosition": 1,
+						"queuedAt": "2026-10-10T21:09:43.965Z",
+						"phase": "executing",
+						"background": false,
+						"parked": false,
+						"identity": "queued-first-slack-holder",
+						"recoverable": false,
+						"remote": false
+					},
+					{
+						"id": "5497aa88-978b-483c-8bdd-ae094be0fa3a",
+						"token": "75437882-db04-4eab-bbdd-a1c6f5674884",
+						"owner": {
+							"pid": 3324,
+							"start": "Sat Oct 10 23:09:43 2026",
+							"incarnation": "cf0eb4f8-785e-4362-ace8-1b309ee835e6"
+						},
+						"sequence": 2,
+						"admissionPosition": 2,
+						"queuedAt": "2026-10-10T21:09:43.970Z",
+						"phase": "queued",
+						"background": false,
+						"parked": false,
+						"identity": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-kkpRUr/home:session:slack-first-slack",
+						"recoverable": true,
+						"remote": false
+					},
+					{
+						"id": "45a8115d-751d-435b-9fb4-1eab53b52e97",
+						"token": "27e20277-4fe1-4382-b271-bc589740f0fd",
+						"owner": {
+							"pid": 3324,
+							"start": "Sat Oct 10 23:09:43 2026",
+							"incarnation": "cf0eb4f8-785e-4362-ace8-1b309ee835e6"
+						},
+						"sequence": 3,
+						"admissionPosition": 3,
+						"queuedAt": "2026-10-10T21:09:43.970Z",
+						"phase": "queued",
+						"background": true,
+						"parked": false,
+						"identity": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-kkpRUr/home:title:slack-first-slack",
+						"recoverable": false,
+						"remote": false
+					}
+				],
+				"directory": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-kkpRUr/home/machine-capacity",
+				"defaultLimit": 4
+			},
+			"providerStartsBeforeDisable": 0,
+			"nativeIdBefore": null,
+			"nativeIdAfter": "f1-mock-c443918f-9342-415b-a81c-6c591f8ecb42",
+			"pendingBefore": {
+				"prompt": "Retained initial slack task",
+				"systemPrompt": "QA queued initial system",
+				"runner": "codex",
+				"model": "accepted-initial-chat-model",
+				"replyEvent": {
+					"id": "first-slack",
+					"text": "Retained initial slack task"
+				}
+			},
+			"promptDelivered": ["Retained initial slack task"],
+			"modelDelivered": "accepted-initial-chat-model",
+			"markerAfterRestart": false,
+			"markerAfterExecution": true,
+			"blockBefore": {
+				"workflowIds": ["simple"],
+				"at": "2026-10-10T21:09:43.978Z",
+				"priorStatus": "active",
+				"reason": "Workflow disabled: simple. Progress retained. Enable it, then Resume this session individually."
+			},
+			"blockAfter": null,
+			"resumedHTTP": 202,
+			"completion": "complete",
+			"replyEvent": {
+				"id": "first-slack",
+				"text": "Retained initial slack task"
+			},
+			"providerStartsAfterResume": 1
+		},
+		{
+			"platform": "zulip",
+			"sessionId": "zulip-first-zulip",
+			"queuedSnapshot": {
+				"limit": 1,
+				"active": 1,
+				"stopping": 0,
+				"queued": 2,
+				"requests": [
+					{
+						"id": "a76f9323-8180-4361-afdd-4df98ca96cf7",
+						"token": "5b8ac6ad-bb58-40d2-8e53-1dbc29ebc920",
+						"owner": {
+							"pid": 3324,
+							"start": "Sat Oct 10 23:09:43 2026",
+							"incarnation": "cf0eb4f8-785e-4362-ace8-1b309ee835e6"
+						},
+						"sequence": 5,
+						"admissionPosition": 5,
+						"queuedAt": "2026-10-10T21:09:44.112Z",
+						"phase": "executing",
+						"background": false,
+						"parked": false,
+						"identity": "queued-first-zulip-holder",
+						"recoverable": false,
+						"remote": false
+					},
+					{
+						"id": "8958fd18-3057-407a-a7c8-dcbebcc26e5e",
+						"token": "094d626d-ecbd-4bf4-a825-589e16521582",
+						"owner": {
+							"pid": 3324,
+							"start": "Sat Oct 10 23:09:43 2026",
+							"incarnation": "cf0eb4f8-785e-4362-ace8-1b309ee835e6"
+						},
+						"sequence": 6,
+						"admissionPosition": 6,
+						"queuedAt": "2026-10-10T21:09:44.117Z",
+						"phase": "queued",
+						"background": false,
+						"parked": false,
+						"identity": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-kkpRUr/home:session:zulip-first-zulip",
+						"recoverable": true,
+						"remote": false
+					},
+					{
+						"id": "d10c8b6d-6a7d-40d7-9a9d-18db966b1fbb",
+						"token": "63c05f66-5135-41ac-a6b2-3677f4abeff3",
+						"owner": {
+							"pid": 3324,
+							"start": "Sat Oct 10 23:09:43 2026",
+							"incarnation": "cf0eb4f8-785e-4362-ace8-1b309ee835e6"
+						},
+						"sequence": 7,
+						"admissionPosition": 7,
+						"queuedAt": "2026-10-10T21:09:44.118Z",
+						"phase": "queued",
+						"background": true,
+						"parked": false,
+						"identity": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-kkpRUr/home:title:zulip-first-zulip",
+						"recoverable": false,
+						"remote": false
+					}
+				],
+				"directory": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-kkpRUr/home/machine-capacity",
+				"defaultLimit": 4
+			},
+			"providerStartsBeforeDisable": 0,
+			"nativeIdBefore": null,
+			"nativeIdAfter": "f1-mock-93d09d6b-3336-4301-b2c4-9d32e3eefc72",
+			"pendingBefore": {
+				"prompt": "Retained initial zulip task",
+				"systemPrompt": "QA queued initial system",
+				"runner": "codex",
+				"model": "accepted-initial-chat-model",
+				"replyEvent": {
+					"id": "first-zulip",
+					"text": "Retained initial zulip task"
+				}
+			},
+			"promptDelivered": ["Retained initial zulip task"],
+			"modelDelivered": "accepted-initial-chat-model",
+			"markerAfterRestart": false,
+			"markerAfterExecution": true,
+			"blockBefore": {
+				"workflowIds": ["simple"],
+				"at": "2026-10-10T21:09:44.121Z",
+				"priorStatus": "active",
+				"reason": "Workflow disabled: simple. Progress retained. Enable it, then Resume this session individually."
+			},
+			"blockAfter": null,
+			"resumedHTTP": 202,
+			"completion": "complete",
+			"replyEvent": {
+				"id": "first-zulip",
+				"text": "Retained initial zulip task"
+			},
+			"providerStartsAfterResume": 1
+		}
+	]
+}

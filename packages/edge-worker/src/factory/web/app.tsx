@@ -868,15 +868,17 @@ function RunPage({
 					<div className="run-page-meta">
 						<span className={`chip ${reason ? "quiet" : (kind ?? "working")}`}>
 							{reason ??
-								(kind === "question"
-									? `${run.questions?.length ?? 0} question(s) for you`
-									: kind === "stuck"
-										? "Stuck — retry?"
-										: kind === "review"
-											? run.outputs?.guide
-												? "Ready for your review"
-												: "Done — take a look"
-											: workingLabel(run))}
+								(run.workflowBlock
+									? "Workflow disabled · Resume required"
+									: kind === "question"
+										? `${run.questions?.length ?? 0} question(s) for you`
+										: kind === "stuck"
+											? "Stuck — retry?"
+											: kind === "review"
+												? run.outputs?.guide
+													? "Ready for your review"
+													: "Done — take a look"
+												: workingLabel(run))}
 						</span>
 						<RunMeta run={run} config={config} />
 						<span>started {ago(run.createdAt)}</span>

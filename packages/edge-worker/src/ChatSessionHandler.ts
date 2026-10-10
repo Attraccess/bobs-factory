@@ -16,7 +16,10 @@ import { AgentSessionStatus, createLogger } from "bobs-factory-core";
 import { AgentSessionManager } from "./AgentSessionManager.js";
 import type { ChatRepositoryProvider } from "./ChatRepositoryProvider.js";
 import { type ChatState, steeringState } from "./factory/SessionChat.js";
-import { runnerCapacityState } from "./RunnerConcurrency.js";
+import {
+	type RunnerStartCheckpoint,
+	runnerCapacityState,
+} from "./RunnerConcurrency.js";
 import type { RunnerConfigBuilder } from "./RunnerConfigBuilder.js";
 import { persistReplyEvent } from "./SessionRecovery.js";
 
@@ -96,6 +99,7 @@ export interface ChatPlatformAdapter<TEvent> {
  * Callbacks for EdgeWorker integration (same pattern as RepositoryRouterDeps).
  */
 export interface ChatSessionHandlerDeps {
+	requireWorkflowAvailable?(id?: string): void;
 	onSessionChange?: (id: string) => void;
 	isShuttingDown?: () => boolean;
 	onNewSession?: (
@@ -114,6 +118,8 @@ export interface ChatSessionHandlerDeps {
 		runnerType?: RunnerType,
 		signal?: AbortSignal,
 		sessionId?: string,
+		/** Persist the first provider-start boundary after capacity admission. */
+		beforeStart?: RunnerStartCheckpoint,
 	) => IAgentRunner;
 	/**
 	 * Live read of the workspace-level custom-integration MCP config paths
@@ -241,6 +247,7 @@ export class ChatSessionHandler<TEvent> {
 
 			// Check if there's already an active session for this thread
 			const existingSessionId = this.threadSessions.get(threadKey);
+			this.deps.requireWorkflowAvailable?.(existingSessionId);
 			if (existingSessionId) {
 				const existingSession =
 					this.sessionManager.getSession(existingSessionId);
@@ -386,6 +393,7 @@ export class ChatSessionHandler<TEvent> {
 				session.metadata.chatPlatform = this.adapter.platformName;
 			session.metadata.chatThreadKey = threadKey;
 			session.metadata.chatSystemPrompt = systemPrompt;
+			session.metadata.chatExecutionStarted = false;
 
 			// Build runner config
 			const runnerConfig = await this.buildRunnerConfig(
@@ -401,6 +409,7 @@ export class ChatSessionHandler<TEvent> {
 					.runnerType,
 				undefined,
 				sessionId,
+				() => this.markExecutionStarted(session),
 			);
 
 			// Store the runner in the session manager
@@ -696,6 +705,11 @@ export class ChatSessionHandler<TEvent> {
 	/** Resume only unfinished turns, through the same capacity-gated start path. */
 	async recoverQueuedSessions(): Promise<void> {
 		for (const session of this.getAllChatSessions()) {
+			try {
+				this.deps.requireWorkflowAvailable?.(session.id);
+			} catch {
+				continue;
+			}
 			if (session.status === AgentSessionStatus.Complete) {
 				this.drainDashboardMessages(session.id);
 				continue;
@@ -732,6 +746,35 @@ export class ChatSessionHandler<TEvent> {
 				await this.deps.onStateChange();
 			}
 		}
+	}
+	isWorkflowStopping(id: string): boolean {
+		return this.continuationStarts.has(id);
+	}
+	interruptWorkflowSession(id: string): void {
+		this.continuationStarts.get(id)?.abort();
+		this.sessionManager.getSession(id)?.agentRunner?.stop();
+	}
+	async resumeBlockedSession(id: string): Promise<void> {
+		const session = this.sessionManager.getSession(id);
+		if (!session) throw new Error("Chat session not found");
+		this.deps.requireWorkflowAvailable?.(id);
+		const resume = this.getResumeInfo(session);
+		if (!resume)
+			throw new Error(
+				"Saved native chat conversation ID is missing. Restore the saved conversation ID before resuming.",
+			);
+		// Continue the saved turn with its accepted model and queued input.
+		await this.resumeSession(
+			undefined,
+			session,
+			id,
+			resume.sessionId,
+			resume.runnerType,
+			session.metadata?.pendingExecution?.prompt ??
+				"Resume interrupted work using prior conversation and tool results.",
+			undefined,
+			true,
+		);
 	}
 	get platformName(): ChatPlatformName {
 		return this.adapter.platformName;
@@ -850,6 +893,7 @@ export class ChatSessionHandler<TEvent> {
 		recovering = false,
 		dashboardMessages?: { id: string; text: string }[],
 	): Promise<void> {
+		this.deps.requireWorkflowAvailable?.(sessionId);
 		if (this.continuationStarts.has(sessionId))
 			throw new Error("The conversation is resuming.");
 		const isCancelled = () =>
@@ -919,6 +963,7 @@ export class ChatSessionHandler<TEvent> {
 				runnerType,
 				controller.signal,
 				sessionId,
+				() => this.markExecutionStarted(existingSession),
 			);
 			this.sessionManager.addAgentRunner(sessionId, runner);
 
@@ -1025,9 +1070,35 @@ export class ChatSessionHandler<TEvent> {
 		if (session.opencodeSessionId) {
 			return { sessionId: session.opencodeSessionId, runnerType: "opencode" };
 		}
-		if (session.metadata?.pendingExecution)
+		if (
+			session.metadata?.chatExecutionStarted === false &&
+			session.metadata.pendingExecution
+		)
 			return { runnerType: session.metadata.pendingExecution.runner };
 		return undefined;
+	}
+
+	private async markExecutionStarted(
+		session: CyrusAgentSession,
+	): ReturnType<RunnerStartCheckpoint> {
+		if (session.metadata?.chatExecutionStarted !== false) return;
+		// Persist before any provider side effects. Missing IDs after this boundary
+		// require recovery; only an explicitly never-started turn can start afresh.
+		await this.persistMessage(() => {
+			session.metadata!.chatExecutionStarted = true;
+			return () => {
+				session.metadata!.chatExecutionStarted = false;
+			};
+		});
+		// The capacity wrapper invokes this only when post-save cancellation or
+		// admission rejection confirms that provider execution never began.
+		return () =>
+			this.persistMessage(() => {
+				session.metadata!.chatExecutionStarted = false;
+				return () => {
+					session.metadata!.chatExecutionStarted = true;
+				};
+			});
 	}
 
 	/**

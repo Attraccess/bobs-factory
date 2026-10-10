@@ -1,0 +1,69 @@
+{
+	"testedRevision": "80e90f11eca492b4e2969f7adf95961c8a7f8b65",
+	"mode": "mock",
+	"findings": [
+		"integration-review:QA-CHAT-MODEL-DRIFT",
+		"integration-review:qa-aef6d69bbf43ce5b"
+	],
+	"productionComponents": [
+		"ChatSessionHandler",
+		"RunnerConfigBuilder",
+		"RunnerSelectionService",
+		"EdgeWorker.buildChatSessionHandlerDeps",
+		"EdgeWorker.createRunnerForType",
+		"session/capacity owners",
+		"protected HTTP Resume"
+	],
+	"controlled": [
+		"provider runners through f1AgentHandlers(mock)",
+		"chat platform transport",
+		"pause and runner-config observation",
+		"title startup for injected chat"
+	],
+	"fixture": {
+		"path": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-production-fix/production-chat-f1.ts",
+		"sha256": "24cde6c344bc6b171dc04f72bacc44c29dbc5cdd53bd65f110b3596952e99e93"
+	},
+	"results": {
+		"beforeFixRegression": {
+			"failed": 2,
+			"reason": "Selected model was absent from persisted chat execution."
+		},
+		"focusedTests": {
+			"passed": 239,
+			"suites": 14
+		},
+		"f1": {
+			"exitCode": 0,
+			"modelPreserved": true,
+			"nativeConversationPreserved": true,
+			"pendingInputReplayed": true,
+			"HTTPResume": 202,
+			"completion": "complete",
+			"blockCleared": true
+		},
+		"build": "passed",
+		"typecheck": "passed",
+		"lint": {
+			"passed": true,
+			"existingWarnings": 19
+		},
+		"commitHookWorkspaceBuildAndTypes": "passed"
+	},
+	"logs": {
+		"before-fix-tests.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-production-fix/before-fix-tests.log",
+		"isolated-focused-tests.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-production-fix/isolated-focused-tests.log",
+		"f1.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-production-fix/f1.log",
+		"build.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-production-fix/build.log",
+		"typecheck.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-production-fix/typecheck.log",
+		"lint.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-production-fix/lint.log",
+		"commit.log": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-production-fix/commit.log"
+	},
+	"limitations": [
+		"Provider execution and platform transport were simulated.",
+		"Existing legacy pending executions with no saved model retain the current-default fallback.",
+		"Initial broader tests inherited managed Factory environment values; all 239 passed after isolation.",
+		"No UI implementation changed; previously accepted visual evidence was not rerun.",
+		"Ticket synchronization remains unconfirmed."
+	]
+}

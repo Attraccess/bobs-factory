@@ -1,0 +1,33 @@
+{
+	"testedRevision": "cb06e9313d7b9e152c99713a4d8b2100def6ec2b",
+	"mode": "mock",
+	"fixture": "/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-fix/qa-fix-extended-f1.ts",
+	"fixtureSha256": "422ad6c9b6d54380b16af1ae877d6f3ca212fbf94807bbe902c1453f6937f214",
+	"f1ExitCode": 0,
+	"tests": {
+		"files": 5,
+		"passed": 192,
+		"newRegressionCases": 2
+	},
+	"build": "passed (edge-worker and commit-hook workspace build)",
+	"types": "passed (edge-worker and commit-hook workspace typecheck)",
+	"lint": {
+		"status": "passed",
+		"warnings": 19,
+		"introducedWarnings": 0
+	},
+	"failedCriteriaRetested": [
+		"native-resume/native-recover",
+		"saved-compatibility/compat-frozen"
+	],
+	"logs": [
+		"/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-red.log",
+		"/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-tests.log",
+		"/Users/jappy/.cyrus/factory/evidence/manual-3db22f15-582b-4d93-82fb-9ab119d3f716/chat-model-fix/f1.log"
+	],
+	"limitations": [
+		"All provider execution was simulated; real agents and live integrations were not tested.",
+		"UI code is unchanged; previously accepted screenshot and keyboard evidence remains applicable.",
+		"Reviewer reassessment, subsequent CI/QA and human approval remain required."
+	]
+}

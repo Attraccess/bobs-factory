@@ -2,17 +2,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-	defaultWorkflows,
-	upgradeWorkflows,
-} from "../src/factory/defaultWorkflows.js";
+import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { validateFactoryResult } from "../src/factory/FactoryResults.js";
 import {
 	filterReview,
 	parseAgentOutput,
 	toolArguments,
 } from "../src/factory/FactoryTools.js";
-import { legacyScreenshotSteps } from "../src/factory/legacyScreenshotSteps.js";
 import { validateWorkflows, type Workflow } from "../src/factory/Workflow.js";
 import {
 	type ExecutionContext,
@@ -21,7 +17,6 @@ import {
 	type RuntimeHooks,
 	WorkflowRuntime,
 } from "../src/factory/WorkflowRuntime.js";
-import { legacyReviewWorkflows } from "./fixtures/legacy-review.js";
 
 const homes: string[] = [];
 afterEach(() => {
@@ -378,30 +373,6 @@ describe("workflow runtime", () => {
 		}
 	});
 
-	it("upgrades the legacy visual reviewer with a real newline while retaining its model", () => {
-		const saved = legacyReviewWorkflows();
-		const shared = saved.find(
-			(definition) => definition.id === "factory-pipeline",
-		)!;
-		const reviewer = shared.steps.find((step) => step.id === "visual-review")!;
-		reviewer.prompt = `${legacyScreenshotSteps.find((step) => step.id === "visual-review")!.prompt!.split("\n")[0]}\nThis is a VISUAL review: open and inspect the actual screenshots, checking each requested area/state against the plan. Include areas with missing/unavailable capture evidence as rating 3 findings. Never approve missing screenshots.`;
-		reviewer.model = "custom-review-model";
-		const upgraded = validateWorkflows(upgradeWorkflows(saved))
-			.find((definition) => definition.id === "factory-pipeline")!
-			.steps.find((step) => step.id === "visual-review")!;
-		expect(upgraded.prompt).toBe(
-			defaultWorkflows
-				.find((definition) => definition.id === "factory-pipeline")!
-				.steps.find((step) => step.id === "visual-review")!.prompt,
-		);
-		expect(upgraded.model).toBe("custom-review-model");
-		reviewer.prompt = "My custom visual review instructions";
-		expect(
-			validateWorkflows(upgradeWorkflows(saved))
-				.find((definition) => definition.id === "factory-pipeline")!
-				.steps.find((step) => step.id === "visual-review")!.prompt,
-		).toBe(reviewer.prompt);
-	});
 	it("persists agent provenance before trimming an oversized event tail", () => {
 		const { runtime, home } = create();
 		const run = start(runtime, workflow([agent("review")]));
@@ -823,19 +794,20 @@ describe("workflow runtime", () => {
 		expect(restarted.get(run.id).status).toBe("running");
 		expect(restarted.get(run.id).events[0]?.message).toBe("working");
 	});
-	it("freezes the workflow per run and applies saved changes only to new runs", () => {
+	it("freezes local workflows per run and protects bundled names", () => {
 		const { runtime } = create();
-		const run = start(
-			runtime,
-			runtime.selectWorkflow(["workflow:factory"], "manual"),
-		);
+		const local = workflow([agent("work")]);
+		runtime.updateWorkflows([...defaultWorkflows, local]);
+		const run = start(runtime, local);
 		const definitions = runtime.listWorkflows();
-		definitions.find((item) => item.id === "factory")!.name = "New name";
+		definitions.find((w) => w.id === "custom")!.name = "New name";
 		runtime.updateWorkflows(definitions);
-		expect(run.workflow.name).toBe("Software factory");
-		expect(runtime.selectWorkflow([], "manual", "factory").name).toBe(
+		expect(run.workflow.name).toBe("Custom");
+		expect(runtime.selectWorkflow([], "manual", "custom").name).toBe(
 			"New name",
 		);
+		definitions.find((w) => w.id === "factory")!.name = "Changed standard";
+		expect(() => runtime.updateWorkflows(definitions)).toThrow("read-only");
 	});
 	it("rejects dangling edges, duplicate IDs and malformed results", () => {
 		expect(() => workflow([agent("x", { next: "missing" })])).toThrow(
@@ -1441,6 +1413,10 @@ it("fails a capture-assistance checkpoint inside a frozen nested fanout without 
 			{ id: "gate", name: "Gate", type: "tool", tool: "visual-gate" },
 		],
 	};
+	runtime.updateWorkflows([
+		...defaultWorkflows,
+		validateWorkflows([...defaultWorkflows, captureFlow]).at(-1)!,
+	]);
 	const run = start(
 		runtime,
 		workflow(
@@ -1828,62 +1804,6 @@ it.each([
 	).toBe(false);
 });
 
-it("upgrades only stock CI routing, retaining customized models and routes", () => {
-	const definitions = legacyReviewWorkflows();
-	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
-	shared.steps = shared.steps.filter((x) => x.id !== "after-ci-fix");
-	const fix = shared.steps.find((x) => x.id === "ci-fix")!;
-	fix.next = "code-review";
-	fix.model = "custom-fixer";
-	const upgraded = validateWorkflows(upgradeWorkflows(definitions)).find(
-		(x) => x.id === "factory-pipeline",
-	)!;
-	expect(upgraded.steps.find((x) => x.id === "ci-fix")).toMatchObject({
-		next: "after-ci-fix",
-		model: "custom-fixer",
-	});
-	expect(
-		validateWorkflows(upgradeWorkflows(upgradeWorkflows(definitions)))
-			.find((x) => x.id === "factory-pipeline")!
-			.steps.filter((x) => x.id === "after-ci-fix"),
-	).toHaveLength(1);
-	fix.prompt = "Custom CI correction policy";
-	expect(
-		validateWorkflows(upgradeWorkflows(definitions))
-			.find((x) => x.id === "factory-pipeline")!
-			.steps.find((x) => x.id === "ci-fix")!.next,
-	).toBe("code-review");
-});
-
-it("upgrades handoff into the existing CI fix route without replacing custom routes", () => {
-	const definitions = legacyReviewWorkflows();
-	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
-	const handoff = shared.steps.find((x) => x.id === "handoff")!;
-	handoff.branches = [];
-	const upgraded = validateWorkflows(upgradeWorkflows(definitions));
-	expect(
-		upgraded
-			.find((x) => x.id === "factory-pipeline")!
-			.steps.find((x) => x.id === "handoff")!.branches,
-	).toEqual([{ when: { path: "fix", equals: true }, next: "ci-fix" }]);
-	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
-	handoff.branches = [
-		{ when: { path: "fix", equals: true }, next: "code-review" },
-	];
-	expect(
-		validateWorkflows(upgradeWorkflows(definitions))
-			.find((x) => x.id === "factory-pipeline")!
-			.steps.find((x) => x.id === "handoff")!.branches,
-	).toEqual(handoff.branches);
-	handoff.branches = [];
-	shared.steps.find((x) => x.id === "ci")!.branches = [];
-	expect(
-		validateWorkflows(upgradeWorkflows(definitions))
-			.find((x) => x.id === "factory-pipeline")!
-			.steps.find((x) => x.id === "handoff")!.branches,
-	).toEqual([]);
-});
-
 it("recovers a saved nested handoff through its existing fixer without replaying completed work", async () => {
 	const called: string[] = [];
 	const { runtime, home } = create({
@@ -2063,36 +1983,6 @@ it.each([
 			"in_review",
 		);
 	}
-});
-
-it("upgrades stock coordination limits without changing agent/custom limits", () => {
-	const definitions = legacyReviewWorkflows();
-	const shared = definitions.find((x) => x.id === "factory-pipeline")!;
-	const gate = shared.steps.find((x) => x.id === "review-gate")!;
-	gate.maxVisits = 8;
-	const ci = shared.steps.find((x) => x.id === "ci")!;
-	ci.maxVisits = 3;
-	const upgraded = validateWorkflows(upgradeWorkflows(definitions)).find(
-		(x) => x.id === "factory-pipeline",
-	)!;
-	expect(upgraded.steps.find((x) => x.id === "review-gate")!.maxVisits).toBe(
-		100,
-	);
-	expect(upgraded.steps.find((x) => x.id === "ci")!.maxVisits).toBe(3);
-	expect(upgraded.steps.find((x) => x.id === "code-review")!.maxVisits).toBe(8);
-	ci.maxVisits = 8;
-	ci.name = "Watch pull request CI";
-	expect(
-		validateWorkflows(upgradeWorkflows(definitions))
-			.find((x) => x.id === "factory-pipeline")!
-			.steps.find((x) => x.id === "ci")!.maxVisits,
-	).toBe(100);
-	gate.name = "My custom review gate";
-	expect(
-		validateWorkflows(upgradeWorkflows(definitions))
-			.find((x) => x.id === "factory-pipeline")!
-			.steps.find((x) => x.id === "review-gate")!.maxVisits,
-	).toBe(8);
 });
 
 it("regenerates only the pending guide in a nested pipeline without approval or repeating captures", async () => {
@@ -2332,29 +2222,6 @@ it("keeps legacy run definitions stable on load and audits contract migration at
 	expect(restarted.get(run.id).workflowDefinitions).toEqual(definitions);
 });
 
-it("upgrades stock implementation blockers without replacing custom instructions or role settings", () => {
-	const saved = structuredClone(defaultWorkflows);
-	const shared = saved.find((item) => item.id === "factory-pipeline")!;
-	const implementation = shared.steps.find((item) => item.id === "implement")!;
-	implementation.prompt =
-		'Implement the provided plan and use its assets. Follow repository conventions and appropriate verification. Return {"summary":"...","checks":["commands and outcomes"]}. Do not create or publish a PR; the next step handles delivery.';
-	implementation.askQuestions = false;
-	implementation.model = "custom-implementation-model";
-	const upgraded = validateWorkflows(upgradeWorkflows(saved));
-	const role = upgraded
-		.find((item) => item.id === "factory-pipeline")!
-		.steps.find((item) => item.id === "implement")!;
-	expect(role.askQuestions).toBe(true);
-	expect(role.model).toBe("custom-implementation-model");
-	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
-	implementation.prompt = "Custom implementation instructions";
-	const custom = validateWorkflows(upgradeWorkflows(saved))
-		.find((item) => item.id === "factory-pipeline")!
-		.steps.find((item) => item.id === "implement")!;
-	expect(custom.prompt).toBe(implementation.prompt);
-	expect(custom.askQuestions).toBe(false);
-});
-
 it("runs nested intensive fanout at limit one and cancels queued leaves without deadlock", async () => {
 	const { MachineCapacity } = await import("../src/MachineCapacity.js");
 	const { capacityRunStatus } = await import(
@@ -2453,7 +2320,9 @@ it.each([
 	const restored = reload(home);
 	expect(restored.getDefaultWorkflow()).toBe(object ? "custom" : "simple");
 	expect(restored.get(run.id)).toEqual(frozen);
-	expect(restored.listWorkflows().at(-1)!.steps[0]!.groups).toEqual([
+	expect(
+		restored.listWorkflows().find((w) => w.id === "custom")!.steps[0]!.groups,
+	).toEqual([
 		[{ ...custom.steps[0]!.groups![0]![0]!, computeIntensive: false }],
 		custom.steps[0]!.groups![1],
 	]);
@@ -2462,9 +2331,13 @@ it.each([
 			.listWorkflows()
 			.find((w) => w.id === "factory-pipeline")!
 			.steps.find((s) => s.tool === "handoff")!.computeIntensive,
-	).toBe(false);
+	).toBe(
+		defaultWorkflows
+			.find((w) => w.id === "factory-pipeline")!
+			.steps.find((s) => s.tool === "handoff")!.computeIntensive,
+	);
 	const normalized = readFileSync(path, "utf8");
-	expect(JSON.parse(normalized).workflows).toEqual(restored.listWorkflows());
+	expect(JSON.parse(normalized).format).toBe("workflow-catalog-v1");
 	const second = reload(home);
 	expect(readFileSync(path, "utf8")).toBe(normalized);
 	expect(second.get(run.id)).toEqual(frozen);
@@ -2571,65 +2444,6 @@ it.each([
 	expect(run.history.map((item) => item.step)).toContain(
 		"parallel/0/call/heavy",
 	);
-});
-
-it("upgrades a coherent screenshot recipe to QA atomically, keeps custom behavior and frozen run definitions", async () => {
-	const saved = legacyReviewWorkflows();
-	const pipeline = saved.find((w) => w.id === "factory-pipeline")!;
-	for (const legacy of legacyScreenshotSteps)
-		pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =
-			structuredClone(legacy);
-	pipeline.steps.find((s) => s.id === "capture")!.model =
-		"custom-capture-model";
-	const upgraded = validateWorkflows(upgradeWorkflows(saved));
-	const qa = upgraded.find((w) => w.id === "factory-pipeline")!;
-	expect(qa.steps.find((s) => s.id === "visual-scope")).toMatchObject({
-		qaContract: "qa-v1",
-		branches: [],
-	});
-	expect(qa.steps.find((s) => s.id === "capture")).toMatchObject({
-		qaContract: "qa-v1",
-		model: "custom-capture-model",
-	});
-	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
-	pipeline.steps.find((s) => s.id === "visual-review")!.prompt =
-		"Custom screenshot requirements";
-	const custom = validateWorkflows(upgradeWorkflows(saved)).find(
-		(w) => w.id === "factory-pipeline",
-	)!;
-	// Handoff recovery is independent of the QA role migration: the existing
-	// CI fixer still handles late conflicts while custom screenshot roles stay intact.
-	expect(custom.steps.find((s) => s.id === "handoff")!.branches).toEqual([
-		{ when: { path: "fix", equals: true }, next: "ci-fix" },
-	]);
-	expect(
-		custom.steps.filter((s) =>
-			legacyScreenshotSteps.some((l) => l.id === s.id && l.id !== "handoff"),
-		),
-	).toEqual(
-		pipeline.steps.filter((s) =>
-			legacyScreenshotSteps.some((l) => l.id === s.id && l.id !== "handoff"),
-		),
-	);
-	const { runtime } = create();
-	const legacyDefinition = {
-		...defaultWorkflows.find((w) => w.id === "factory")!,
-		steps: structuredClone(legacyScreenshotSteps),
-	};
-	const run = start(runtime, legacyDefinition);
-	const frozen = structuredClone(run.workflow);
-	runtime.save(run);
-	const restored = new WorkflowRuntime(
-		runtime.directory.replace(/\/factory$/, ""),
-		{
-			agent: async () => ({}),
-			script: async () => ({}),
-			tool: async () => ({}),
-		},
-	);
-	expect(restored.get(run.id).workflow).toEqual(frozen);
-	await restored.shutdown();
-	await runtime.shutdown();
 });
 
 it("retries blocked nonvisual QA after restart and waits again without waiving criteria", async () => {
@@ -2895,56 +2709,6 @@ it.each([
 	);
 	expect(restored.status).toBe("completed");
 	await restarted.shutdown();
-});
-
-it("upgrades the original stock end-at-handoff recipe with QA and its human checkpoint together", () => {
-	const saved = structuredClone(defaultWorkflows);
-	const pipeline = saved.find((w) => w.id === "factory-pipeline")!;
-	for (const legacy of legacyScreenshotSteps)
-		pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =
-			structuredClone(legacy);
-	pipeline.steps = pipeline.steps.filter(
-		(s) => !["human-review", "human-fix", "merge"].includes(s.id),
-	);
-	pipeline.steps.find((s) => s.id === "handoff")!.next = "end";
-	const upgraded = validateWorkflows(upgradeWorkflows(saved));
-	const qa = upgraded.find((w) => w.id === "factory-pipeline")!;
-	expect(qa.steps.find((s) => s.id === "handoff")).toMatchObject({
-		qaContract: "qa-v1",
-		next: "human-review",
-	});
-	expect(qa.steps.some((s) => s.id === "human-review")).toBe(true);
-	expect(upgradeWorkflows(upgraded)).toEqual(upgraded);
-});
-
-it("preserves a screenshot recipe with customized result handling or nonvisual routing", () => {
-	for (const customize of [
-		(step: Workflow["steps"][number]) => {
-			step.json = false;
-		},
-		(step: Workflow["steps"][number]) => {
-			step.askQuestions = true;
-		},
-		(step: Workflow["steps"][number]) => {
-			step.branches = [];
-		},
-	]) {
-		const saved = legacyReviewWorkflows(),
-			pipeline = saved.find((w) => w.id === "factory-pipeline")!;
-		for (const legacy of legacyScreenshotSteps)
-			pipeline.steps[pipeline.steps.findIndex((s) => s.id === legacy.id)] =
-				structuredClone(legacy);
-		customize(pipeline.steps.find((s) => s.id === "visual-scope")!);
-		const updated = validateWorkflows(upgradeWorkflows(saved)).find(
-			(w) => w.id === "factory-pipeline",
-		)!;
-		expect(updated.steps.find((s) => s.id === "visual-scope")).toEqual(
-			pipeline.steps.find((s) => s.id === "visual-scope"),
-		);
-		expect(
-			updated.steps.find((s) => s.id === "capture")!.qaContract,
-		).toBeUndefined();
-	}
 });
 
 it("assigns new identities to repeated question batches and labels ticket suggestions", async () => {

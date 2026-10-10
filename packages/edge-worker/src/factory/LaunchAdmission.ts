@@ -21,6 +21,7 @@ export interface TicketLaunchReceipt {
 	origin: WorkflowTriggerOrigin;
 	commentBody?: string | null;
 	launch?: {
+		nativePreferences?: import("./AgentSettings.js").AgentSettings;
 		workflow: Workflow;
 		workflowDefinitions: Workflow[];
 		selectionMethod: NonNullable<WorkflowTriggerOrigin["selectionMethod"]>;

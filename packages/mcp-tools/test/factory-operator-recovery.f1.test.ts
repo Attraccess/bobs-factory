@@ -41,6 +41,10 @@ it("F1: repairs missing Taskbot transport entirely through compiled stdio MCP, p
 	vi.stubEnv("BOBS_FACTORY_FACTORY_PORT", "0");
 	const home = mkdtempSync(join(tmpdir(), "f1-operator-"));
 	cleanup.push(() => rmSync(home, { recursive: true, force: true }));
+	vi.stubEnv(
+		"BOBS_FACTORY_MIGRATION_SOURCE_CAPACITY_DIRECTORY",
+		join(home, "legacy-capacity"),
+	);
 	const repo = join(home, "repo");
 	execFileSync("git", ["init", "-b", "main", repo]);
 	execFileSync("git", [

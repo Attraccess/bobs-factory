@@ -204,6 +204,8 @@ export class SessionSemaphore implements ExecutionCapacity {
  */
 const capacityStates = new WeakMap<IAgentRunner, CapacityRequest>();
 const capacityExecutions = new WeakMap<IAgentRunner, Promise<unknown>>();
+/** Return durable cleanup for a saved checkpoint if no provider is invoked. */
+export type RunnerStartCheckpoint = () => Promise<void | (() => Promise<void>)>;
 export async function waitForRunnerCapacity(
 	runner: IAgentRunner,
 ): Promise<void> {
@@ -219,6 +221,8 @@ export function capRunnerStarts(
 	semaphore: ExecutionCapacity,
 	signal?: AbortSignal,
 	options: CapacityOptions = {},
+	admit?: () => void,
+	beforeStart?: RunnerStartCheckpoint,
 ): IAgentRunner {
 	let controller: AbortController | undefined;
 	let pending = false;
@@ -230,6 +234,7 @@ export function capRunnerStarts(
 		return work;
 	};
 	const gate = async <T>(run: () => Promise<T>): Promise<T> => {
+		admit?.();
 		if (stopped) throw new Error("Session start cancelled");
 		if (pending) throw new Error("Runner execution already pending");
 		controller = new AbortController();
@@ -251,8 +256,23 @@ export function capRunnerStarts(
 				},
 			});
 			controller.signal.throwIfAborted();
+			admit?.();
 			admitted = true;
-			return await lease.run(run);
+			return await lease.run(async () => {
+				const restoreCheckpoint = await beforeStart?.();
+				try {
+					controller!.signal.throwIfAborted();
+					admit?.();
+				} catch (error) {
+					// Cancellation or admission rejection here proves the provider
+					// was never invoked. Finish durable cleanup before releasing capacity.
+					await restoreCheckpoint?.();
+					throw error;
+				}
+				// Once invoked, even a synchronous provider failure has uncertain
+				// effects; keep the checkpoint for conservative recovery.
+				return run();
+			});
 		} finally {
 			try {
 				if (lease) await lease.release();
@@ -268,6 +288,11 @@ export function capRunnerStarts(
 		get(target, property, receiver) {
 			if (property === "start")
 				return (prompt: string) => track(gate(() => target.start(prompt)));
+			if (property === "addStreamMessage" && target.addStreamMessage)
+				return (message: string) => {
+					admit?.();
+					return target.addStreamMessage!(message);
+				};
 			if (property === "stop")
 				return () => {
 					stopped = true;

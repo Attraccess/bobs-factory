@@ -72,6 +72,8 @@ it("settling an integration launch cancels setup queued in the production custom
 	};
 	const worker: any = Object.create(EdgeWorker.prototype);
 	Object.assign(worker, {
+		requireSessionWorkflowAvailable: vi.fn(),
+		interruptDisabledSessions: vi.fn(),
 		factoryHome: home,
 		runnerSlots: slots,
 		recoveryAbort: new AbortController(),
@@ -84,7 +86,15 @@ it("settling an integration launch cancels setup queued in the production custom
 			identifier: "ISSUE-1",
 			title: "Test",
 		}),
-		selectTicketLaunch: async () => ({ workflow: { id: "simple" } }),
+		selectTicketLaunch: async () => ({
+			workflow: { id: "simple", steps: [] },
+			workflowDefinitions: [],
+		}),
+		fetchIssueLabels: async () => [],
+		runnerSelectionService: {
+			determineRunnerSelection: () => ({ runnerType: "codex" }),
+		},
+		preflightExecution: vi.fn(),
 		moveIssueToStartedState: vi.fn(),
 		getLaunchAdmission: () => ({
 			get: () => receipt,
@@ -165,8 +175,14 @@ it.each([
 		linearWorkspaceId: "test-workspace",
 	} as RepositoryConfig;
 	const worker: any = Object.create(EdgeWorker.prototype);
-	const runtime = { runs: new Map(), resumeAll: vi.fn() };
+	const runtime = {
+		runs: new Map(),
+		resumeAll: vi.fn(),
+		catalog: { getBlock: () => undefined, simplePreferences: () => ({}) },
+	};
 	Object.assign(worker, {
+		requireSessionWorkflowAvailable: vi.fn(),
+		interruptDisabledSessions: vi.fn(),
 		factoryHome: home,
 		runnerSlots: slots,
 		recoveryAbort: new AbortController(),
@@ -285,6 +301,8 @@ function recoveryFixture(platform = "github", runnerType = "cursor") {
 	const scopedLogger = { ...logger, withContext: () => scopedLogger };
 	const worker: any = Object.create(EdgeWorker.prototype);
 	Object.assign(worker, {
+		requireSessionWorkflowAvailable: vi.fn(),
+		interruptDisabledSessions: vi.fn(),
 		factoryHome: home,
 		runnerSlots: slots,
 		recoveryAbort: new AbortController(),
@@ -507,11 +525,17 @@ it.each([
 		(request) => request.phase === "queued",
 	);
 	Object.assign(worker, {
+		requireSessionWorkflowAvailable: vi.fn(),
+		interruptDisabledSessions: vi.fn(),
 		repositories: new Map([[repository.id, repository]]),
 		sessionRepositories: new Map(),
 		chatSessionHandler: null,
 		zulipChatSessionHandler: null,
-		getFactoryRuntime: () => ({ runs: new Map(), resumeAll: vi.fn() }),
+		getFactoryRuntime: () => ({
+			runs: new Map(),
+			resumeAll: vi.fn(),
+			catalog: { getBlock: () => undefined, simplePreferences: () => ({}) },
+		}),
 		ticketStartupIsIncomplete: () => false,
 		getAllKnownSessions: () => [session],
 	});

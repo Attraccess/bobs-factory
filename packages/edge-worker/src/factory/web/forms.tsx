@@ -2,7 +2,7 @@ import { useEffect, useId, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { passiveTools } from "../CapacityPolicy";
 import type { ExecutionSelection } from "../ExecutionProfiles";
-import { useAction, useConfig } from "./client";
+import { api, useAction, useConfig } from "./client";
 import { ExecutionSelectors } from "./execution";
 import { useCurrentForm, useFormState } from "./form-state";
 import { revisionOf } from "./restoration";
@@ -193,7 +193,15 @@ export function Composer({
 		navigate = useNavigate();
 	const launchConfig = revisionOf([
 		config.repositories,
-		config.workflows,
+		config.workflows.map(
+			({
+				enabled: _enabled,
+				unavailable: _unavailable,
+				ownership: _ownership,
+				provenance: _provenance,
+				...definition
+			}: any) => definition,
+		),
 		config.defaultWorkflow,
 		config.defaultRunner,
 		config.reasoningLevels,
@@ -221,8 +229,11 @@ export function Composer({
 			{},
 		),
 		[agentOpen, setAgentOpen] = useFormState(inputContext, false);
-	const workflows = config.workflows.filter((w: any) =>
-			w.allowedTriggers.includes("manual"),
+	const workflows = config.workflows.filter(
+			(w: any) =>
+				w.enabled !== false &&
+				!w.unavailable?.length &&
+				w.allowedTriggers.includes("manual"),
 		),
 		workflow = workflows.find((w: any) => w.id === workflowId),
 		fields = workflow?.launchFields ?? [];
@@ -525,7 +536,8 @@ export function Recipes() {
 		toast = useToast();
 	const config = configQuery.data;
 	const definitions = revisionOf(config?.workflows);
-	const [editing, setEditing] = useFormState<any>(definitions, undefined),
+	const [disabling, setDisabling] = useFormState<any>(definitions, undefined),
+		[editing, setEditing] = useFormState<any>(definitions, undefined),
 		[json, setJson] = useFormState(definitions, ""),
 		[role, setRole] = useFormState<any>(definitions, undefined),
 		[error, setError] = useFormState(
@@ -563,13 +575,60 @@ export function Recipes() {
 			<h1>Recipes</h1>
 			<p className="intro">
 				How Bob cooks each kind of run. Tune the agent per step; the default
-				recipe is used when nothing else matches. Launch methods apply to new
-				runs; existing runs retain their definitions.
+				recipe is used when nothing else matches. Bundled behavior comes from
+				the installed runtime. Fork Factory or Takeover to edit their graph.
+				Launch methods apply to new runs; existing runs retain their
+				definitions.
 			</p>
 			<p className="muted">
 				Factory-wide profiles, defaults, capacity and run titles are in{" "}
 				<Link to="/settings">Settings</Link>.
 			</p>
+			{Object.entries(
+				config.workflowConfiguration?.migration?.conflicts ?? {},
+			).map(([id, message]) => (
+				<div key={id} className="error" role="alert">
+					<p>
+						{id === "simple" ? "Simple" : id}: {String(message)}
+					</p>
+					{id === "simple" && (
+						<Button
+							requiresConnection
+							type="button"
+							disabled={action.isPending}
+							onClick={() =>
+								void action
+									.mutateAsync({
+										path: "/api/workflows/simple/resolve-migration",
+										method: "POST",
+										body: { useBundledSimple: true },
+									})
+									.catch(() => {})
+							}
+						>
+							Use bundled native Simple
+						</Button>
+					)}
+				</div>
+			))}
+			{config.workflowConfiguration?.migration && (
+				<p className="muted">
+					Original configuration backup:{" "}
+					{config.workflowConfiguration.migration.backup}. Preserved custom IDs:{" "}
+					{JSON.stringify(config.workflowConfiguration.migration.mappings)}.
+					Update external ticket selectors to use the preserved custom IDs.
+				</p>
+			)}
+			{(config.workflowConfiguration?.inactive ?? []).map(
+				(item: any, index: number) => (
+					<InactivePreference
+						key={`${item.workflow}/${item.role}`}
+						item={item}
+						index={index}
+						config={config}
+					/>
+				),
+			)}
 			<div className="recipes">
 				{config.workflows.map((workflow: any) => (
 					<article className="recipe" key={workflow.id}>
@@ -577,9 +636,13 @@ export function Recipes() {
 							<button
 								type="button"
 								className="recipe-emoji"
-								aria-label={`Edit ${workflow.name}`}
+								aria-label={`${workflow.ownership === "bundled" ? "Inspect" : "Edit"} ${workflow.name}`}
 								onClick={() => {
-									setEditing({ id: workflow.id, name: workflow.name });
+									setEditing({
+										id: workflow.id,
+										name: workflow.name,
+										readonly: workflow.ownership === "bundled",
+									});
 									setJson(JSON.stringify(workflow, null, 2));
 								}}
 							>
@@ -593,6 +656,13 @@ export function Recipes() {
 									)}
 								</h2>
 								<p>{workflow.description}</p>
+								<small>
+									{workflow.ownership === "bundled"
+										? "Bundled · behavior read-only"
+										: "Local · editable"}
+									{workflow.provenance &&
+										` · ${workflow.provenance.kind} of ${workflow.provenance.source}`}
+								</small>
 							</div>
 							{
 								<button
@@ -613,11 +683,92 @@ export function Recipes() {
 								</button>
 							}
 						</header>
+						<div className="actions">
+							<Button
+								requiresConnection
+								disabled={action.isPending}
+								onClick={() => {
+									if (workflow.enabled === false)
+										void action
+											.mutateAsync({
+												path: `/api/workflows/${workflow.id}/availability`,
+												method: "PUT",
+												body: { enabled: true },
+											})
+											.catch(() => {});
+									else
+										void api<any>(`/api/workflows/${workflow.id}/availability`)
+											.then((impact) => setDisabling({ workflow, impact }))
+											.catch((error) => setError(error.message));
+								}}
+							>
+								{workflow.enabled === false ? "Enable" : "Disable"}
+							</Button>
+							{["factory", "takeover"].includes(workflow.id) && (
+								<Button
+									requiresConnection
+									disabled={action.isPending}
+									onClick={() =>
+										void action
+											.mutateAsync({
+												path: `/api/workflows/${workflow.id}/fork`,
+											})
+											.then(() =>
+												toast({ text: "Private editable fork created" }),
+											)
+											.catch(() => {})
+									}
+								>
+									Fork
+								</Button>
+							)}
+							{workflow.id === "simple" && (
+								<Button
+									onClick={() =>
+										setRole({
+											workflowId: "simple",
+											stepId: "native",
+											path: [],
+											value: {
+												name: "Simple agent",
+												...(config.workflowConfiguration?.preferences?.simple
+													?.native ?? {}),
+											},
+										})
+									}
+								>
+									Agent settings
+								</Button>
+							)}
+						</div>
+						{!!workflow.unavailable?.length && (
+							<p className="error">
+								Unavailable: {workflow.unavailable.join(", ")}. Enable the
+								dependency or edit a local graph. A disabled default rejects
+								launches; choose another default to route new work.
+							</p>
+						)}
+						<RecipeLabels
+							workflow={workflow}
+							pending={action.isPending}
+							onSave={(labels) =>
+								save(
+									config.workflows.map((w: any) =>
+										w.id === workflow.id ? { ...w, labels } : w,
+									),
+								)
+							}
+						/>
+
 						<label className="recipe-chat">
 							<input
 								type="checkbox"
 								checked={workflow.chat ?? false}
-								disabled={action.isPending || action.isBlocked}
+								disabled={
+									workflow.ownership === "bundled" ||
+									action.isPending ||
+									action.isBlocked
+								}
 								onChange={(event) =>
 									void save(
 										config.workflows.map((w: any) =>
@@ -669,8 +820,8 @@ export function Recipes() {
 							</small>
 							{workflow.id === "simple" && (
 								<small>
-									Simple has no graph to call. Clone it under another ID with
-									graph steps to customize.
+									Simple uses native conversations and cannot be forked or
+									called by another workflow.
 								</small>
 							)}
 							{config.defaultWorkflow === workflow.id && (
@@ -763,23 +914,26 @@ export function Recipes() {
 								</div>
 							</section>
 						</div>
-						<CapacityClassification
-							disabled={action.isPending}
-							steps={workflow.steps}
-							onSave={async (path, computeIntensive) => {
-								const definitions = structuredClone(config.workflows);
-								let node: any = definitions.find(
-									(item: any) => item.id === workflow.id,
-								).steps;
-								for (const part of path.split("/")) node = node[part];
-								node.computeIntensive = computeIntensive;
-								await save(definitions);
-							}}
-						/>
+						{workflow.ownership !== "bundled" && (
+							<CapacityClassification
+								disabled={action.isPending}
+								steps={workflow.steps}
+								onSave={async (path, computeIntensive) => {
+									const definitions = structuredClone(config.workflows);
+									let node: any = definitions.find(
+										(item: any) => item.id === workflow.id,
+									).steps;
+									for (const part of path.split("/")) node = node[part];
+									node.computeIntensive = computeIntensive;
+									await save(definitions);
+								}}
+							/>
+						)}
 						<RecipeDetails workflow={workflow}>
 							<RecipeEditor
 								workflow={workflow}
 								pending={action.isPending}
+								readonly={workflow.ownership === "bundled"}
 								onSave={async (value: any) => {
 									const definitions = config.workflows.map((w: any) =>
 										w.id === workflow.id ? value : w,
@@ -825,6 +979,54 @@ export function Recipes() {
 				＋ New recipe
 			</Button>
 			<Modal
+				open={!!disabling}
+				onOpenChange={(open) => {
+					if (!open) setDisabling(undefined);
+				}}
+				title="Disable workflow"
+				description="Executing work will be interrupted. Saved progress and native conversations are retained. Actions already performed cannot be undone. Re-enabling permits new launches; each blocked run requires its own Resume action."
+			>
+				<div className="modal-body">
+					<p>
+						{disabling?.workflow.name}: {disabling?.impact.runs.length ?? 0}{" "}
+						unfinished runs may be interrupted.
+					</p>
+					<ul>
+						{disabling?.impact.runs.map((id: string) => (
+							<li key={id}>
+								<Link to={`/runs/${id}`}>{id}</Link>
+							</li>
+						))}
+					</ul>
+					{action.error && (
+						<p role="alert" className="error">
+							{action.error.message}
+						</p>
+					)}
+					<Button
+						requiresConnection
+						busy={action.isPending}
+						onClick={() =>
+							void action
+								.mutateAsync({
+									path: `/api/workflows/${disabling.workflow.id}/availability`,
+									method: "PUT",
+									body: {
+										enabled: false,
+										confirm: true,
+										token: disabling.impact.token,
+									},
+								})
+								.then(() => setDisabling(undefined))
+								.catch(() => {})
+						}
+					>
+						Interrupt work and disable
+					</Button>
+				</div>
+			</Modal>
+
+			<Modal
 				open={Boolean(editing)}
 				onOpenChange={(o) => {
 					if (!o) {
@@ -861,37 +1063,40 @@ export function Recipes() {
 						}
 					}}
 				>
-					<label>
-						Icon
-						<input
-							value={(() => {
-								try {
-									return JSON.parse(json).icon ?? "";
-								} catch {
-									return "";
-								}
-							})()}
-							onChange={(e) => {
-								try {
-									setJson(
-										JSON.stringify(
-											{ ...JSON.parse(json), icon: e.target.value },
-											null,
-											2,
-										),
-									);
-								} catch {
-									setError("Fix JSON before editing the icon");
-								}
-							}}
-						/>
-					</label>
+					{!editing?.readonly && (
+						<label>
+							Icon
+							<input
+								value={(() => {
+									try {
+										return JSON.parse(json).icon ?? "";
+									} catch {
+										return "";
+									}
+								})()}
+								onChange={(e) => {
+									try {
+										setJson(
+											JSON.stringify(
+												{ ...JSON.parse(json), icon: e.target.value },
+												null,
+												2,
+											),
+										);
+									} catch {
+										setError("Fix JSON before editing the icon");
+									}
+								}}
+							/>
+						</label>
+					)}
 					<label>
 						Workflow JSON
 						<textarea
 							className="code-editor"
 							rows={18}
 							value={json}
+							readOnly={editing?.readonly}
 							onChange={(e) => setJson(e.target.value)}
 						/>
 					</label>
@@ -899,7 +1104,7 @@ export function Recipes() {
 					<Button
 						type="submit"
 						requiresConnection
-						disabled={action.isPending}
+						disabled={editing?.readonly || action.isPending}
 						busy={action.isPending}
 					>
 						Save recipe
@@ -922,93 +1127,104 @@ export function Recipes() {
 							onChange={(value) => setRole({ ...role, value })}
 						/>
 					)}
-					{role && (
-						<>
-							<label>
-								Role prompt
-								<textarea
-									value={role.value.prompt ?? ""}
-									onChange={(e) =>
-										setRole({
-											...role,
-											value: { ...role.value, prompt: e.target.value },
-										})
-									}
-									rows={8}
-								/>
-							</label>
-							<label>
-								Output contract
-								<select
-									value={role.value.reviewContract ?? ""}
-									onChange={(e) =>
-										setRole({
-											...role,
-											value: {
-												...role.value,
-												reviewContract: e.target.value || undefined,
-											},
-										})
-									}
-								>
-									<option value="">Legacy / custom output</option>
-									<option value="inventory-v1">Requirement inventory</option>
-									<option value="specialist-v1">Specialist findings</option>
-									<option value="coverage-v1">
-										Findings and complete requirement coverage
-									</option>
-								</select>
-							</label>
-							{role.value.id === "guide" && (
+					{role &&
+						config.workflows.find((w: any) => w.id === role.workflowId)
+							?.ownership !== "bundled" && (
+							<>
 								<label>
-									Review format
+									Role prompt
+									<textarea
+										value={role.value.prompt ?? ""}
+										onChange={(e) =>
+											setRole({
+												...role,
+												value: { ...role.value, prompt: e.target.value },
+											})
+										}
+										rows={8}
+									/>
+								</label>
+								<label>
+									Output contract
 									<select
-										value={role.value.guideContract ?? ""}
+										value={role.value.reviewContract ?? ""}
 										onChange={(e) =>
 											setRole({
 												...role,
 												value: {
 													...role.value,
-													guideContract: e.target.value || undefined,
+													reviewContract: e.target.value || undefined,
 												},
 											})
 										}
 									>
-										<option value="brief-v1">
-											Review brief (requirement-first)
+										<option value="">Legacy / custom output</option>
+										<option value="inventory-v1">Requirement inventory</option>
+										<option value="specialist-v1">Specialist findings</option>
+										<option value="coverage-v1">
+											Findings and complete requirement coverage
 										</option>
-										<option value="">Chapter guide (legacy)</option>
 									</select>
 								</label>
-							)}
-							{role.value.id === "guide" && (
-								<p className="muted">
-									The role prompt must ask for the selected format. Saved runs
-									keep the format they started with.
-								</p>
-							)}
+								{role.value.id === "guide" && (
+									<label>
+										Review format
+										<select
+											value={role.value.guideContract ?? ""}
+											onChange={(e) =>
+												setRole({
+													...role,
+													value: {
+														...role.value,
+														guideContract: e.target.value || undefined,
+													},
+												})
+											}
+										>
+											<option value="brief-v1">
+												Review brief (requirement-first)
+											</option>
+											<option value="">Chapter guide (legacy)</option>
+										</select>
+									</label>
+								)}
+								{role.value.id === "guide" && (
+									<p className="muted">
+										The role prompt must ask for the selected format. Saved runs
+										keep the format they started with.
+									</p>
+								)}
+								<label>
+									<input
+										type="checkbox"
+										checked={role.value.json !== false}
+										onChange={(e) =>
+											setRole({
+												...role,
+												value: { ...role.value, json: e.target.checked },
+											})
+										}
+									/>{" "}
+									Structured JSON output
+								</label>
+								{role.value.reviewContract && (
+									<p className="muted">
+										Review contracts require structured JSON. Replace the
+										coverage supplier before removing it. Add or remove
+										reviewers in the recipe JSON; up to eight fanout groups.
+									</p>
+								)}
+							</>
+						)}
+					{role &&
+						config.workflows.find((w: any) => w.id === role.workflowId)
+							?.ownership === "bundled" &&
+						role.value.prompt && (
 							<label>
-								<input
-									type="checkbox"
-									checked={role.value.json !== false}
-									onChange={(e) =>
-										setRole({
-											...role,
-											value: { ...role.value, json: e.target.checked },
-										})
-									}
-								/>{" "}
-								Structured JSON output
+								Bundled role prompt
+								<textarea readOnly rows={8} value={role.value.prompt} />
 							</label>
-							{role.value.reviewContract && (
-								<p className="muted">
-									Review contracts require structured JSON. Replace the coverage
-									supplier before removing it. Add or remove reviewers in the
-									recipe JSON; up to eight fanout groups.
-								</p>
-							)}
-						</>
-					)}
+						)}
 					{action.error && (
 						<p className="error" role="alert">
 							{action.error.message}
@@ -1020,6 +1236,29 @@ export function Recipes() {
 						busy={action.isPending}
 						onClick={() => {
 							if (action.isPending || !role?.path) return;
+							if (role.stepId === "native") {
+								const keys = [
+									"runner",
+									"model",
+									"reasoningEffort",
+									"modelVariant",
+									"serviceTier",
+								];
+								const settings = Object.fromEntries(
+									keys
+										.filter((k) => role.value[k] !== undefined)
+										.map((k) => [k, role.value[k]]),
+								);
+								void action
+									.mutateAsync({
+										path: "/api/workflows/simple/preferences",
+										method: "PUT",
+										body: { native: settings },
+									})
+									.then(() => setRole(undefined))
+									.catch(() => {});
+								return;
+							}
 							const definitions = structuredClone(config.workflows);
 							const workflow = definitions.find(
 								(w: any) => w.id === role.workflowId,
@@ -1055,7 +1294,9 @@ function RecipeDetails({
 			open={open}
 			onToggle={(event) => setOpen(event.currentTarget.open)}
 		>
-			<summary>Edit as JSON</summary>
+			<summary>
+				{workflow.ownership === "bundled" ? "Inspect JSON" : "Edit as JSON"}
+			</summary>
 			{open ? children : null}
 		</details>
 	);
@@ -1064,7 +1305,9 @@ function RecipeEditor({
 	workflow,
 	onSave,
 	pending,
+	readonly = false,
 }: {
+	readonly?: boolean;
 	workflow: any;
 	onSave: (v: any) => Promise<boolean>;
 	pending: boolean;
@@ -1081,7 +1324,7 @@ function RecipeEditor({
 			onSubmit={(e) => {
 				e.preventDefault();
 				try {
-					if (busy || pending) return;
+					if (readonly || busy || pending) return;
 					const value = JSON.parse(text);
 					setBusy(true);
 					void onSave(value).finally(() => setBusy(false));
@@ -1097,6 +1340,7 @@ function RecipeEditor({
 			<textarea
 				id={`json-${workflow.id}`}
 				className="code-editor"
+				readOnly={readonly}
 				rows={12}
 				value={text}
 				onChange={(e) => setText(e.target.value)}
@@ -1105,11 +1349,131 @@ function RecipeEditor({
 			<Button
 				type="submit"
 				requiresConnection
-				disabled={pending || busy}
+				disabled={readonly || pending || busy}
 				busy={pending || busy}
 			>
 				Save
 			</Button>
 		</form>
 	);
+}
+
+function RecipeLabels({
+	workflow,
+	pending,
+	onSave,
+}: {
+	workflow: any;
+	pending: boolean;
+	onSave: (labels: string[]) => Promise<boolean>;
+}) {
+	const [value, setValue] = useFormState(
+		revisionOf(workflow),
+		workflow.labels.join(", "),
+	);
+	return (
+		<form
+			onSubmit={(event) => {
+				event.preventDefault();
+				void onSave(
+					value
+						.split(",")
+						.map((v: string) => v.trim())
+						.filter(Boolean),
+				);
+			}}
+		>
+			<label>
+				Routing labels
+				<input
+					value={value}
+					onChange={(event) => setValue(event.target.value)}
+				/>
+			</label>
+			<Button type="submit" requiresConnection disabled={pending}>
+				Save labels
+			</Button>
+		</form>
+	);
+}
+function InactivePreference({
+	item,
+	index,
+	config,
+}: {
+	item: any;
+	index: number;
+	config: any;
+}) {
+	const action = useAction("workflows"),
+		[target, setTarget] = useFormState(revisionOf(config), "");
+	const roles = config.workflows
+		.filter((w: any) => w.ownership === "bundled")
+		.flatMap((w: any) =>
+			w.id === "simple"
+				? [{ value: "simple/native", name: "Simple agent" }]
+				: ownRoles(w.steps).map(({ step }: any) => ({
+						value: `${w.id}/${semanticRole(w.steps, step.id)}`,
+						name: `${w.name}: ${step.name}`,
+					})),
+		);
+	return (
+		<div className="recipe">
+			<p>
+				Inactive preference: {item.workflow}/{item.role}. {item.reason}
+			</p>
+			<pre>{JSON.stringify(item.settings)}</pre>
+			<label>
+				Reassign to
+				<select value={target} onChange={(e) => setTarget(e.target.value)}>
+					<option value="">Choose a role</option>
+					{roles.map((r: any) => (
+						<option key={r.value} value={r.value}>
+							{r.name}
+						</option>
+					))}
+				</select>
+			</label>
+			<Button
+				requiresConnection
+				disabled={!target || action.isPending}
+				onClick={() => {
+					const [workflow, ...role] = target.split("/");
+					void action
+						.mutateAsync({
+							path: `/api/workflow-preferences/inactive/${index}`,
+							body: { target: { workflow, role: role.join("/") } },
+						})
+						.catch(() => {});
+				}}
+			>
+				Reassign
+			</Button>
+			<Button
+				requiresConnection
+				disabled={action.isPending}
+				onClick={() =>
+					void action
+						.mutateAsync({
+							path: `/api/workflow-preferences/inactive/${index}`,
+						})
+						.catch(() => {})
+				}
+			>
+				Remove
+			</Button>
+			{action.error && <p role="alert">{action.error.message}</p>}
+		</div>
+	);
+}
+function semanticRole(steps: any[], id: string, parent = ""): string {
+	for (const step of steps) {
+		const key = `${parent}${step.id}`;
+		if (step.id === id) return key;
+		for (const group of step.groups ?? []) {
+			const role = semanticRole(group, id, `${key}/`);
+			if (role) return role;
+		}
+	}
+	return "";
 }

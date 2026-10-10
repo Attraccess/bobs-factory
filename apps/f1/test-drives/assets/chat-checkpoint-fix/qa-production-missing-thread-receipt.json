@@ -1,0 +1,48 @@
+{
+	"executed": true,
+	"expectedHTTP": 409,
+	"actualHTTP": 409,
+	"response": {
+		"error": "Saved native chat conversation ID is missing. Restore the saved conversation ID before resuming."
+	},
+	"blockBefore": {
+		"workflowIds": ["simple"],
+		"at": "2026-10-10T21:33:36.917Z",
+		"priorStatus": "active",
+		"reason": "Workflow disabled: simple. Progress retained. Enable it, then Resume this session individually."
+	},
+	"blockAfter": {
+		"workflowIds": ["simple"],
+		"at": "2026-10-10T21:33:36.917Z",
+		"priorStatus": "active",
+		"reason": "Workflow disabled: simple. Progress retained. Enable it, then Resume this session individually."
+	},
+	"pendingBefore": {
+		"prompt": "Chat retained follow-up",
+		"systemPrompt": "QA chat system",
+		"runner": "codex",
+		"model": "accepted-chat-model",
+		"replyEvent": {
+			"id": "chat-pending",
+			"text": "Chat retained follow-up"
+		}
+	},
+	"pendingAfter": {
+		"prompt": "Chat retained follow-up",
+		"systemPrompt": "QA chat system",
+		"runner": "codex",
+		"model": "accepted-chat-model",
+		"replyEvent": {
+			"id": "chat-pending",
+			"text": "Chat retained follow-up"
+		}
+	},
+	"newRunners": 0,
+	"runnerConfig": {
+		"resume": "f1-mock-7e4c130f-558b-4e5b-bfc8-9b808359de68",
+		"model": "accepted-chat-model"
+	},
+	"nativeThreadBefore": "f1-mock-7e4c130f-558b-4e5b-bfc8-9b808359de68",
+	"nativeThreadAfter": null,
+	"completion": "error"
+}

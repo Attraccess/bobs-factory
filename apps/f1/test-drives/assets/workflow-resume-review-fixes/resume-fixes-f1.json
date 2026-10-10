@@ -1,0 +1,20 @@
+{
+	"mode": "mock",
+	"result": "passed",
+	"runId": "manual-97a188ef-a1f0-4048-8b54-3bf51ff9a04f",
+	"nativeId": "session-1",
+	"home": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-TD1EN7/home",
+	"checks": [
+		"migration",
+		"forks",
+		"dependency gating",
+		"blocked restart",
+		"native queue interruption",
+		"native Resume",
+		"operator manual Simple Resume",
+		"HTTP import/export"
+	],
+	"sourceRevision": "4766bbc20566c459481ec961de8787553debf9ec",
+	"provenance": "Validated source was committed unchanged except formatting; subsequent commit adds evidence only.",
+	"fixtureCleanedUp": true
+}

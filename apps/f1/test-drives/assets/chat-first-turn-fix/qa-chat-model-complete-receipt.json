@@ -1,0 +1,41 @@
+{
+	"executed": true,
+	"mode": "mock",
+	"expected": "accepted-chat-model",
+	"actual": "accepted-chat-model",
+	"passed": true,
+	"sessionId": "slack-chat-initial",
+	"nativeThreadBefore": "f1-mock-9d322259-3303-480f-a642-d17768d6976f",
+	"nativeThreadAfter": "f1-mock-9d322259-3303-480f-a642-d17768d6976f",
+	"acceptedPending": {
+		"prompt": "Chat retained follow-up",
+		"systemPrompt": "QA chat system",
+		"runner": "codex",
+		"model": "accepted-chat-model",
+		"replyEvent": {
+			"id": "chat-pending",
+			"text": "Chat retained follow-up"
+		}
+	},
+	"currentPreferences": {
+		"runner": "codex",
+		"model": "future-chat-model"
+	},
+	"runnerConfigs": [
+		{
+			"model": "accepted-chat-model"
+		},
+		{
+			"resume": "f1-mock-9d322259-3303-480f-a642-d17768d6976f",
+			"model": "accepted-chat-model"
+		},
+		{
+			"resume": "f1-mock-9d322259-3303-480f-a642-d17768d6976f",
+			"model": "accepted-chat-model"
+		}
+	],
+	"recoveryHTTP": 202,
+	"completion": "complete",
+	"blockAfter": null,
+	"testedRevision": "ccc84e6bdd3faa7c27c3360840701f8b0f420ba9"
+}

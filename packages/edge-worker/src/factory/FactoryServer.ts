@@ -37,6 +37,9 @@ import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	resume?(id: string): Promise<void>;
+	resumeEligible?(id: string): boolean;
+	availabilityImpact?(id: string): string[];
 	onboarding?: FactoryOnboarding;
 	deliveryStatus?(): {
 		platform: string;
@@ -165,6 +168,7 @@ export class FactoryServer {
 						runtime.listWorkflows(),
 						runtime.getDefaultWorkflow(),
 						runtime.getTitleSettings(),
+						runtime.catalog.read(),
 						runtime.executionProfiles.read(),
 					]),
 				)
@@ -464,8 +468,10 @@ export class FactoryServer {
 			repositories: hooks.repositories(),
 			workflows: runtime.listWorkflows().map((workflow) => ({
 				...workflow,
+				...runtime.catalog.metadata(workflow.id),
 				launchFields: getLaunchFields(workflow),
 			})),
+			workflowConfiguration: runtime.catalog.read(),
 			defaultWorkflow: runtime.getDefaultWorkflow(),
 			defaultRunner: hooks.defaultRunner?.() ?? "claude",
 			titleGeneration: runtime.getTitleSettings(),
@@ -592,12 +598,162 @@ export class FactoryServer {
 					.updateWorkflows(workflows, defaultWorkflow)
 					.map((workflow) => ({
 						...workflow,
+						...runtime.catalog.metadata(workflow.id),
 						launchFields: getLaunchFields(workflow),
 					})),
 				defaultWorkflow: runtime.getDefaultWorkflow(),
 				configRevision: configRevision(),
 			};
 		});
+		this.app.get("/api/workflows/export", () => runtime.catalog.read());
+		this.app.post<{ Params: { id: string } }>(
+			"/api/workflows/:id/fork",
+			(request) => {
+				checkConfigRevision(request);
+				const body = z
+					.object({ name: z.string().trim().min(1).max(200).optional() })
+					.parse(request.body);
+				return runtime.forkWorkflow(request.params.id, body.name);
+			},
+		);
+		this.app.put<{ Params: { id: string } }>(
+			"/api/workflows/:id/preferences",
+			(request) => {
+				checkConfigRevision(request);
+				runtime.updatePreferences(request.params.id, request.body);
+				return { saved: true };
+			},
+		);
+		this.app.post<{ Params: { index: string } }>(
+			"/api/workflow-preferences/inactive/:index",
+			(request) => {
+				checkConfigRevision(request);
+				const body = z
+					.object({
+						target: z
+							.object({ workflow: z.string(), role: z.string() })
+							.optional(),
+					})
+					.parse(request.body);
+				runtime.catalog.updateInactive(
+					z.coerce.number().int().min(0).parse(request.params.index),
+					body.target,
+				);
+				runtime.updateWorkflows(runtime.catalog.list());
+				return { saved: true };
+			},
+		);
+		const availabilityImpact = (id: string) =>
+			[
+				...new Set([
+					...runtime.availabilityImpact(id),
+					...(hooks.availabilityImpact?.(id) ?? []),
+					...hooks
+						.sessions()
+						.filter(
+							(s) =>
+								!runtime.runs.has(s.id) &&
+								!["complete", "completed", "cancelled"].includes(s.status) &&
+								(s.triggerOrigin?.workflowId ?? "simple") === id,
+						)
+						.map((s) => s.id),
+				]),
+			].sort();
+		const impactToken = (id: string) =>
+			createHash("sha256")
+				.update(JSON.stringify([configRevision(), availabilityImpact(id)]))
+				.digest("hex");
+		this.app.get<{ Params: { id: string } }>(
+			"/api/workflows/:id/availability",
+			(request) => ({
+				runs: availabilityImpact(request.params.id),
+				token: impactToken(request.params.id),
+			}),
+		);
+		this.app.put<{ Params: { id: string } }>(
+			"/api/workflows/:id/availability",
+			(request) => {
+				checkConfigRevision(request);
+				const body = z
+					.object({
+						enabled: z.boolean(),
+						token: z.string().optional(),
+						confirm: z.literal(true).optional(),
+					})
+					.parse(request.body);
+				if (
+					!body.enabled &&
+					(!body.confirm || body.token !== impactToken(request.params.id))
+				)
+					throw new Error(
+						"Review the current disable impact and confirm interruption before applying",
+					);
+				runtime.setWorkflowEnabled(request.params.id, body.enabled);
+				return { saved: true };
+			},
+		);
+		this.app.post("/api/workflows/import/impact", (request) => {
+			const proposed = runtime.catalog.validateImport(request.body);
+			const disabled = Object.entries(proposed.enabled)
+				.filter(
+					([id, enabled]) =>
+						!enabled && runtime.catalog.read().enabled[id] !== false,
+				)
+				.map(([id]) => id);
+			const runs = [...new Set(disabled.flatMap(availabilityImpact))].sort();
+			return {
+				runs,
+				disabled,
+				token: createHash("sha256")
+					.update(JSON.stringify([configRevision(), proposed, runs]))
+					.digest("hex"),
+			};
+		});
+		this.app.post("/api/workflows/import", (request) => {
+			checkConfigRevision(request);
+			const body = z
+				.object({
+					configuration: z.unknown(),
+					confirm: z.literal(true),
+					token: z.string(),
+				})
+				.parse(request.body);
+			const proposed = runtime.catalog.validateImport(body.configuration);
+			const disabled = Object.entries(proposed.enabled)
+				.filter(
+					([id, enabled]) =>
+						!enabled && runtime.catalog.read().enabled[id] !== false,
+				)
+				.map(([id]) => id);
+			const runs = [...new Set(disabled.flatMap(availabilityImpact))].sort();
+			const token = createHash("sha256")
+				.update(JSON.stringify([configRevision(), proposed, runs]))
+				.digest("hex");
+			if (body.token !== token)
+				throw new Error(
+					"Configuration or affected runs changed. Review import impact again before applying",
+				);
+			runtime.importWorkflows(proposed);
+			return { saved: true };
+		});
+		this.app.post("/api/workflows/simple/resolve-migration", (request) => {
+			checkConfigRevision(request);
+			z.object({ useBundledSimple: z.literal(true) }).parse(request.body);
+			runtime.catalog.resolveSimpleConflict();
+			runtime.updateWorkflows(runtime.catalog.list());
+			return { saved: true };
+		});
+		this.app.post<{ Params: { id: string } }>(
+			"/api/runs/:id/resume",
+			async (request, reply) => {
+				if (runtime.runs.has(request.params.id))
+					return reply.code(202).send(runtime.resume(request.params.id));
+				if (!hooks.resume)
+					throw new Error("Native session Resume is unavailable");
+				await hooks.resume(request.params.id);
+				return reply.code(202).send({ resumed: true });
+			},
+		);
 		this.app.get("/api/runs", () => {
 			const workflowRuns = [...runtime.runs.values()].map(
 				({
@@ -611,6 +767,7 @@ export class FactoryServer {
 					repositoryId,
 					step,
 					workflow,
+					workflowBlock,
 					triggerOrigin,
 					error,
 					ticketSync,
@@ -628,6 +785,7 @@ export class FactoryServer {
 					repositoryId,
 					step,
 					workflow: workflow.id,
+					workflowBlock,
 					triggerOrigin,
 					error,
 					ticketSync: ticketSync && {
@@ -653,6 +811,10 @@ export class FactoryServer {
 					.filter((session) => !tracked.has(session.id))
 					.map((session) => ({
 						...session,
+						workflowBlock: runtime.catalog.getBlock(session.id),
+						status: runtime.catalog.getBlock(session.id)
+							? "blocked"
+							: session.status,
 						workflow: "simple",
 						viewState: runtime.viewState(session.id),
 					})),
@@ -693,7 +855,27 @@ export class FactoryServer {
 						questions: [],
 						outputs: {},
 					}),
-					status: run ? capacityRunStatus(run) : session!.status,
+					workflowBlock: runtime.catalog.getBlock(request.params.id),
+					resumeEligible:
+						!!runtime.catalog.getBlock(request.params.id) &&
+						!runtime.catalog.unavailable(
+							run?.workflow ??
+								runtime
+									.listWorkflows()
+									.find(
+										(w) =>
+											w.id === (session?.triggerOrigin?.workflowId ?? "simple"),
+									)!,
+							run?.workflowDefinitions ?? runtime.listWorkflows(),
+						).length &&
+						(run
+							? !runtime.isExecuting(run.id)
+							: (hooks.resumeEligible?.(request.params.id) ?? false)),
+					status: runtime.catalog.getBlock(request.params.id)
+						? "blocked"
+						: run
+							? capacityRunStatus(run)
+							: session!.status,
 					chat: hooks.chat?.(request.params.id) ?? {
 						enabled: false,
 						available: false,

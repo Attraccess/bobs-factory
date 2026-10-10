@@ -257,7 +257,7 @@ export class RunnerConfigBuilder {
 	 * Build a runner config for chat sessions (Slack, GitHub chat, etc.).
 	 *
 	 * Chat sessions get read-only tools + MCP tool prefixes, and a simplified
-	 * config without hooks or model selection.
+	 * config without hooks. Resolve the model before the handler persists it.
 	 */
 	buildChatConfig(input: ChatRunnerConfigInput): AgentRunnerConfig {
 		// MCP config paths for chat sessions come exclusively from the
@@ -315,6 +315,7 @@ export class RunnerConfigBuilder {
 
 		const config: AgentRunnerConfig = {
 			runnerType,
+			model: this.runnerSelector.getDefaultModelForRunner(runnerType),
 			workingDirectory: input.workspacePath,
 			allowedTools,
 			disallowedTools: [] as string[],

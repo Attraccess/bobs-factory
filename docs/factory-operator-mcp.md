@@ -82,7 +82,7 @@ the correct operation. Run results identify the instance and run.
 | `inspect_run` | Failure, pending questions, execution/connection diagnosis, progress and action eligibility |
 | `read_run_activity` | Page sanitized workflow events; agent payloads are excluded |
 | `retry_run` | Retry a failed run through its existing checkpoint |
-| `resume_run` | Resume an interrupted run with saved progress |
+| `resume_run` | Resume interrupted saved progress, or a disabled run after its workflow is enabled and execution has stopped |
 | `retry_ticket_sync` | Retry tracker synchronization only |
 | `stop_run` | Stop an active/waiting/interrupted run and retain work |
 | `answer_run` | Answer current questions or request an explanation with `kind: "explanation"` |
@@ -107,7 +107,7 @@ completed recovery; inspect again to observe progress.
 Completed, stopped, active and pending-human-review runs are not resumable merely
 because they have a checkpoint. Retry/resume retains completed outputs, publication
 receipts, evidence and decisions. Steering follows the accepted recipe and actual
-runner availability. Human review remains a dashboard/human decision.
+runner availability. Saved Simple runs resume through the workflow engine and retain their native conversation. Re-enabling a workflow does not resume its blocked runs; each run requires an explicit Resume. The terminal shows the blocked reason and offers `c resume` when eligible. Human review remains a dashboard/human decision.
 
 ## Other connection checks
 

@@ -74,3 +74,24 @@ export function resolveAgentSettings(
 	}
 	return variant ? { ...resolved, modelVariant: variant } : resolved;
 }
+
+/** A native Simple role follows the same provider-aware inheritance as graph roles. */
+export function resolveNativePreferences(
+	explicit: AgentSettings,
+	inherited: AgentSettings,
+): AgentSettings {
+	const sameProvider = !explicit.runner || explicit.runner === inherited.runner;
+	return {
+		runner: explicit.runner ?? inherited.runner,
+		model: explicit.model ?? (sameProvider ? inherited.model : undefined),
+		reasoningEffort:
+			explicit.reasoningEffort ??
+			(sameProvider ? inherited.reasoningEffort : undefined),
+		modelVariant:
+			explicit.modelVariant ??
+			(sameProvider ? inherited.modelVariant : undefined),
+		serviceTier:
+			explicit.serviceTier ??
+			(sameProvider ? inherited.serviceTier : undefined),
+	};
+}

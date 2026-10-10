@@ -66,6 +66,7 @@ export function workingLabel(run: RunSummary): string {
 			: "Waiting for delivery admission";
 	if (run.status === "capacity-waiting") return "Waiting for capacity";
 	if (run.status === "stopping") return "Stopping";
+	if (run.status === "blocked") return "Workflow disabled · Resume required";
 	const leaves = Object.values(run.capacityLeaves ?? {}) as { phase: string }[];
 	return leaves.length && leaves.every((leaf) => leaf.phase === "waiting-ci")
 		? "Waiting for CI"
@@ -105,7 +106,8 @@ export function attention(run: RunSummary): Attention | undefined {
 	if (run.reviewGate?.status === "pending" && run.status === "waiting")
 		return "review";
 	if (run.status === "waiting") return "question";
-	if (["failed", "error", "interrupted"].includes(run.status)) return "stuck";
+	if (["failed", "error", "interrupted", "blocked"].includes(run.status))
+		return "stuck";
 	if (["complete", "completed"].includes(run.status)) return "review";
 	return undefined;
 }

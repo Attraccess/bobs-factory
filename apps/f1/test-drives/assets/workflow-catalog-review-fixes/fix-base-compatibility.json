@@ -1,0 +1,8 @@
+{
+	"base": "d982159b94f56469eaed270e0f7e36406149c460",
+	"source": "archived frozen base defaultWorkflows.ts",
+	"locals": 0,
+	"mappings": {},
+	"defaultWorkflow": "factory",
+	"deliveryRoute": true
+}

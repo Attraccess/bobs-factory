@@ -169,7 +169,12 @@ export async function api<T = any>(
 			"/api/title-settings",
 			"/api/execution-profiles",
 			"/api/runs",
-		].includes(path)
+		].some(
+			(p) =>
+				path === p ||
+				path.startsWith("/api/workflows/") ||
+				path.startsWith("/api/workflow-preferences/"),
+		)
 			? client.getQueryData<any>(["config"])?.configRevision
 			: undefined;
 	try {

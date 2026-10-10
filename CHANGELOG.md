@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Bundle standard workflows independently of model preferences. Add private Factory/Takeover forks, recoverable legacy migration, and disabling that interrupts work while preserving progress for individual Resume. Simple cannot be forked. Preserve existing delivery, operator recovery and older-run priority; recover interrupted backups and remove deleted-fork metadata. Save the selected chat model before execution and preserve it through the production runner factory on Resume. ([#83](https://github.com/jappyjan/bobs-factory/pull/83); [Taskbot #129](https://taskbot.apps.janjaap.de/p/bobs-factory/t/129); [validation](apps/f1/test-drives/2026-10-10-workflow-catalog.md))
+
 ### Added
 
 - Reconcile release tooling with the signed candidate contract, validate optional desktop assets and their receipts in the signed inventory, and add candidate-bound public installer smoke checks. Stable promotion selects an exact verified published nightly, explicit stable installs reject beta, and default installs retain beta compatibility. Downloads show source commits and exact-version commands ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
@@ -13,6 +17,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Resume interrupted ticket Simple work in its saved conversation with pending attachments. Standalone chat Resume retains its accepted model and queued input after preferences change. First chat turns interrupted while waiting for capacity or saving the startup checkpoint can Resume after restart without an ID; established chats still reject missing native conversation IDs. Missing repositories and startup failures retain the recovery block and report an error ([#83](https://github.com/jappyjan/bobs-factory/pull/83)).
+
+- Resume blocked Simple runs through the workflow engine from operator MCP. Show the blocked reason and an eligible Resume action in the terminal, refreshing availability when workflows are re-enabled ([#83](https://github.com/jappyjan/bobs-factory/pull/83)).
 - Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).
 
 - Integrate external ticket delivery with main’s shared operator recovery and run-age scheduling, preserving conflict-safe retries and acceptance bindings ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).

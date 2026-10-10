@@ -125,11 +125,22 @@ export interface CyrusAgentSession {
 		intentionalStop?: boolean;
 		/** Immutable public execution-profile snapshot. Interpreted by the Factory resolver. */
 		executionSnapshot?: unknown;
+		/** Frozen native workflow execution preferences at initial acceptance. */
+		workflowPreferences?: unknown;
+		/** Undelivered or interrupted native continuation, retained until successful completion. */
+		workflowPendingPrompt?: {
+			body: string;
+			attachmentManifest: string;
+			commentAuthor?: string;
+			commentTimestamp?: string;
+		};
 		/** Default repository available when a standalone chat was created. */
 		chatRepositoryId?: string;
 		chatPlatform?: "slack" | "zulip";
 		chatThreadKey?: string;
 		chatSystemPrompt?: string;
+		/** False only while the first chat turn has never reached provider execution. */
+		chatExecutionStarted?: boolean;
 		/** Dashboard messages awaiting their next capacity-gated chat turn. */
 		pendingChatMessages?: { id: string; text: string }[];
 		/** Durable input for a queued/interrupted integration turn. Never stores credentials. */

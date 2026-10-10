@@ -1,0 +1,35 @@
+{
+	"sourceRevision": "c31619d46280b6e2805630ebcf8dc38608187473",
+	"webBuild": "66174cf586ba7fd660e64a30",
+	"browser": "agent-browser, fresh session catalog-review-fix-129, headless",
+	"viewports": [[1280, 577], [1280, 900], [390, 844]],
+	"mode": "mock",
+	"keyboardChecks": [
+		{
+			"action": "Recipes navigation: focus link and Enter",
+			"result": "Recipes rendered"
+		},
+		{
+			"action": "Inspect Software factory: Enter, Shift+Tab, Escape",
+			"result": "Focus entered dialog, remained inside after reverse Tab; Escape dismissed and returned focus to Inspect Software factory"
+		},
+		{
+			"action": "Security reviewer preferences: Enter, keyboard typing, Tab through fields, Enter on Save step settings",
+			"result": "API export retained the typed model suffix; bundled prompt stayed read-only"
+		},
+		{
+			"action": "Disable: Enter, Escape; reopen, Tab to Interrupt work and disable, Enter",
+			"result": "Warning explained interruption and retained progress. Escape returned focus. Confirmation persisted factory.enabled=false"
+		},
+		{
+			"action": "Enable Factory and Saved question using Enter",
+			"result": "Saved question remained blocked with its original question; no automatic Resume"
+		},
+		{
+			"action": "Focus Resume and Enter",
+			"result": "Run became waiting, workflowBlock cleared, original question retained"
+		}
+	],
+	"realAgentExecution": false,
+	"screenshotsInspected": true
+}
