@@ -118,3 +118,6 @@ preserved as customization or a Simple conflict.
 The runtime supplied no originating ticket identity for this manual run. The
 Taskbot URL above comes from accepted task context; no tracking-service update
 was attempted. Publication, review and delivery are subsequent workflow steps.
+
+Review findings and keyboard acceptance evidence are recorded in the
+[review-fix follow-up](2026-10-10-workflow-catalog-review-fixes.md).

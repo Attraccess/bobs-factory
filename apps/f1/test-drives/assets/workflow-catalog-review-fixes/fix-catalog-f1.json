@@ -1,0 +1,16 @@
+{
+	"mode": "mock",
+	"result": "passed",
+	"runId": "manual-1b7f4660-47b1-4c1c-a99a-ff543096e0a5",
+	"nativeId": "session-1",
+	"home": "/var/folders/5m/3pxzz_nd1v7f34rd9vnm01380000gn/T/f1-catalog-129-WsIobA/home",
+	"checks": [
+		"migration",
+		"forks",
+		"dependency gating",
+		"blocked restart",
+		"native queue interruption",
+		"native Resume",
+		"HTTP import/export"
+	]
+}
