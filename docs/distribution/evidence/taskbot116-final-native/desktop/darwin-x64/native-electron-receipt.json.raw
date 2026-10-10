@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "platform": "darwin",
+  "arch": "x64",
+  "electron": "44.7.0",
+  "fixture": "/var/folders/20/jp1_0n3n7kndh6rnbqb5344m0000gn/T/factory-electron-smoke-iJu8yB",
+  "auth": "CDP virtual authenticator enrollment/login/logout",
+  "closedWindowKeepsWorker": true,
+  "reopenSamePid": true,
+  "explicitStop": true,
+  "confirmationMaintenanceRaceRejected": true,
+  "stopSuppressesAutomaticRestart": true,
+  "nativeCredentials": "not tested"
+}

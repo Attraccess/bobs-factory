@@ -141,3 +141,36 @@ scripted shell processes and mock checkpoints are not native Electron activation
 authenticated provider continuation, physical passkeys or native OS service startup.
 Older four-target/native proofs stay bound to their original source and bytes.
 This report is no automatic fullPayloadF1/licensingAndSource release PASS.
+
+## Native evidence supplement — exact candidate and current pending head
+
+The historical unsigned native candidate `1.0.0-nightly.20261010.15` is source/tooling
+`1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32`, digest
+`d053b7c2993931d93c88754fe7922e3c3c0352f2cb3bb18201584d2a7b2dea7f`, run
+[38085071118](https://github.com/jappyjan/bobs-factory/actions/runs/38085071118).
+All four binary and all four desktop jobs succeeded. Downloaded binary manifests
+matched the actual archive bytes; desktop assets matched their build inventories,
+and the runtime archives reused in desktop jobs matched the binary artifacts.
+Target receipts, artifact IDs/container digests, native notice hashes, job links,
+cleanup results and platform observations are preserved in
+[FINAL_NATIVE_116](../../docs/distribution/FINAL_NATIVE_116.md) and its
+[artifact index](../../docs/distribution/evidence/taskbot116-final-native/artifact-index.json).
+
+This does not certify the current PR head. The exact reviewed desktop workflow
+fix `ad6f0f8553f9c6df26591fc033764bf4bc354712` was integrated and pushed with the
+report changelog follow-up at `b82c37c4fb9a3e18d1cb222c6d56d3fef852096f`.
+Its push-triggered native run [38086228778](https://github.com/jappyjan/bobs-factory/actions/runs/38086228778)
+had a successful freeze, two Linux binary passes and two active macOS binary jobs
+at the latest coordinator observation. CI [38086231619](https://github.com/jappyjan/bobs-factory/actions/runs/38086231619)
+was active on Node 22/24. This new candidate's final identity and all-target
+receipts remain pending and must not be relabeled with the `1fa3ba1b` evidence.
+Linux Electron receipt stdout in the historical run contains DBus error lines
+before its JSON payload; those raw bytes are retained and called out in the native
+report rather than normalized.
+
+Read-only Taskbot child snapshot: #117 `done`; #118 and #123 `in_review`; #119,
+#120, #121, #122 and #124 `in_progress`; parent #116 remains `in_progress`.
+No Taskbot status or acceptance field was changed. Native source/relink/licensing,
+publisher trust/signing/rollout, signed Mac acceptance, real operator/platform
+acceptance and GitGuardian disposition remain open as listed in
+[the final native handoff](../../docs/distribution/FINAL_NATIVE_116.md).

@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "product": "bobs-factory",
+  "validation": "public-installer",
+  "status": "passed",
+  "version": "1.0.0-nightly.20261010.15",
+  "commit": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+  "candidateDigest": "d053b7c2993931d93c88754fe7922e3c3c0352f2cb3bb18201584d2a7b2dea7f",
+  "workflowSha": "1fa3ba1ba19a8ea79ad3994a45af19f56a5fad32",
+  "target": "darwin-x64",
+  "scope": "native-archive-controlled-downloads",
+  "checks": {
+    "badSignaturePreservesInstallation": "passed",
+    "ownershipReceipt": "passed",
+    "foreignRemovalRefused": "passed",
+    "ownedRemovalRetainsState": "passed",
+    "reinstallAfterRemoval": "passed",
+    "channelResolution": "passed",
+    "exactVersion": "passed",
+    "repeatInstall": "passed",
+    "badHashPreservesInstallation": "passed",
+    "badSizePreservesInstallation": "passed",
+    "badSourcePreservesInstallation": "passed",
+    "unavailableTargetPreservesInstallation": "passed"
+  }
+}
