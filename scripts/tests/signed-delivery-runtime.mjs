@@ -557,6 +557,7 @@ try {
 	let hook,
 		failedHealth = false,
 		lostAck = false,
+		lostAckOutcome = "succeeded",
 		ackInjected = false,
 		activations = 0,
 		stops = 0;
@@ -594,7 +595,7 @@ try {
 				lostAck &&
 				!ackInjected &&
 				JSON.parse(readFileSync(join(nativeHome, "updates/state.json")))
-					.transaction?.release?.outcome === "succeeded"
+					.transaction?.release?.outcome === lostAckOutcome
 			) {
 				ackInjected = true;
 				throw Error("Controlled lost exact release acknowledgment");
@@ -605,6 +606,50 @@ try {
 	const source = newSource(join(nativeHome, "updates"), realpathSync(link));
 	let manager = new UpdateManager(nativeHome, source, lifecycle, previous);
 	const cfg = (patch) => manager.configure(patch, manager.status().revision);
+	async function wrongRuntimeRejected(executable, outcome) {
+		const journal = readFileSync(join(nativeHome, "updates/state.json"));
+		const transaction = JSON.parse(journal).transaction;
+		assert.equal(transaction.phase, "recovery-required");
+		assert.equal(transaction.release.outcome, outcome);
+		assert.equal(transaction.release.status, "pending");
+		// Cold startup observes a real lost-ack journal in another controlled home.
+		// It cannot touch the selected owner or ask a provider to resume its work.
+		const isolated = join(work, `wrong-runtime-${outcome}`);
+		mkdirSync(join(isolated, "updates"), { recursive: true });
+		writeFileSync(join(isolated, "updates/state.json"), journal);
+		writeFileSync(
+			join(isolated, "config.json"),
+			jsonBytes({ repositories: [] }),
+		);
+		const r = await command(
+			executable,
+			["--home", isolated, "--port", "19689", "--no-open", "local"],
+			{ env, timeout: 10000 },
+		);
+		assert.equal(
+			r.code,
+			1,
+			"Wrong runtime must fail startup before readiness, not run until fixture timeout",
+		);
+		assert.equal(r.signal, null);
+		assert.match(r.stderr, /Installed runtime.*match/i);
+		assert.deepEqual(
+			readFileSync(join(isolated, "updates/state.json")),
+			journal,
+		);
+		const owner = workerOwner(isolated);
+		assert(!owner || !ownerAlive(owner));
+		const build = JSON.parse(
+			readFileSync(join(dirname(executable), "build.json")),
+		);
+		return {
+			outcome,
+			rejectedVersion: build.version,
+			executableSha256: build.executable.sha256,
+			journalUnchanged: true,
+			exitCode: r.code,
+		};
+	}
 	async function selected(release, channel = "nightly") {
 		manager = new UpdateManager(
 			nativeHome,
@@ -874,6 +919,10 @@ try {
 			assert.equal(r.transaction.phase, "recovery-required");
 			assert.equal(r.transaction.release.status, "pending");
 			assert.equal(r.transaction.release.outcome, "succeeded");
+			const rejected = await wrongRuntimeRejected(
+				r.transaction.staged.previousExecutable,
+				"succeeded",
+			);
 			const newOwner = workerOwner(nativeHome),
 				count = activations;
 			lifecycle = new OwnedUpdateLifecycle(nativeHome, port);
@@ -885,6 +934,7 @@ try {
 			assert.equal(workerOwner(nativeHome).pid, newOwner.pid);
 			preserved();
 			lostAck = false;
+			return { wrongRuntime: rejected, recoveredPhase: r.transaction.phase };
 		},
 	);
 	await check(
@@ -975,11 +1025,34 @@ try {
 			await selected(n3);
 			cfg({ policy: "idle-auto" });
 			failedHealth = true;
+			lostAck = true;
+			lostAckOutcome = "rolled-back";
+			ackInjected = false;
 			manager.requestInstall(
 				candidateKey(manager.status().pending.candidate),
 				manager.status().revision,
 			);
-			const r = await reconcile();
+			let r = await reconcile();
+			assert.equal(
+				r.transaction.phase,
+				"recovery-required",
+				JSON.stringify(r.transaction),
+			);
+			const rejected = await wrongRuntimeRejected(
+				r.transaction.staged.executable,
+				"rolled-back",
+			);
+			const rolledBackOwner = workerOwner(nativeHome),
+				count = activations;
+			manager = new UpdateManager(
+				nativeHome,
+				source,
+				new OwnedUpdateLifecycle(nativeHome, port),
+				previous,
+			);
+			r = await manager.recover("rollback release acknowledgment lost");
+			assert.equal(workerOwner(nativeHome).pid, rolledBackOwner.pid);
+			assert.equal(activations, count);
 			assert.equal(
 				r.transaction.phase,
 				"rolled-back",
@@ -996,6 +1069,8 @@ try {
 					.badCandidates.includes(candidateKey(r.transaction.candidate)),
 			);
 			failedHealth = false;
+			lostAck = false;
+			return { wrongRuntime: rejected, recoveredPhase: r.transaction.phase };
 		},
 	);
 	await check(
