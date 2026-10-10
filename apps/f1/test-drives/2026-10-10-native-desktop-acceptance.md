@@ -5,6 +5,7 @@ Taskbot [#116](https://taskbot.apps.janjaap.de/p/bobs-factory/t/116),
 [#121](https://taskbot.apps.janjaap.de/p/bobs-factory/t/121),
 [#122](https://taskbot.apps.janjaap.de/p/bobs-factory/t/122),
 [#124](https://taskbot.apps.janjaap.de/p/bobs-factory/t/124).
+Test-only draft stack: [PR #88](https://github.com/jappyjan/bobs-factory/pull/88).
 No production code changes or confirmed production defects in this drive.
 The tickets remain open for the physical, platform and delivery gates below.
 
@@ -111,7 +112,8 @@ pnpm exec biome check apps/desktop/test/acceptance-fixture.mjs \
 git diff --check
 ```
 
-The native drive and two relevant existing boundary tests passed. The controller
+The native drive and two relevant existing boundary tests passed. Required commit
+hooks also passed staged Biome, full workspace build and full workspace typecheck. The controller
 uses an allowlisted temporary environment/HOME/profile, refuses production source
 drift, verifies executable and mounted shell hashes and bounds each Electron phase.
 Test TLS trust is restricted to the exact ephemeral fixture certificate and origin;
