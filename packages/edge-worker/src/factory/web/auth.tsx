@@ -9,9 +9,9 @@ import {
 	accessGeneration,
 	accessRequired,
 	accessSignal,
-	accessState,
 	checkAccess,
 	onAccessLost,
+	rotateSession,
 	useAccess,
 } from "./auth-state";
 import { uiBuild, usePwa, versionMismatch } from "./pwa";
@@ -32,6 +32,7 @@ async function authRequest(path: string, body: unknown = {}, method = "POST") {
 		},
 		...(method !== "GET" ? { body: JSON.stringify(body) } : {}),
 	});
+	if (epoch !== accessGeneration()) throw new Error("Session changed");
 	if (response.status === 401)
 		accessRequired("Your session expired. Sign in again.");
 	const result = await response.json();
@@ -53,11 +54,13 @@ async function ceremony(
 		purpose === "login"
 			? await startAuthentication({ optionsJSON: options })
 			: await startRegistration({ optionsJSON: options });
-	await authRequest(`${purpose}/verify`, { transaction, response });
-	// The verified ceremony rotated the session. Refresh its deadline without
-	// unmounting an in-progress credential management action. Failed checks
-	// still clear access through the normal boundary.
-	await checkAccess();
+	await rotateSession(async () => {
+		await authRequest(`${purpose}/verify`, { transaction, response });
+		// The verified ceremony rotated the session. Refresh its deadline without
+		// unmounting an in-progress credential management action. Failed checks
+		// still clear access through the normal boundary.
+		await checkAccess();
+	});
 }
 // Local-launch fragments never reach HTTP logs. Consume before the router or browser
 // history can retain the one-time grant, and keep it only in this component's memory.
@@ -83,7 +86,8 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 	const [label, setLabel] = useState("");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string>();
-	const updateRequired = pwa.status === "mismatch" || pwa.updating;
+	const updateRequired =
+		pwa.status === "mismatch" || pwa.status === "offline" || pwa.updating;
 	useEffect(() => {
 		if (location.hostname === "127.0.0.1") {
 			const canonical = new URL(location.href);
@@ -101,10 +105,9 @@ export function AccessBoundary({ children }: { children: ReactNode }) {
 		window.addEventListener("pageshow", page);
 		document.addEventListener("visibilitychange", visible);
 		window.addEventListener("online", page);
-		// A signed-in UI stays mounted while offline; the header shows reconnection.
+		// Discard private views immediately, even before a request fails.
 		const offline = () => {
-			if (accessState().status !== "authenticated")
-				accessRequired("Factory is offline. Reconnect to sign in.");
+			accessRequired("Factory is offline. Reconnect to sign in.");
 		};
 		window.addEventListener("offline", offline);
 		return () => {

@@ -27,13 +27,19 @@ Keep webhook ingress separate, with its provider signature checks.
 Foreground first launch prints the ten-minute passkey setup code in its own
 terminal and opens the browser. For a service, read the private code from
 `<home>/factory/auth/enroll.json` on the service machine, then enter it in the
-setup screen and create a passkey. Additional enrollment requires a recent passkey sign-in and a new code from
-`bobs-factory --home /absolute/service/home factory-auth`. Use the running service's
-home. If all passkeys are lost, run the same command with `--recover --confirm
+setup screen and create a passkey. For additional enrollment, either sign out
+and use a fresh machine-authorized code from
+`bobs-factory --home /absolute/service/home factory-auth`, or add a key in Settings
+with recent passkey verification and no code. Listing/removing keys requires a
+session verified within five minutes; a setup code does not authorize removal.
+Keep at least one key per enrolled address. Use the running service's home.
+If all passkeys are lost, run the same command with `--recover --confirm
 "RESET FACTORY AUTHENTICATION"`; this revokes passkeys and sessions while preserving
 runs and integrations. Re-enroll using the new setup code. Changing configured
 origins also requires deliberate local recovery. See [passkey setup and recovery](FACTORY.md#passkey-access-and-first-setup)
-for session limits and supported secure origins. Preserve PWA secure-origin/version
+for session limits, restart behavior and mobile troubleshooting. See the
+[remote access design and trust boundary](FACTORY.md#protected-remote-access-design)
+for the listener comparison and proxy requirements. Preserve PWA secure-origin/version
 guards; independent identity overlays (#57) remain separate work.
 
 ## Linux systemd (user service)
