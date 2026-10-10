@@ -62,8 +62,10 @@ async function codexMcpRequest(
 			`Interactive MCP authorization required; run codex mcp login ${serverName}`,
 		);
 	});
+	let closing: Promise<void> | undefined;
+	const close = () => (closing ??= client.close());
 	const stop = () => {
-		void client.close();
+		void close().catch(() => {});
 	};
 	signal.addEventListener("abort", stop, { once: true });
 	try {
@@ -143,7 +145,7 @@ async function codexMcpRequest(
 		throw error;
 	} finally {
 		signal.removeEventListener("abort", stop);
-		await client.close();
+		await close();
 	}
 }
 

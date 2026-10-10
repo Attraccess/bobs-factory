@@ -113,6 +113,25 @@ function fixture(runner: RunnerType, acceptedRunner?: RunnerType) {
 }
 
 it.each([
+	"claude",
+	"codex",
+] as const)("keeps the admitted %s check cancellation signal through transport execution", async (runner) => {
+	const f = fixture(runner);
+	const resolved = await f.edge.factoryMcpConfig(f.run);
+	const controller = new AbortController();
+	const used = runner === "codex" ? nativeList : directList;
+	await checkOperatorTransport(f.run, resolved, "taskbot", controller.signal);
+	expect(used).toHaveBeenCalledOnce();
+	expect(used.mock.calls[0]).toContain(controller.signal);
+	used.mockClear();
+	controller.abort(new Error("check expired during preparation"));
+	await expect(
+		checkOperatorTransport(f.run, resolved, "taskbot", controller.signal),
+	).rejects.toThrow("check expired during preparation");
+	expect(used).not.toHaveBeenCalled();
+});
+
+it.each([
 	["codex", undefined],
 	["claude", "codex"],
 ] as const)("uses native OAuth for %s defaults and %s accepted runs", async (runner, acceptedRunner) => {

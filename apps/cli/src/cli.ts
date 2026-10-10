@@ -19,6 +19,8 @@ import { RefreshTokenCommand } from "./commands/RefreshTokenCommand.js";
 import { SelfAddRepoCommand } from "./commands/SelfAddRepoCommand.js";
 import { SelfAuthCommand } from "./commands/SelfAuthCommand.js";
 import { StartCommand } from "./commands/StartCommand.js";
+import { addServiceCommands } from "./commands/service.js";
+import { addUpdateCommands } from "./commands/update.js";
 import { gitCredential, githubApiRequest } from "./github.js";
 import { launchLocal } from "./local.js";
 import { addMigrationCommands } from "./migration/command.js";
@@ -64,6 +66,8 @@ program
 	.option("--model <model>", "Agent model")
 	.option("--origin <origin>", "Exact public HTTPS dashboard origin")
 	.option("--session-hours <hours>", "Passkey session lifetime (1–24 hours)");
+
+addUpdateCommands(program);
 
 // Machine-owner setup/recovery must remain outside the dashboard auth boundary.
 program
@@ -270,6 +274,7 @@ program
 		},
 	);
 
+addServiceCommands(program);
 addMigrationCommands(program);
 
 // Parse and execute

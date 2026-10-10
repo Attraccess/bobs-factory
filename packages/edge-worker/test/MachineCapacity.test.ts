@@ -9,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { executionScope } from "bobs-factory-core";
 import { afterEach, expect, it, vi } from "vitest";
 import {
 	assertLegacyCapacityDrained,
@@ -27,6 +28,21 @@ const root = () => {
 	roots.push(directory);
 	return directory;
 };
+it("reuses existing transport ownership without taking a second slot and releases failed work", async () => {
+	const service = new MachineCapacity(1, root());
+	await expect(
+		service.run(async () => {
+			const token = executionScope.getStore()!.token;
+			await service.run(async () => {
+				expect(executionScope.getStore()!.token).toBe(token);
+				expect((await service.snapshot()).active).toBe(1);
+			});
+			throw new Error("transport failed");
+		}),
+	).rejects.toThrow("transport failed");
+	expect((await service.snapshot()).active).toBe(0);
+	await service.shutdown();
+});
 it("blocks a live legacy coordinator without mutating it or creating a second pool", async () => {
 	const directory = root();
 	const state = JSON.stringify({
@@ -189,21 +205,34 @@ it("bounds actual mixed execution across processes with different state homes", 
 	expect(maximum).toBe(2);
 	expect(active).toBe(0);
 });
-it("reconciles a killed owner and terminates its surviving command before admitting new work", async () => {
+it.each([
+	"orphan",
+	"mcp-orphan",
+])("reconciles a killed %s owner and terminates its surviving command before admitting new work", async (mode) => {
 	const directory = root(),
 		ledger = join(directory, "intervals.jsonl");
 	const service = new MachineCapacity(1, directory);
 	await service.ready();
-	const owner = worker(directory, "old-home", ledger, "orphan");
+	const owner = worker(directory, "old-home", ledger, mode);
 	const stopped = owner.done.catch(() => {});
+	// A surviving stdio server can retain the owner's inherited stderr pipe.
+	// Await process death, then reconcile descendants before waiting for close.
+	const ownerExited = new Promise<void>((resolve) =>
+		owner.child.once("exit", () => resolve()),
+	);
 	await vi.waitFor(
 		() => expect(readFileSync(ledger, "utf8")).toContain('"start"'),
 		{ timeout: 10000 },
 	);
 	const pid = JSON.parse(readFileSync(ledger, "utf8").trim()).pid;
+	if (mode === "mcp-orphan")
+		expect(JSON.parse(readFileSync(ledger, "utf8").trim()).token).toBe(
+			(await service.snapshot()).requests[0]!.token,
+		);
 	owner.child.kill("SIGKILL");
-	await stopped;
+	await ownerExited;
 	const lease = await service.acquireLease();
+	await stopped;
 	await delay(100);
 	expect(() => process.kill(pid, 0)).toThrow();
 	expect((await service.snapshot()).active).toBe(1);

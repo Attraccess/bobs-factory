@@ -1,0 +1,14 @@
+{
+	"passed": true,
+	"platform": "linux",
+	"arch": "x64",
+	"electron": "44.7.0",
+	"fixture": "/tmp/factory-electron-smoke-7Z58So",
+	"auth": "CDP virtual authenticator enrollment/login/logout",
+	"closedWindowKeepsWorker": true,
+	"reopenSamePid": true,
+	"explicitStop": true,
+	"confirmationMaintenanceRaceRejected": true,
+	"stopSuppressesAutomaticRestart": true,
+	"nativeCredentials": "not tested"
+}

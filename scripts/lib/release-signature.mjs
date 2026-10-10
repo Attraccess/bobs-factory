@@ -1,12 +1,10 @@
 import { createPrivateKey, createPublicKey, sign, verify } from "node:crypto";
-import { readFileSync } from "node:fs";
+import releaseKeys from "../../docs/distribution/release-keys.json" with {
+	type: "json",
+};
 import { requireValue } from "./binary-release.mjs";
-export const trustedKeys = JSON.parse(
-	readFileSync(
-		new URL("../../docs/distribution/release-keys.json", import.meta.url),
-		"utf8",
-	),
-).keys;
+// Static import also embeds the reviewed pins in compiled runtime consumers.
+export const trustedKeys = releaseKeys.keys;
 export function verifyManifestSignature(
 	bytes,
 	signature,

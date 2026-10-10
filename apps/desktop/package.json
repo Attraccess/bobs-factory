@@ -1,0 +1,79 @@
+{
+	"name": "bobs-factory-desktop",
+	"version": "1.0.0-beta",
+	"private": true,
+	"type": "module",
+	"main": "src/main.mjs",
+	"description": "Bob's Factory native desktop client",
+	"author": "Bob's Factory contributors",
+	"license": "Apache-2.0",
+	"scripts": {
+		"start": "electron .",
+		"test": "node --test test/*.test.mjs",
+		"test:run": "node --test test/*.test.mjs",
+		"build": "node --check src/main.mjs",
+		"typecheck": "node --check src/main.mjs",
+		"package": "electron-builder --publish never"
+	},
+	"devDependencies": {
+		"electron": "44.7.0",
+		"electron-builder": "26.15.3"
+	},
+	"build": {
+		"appId": "de.bobs-factory.desktop",
+		"productName": "Bob's Factory",
+		"directories": {
+			"output": "../../artifacts/desktop"
+		},
+		"files": [
+			"src/**",
+			"package.json",
+			"LICENSE",
+			"NOTICE"
+		],
+		"extraResources": [
+			{
+				"from": "runtime",
+				"to": "runtime",
+				"filter": [
+					"**/*"
+				]
+			}
+		],
+		"artifactName": "bobs-factory-desktop-${version}-${os}-${arch}.${ext}",
+		"mac": {
+			"target": [
+				"dmg"
+			],
+			"category": "public.app-category.developer-tools",
+			"hardenedRuntime": true
+		},
+		"dmg": {
+			"contents": [
+				{
+					"x": 130,
+					"y": 150
+				},
+				{
+					"x": 410,
+					"y": 150,
+					"type": "link",
+					"path": "/Applications"
+				}
+			]
+		},
+		"linux": {
+			"target": [
+				"AppImage",
+				"deb"
+			],
+			"category": "Development",
+			"maintainer": "Bob's Factory contributors",
+			"executableName": "bobs-factory-desktop",
+			"syncDesktopName": true
+		},
+		"icon": "../../packages/edge-worker/src/factory/web/icons/icon-512.png"
+	},
+	"desktopName": "bobs-factory-desktop.desktop",
+	"homepage": "https://jappyjan.github.io/bobs-factory/"
+}

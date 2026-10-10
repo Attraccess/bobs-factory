@@ -1,11 +1,17 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import type { ServerResponse } from "node:http";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { factoryRuntimeIdentity } from "bobs-factory-core";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { MachineCapacity } from "../MachineCapacity.js";
+import { PublishedUpdateSource } from "../updates/PublishedUpdateSource.js";
+import type { UpdateDrain } from "../updates/UpdateDrain.js";
+import {
+	UpdateManager,
+	UpdateSettingsPatchSchema,
+} from "../updates/UpdateManager.js";
 import { activityMarkers, activityPage } from "./ActivityPage.js";
 import { reasoningLevels, serviceTierRunners } from "./AgentSettings.js";
 import { ExecutionSelectionSchema } from "./ExecutionProfiles.js";
@@ -37,6 +43,8 @@ import type { FactoryRun, WorkflowRuntime } from "./WorkflowRuntime.js";
 import { capacityRunStatus } from "./WorkflowRuntime.js";
 
 interface ServerHooks {
+	updates?: UpdateManager;
+	updateDrain?: UpdateDrain;
 	onboarding?: FactoryOnboarding;
 	deliveryStatus?(): {
 		platform: string;
@@ -103,8 +111,26 @@ export class FactoryServer {
 	) {
 		const operator = new OperatorService(runtime, hooks, "dashboard");
 		const shell = factoryWebAssets();
+		const home = dirname(runtime.directory);
+		// The dashboard queues consent; the external owner supervises activation.
+		const updates =
+			hooks.updates ??
+			new UpdateManager(
+				home,
+				factoryRuntimeIdentity.target
+					? new PublishedUpdateSource(
+							join(home, "updates"),
+							process.execPath,
+							factoryRuntimeIdentity.target,
+						)
+					: undefined,
+			);
 		this.auth = new FactoryAuth(runtime.directory, access);
 		this.app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 });
+		if (factoryRuntimeIdentity.packaged)
+			this.app.addHook("onReady", async () => {
+				await updates.observeInstalled(factoryRuntimeIdentity);
+			});
 		registerVideoRoutes(this.app, runtime);
 		this.app.setErrorHandler((error, _request, reply) =>
 			reply.code(error instanceof z.ZodError ? 400 : 409).send({
@@ -219,6 +245,16 @@ export class FactoryServer {
 			"/api/auth/register/verify",
 			...shell.assets.map((asset) => asset.path),
 		]);
+		const controlIntake = (request: FastifyRequest) =>
+			!["GET", "HEAD"].includes(request.method) &&
+			!request.url.startsWith("/api/updates/") &&
+			!request.url.startsWith("/api/auth/");
+		this.app.addHook("onResponse", async (request) => {
+			hooks.updateDrain?.leave(request);
+		});
+		this.app.addHook("onError", async (request) => {
+			hooks.updateDrain?.leave(request);
+		});
 		this.app.addHook("onRequest", async (request, reply) => {
 			this.auth.checkRecovery();
 			this.auth.checkTerminalRequests();
@@ -252,6 +288,7 @@ export class FactoryServer {
 					error: "Sign in with a passkey",
 					code: "FACTORY_AUTH_REQUIRED",
 				});
+			if (controlIntake(request)) hooks.updateDrain?.enter(request);
 		});
 		this.app.addHook("preHandler", async (request, reply) => {
 			if (
@@ -263,12 +300,77 @@ export class FactoryServer {
 					code: "FACTORY_AUTH_REQUIRED",
 				});
 		});
+		this.app.addHook("preHandler", async (request, reply) => {
+			if (
+				hooks.updateDrain?.active() &&
+				!["GET", "HEAD"].includes(request.method) &&
+				!request.url.startsWith("/api/updates/") &&
+				!request.url.startsWith("/api/auth/")
+			)
+				return reply.code(503).header("Retry-After", "30").send({
+					error: "Factory update maintenance; running work is draining",
+				});
+		});
 		// Never let an individual media handler override sensitive response policy.
 		this.app.addHook("onSend", async (request, reply) => {
 			if (
 				!shell.assets.some((asset) => asset.path === request.url.split("?")[0])
 			)
 				reply.header("Cache-Control", "no-store");
+		});
+		this.app.get("/api/updates", () => updates.status());
+		this.app.put("/api/updates/settings", (request) => {
+			const body = z
+				.object({
+					revision: z.number().int().nonnegative(),
+					settings: UpdateSettingsPatchSchema,
+				})
+				.strict()
+				.parse(request.body);
+			const result = updates.configure(body.settings, body.revision);
+			broadcast({ config: true });
+			return result;
+		});
+		for (const action of ["check", "stage", "install", "retry"] as const) {
+			this.app.post(`/api/updates/${action}`, async (request) => {
+				let result: ReturnType<UpdateManager["status"]>;
+				if (action === "check") result = await updates.check();
+				else if (action === "stage") result = await updates.stage();
+				else {
+					const body = z
+						.object({
+							candidate: z.string().min(1),
+							revision: z.number().int().nonnegative(),
+						})
+						.strict()
+						.parse(request.body);
+					result = updates.requestInstall(
+						body.candidate,
+						body.revision,
+						action === "retry",
+					);
+				}
+				broadcast({ config: true });
+				return result;
+			});
+		}
+		this.app.post("/api/updates/maintenance", async (request) => {
+			const body = z
+				.object({
+					transactionId: z.string().min(1),
+					action: z.enum(["begin", "end"]),
+				})
+				.strict()
+				.parse(request.body);
+			if (!hooks.updateDrain)
+				throw new Error("Runtime drain hooks are unavailable");
+			await hooks.updateDrain[body.action](body.transactionId);
+			return { maintenance: hooks.updateDrain.active() };
+		});
+		this.app.get("/api/updates/drain", async () => {
+			if (!hooks.updateDrain)
+				throw new Error("Runtime drain hooks are unavailable");
+			return hooks.updateDrain.inspect();
 		});
 		this.app.get("/api/auth/status", (request) => {
 			const origin = originFor(request)!;
@@ -443,6 +545,7 @@ export class FactoryServer {
 			});
 		});
 		this.app.get("/api/config", async (request) => ({
+			updates: updates.status(),
 			onboarding:
 				hooks.onboarding &&
 				["localhost", "127.0.0.1"].includes(
