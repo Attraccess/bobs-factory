@@ -4,6 +4,7 @@ on:
     types: [opened, reopened]
     branches: [main, feat/desktop-service-121-122-124]
     paths:
+      - '.github/workflows/desktop-build.yml'
       - 'apps/desktop/**'
       - 'apps/cli/**'
       - 'packages/**'
@@ -17,6 +18,7 @@ on:
       - feat/desktop-shell-update-116
       - delivery/taskbot-116-integration
     paths:
+      - '.github/workflows/desktop-build.yml'
       - 'apps/desktop/**'
       - 'apps/cli/**'
       - 'packages/**'
@@ -41,7 +43,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || fromJSON(inputs.candidate_json).candidate.workflowSha }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.event_name == 'push' && github.sha || fromJSON(inputs.candidate_json).candidate.workflowSha }}
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
