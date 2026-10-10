@@ -16,6 +16,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { localRepository } from "../../apps/cli/dist/src/onboarding.js";
 import {
+	assertInstallationProof,
+	installationProof,
+} from "../../apps/cli/dist/src/services/InstallationOwnership.js";
+import {
 	ownerAlive,
 	workerOwner,
 } from "../../apps/cli/dist/src/services/InstanceLock.js";
@@ -371,6 +375,38 @@ try {
 				settings: state.settings,
 				installed: state.installed,
 				noWorkerStarted: true,
+			};
+		},
+	);
+	await check(
+		"actual signed shell installation grants bound ownership; changed receipt revokes it",
+		async () => {
+			const executable = join(prefix, "bin/bobs-factory");
+			const proof = installationProof(home, executable);
+			assert(proof);
+			assert.equal(proof.kind, "installer");
+			assertInstallationProof(home, executable, proof);
+			const bytes = readFileSync(proof.record);
+			const selectedBytes = readFileSync(executable);
+			try {
+				writeFileSync(
+					proof.record,
+					jsonBytes({ ...JSON.parse(bytes), channel: "stable" }),
+				);
+				assert.throws(
+					() => assertInstallationProof(home, executable, proof),
+					/ownership changed/,
+				);
+				assert.deepEqual(readFileSync(executable), selectedBytes);
+			} finally {
+				writeFileSync(proof.record, bytes);
+			}
+			assertInstallationProof(home, executable, proof);
+			return {
+				kind: proof.kind,
+				recordSha256: proof.sha256,
+				tamperRejected: true,
+				executableUnchanged: true,
 			};
 		},
 	);
