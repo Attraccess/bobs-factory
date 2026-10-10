@@ -220,6 +220,7 @@ export function capRunnerStarts(
 	signal?: AbortSignal,
 	options: CapacityOptions = {},
 	admit?: () => void,
+	beforeStart?: () => Promise<void>,
 ): IAgentRunner {
 	let controller: AbortController | undefined;
 	let pending = false;
@@ -255,7 +256,12 @@ export function capRunnerStarts(
 			controller.signal.throwIfAborted();
 			admit?.();
 			admitted = true;
-			return await lease.run(run);
+			return await lease.run(async () => {
+				await beforeStart?.();
+				controller!.signal.throwIfAborted();
+				admit?.();
+				return run();
+			});
 		} finally {
 			try {
 				if (lease) await lease.release();

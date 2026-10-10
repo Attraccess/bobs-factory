@@ -17,7 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Resume interrupted ticket Simple work in its saved conversation with pending attachments. Standalone chat Resume retains its accepted model and queued input after preferences change. Missing native chat conversation IDs, missing repositories and startup failures retain the recovery block and report an error ([#83](https://github.com/jappyjan/bobs-factory/pull/83)).
+- Resume interrupted ticket Simple work in its saved conversation with pending attachments. Standalone chat Resume retains its accepted model and queued input after preferences change. First chat turns interrupted while waiting for capacity can Resume after restart without an ID; established chats still reject missing native conversation IDs. Missing repositories and startup failures retain the recovery block and report an error ([#83](https://github.com/jappyjan/bobs-factory/pull/83)).
 
 - Resume blocked Simple runs through the workflow engine from operator MCP. Show the blocked reason and an eligible Resume action in the terminal, refreshing availability when workflows are re-enabled ([#83](https://github.com/jappyjan/bobs-factory/pull/83)).
 - Make the website's exact beta install command use default-channel compatibility so it installs the advertised beta while explicit stable requests still reject beta ([#79](https://github.com/jappyjan/bobs-factory/pull/79)).

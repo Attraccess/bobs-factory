@@ -136,6 +136,51 @@ describe("SessionSemaphore", () => {
 });
 
 describe("capRunnerStarts", () => {
+	it.each([
+		false,
+		true,
+	])("checks cancellation after persisting provider startup (streaming: %s)", async (streaming) => {
+		const semaphore = new SessionSemaphore(1);
+		const pending = fakeRunner(streaming);
+		pending.runner.stop = vi.fn();
+		const save = deferred<void>();
+		const checkpoint = vi.fn(() => save.promise);
+		const wrapped = capRunnerStarts(
+			pending.runner,
+			semaphore,
+			undefined,
+			{},
+			undefined,
+			checkpoint,
+		);
+		const done = streaming
+			? wrapped.startStreaming!("task")
+			: wrapped.start("task");
+		await vi.waitFor(() => expect(checkpoint).toHaveBeenCalledOnce());
+		wrapped.stop();
+		save.resolve();
+		await expect(done).rejects.toThrow("cancelled");
+		expect(pending.started).not.toHaveBeenCalled();
+		expect(pending.startedStreaming).not.toHaveBeenCalled();
+		expect(semaphore.active).toBe(0);
+	});
+	it("does not execute when the startup checkpoint fails", async () => {
+		const semaphore = new SessionSemaphore(1);
+		const pending = fakeRunner(false);
+		const wrapped = capRunnerStarts(
+			pending.runner,
+			semaphore,
+			undefined,
+			{},
+			undefined,
+			async () => {
+				throw new Error("storage unavailable");
+			},
+		);
+		await expect(wrapped.start("task")).rejects.toThrow("storage unavailable");
+		expect(pending.started).not.toHaveBeenCalled();
+		expect(semaphore.active).toBe(0);
+	});
 	it("does not launch when stopped before start is called", async () => {
 		const semaphore = new SessionSemaphore(1);
 		const pending = fakeRunner(false);

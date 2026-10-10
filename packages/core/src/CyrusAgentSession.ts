@@ -139,6 +139,8 @@ export interface CyrusAgentSession {
 		chatPlatform?: "slack" | "zulip";
 		chatThreadKey?: string;
 		chatSystemPrompt?: string;
+		/** False only while the first chat turn has never reached provider execution. */
+		chatExecutionStarted?: boolean;
 		/** Dashboard messages awaiting their next capacity-gated chat turn. */
 		pendingChatMessages?: { id: string; text: string }[];
 		/** Durable input for a queued/interrupted integration turn. Never stores credentials. */

@@ -115,6 +115,8 @@ export interface ChatSessionHandlerDeps {
 		runnerType?: RunnerType,
 		signal?: AbortSignal,
 		sessionId?: string,
+		/** Persist the first provider-start boundary after capacity admission. */
+		beforeStart?: () => Promise<void>,
 	) => IAgentRunner;
 	/**
 	 * Live read of the workspace-level custom-integration MCP config paths
@@ -388,6 +390,7 @@ export class ChatSessionHandler<TEvent> {
 				session.metadata.chatPlatform = this.adapter.platformName;
 			session.metadata.chatThreadKey = threadKey;
 			session.metadata.chatSystemPrompt = systemPrompt;
+			session.metadata.chatExecutionStarted = false;
 
 			// Build runner config
 			const runnerConfig = await this.buildRunnerConfig(
@@ -403,6 +406,7 @@ export class ChatSessionHandler<TEvent> {
 					.runnerType,
 				undefined,
 				sessionId,
+				() => this.markExecutionStarted(session),
 			);
 
 			// Store the runner in the session manager
@@ -752,7 +756,7 @@ export class ChatSessionHandler<TEvent> {
 		if (!session) throw new Error("Chat session not found");
 		this.deps.requireWorkflowAvailable?.(id);
 		const resume = this.getResumeInfo(session);
-		if (!resume?.sessionId)
+		if (!resume)
 			throw new Error(
 				"Saved native chat conversation ID is missing. Restore the saved conversation ID before resuming.",
 			);
@@ -956,6 +960,7 @@ export class ChatSessionHandler<TEvent> {
 				runnerType,
 				controller.signal,
 				sessionId,
+				() => this.markExecutionStarted(existingSession),
 			);
 			this.sessionManager.addAgentRunner(sessionId, runner);
 
@@ -1062,9 +1067,26 @@ export class ChatSessionHandler<TEvent> {
 		if (session.opencodeSessionId) {
 			return { sessionId: session.opencodeSessionId, runnerType: "opencode" };
 		}
-		if (session.metadata?.pendingExecution)
+		if (
+			session.metadata?.chatExecutionStarted === false &&
+			session.metadata.pendingExecution
+		)
 			return { runnerType: session.metadata.pendingExecution.runner };
 		return undefined;
+	}
+
+	private async markExecutionStarted(
+		session: CyrusAgentSession,
+	): Promise<void> {
+		if (session.metadata?.chatExecutionStarted !== false) return;
+		// Persist before any provider side effects. Missing IDs after this boundary
+		// require recovery; only an explicitly never-started turn can start afresh.
+		await this.persistMessage(() => {
+			session.metadata!.chatExecutionStarted = true;
+			return () => {
+				session.metadata!.chatExecutionStarted = false;
+			};
+		});
 	}
 
 	/**

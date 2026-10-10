@@ -1634,7 +1634,13 @@ export class EdgeWorker extends EventEmitter {
 			chatRepositoryProvider,
 			onSessionChange: (id) => this.emit("chatSessionChanged", id),
 			runnerConfigBuilder: this.runnerConfigBuilder,
-			createRunner: (config, chatRunnerType, signal, sessionId) => {
+			createRunner: (
+				config,
+				chatRunnerType,
+				signal,
+				sessionId,
+				beforeStart,
+			) => {
 				const runnerType =
 					chatRunnerType ?? this.runnerSelectionService.getDefaultRunner();
 				return this.createRunnerForType(
@@ -1646,6 +1652,7 @@ export class EdgeWorker extends EventEmitter {
 					},
 					signal,
 					sessionId,
+					beforeStart,
 				);
 			},
 			getPlatformMcpConfigOverrides,
@@ -7318,6 +7325,7 @@ ${taskSection}`;
 		config: AgentRunnerConfig,
 		signal?: AbortSignal,
 		sessionId = config.workspaceName ?? config.workingDirectory ?? randomUUID(),
+		beforeStart?: () => Promise<void>,
 	): IAgentRunner {
 		return capRunnerStarts(
 			this.buildRunnerForType(runnerType, config),
@@ -7332,6 +7340,7 @@ ${taskSection}`;
 				onChange: () => this.emit("chatSessionChanged", sessionId),
 			},
 			() => this.requireSessionWorkflowAvailable(sessionId),
+			beforeStart,
 		);
 	}
 
