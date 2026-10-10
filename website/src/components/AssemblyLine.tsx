@@ -127,20 +127,20 @@ const stations: Station[] = [
 		title: "Proof, not promises.",
 		body: "Bob turns requirements into user stories, executes them, and captures every changed UI state on desktop and mobile. Images are hash-verified; unchanged, approved evidence is reused instead of recaptured.",
 		visual: {
-			shot: "review-chapter",
-			alt: "Screenshot evidence inside a review guide chapter",
+			shot: "review-proof",
+			alt: "Requirements with cropped screenshot and test proof in a review brief",
 		},
 	},
 	{
 		icon: "📖",
-		name: "Review guide",
+		name: "Review brief",
 		kind: "agent",
 		mood: "happy",
-		title: "A guided tour of the whole PR.",
-		body: "Chapters per feature with before/after, system diagrams, screenshots, risks and exactly what to check — plus every changed file grouped by chapter. It's also posted to the PR description.",
+		title: "Did it deliver what you asked?",
+		body: "Your request word for word, every interpretation Bob made, one decisive proof per requirement, only the decisions that need you, and what changed beyond the ask. Architecture changes get real sequence diagrams. It's also posted to the PR description.",
 		visual: {
-			shot: "review-overview",
-			alt: "Review guide overview with a before/after system diagram",
+			shot: "review-verdict",
+			alt: "Review brief verdict with the original request and Bob's interpretation",
 		},
 	},
 	{
@@ -152,7 +152,7 @@ const stations: Station[] = [
 		body: "Approve to mark the PR ready and merge — honoring required reviews, checks and merge queues, never an admin bypass. Request changes and Bob fixes, re-reviews, re-tests and asks again.",
 		visual: {
 			shot: "review-decision",
-			alt: "The final decide step of a review guide",
+			alt: "Deciding on a review brief with an objection drafted as feedback",
 		},
 	},
 ];

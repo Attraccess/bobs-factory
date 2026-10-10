@@ -17,6 +17,10 @@ import {
 import { defaultWorkflows } from "../src/factory/defaultWorkflows.js";
 import { FactoryTools } from "../src/factory/FactoryTools.js";
 import {
+	attachRequirementCoverage,
+	validateGuideCoverage,
+} from "../src/factory/Guide.js";
+import {
 	aggregateDeliveries,
 	deliveryRevisions,
 } from "../src/factory/RepositoryScope.js";
@@ -28,6 +32,7 @@ import {
 	type TicketAdapter,
 	TicketTracking,
 } from "../src/factory/TicketTracking.js";
+import type { ExecutionContext } from "../src/factory/WorkflowRuntime.js";
 import {
 	type FactoryRun,
 	WorkflowRuntime,
@@ -1182,4 +1187,31 @@ it("renews mixed acceptance once for the full grouped scope after confirmed merg
 	expect(f.content).toHaveBeenCalledTimes(1);
 	expect(f.relationship).toHaveBeenCalledTimes(1);
 	await runtime.shutdown();
+});
+
+it("retains independently verified ticket evidence on a mixed review brief and blocks stale evidence", async () => {
+	const f = setup();
+	freezeDelivery(f.run, { ...f.contract, version: 2, mode: "mixed" });
+	await f.service.apply(f.run);
+	await f.service.verify(f.run);
+	const context = { run: f.run } as ExecutionContext;
+	const candidate = { contract: "brief-v1" };
+	const attached = attachRequirementCoverage(context, candidate);
+	expect(attached).toMatchObject({
+		contract: "brief-v1",
+		deliveryMode: "mixed",
+		externalDigest: f.run.delivery!.verification!.digest,
+		externalResources: [
+			{ key: "ticket", url: f.contract.targets[0]!.resource.url },
+		],
+		externalChanges: [
+			{ target: "ticket", outcome: "applied" },
+			{ target: "ticket", outcome: "applied" },
+		],
+		externalCriteria: [{ id: "content", passed: true }],
+	});
+	f.run.delivery!.verification!.contractDigest = "stale";
+	expect(() => validateGuideCoverage(context, candidate)).toThrow(
+		"Independent external verification required",
+	);
 });

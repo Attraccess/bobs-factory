@@ -959,6 +959,34 @@ export function Recipes() {
 									</option>
 								</select>
 							</label>
+							{role.value.id === "guide" && (
+								<label>
+									Review format
+									<select
+										value={role.value.guideContract ?? ""}
+										onChange={(e) =>
+											setRole({
+												...role,
+												value: {
+													...role.value,
+													guideContract: e.target.value || undefined,
+												},
+											})
+										}
+									>
+										<option value="brief-v1">
+											Review brief (requirement-first)
+										</option>
+										<option value="">Chapter guide (legacy)</option>
+									</select>
+								</label>
+							)}
+							{role.value.id === "guide" && (
+								<p className="muted">
+									The role prompt must ask for the selected format. Saved runs
+									keep the format they started with.
+								</p>
+							)}
 							<label>
 								<input
 									type="checkbox"

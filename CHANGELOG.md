@@ -6,9 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Replace the chapter-based review guide with a requirement-first review brief. It quotes your original request, shows every interpretation Bob made and who decided it, gives each requirement one decisive proof (cropped screenshots, observed values, tests or code), asks only the questions that need your judgment, and lists what changed beyond the ask and what was not verified. Architecture changes get sequence diagrams of real flows plus endpoint, stored-data and dependency tables. Mark lines met or not met; objections become precise change-request feedback. Saved stock recipes upgrade automatically; running and historical runs keep their chapter guides ([#82](https://github.com/jappyjan/bobs-factory/pull/82), [F1 validation](apps/f1/test-drives/2026-10-10-review-brief.md)).
+
 - Prepare frozen stable and nightly binary candidates with signed channel discovery, exact-asset stable approval and recoverable publication. Check stable ordering against complete provider history, block nightly eligibility when the latest published nightly cannot be verified, authenticate efficient website discovery, and explain unavailable installer channels. Nightlies remain opt-in and publication stays disabled pending protected signing and rollout approval ([Taskbot #117](https://taskbot.apps.janjaap.de/p/bobs-factory/t/117), [#70](https://github.com/jappyjan/bobs-factory/pull/70)).
 
 ### Fixed
+
+- Preserve verified ticket evidence and snapshot-bound approval when mixed delivery uses the new review brief; retain pending-tracking settlement guards during integration ([#80](https://github.com/jappyjan/bobs-factory/pull/80)).
 
 - Show ticket synchronization failures in the review guide, explain pending tracking, and withhold Settle in the review, Run story and Today’s keyboard shortcut until tracking succeeds ([#80](https://github.com/JappyJan/bobs-factory/pull/80)).
 

@@ -63,6 +63,7 @@ import {
 	questionNotification,
 } from "./Questions.js";
 import { deliveryRevisions } from "./RepositoryScope.js";
+import { guideHeadline } from "./ReviewBrief.js";
 import { reviewRecoveryQuestions } from "./ReviewRecovery.js";
 import { buildTitleContext } from "./RunTitleGenerator.js";
 import {
@@ -1654,7 +1655,7 @@ export class WorkflowRuntime {
 						: step.tool === "handoff"
 							? handoffFix
 								? `Handoff requires corrections: ${pr}. Corrective work continues in Factory.`
-								: `Ready for human review: ${pr}. Review the guide and explicitly approve this revision or request changes in Factory. ${String(readPath(outputs, "guide.summary") ?? "")}`
+								: `Ready for human review: ${pr}. Review the guide and explicitly approve this revision or request changes in Factory. ${outputs.guide ? guideHeadline(outputs.guide) : ""}`
 							: step.tool === "draft-pr"
 								? `Draft PR created or continued: ${pr}. Review and validation are underway.`
 								: `${step.name}: ${String(readPath(output, "summary") ?? (step.id === "plan" ? "Implementation direction recorded in the accepted plan." : "Inspect the implementation receipts and checks in Factory."))}`;

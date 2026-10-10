@@ -101,6 +101,7 @@ export function toolArguments(
 }
 
 import type { GuideSchema } from "./FactoryResults.js";
+import { briefMarkdown, guideReady, isReviewBrief } from "./ReviewBrief.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
 function blockRevisionMismatch(
@@ -1489,7 +1490,7 @@ export class FactoryTools {
 					run.outputs.ci = recovery;
 					return recovery;
 				}
-				if (readPath(run.outputs, "guide.decision.status") !== "ready")
+				if (!guideReady(run.outputs.guide))
 					throw new Error(
 						"Review guide reports unresolved gaps; handoff blocked",
 					);
@@ -1507,7 +1508,9 @@ export class FactoryTools {
 							"QA evidence changed or is incomplete; handoff blocked",
 						);
 				}
-				const guide = reviewGuideMarkdown(run.outputs.guide, headSha);
+				const guide = isReviewBrief(run.outputs.guide)
+					? briefMarkdown(run.outputs.guide, headSha)
+					: reviewGuideMarkdown(run.outputs.guide, headSha);
 				await (await provider(url)).description(url, guide);
 				if (!run.ticketReference)
 					await this.hooks.postComment(

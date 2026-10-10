@@ -20,8 +20,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { defaultWorkflows } from "../../packages/edge-worker/dist/factory/defaultWorkflows.js";
-import { GeneratedGuideSchema } from "../../packages/edge-worker/dist/factory/FactoryResults.js";
+import { factoryAccess } from "../../packages/edge-worker/dist/factory/FactoryAuth.js";
 import { FactoryServer } from "../../packages/edge-worker/dist/factory/FactoryServer.js";
+import { GeneratedBriefSchema } from "../../packages/edge-worker/dist/factory/ReviewBrief.js";
 import { createReviewSnapshot } from "../../packages/edge-worker/dist/factory/ReviewFiles.js";
 import {
 	type ExecutionContext,
@@ -61,6 +62,8 @@ git("init", "-q", "-b", "main");
 git("add", "-A");
 git("commit", "-q", "-m", "feat: pancake menu");
 const baseSha = git("rev-parse", "HEAD");
+// Specialist review rounds compare against the provider base branch.
+git("update-ref", "refs/remotes/origin/main", baseSha);
 git("checkout", "-q", "-b", "bob/dark-mode-menu");
 cpSync(join(here, "pancake/head"), repo, { recursive: true });
 git("add", "-A");
@@ -196,247 +199,149 @@ interface Scenario {
 	branch: string;
 }
 
-const darkGuide = {
-	tldr: "Dark mode for the menu, with a toggle that remembers your choice",
-	goal: "Let night-owl guests browse the menu in a comfortable dark theme.",
-	summary:
-		"The menu now ships a warm dark palette, a header toggle that persists, and follows the system setting by default.",
-	decision: {
-		status: "ready",
-		summaryShort:
-			"Ready: all three criteria verified in browser tests and screenshots.",
-		summary:
-			"All acceptance criteria are supported by Playwright tests, QA stories and reviewed screenshots. No open findings remain.",
+const darkTicket =
+	"Dark mode for the menu page. Night-owl guests browse on their phones and the bright cream menu glares at them.";
+const darkBrief = {
+	contract: "brief-v1",
+	verdict: {
+		headline:
+			"The menu has a warm dark theme, and a header toggle that remembers each guest’s choice.",
+		readiness: "ready-with-caveats",
+		why: "All three requirements are shown working in the browser. One question for you: is an icon-only toggle clear enough?",
 	},
-	system: {
-		lanes: [
-			{ id: "browser", name: "Browser" },
-			{ id: "app", name: "Menu page" },
-		],
-		parts: [
-			{
-				id: "os",
-				label: "prefers-color-scheme",
-				laneId: "browser",
-				status: "unchanged",
-			},
-			{
-				id: "storage",
-				label: "localStorage",
-				laneId: "browser",
-				status: "unchanged",
-			},
-			{ id: "theme", label: "theme.js", laneId: "app", status: "new" },
-			{
-				id: "html",
-				label: "index.html header",
-				laneId: "app",
-				status: "changed",
-			},
-			{
-				id: "css",
-				label: "styles.css tokens",
-				laneId: "app",
-				status: "changed",
-			},
-		],
-		before: [{ source: "html", target: "css", label: "light only" }],
-		after: [
-			{ source: "os", target: "theme", label: "default" },
-			{ source: "storage", target: "theme", label: "saved choice" },
-			{ source: "theme", target: "html", label: "data-theme" },
-			{ source: "html", target: "css", label: "token swap" },
-		],
+	ask: {
+		source: "Linear PAN-57",
+		url: "https://linear.app/syrup-co/issue/PAN-57",
+		quote: darkTicket,
 	},
-	chapters: [
+	interpretation: [
 		{
-			id: "dark-palette",
-			title: "A warm dark palette for the whole menu",
-			tldr: "Color tokens swap to a cocoa-dark palette",
-			summary:
-				"Every hard-coded color moved into CSS custom properties. A data-theme=dark block swaps them for a warm, high-contrast cocoa palette; transitions respect reduced motion.",
-			before: "The menu only had a bright cream theme, glaring at night.",
-			after:
-				"Guests get a cozy dark menu with readable 7:1 contrast on prices and buttons.",
-			beforeShort: "Bright cream theme only",
-			afterShort: "Warm cocoa dark theme",
-			risk: {
-				level: "low",
-				text: "Pure CSS token swap; light theme pixels unchanged",
-			},
-			keyChecks: [
-				{
-					do: "Open the menu with the OS in dark mode",
-					expect: "Cocoa background, amber buttons",
-				},
-				{
-					do: "Compare light screenshots to main",
-					expect: "No visual change in light mode",
-				},
-			],
-			systemPartIds: ["css"],
-			requirementIndexes: [0],
-			files: ["src/styles.css"],
-			screenshots: [
-				{
-					area: "Menu page",
-					state: "Dark · desktop",
-					caption: "Dark menu on desktop",
-					device: "Desktop",
-				},
-				{
-					area: "Menu page",
-					state: "Dark · mobile",
-					caption: "Dark menu on a phone",
-					device: "Mobile",
-				},
-				{
-					area: "Menu page",
-					state: "Light · desktop",
-					caption: "Light theme is unchanged",
-					device: "Desktop",
-				},
-			],
-			diagrams: [],
-			reviewChecks: [
-				"Prices and Add buttons stay readable in both themes.",
-				"Light theme looks identical to the current production menu.",
-			],
-			risks: [
-				"Third-party embeds (none today) would need their own dark styles.",
-			],
-			evidence: [
-				"QA story palette passed with 3 screenshots",
-				"axe contrast check: 0 violations",
-			],
+			topic: "Default theme",
+			chosen:
+				"Follow the phone’s dark-mode setting until the guest picks a theme",
+			alternatives: ["Always start light"],
+			decidedBy: "bob",
+			note: "The ticket mentions guests on phones at night.",
 		},
 		{
-			id: "theme-toggle",
-			title: "A toggle that remembers the guest's choice",
-			tldr: "Header toggle persists; system preference is the default",
-			summary:
-				"A small theme.js runs before first paint, picks the saved choice or the system preference, and wires the 🌙/☀️ header button. Playwright tests cover persistence and system defaults.",
-			before: "No way to switch themes; the page ignored the OS setting.",
-			after:
-				"One tap toggles the theme, survives reloads, and never flashes light on load.",
-			beforeShort: "No toggle, ignores OS",
-			afterShort: "Toggle persists, follows OS",
-			risk: {
-				level: "medium",
-				text: "Inline script runs before CSS paints; keep it tiny",
-			},
-			keyChecks: [
-				{ do: "Toggle to dark, then reload", expect: "Page stays dark" },
-				{ do: "Clear storage, switch OS theme", expect: "Menu follows the OS" },
-				{
-					do: "Tab to the toggle",
-					expect: "Accessible label names the next theme",
-				},
-			],
-			systemPartIds: ["os", "storage", "theme", "html"],
-			flow: {
-				title: "First paint",
-				steps: [
-					{
-						label: "Read saved choice",
-						detail: "theme.js checks localStorage for pancake-theme.",
-					},
-					{
-						label: "Fall back to OS",
-						detail: "Without a saved choice, prefers-color-scheme decides.",
-					},
-					{
-						label: "Set data-theme",
-						detail:
-							"Applied on <html> before the body paints, so there is no flash.",
-					},
-					{
-						label: "Wire the toggle",
-						detail: "Clicking stores the new choice and updates the label.",
-					},
-				],
-			},
-			requirementIndexes: [1, 2],
-			files: ["index.html", "src/theme.js", "test/theme.test.js"],
-			screenshots: [
-				{
-					area: "Menu page",
-					state: "Light · mobile",
-					caption: "Toggle in the mobile header",
-					device: "Mobile",
-				},
-				{
-					area: "Menu page (before)",
-					state: "Light · desktop",
-					caption: "Before: no theme toggle",
-					device: "Desktop",
-				},
-			],
-			diagrams: [],
-			reviewChecks: [
-				"Toggle, reload, and confirm the theme sticks.",
-				"With storage cleared, the menu follows the OS appearance.",
-			],
-			risks: [
-				"Private-mode Safari can block localStorage; the code degrades to the OS theme.",
-			],
-			evidence: [
-				"theme.test.js: 2 passed",
-				"QA story toggle passed in Chromium and WebKit",
-			],
+			topic: "Where to switch",
+			chosen: "A 🌙/☀️ button in the menu header",
+			alternatives: ["A setting in the footer"],
+			decidedBy: "bob",
 		},
 	],
 	requirements: [
 		{
-			criterion:
-				"The menu supports a dark theme that matches the brand palette",
-			status: "supported",
-			evidence: [
-				"Screenshots: Dark · desktop, Dark · mobile",
-				"axe: 0 contrast violations",
+			id: "dark-palette",
+			text: "The menu has a dark theme in the brand’s warm palette.",
+			origin: "ask",
+			status: "shown",
+			proof: {
+				kind: "screens",
+				shots: [
+					{
+						area: "Menu page",
+						state: "Dark · desktop",
+						label: "Dark · desktop",
+					},
+					{ area: "Menu page", state: "Dark · mobile", label: "Dark · phone" },
+				],
+			},
+			more: [
+				{
+					kind: "table",
+					method: "axe contrast check on the dark menu",
+					columns: ["Element", "Observed"],
+					rows: [
+						{ cells: ["Prices on cards", "7.2 : 1"], mark: "good" },
+						{ cells: ["Add buttons", "5.1 : 1"], mark: "good" },
+						{ cells: ["Contrast violations", "0"], mark: "good" },
+					],
+				},
 			],
+			files: ["src/styles.css"],
 		},
 		{
-			criterion:
-				"A header toggle switches themes and remembers the guest's choice",
-			status: "supported",
-			evidence: ["theme.test.js › remembers the chosen theme across reloads"],
+			id: "toggle-remembers",
+			text: "A header toggle switches themes, and the choice survives a reload.",
+			origin: "ask",
+			status: "shown",
+			proof: {
+				kind: "table",
+				method: "Playwright in Chromium and WebKit",
+				columns: ["Do", "Observed"],
+				rows: [
+					{ cells: ["Tap 🌙, reload", "Still dark"], mark: "good" },
+					{ cells: ["Tap ☀️, reload", "Still light"], mark: "good" },
+					{
+						cells: ["Tab to the toggle", "Reads “Switch to light theme”"],
+						mark: "good",
+					},
+				],
+			},
+			files: ["index.html", "src/theme.js"],
 		},
 		{
-			criterion:
-				"Follow the system preference until the guest chooses, without a light flash",
-			status: "supported",
-			evidence: [
-				"theme.test.js › follows the system preference",
-				"theme.js runs in <head>",
+			id: "system-default",
+			text: "Without a saved choice the menu follows the phone setting, with no light flash.",
+			origin: "bob",
+			status: "tested",
+			proof: {
+				kind: "test",
+				file: "test/theme.test.js",
+				excerpt:
+					'test("remembers the chosen theme across reloads")\ntest("follows the system preference until the guest chooses")',
+				result: "2 passed in Chromium and WebKit",
+			},
+			more: [
+				{
+					kind: "code",
+					file: "index.html",
+					excerpt:
+						' <link rel="stylesheet" href="src/styles.css" />\n+<script src="src/theme.js"></script>',
+					note: "The theme is applied in <head>, before the page paints.",
+				},
 			],
+			caveat:
+				"“No flash” is shown by script order and tests; no slow-device recording was made.",
+			files: ["test/theme.test.js"],
 		},
 	],
-	behavior: [
+	yourCall: [
 		{
-			scenario: "Guest with a dark OS opens the menu",
-			before: "Bright cream page",
-			after: "Cocoa dark menu immediately",
+			question: "Is an icon-only toggle clear enough?",
+			context:
+				"The header shows 🌙 or ☀️ without text. Screen readers hear “Switch to dark theme”; sighted guests only see the icon.",
+			bobChose: "Icon only, to keep the phone header compact.",
+			proof: {
+				kind: "screens",
+				shots: [
+					{
+						area: "Menu page",
+						state: "Light · mobile",
+						label: "The toggle in the phone header",
+					},
+				],
+			},
 		},
+	],
+	beyondAsk: [
 		{
-			scenario: "Guest toggles and reloads",
-			before: "Not possible",
-			after: "Choice persists across reloads",
+			what: "Every color in the stylesheet became a CSS variable.",
+			why: "Needed to swap the palette. Light-mode pixels are unchanged.",
+			attention: "low",
+			files: [],
 		},
 	],
-	checks: [
-		"pnpm test — 14 passed",
-		"playwright test test/theme.test.js — 2 passed",
-		"CI: lint, unit, e2e (3/3 green)",
+	notVerified: [
+		{
+			what: "Private-mode Safari",
+			why: "It can block saved choices; the menu then follows the phone setting.",
+		},
 	],
-	risks: ["Inline theme script must stay tiny to avoid delaying first paint."],
-	reviewInstructions: [
-		"Skim both chapters and their screenshots.",
-		"Open the diff for src/theme.js — it is the only new logic.",
-		"Approve to mark the PR ready and merge when checks pass.",
-	],
+	hygiene: [{ text: "Lint, unit and end-to-end checks green" }],
 };
-GeneratedGuideSchema.parse(darkGuide);
+GeneratedBriefSchema.parse(darkBrief);
 
 const scenarios: Record<string, Scenario> = {
 	dark: {
@@ -528,7 +433,7 @@ const scenarios: Record<string, Scenario> = {
 				evidence: "src/theme.js:9 — label is set once at load",
 			},
 		],
-		guide: darkGuide,
+		guide: darkBrief,
 	},
 	favourites: {
 		pr: 131,
@@ -842,6 +747,68 @@ const runtime: WorkflowRuntime = new WorkflowRuntime(home, {
 					checks: ["pnpm test", "pnpm lint"],
 					questions: [],
 				};
+			case "extract-requirements":
+				await beats([
+					{
+						say: "Freezing the requirement inventory every reviewer checks against.",
+					},
+				]);
+				return {
+					schemaVersion: 1,
+					requirements: s.requirements.map((criterion, i) => ({
+						id: `R${i + 1}`,
+						criterion,
+						classification: "active",
+						sources: [
+							{ source: "originalInput", reference: `/requirements/${i}` },
+						],
+					})),
+					decisions: [],
+					conflicts: [],
+					sourceReceipt: {
+						considered: [{ source: "originalInput", reference: "/" }],
+						unavailable: [],
+					},
+					questions: [],
+				};
+			case "security-review":
+			case "architecture-review":
+			case "integration-review":
+			case "simplicity-review":
+			case "correctness-review":
+			case "requirements-review": {
+				// The scripted finding opens on the first round and is resolved after the fix.
+				const scripted =
+					step === "correctness-review" ? (s.codeFindings ?? []) : [];
+				await beats([
+					{ say: `${context.step.name}: reviewing the frozen diff.` },
+				]);
+				return {
+					status: "completed",
+					blockers: [],
+					summary:
+						scripted.length && visits === 0
+							? scripted[0]!.summary
+							: "No open findings.",
+					findings: scripted.map((f) => ({
+						...f,
+						status: visits === 0 ? "open" : "resolved",
+						...(visits === 0
+							? {}
+							: { reason: "Fixed and verified in the new revision" }),
+					})),
+					...(step === "requirements-review"
+						? {
+								coverage: s.requirements.map((_, i) => ({
+									requirementId: `R${i + 1}`,
+									status: "met",
+									evidence: ["Executed tests and reviewed screenshots"],
+									reason: "Implemented and verified",
+								})),
+							}
+						: {}),
+				};
+			}
 			case "code-review": {
 				const findings = visits === 0 ? (s.codeFindings ?? []) : [];
 				await beats([
@@ -1114,7 +1081,7 @@ const runtime: WorkflowRuntime = new WorkflowRuntime(home, {
 			case "guide": {
 				await beats([
 					{
-						say: "Writing the human review guide: chapters, screenshots, risks and what to check.",
+						say: "Writing the review brief: the ask, proof for each requirement, and what needs your call.",
 					},
 				]);
 				if (s.guide) {
@@ -1128,23 +1095,30 @@ const runtime: WorkflowRuntime = new WorkflowRuntime(home, {
 					return { ...(s.guide as object), reviewFiles };
 				}
 				return {
-					tldr: s.summary.slice(0, 90),
-					goal: s.requirements[0],
-					summary: s.summary,
-					decision: {
-						status: "ready",
-						summaryShort: "Ready for review",
-						summary: "All requirements verified.",
+					contract: "brief-v1",
+					verdict: {
+						headline: s.summary.slice(0, 160),
+						readiness: "ready",
+						why: "Every requirement is covered by passing tests.",
 					},
-					requirements: s.requirements.map((criterion) => ({
-						criterion,
-						status: "supported",
-						evidence: ["Tests pass"],
+					ask: { source: "Ticket", quote: s.requirements.join("\n") },
+					interpretation: [],
+					requirements: s.requirements.map((text, i) => ({
+						id: `requirement-${i + 1}`,
+						text: text.slice(0, 180),
+						origin: "ask",
+						status: "tested",
+						proof: {
+							kind: "command",
+							command: "pnpm test",
+							output: "Tests pass",
+						},
+						files: [],
 					})),
-					behavior: [],
-					checks: ["pnpm test"],
-					risks: [],
-					reviewInstructions: ["Review the diff and approve."],
+					yourCall: [],
+					beyondAsk: [],
+					notVerified: [],
+					hygiene: [],
 				};
 			}
 			default:
@@ -1397,6 +1371,7 @@ await until(postgres, (r) =>
 );
 
 const dark = start("Dark mode for the menu page", scenarios.dark!, {
+	input: darkTicket,
 	pace: 3,
 	ticket: "PAN-57",
 });
@@ -1426,29 +1401,43 @@ start("Speed up checkout API p95", scenarios.checkout!, {
 });
 
 // ---------------------------------------------------------------------------
-const server = new FactoryServer(runtime, {
-	repositories: () => [{ id: "pancake", name: "pancake-palace" }],
-	sessions: () => [],
-	entries: () => [],
-	defaultRunner: () => "claude",
-	start: async (input) => {
-		const workflow =
-			defaultWorkflows.find((w) => w.id === input.workflow) ?? factory;
-		const prompt = input.prompt || "New feature";
-		return start(
-			prompt.split("\n")[0]!.slice(0, 80),
-			{
-				...scenarios.checkout!,
-				implementBeats: scenarios.dark!.implementBeats,
-			},
-			{
-				pace: 1800,
-				workflow,
-				input: prompt,
-			},
-		);
+const server = new FactoryServer(
+	runtime,
+	{
+		repositories: () => [{ id: "pancake", name: "pancake-palace" }],
+		sessions: () => [],
+		entries: () => [],
+		defaultRunner: () => "claude",
+		start: async (input) => {
+			const workflow =
+				defaultWorkflows.find((w) => w.id === input.workflow) ?? factory;
+			const prompt = input.prompt || "New feature";
+			return start(
+				prompt.split("\n")[0]!.slice(0, 80),
+				{
+					...scenarios.checkout!,
+					implementBeats: scenarios.dark!.implementBeats,
+				},
+				{
+					pace: 1800,
+					workflow,
+					input: prompt,
+				},
+			);
+		},
+		stop: (id) => runtime.stop(id),
 	},
-	stop: (id) => runtime.stop(id),
+	factoryAccess(Number(values.port)),
+);
+// A local marketing demo with scripted data: no passkey ceremony.
+Object.assign(server.auth, {
+	session: (_token: string | undefined, origin: string) => ({
+		hash: "demo",
+		credential: "demo",
+		origin,
+		expires: Date.now() + 3_600_000,
+		verifiedAt: Date.now(),
+	}),
 });
 await server.start(Number(values.port));
 console.log(

@@ -325,7 +325,10 @@ export function ChangedFiles({
 	run,
 	onChapter,
 	reviewed = {},
+	noun = "step",
 }: {
+	/** What the groups are called: guide steps or brief requirements. */
+	noun?: string;
 	reviewed?: Record<string, boolean>;
 	query: ReturnType<typeof useReviewFiles>;
 	chapters: GuideChapter[];
@@ -393,7 +396,7 @@ export function ChangedFiles({
 						{owner < 0 ? "!" : reviewed[chapter!.id] ? "✓" : owner + 1}
 					</span>
 					<span className="group-title">
-						<strong>{chapter?.title ?? "Not explained by any step"}</strong>
+						<strong>{chapter?.title ?? `Not explained by any ${noun}`}</strong>
 						<span>
 							<span className="count-pill">
 								{files.length} {files.length === 1 ? "file" : "files"}
@@ -403,7 +406,7 @@ export function ChangedFiles({
 								<span className="exclusive">
 									{" "}
 									· {exclusive.length} area{exclusive.length > 1 ? "s" : ""}{" "}
-									only this step touches
+									only this {noun} touches
 								</span>
 							)}
 						</span>
@@ -431,13 +434,13 @@ export function ChangedFiles({
 								className={`chip ${exclusive.includes(area) ? "exclusive-area" : ""}`}
 								aria-description={
 									exclusive.includes(area)
-										? "No other step touches this area."
+										? `No other ${noun} touches this area.`
 										: undefined
 								}
 								key={area}
 								title={
 									exclusive.includes(area)
-										? "No other step touches this area"
+										? `No other ${noun} touches this area`
 										: undefined
 								}
 							>
@@ -451,10 +454,10 @@ export function ChangedFiles({
 								{exclusive.includes(area) && (
 									<span
 										className="exclusive"
-										title="No other step touches this area"
+										title={`No other ${noun} touches this area`}
 									>
 										{" "}
-										· ONLY THIS STEP
+										· ONLY THIS {noun.toUpperCase()}
 									</span>
 								)}
 							</span>
@@ -462,7 +465,7 @@ export function ChangedFiles({
 					</div>
 					{exclusive.length > 0 && (
 						<small className="muted">
-							No other step touches these exclusive areas.
+							No other {noun} touches these exclusive areas.
 						</small>
 					)}
 					{chapter && (
@@ -471,7 +474,7 @@ export function ChangedFiles({
 							className="text-button"
 							onClick={() => onChapter(owner + 1)}
 						>
-							← Back to step {owner + 1}
+							← Back to {noun} {owner + 1}
 						</button>
 					)}
 					<Tree
@@ -510,8 +513,8 @@ export function ChangedFiles({
 				<span className="chip">{totals.tests} tests</span>
 				<span className={`chip ${grouped.unassigned.length ? "red" : "green"}`}>
 					{grouped.unassigned.length
-						? `⚠ ${grouped.unassigned.length} not explained by any step`
-						: "✓ every file belongs to a step"}
+						? `⚠ ${grouped.unassigned.length} not explained by any ${noun}`
+						: `✓ every file belongs to a ${noun}`}
 				</span>
 			</div>
 			{grouped.unassigned.length > 0 && group(grouped.unassigned, -1)}

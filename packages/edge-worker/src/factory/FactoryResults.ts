@@ -13,6 +13,7 @@ import {
 	normalizeQuestionResult,
 	QuestionRecommendationSchema,
 } from "./Questions.js";
+import { isReviewBrief, ReviewBriefSchema } from "./ReviewBrief.js";
 
 const text = z.string().min(1);
 /** Bump when runtime result interpretation or validation changes. Frozen flags remain separate. */
@@ -448,7 +449,9 @@ function parseFactoryResult(
 				? QaCaptureSchema.parse(output)
 				: CaptureSchema.parse(output);
 		case "guide":
-			return GuideSchema.parse(output);
+			return isReviewBrief(output)
+				? ReviewBriefSchema.parse(output)
+				: GuideSchema.parse(output);
 		case "ci-fix":
 			return z
 				.object({

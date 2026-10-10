@@ -9,9 +9,11 @@ import {
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { Guide } from "../FactoryResults";
+import type { ReviewBrief } from "../ReviewBrief";
 import { api, client } from "./client";
 import { useReadingPosition } from "./reading-position";
 import { revisionOf, useRestorableState } from "./restoration";
+import { BriefReview } from "./review-brief";
 import {
 	CollectedFeedback,
 	Commentable,
@@ -141,6 +143,16 @@ export function GuidedReview({
 				)}
 			</div>
 		);
+	if (isBrief(guide))
+		return (
+			<BriefSession
+				key={key}
+				storageKey={key}
+				brief={guide}
+				run={run}
+				controls={controls}
+			/>
+		);
 	return (
 		<ReviewSession
 			key={key}
@@ -151,6 +163,25 @@ export function GuidedReview({
 			documentPage={documentPage}
 			controls={controls}
 		/>
+	);
+}
+/** Briefs come from steps declaring the brief contract; chapter guides stay readable. */
+export const isBrief = (guide: unknown): guide is ReviewBrief =>
+	(guide as { contract?: unknown } | undefined)?.contract === "brief-v1";
+function BriefSession(props: React.ComponentProps<typeof BriefReview>) {
+	const controller = useFeedbackController(
+		feedbackKey(props.storageKey, props.run.reviewGate?.id),
+		revisionOf([
+			feedbackKey(props.storageKey, props.run.reviewGate?.id),
+			props.run.reviewGate,
+			props.run.status,
+			props.run.chat?.mode,
+		]),
+	);
+	return (
+		<FeedbackContext.Provider value={props.controls ? controller : null}>
+			<BriefReview {...props} />
+		</FeedbackContext.Provider>
 	);
 }
 function ReviewSession(props: React.ComponentProps<typeof ReviewReader>) {

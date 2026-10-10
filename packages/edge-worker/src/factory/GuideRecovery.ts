@@ -3,6 +3,12 @@ import type { Guide } from "./FactoryResults.js";
 import { feedbackInstructionFingerprint } from "./FeedbackPolicy.js";
 import type { MergeReadiness } from "./MergeReadiness.js";
 import { groupedOutput } from "./RepositoryScope.js";
+import {
+	guideGaps,
+	guideReady,
+	guideWhy,
+	isReviewBrief,
+} from "./ReviewBrief.js";
 import { readPath } from "./Workflow.js";
 import type { ExecutionContext } from "./WorkflowRuntime.js";
 
@@ -13,12 +19,12 @@ export function guideGapRecovery(
 	context: ExecutionContext,
 	readiness: MergeReadiness,
 ): MergeReadiness | undefined {
-	const guide = context.run.outputs.guide as Partial<Guide> | undefined;
-	if (!guide?.decision) return;
-	const gaps = (guide.requirements ?? []).filter((requirement) =>
-		["gap", "unverified"].includes(requirement.status),
-	);
-	if (guide.decision.status === "ready" && !gaps.length) return;
+	const guide = context.run.outputs.guide;
+	if (!isReviewBrief(guide) && !(guide as Partial<Guide> | undefined)?.decision)
+		return;
+	const gaps = guideGaps(guide);
+	const ready = guideReady(guide);
+	if (ready && !gaps.length) return;
 	const correction = context.step.branches.find(
 		(branch) =>
 			branch.when.path === "fix" &&
@@ -38,10 +44,10 @@ export function guideGapRecovery(
 				baseSha: readiness.baseSha,
 				instructions: feedbackInstructionFingerprint(context),
 				gaps: gaps.length
-					? gaps
-							.map((gap) => [gap.requirementId ?? gap.criterion, gap.status])
-							.sort()
-					: guide.decision.status,
+					? gaps.map((gap) => [gap.id, gap.status]).sort()
+					: isReviewBrief(guide)
+						? guide.verdict.readiness
+						: (guide as Partial<Guide>).decision?.status,
 			}),
 		)
 		.digest("hex");
@@ -63,12 +69,9 @@ export function guideGapRecovery(
 				)
 		);
 	});
-	const message = [
-		guide.decision.summary,
-		...gaps.map(
-			(gap) => `${gap.criterion} (${gap.status}): ${gap.evidence.join("; ")}`,
-		),
-	].join("\n\n");
+	const message = [guideWhy(guide), ...gaps.map((gap) => gap.line)].join(
+		"\n\n",
+	);
 	context.log(
 		repeated
 			? "The same guide gaps remain after correction; waiting for specific assistance."

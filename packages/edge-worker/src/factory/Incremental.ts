@@ -11,6 +11,7 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { feedbackPolicyInstructions } from "./FeedbackPolicy.js";
 import {
+	briefRuntimeInstructions,
 	guideArtifactInstructions,
 	guideMapInstructions,
 } from "./GuideAuthoring.js";
@@ -398,3 +399,13 @@ export const incrementalRoleInstructions: Record<string, string> = {
 	guide: `${guideArtifactInstructions}\n${guideMapInstructions}\nAll new guides require purpose-written tldr, decision.summaryShort and per-chapter tldr, beforeShort, afterShort, risk:{level,text}, keyChecks:[{do,expect}] (1-3). Limits: overview 90, decision 160, chapter/risk 70, before/after 50, each check 60 characters. Never truncate full prose. Optional flow and required system references must be valid; preserve accepted screenshot metadata. Missing compact fields require guide-only correction, never incomplete publication. The review guide describes the COMPLETE cumulative PR, including inherited takeover work. On the first guide inspect /progress/reviewScope and the accepted requirements/plan, not just the latest role result. On repeats keep unchanged chapters and feature coverage, update affected evidence and add a separate short delta note if appropriate. Full feature scope is separate from /progress/diff. chapter.files MUST contain only files from /progress/reviewScope/files. Changes since prior human approval are separately available in /progress/approvalDelta; describe base integration and reapproval in chapter evidence/risks or revisionNote, never put base-only files in chapter.files. Empty files is allowed for an integration-context chapter. A revision summary requires an actual prior human-reviewed guide; previous agent iterations alone never qualify. Never lead the first guide with the last repair or drop unchanged features.`,
 	"ci-fix": `If CI is blocked by owner/security adjudication, unavailable infrastructure or access that you cannot repair, return questions:["the specific assistance needed"] alongside your summary and checks. Do not repeat unchanged fixes or claim the check passed. Return questions:[] when corrective work is complete. Read /answers before retrying after assistance. Use the latest merge-readiness receipt, assess all newly unassessed PR comments/review requests exactly once and return addressedCommentIds and addressedReviewIds. On revision mismatch synchronize local and remote branch without discarding existing work, commit/push pending changes, and verify that the Git provider reports the same PR head. An up-to-date branch or successful Git-ref API update alone does not establish PR synchronization. If the Git provider remains out of sync after a bounded repair attempt, return specific assistance questions instead of repeating unchanged pushes or claiming completion. The pipeline redoes all reviews after changes. Never dismiss reviews, bypass rules, assume approval or resolve a review thread without addressing it or supplying evidence. Waiting for an external human approval is not a code fix.\n${feedbackPolicyInstructions}\n${guideGapFixInstructions}`,
 };
+
+/** Runtime role instructions; guide steps follow their declared contract. */
+export function roleInstructions(step: {
+	id: string;
+	guideContract?: string;
+}): string {
+	if (step.id === "guide" && step.guideContract)
+		return briefRuntimeInstructions;
+	return incrementalRoleInstructions[step.id] ?? "";
+}
