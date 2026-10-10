@@ -18,6 +18,7 @@ export interface FactoryChange {
 
 export interface FactoryClientOptions {
 	port: number;
+	requestTimeoutMs?: number;
 	home: string;
 	/** Writes a local terminal-session request and returns its token. */
 	requestSession: (home: string) => string;
@@ -92,7 +93,9 @@ export class FactoryClient {
 				},
 			);
 			req.on("error", (error) => reject(this.unreachable(error)));
-			req.setTimeout(30000, () => req.destroy(new Error("Request timed out")));
+			req.setTimeout(this.options.requestTimeoutMs ?? 30000, () =>
+				req.destroy(new Error("Request timed out")),
+			);
 			req.end(body === undefined ? undefined : JSON.stringify(body));
 		});
 	}

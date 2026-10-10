@@ -5,7 +5,14 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+	cpSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { defaultWorkflows } from "../../../../packages/edge-worker/dist/factory/defaultWorkflows.js";
@@ -179,6 +186,7 @@ const lifecycle = {
 		calls.push("start");
 		assert.equal(workers, 0);
 		createRuntime();
+		await observeStartup(candidate);
 		workers++;
 		peakWorkers = Math.max(peakWorkers, workers);
 	},
@@ -198,6 +206,7 @@ const lifecycle = {
 			force: true,
 		});
 		createRuntime();
+		await observeStartup(transaction.previous);
 		workers++;
 		assert.deepEqual(drain.receipt(), snapshotReceipt);
 	},
@@ -219,6 +228,49 @@ const hooksForServer = () => ({
 	},
 	stop: (id) => runtime.stop(id),
 });
+// Development builds have no packaged identity. Supply the controlled identity
+// through the same awaited onReady path; the separate native regression tests
+// compiled FactoryServer startup without this fixture hook.
+async function observeStartup(identity) {
+	const before = readFileSync(manager.file, "utf8");
+	const lock = join(manager.directory, "state.lock");
+	writeFileSync(lock, String(process.pid), { flag: "wx" });
+	const replacement = new FactoryServer(runtime, hooksForServer(), {
+		origins: ["http://localhost"],
+	});
+	replacement.app.addHook("onReady", async () => {
+		await manager.observeInstalled(identity);
+	});
+	try {
+		assert.equal(
+			(
+				await replacement.app.inject({
+					url: "/api/auth/status",
+					headers: { host: "localhost" },
+				})
+			).statusCode,
+			200,
+		);
+		assert.equal(
+			(
+				await replacement.app.inject({
+					url: "/api/updates",
+					headers: { host: "localhost" },
+				})
+			).statusCode,
+			401,
+		);
+		assert.equal(readFileSync(manager.file, "utf8"), before);
+		assert.equal(readFileSync(lock, "utf8"), String(process.pid));
+		receipts.push(
+			`transaction-owned ${manager.status().transaction.phase} startup remains healthy under live writer contention without changing installed state`,
+		);
+	} finally {
+		await replacement.stop();
+		assert.equal(readFileSync(lock, "utf8"), String(process.pid));
+		rmSync(lock);
+	}
+}
 server = new FactoryServer(runtime, hooksForServer(), {
 	origins: ["http://localhost"],
 });

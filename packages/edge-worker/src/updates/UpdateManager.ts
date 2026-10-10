@@ -177,6 +177,8 @@ export function candidateKey(candidate: UpdateCandidate) {
 		candidate.manifestSha256,
 	].join(":");
 }
+class UpdateStateLockBusyError extends Error {}
+
 const now = () => new Date().toISOString();
 const terminal = (transaction?: UpdateTransaction) =>
 	!transaction ||
@@ -223,19 +225,24 @@ export class UpdateManager {
 			failures: 0,
 		});
 	}
-	private change<T>(mutate: (state: UpdateState) => T): T {
+	private change<T>(
+		mutate: (state: UpdateState) => T,
+		shouldWrite: (state: UpdateState) => boolean = () => true,
+	): T | undefined {
 		mkdirSync(this.directory, { recursive: true, mode: 0o700 });
 		const lock = join(this.directory, "state.lock");
 		this.read();
 		try {
 			writeFileSync(lock, String(process.pid), { flag: "wx", mode: 0o600 });
-		} catch {
-			throw new Error(
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+			throw new UpdateStateLockBusyError(
 				"Update settings are being saved; retry. Inspect a retained state.lock after interruption.",
 			);
 		}
 		try {
 			const state = this.read();
+			if (!shouldWrite(state)) return;
 			const result = mutate(state);
 			StateSchema.parse(state);
 			const temporary = `${this.file}.${randomUUID()}.tmp`;
@@ -258,13 +265,69 @@ export class UpdateManager {
 			unlinkSync(lock);
 		}
 	}
-	observeInstalled(identity: InstalledUpdate) {
+	/** Startup observation never owns a supervisor transaction. Only lock contention
+	 * is deferred; malformed state and unexpected runtime identities still fail startup.
+	 * The bounded wait is asynchronous so the legitimate writer can finish normally.
+	 */
+	async observeInstalled(identity: InstalledUpdate) {
+		InstalledSchema.parse(identity);
 		if (!identity.target || !identity.commit) return;
-		this.change((state) => {
-			if (terminal(state.transaction))
-				state.installed = InstalledSchema.parse(identity);
-		});
+		const observed = InstalledSchema.extend({
+			version: CandidateSchema.shape.version,
+			commit: CandidateSchema.shape.commit,
+			target: CandidateSchema.shape.target,
+		}).parse(identity);
+		const matches = (expected: InstalledUpdate) =>
+			observed.version === expected.version &&
+			observed.commit === expected.commit &&
+			observed.target === expected.target;
+		const shouldWrite = (state: UpdateState) => {
+			const transaction = state.transaction;
+			if (!terminal(transaction)) {
+				const owned = transaction!;
+				if (
+					candidateKey(owned.candidate) !== candidateKey(owned.staged.candidate)
+				)
+					throw new Error(
+						"Update transaction has inconsistent staged identity",
+					);
+				const phase = owned.phase;
+				const expected = ["starting", "health", "succeeded"].includes(phase)
+					? [owned.candidate]
+					: ["activating", "recovery-required"].includes(phase)
+						? [owned.previous, owned.candidate]
+						: [owned.previous];
+				if (!expected.some(matches))
+					throw new Error(
+						`Installed runtime does not match update transaction phase ${phase}`,
+					);
+				return false;
+			}
+			return !matches(state.installed);
+		};
+		const deadline = Date.now() + 1_000;
+		while (true) {
+			if (!shouldWrite(this.read())) return;
+			try {
+				// Recheck under the writer lock: a supervisor may have started a
+				// transaction while this observer waited. Never overwrite its view.
+				this.change((state) => {
+					state.installed = observed;
+				}, shouldWrite);
+				return;
+			} catch (error) {
+				if (!(error instanceof UpdateStateLockBusyError)) throw error;
+				if (Date.now() >= deadline) {
+					console.warn(
+						`Installed runtime observation deferred. ${error.message}`,
+					);
+					return;
+				}
+				await new Promise((resolve) => setTimeout(resolve, 25));
+			}
+		}
 	}
+
 	status() {
 		const state = this.read();
 		return {

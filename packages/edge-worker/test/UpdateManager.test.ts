@@ -432,3 +432,100 @@ it.each([
 	await manager.reconcile();
 	expect(calls).toContain("activate");
 });
+
+async function startingFixture() {
+	const fixtureValue = fixture();
+	fixtureValue.manager.configure({ channel: "nightly" }, 0);
+	await fixtureValue.manager.check();
+	await fixtureValue.manager.stage();
+	await fixtureValue.manager.reconcile();
+	const state = JSON.parse(readFileSync(fixtureValue.manager.file, "utf8"));
+	state.installed = installed;
+	state.transaction.phase = "starting";
+	delete state.transaction.release;
+	writeFileSync(fixtureValue.manager.file, JSON.stringify(state));
+	return fixtureValue;
+}
+it.each([
+	"starting",
+	"health",
+	"rollback",
+])("startup observation preserves %s transaction under a live writer lock", async (phase) => {
+	const { manager } = await startingFixture();
+	const state = JSON.parse(readFileSync(manager.file, "utf8"));
+	state.transaction.phase = phase;
+	writeFileSync(manager.file, JSON.stringify(state));
+	const before = readFileSync(manager.file, "utf8");
+	const lock = join(manager.directory, "state.lock");
+	writeFileSync(lock, String(process.pid), { flag: "wx" });
+	await manager.observeInstalled(phase === "rollback" ? installed : candidate);
+	expect(readFileSync(manager.file, "utf8")).toBe(before);
+	expect(readFileSync(lock, "utf8")).toBe(String(process.pid));
+});
+it("retries transient observation contention without changing settings CAS behavior", async () => {
+	const { manager } = fixture();
+	manager.configure({ paused: true }, 0);
+	const lock = join(manager.directory, "state.lock");
+	writeFileSync(lock, String(process.pid), { flag: "wx" });
+	expect(() => manager.configure({ paused: false }, 1)).toThrow(
+		"Inspect a retained state.lock",
+	);
+	const observation = manager.observeInstalled(candidate);
+	setTimeout(() => rmSync(lock), 50);
+	await observation;
+	expect(manager.status().installed).toEqual({
+		version: candidate.version,
+		commit: candidate.commit,
+		target: candidate.target,
+	});
+	expect(manager.status().settings.paused).toBe(true);
+	expect(manager.status().revision).toBe(1);
+});
+it("rechecks transaction identity after contention without clobbering the supervisor", async () => {
+	const { manager } = await startingFixture();
+	const transactionState = readFileSync(manager.file, "utf8");
+	const state = JSON.parse(transactionState);
+	delete state.transaction;
+	writeFileSync(manager.file, JSON.stringify(state));
+	const lock = join(manager.directory, "state.lock");
+	writeFileSync(lock, String(process.pid), { flag: "wx" });
+	const observation = manager.observeInstalled(candidate);
+	setTimeout(() => {
+		writeFileSync(manager.file, transactionState);
+		rmSync(lock);
+	}, 50);
+	await observation;
+	expect(readFileSync(manager.file, "utf8")).toBe(transactionState);
+});
+it("bounds retained observation contention and leaves owner inspection intact", async () => {
+	const { manager } = fixture();
+	manager.configure({}, 0);
+	const before = readFileSync(manager.file, "utf8");
+	const lock = join(manager.directory, "state.lock");
+	writeFileSync(lock, "2147483647", { flag: "wx" });
+	const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+	try {
+		await manager.observeInstalled(candidate);
+		expect(warning).toHaveBeenCalledWith(
+			expect.stringContaining("Inspect a retained state.lock"),
+		);
+		expect(readFileSync(lock, "utf8")).toBe("2147483647");
+		expect(readFileSync(manager.file, "utf8")).toBe(before);
+	} finally {
+		warning.mockRestore();
+	}
+});
+it("rejects wrong phase identity, malformed identity and malformed state even under contention", async () => {
+	const { manager } = await startingFixture();
+	writeFileSync(join(manager.directory, "state.lock"), String(process.pid), {
+		flag: "wx",
+	});
+	await expect(manager.observeInstalled(installed)).rejects.toThrow(
+		"phase starting",
+	);
+	await expect(
+		manager.observeInstalled({ ...candidate, commit: "invalid" }),
+	).rejects.toThrow();
+	writeFileSync(manager.file, "{}");
+	await expect(manager.observeInstalled(candidate)).rejects.toThrow();
+});

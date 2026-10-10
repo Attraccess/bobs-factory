@@ -1,7 +1,7 @@
 // Actual Electron shell + native local runtime; CDP virtual authenticator, no provider.
 
 import assert from "node:assert/strict";
-import { mkdtempSync, readlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { app, BrowserWindow, dialog, Menu } from "electron";
@@ -17,6 +17,10 @@ dialog.showErrorBox = (title, message) => {
 };
 dialog.showMessageBox = async () => ({ response: 1, checkboxChecked: false });
 let workerPid;
+let reportedError;
+dialog.showErrorBox = (title, message) => {
+	reportedError = `${title}: ${message}`;
+};
 const until = async (check) => {
 	const deadline = Date.now() + 15000;
 	while (!(await check())) {
@@ -117,6 +121,47 @@ void (async () => {
 				"fetch('/api/auth/status').then(r=>r.json()).then(s=>s.authenticated)",
 			),
 		);
+		// Hold the real menu confirmation while the external owner admits maintenance.
+		const { OwnedUpdateLifecycle } = await import(
+			"../../cli/dist/src/services/OwnedUpdateLifecycle.js"
+		);
+		const lifecycle = new OwnedUpdateLifecycle(
+			process.env.BOBS_FACTORY_DESKTOP_HOME,
+			Number(process.env.BOBS_FACTORY_DESKTOP_PORT),
+		);
+		let confirm, entered;
+		const shown = new Promise((resolve) => {
+			entered = resolve;
+		});
+		dialog.showMessageBox = async (options) => {
+			if (!options.buttons) return { response: 0 };
+			entered();
+			return new Promise((resolve) => {
+				confirm = resolve;
+			});
+		};
+		menu.items[0].submenu.items
+			.find((i) => i.label === "Stop local Factory…")
+			.click();
+		await shown;
+		await lifecycle.acquireMaintenance("native-menu-race");
+		confirm({ response: 1 });
+		await until(() => reportedError);
+		assert.match(reportedError, /maintenance/);
+		assert.equal(getOwner().pid, workerPid);
+		assert.equal(
+			existsSync(
+				join(
+					process.env.BOBS_FACTORY_DESKTOP_HOME,
+					"runtime",
+					"desktop-stopped.json",
+				),
+			),
+			false,
+		);
+		await lifecycle.releaseMaintenance("native-menu-race");
+		reportedError = undefined;
+		dialog.showMessageBox = async () => ({ response: 1 });
 		// Native menu confirms explicit Stop; UI close never did.
 		menu.items[0].submenu.items
 			.find((i) => i.label === "Stop local Factory…")
@@ -130,6 +175,14 @@ void (async () => {
 			}
 		});
 		workerPid = undefined;
+		await assert.rejects(lifecycle.start(), /Deliberate Stop/);
+		await lifecycle.restartCrashedDesktop();
+		assert.equal(
+			existsSync(
+				join(process.env.BOBS_FACTORY_DESKTOP_HOME, "runtime", "worker.lock"),
+			),
+			false,
+		);
 		console.log(
 			JSON.stringify(
 				{
@@ -142,6 +195,8 @@ void (async () => {
 					closedWindowKeepsWorker: true,
 					reopenSamePid: true,
 					explicitStop: true,
+					confirmationMaintenanceRaceRejected: true,
+					stopSuppressesAutomaticRestart: true,
 					nativeCredentials: "not tested",
 				},
 				null,

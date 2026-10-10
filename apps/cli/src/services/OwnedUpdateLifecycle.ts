@@ -19,6 +19,12 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { requestFactoryTerminalSession } from "bobs-factory-edge-worker";
 import { FactoryClient } from "../tui/client.js";
+import { desktopStopped, lifecycleGuard } from "./DesktopLifecycle.js";
+import {
+	assertInstallationProof,
+	type InstallationProof,
+	installationProof,
+} from "./InstallationOwnership.js";
 import {
 	acquireInstanceLock,
 	ownerAlive,
@@ -59,6 +65,7 @@ export class OwnedUpdateLifecycle {
 	private readonly manager: ServiceLifecycle;
 	private readonly client: FactoryClient;
 	private readonly owner: Owner;
+	private readonly installationOwner: InstallationProof | undefined;
 	constructor(
 		readonly home: string,
 		port: number,
@@ -97,6 +104,14 @@ export class OwnedUpdateLifecycle {
 			throw new Error(
 				"Updates require the explicit owned executable link, never an app bundle/system executable",
 			);
+		this.installationOwner =
+			service?.updateOwner ??
+			(!service ? installationProof(home, this.owner.executable) : undefined);
+		assertInstallationProof(
+			home,
+			this.owner.executable,
+			this.installationOwner,
+		);
 		const current = workerOwner(home);
 		if (current?.pid === process.pid)
 			throw new Error(
@@ -118,6 +133,21 @@ export class OwnedUpdateLifecycle {
 		renameSync(`${this.fence()}.tmp`, this.fence());
 	}
 	async acquireMaintenance(transactionId: string) {
+		const release = await lifecycleGuard(this.home);
+		try {
+			this.assertMayStart();
+			assertInstallationProof(
+				this.home,
+				this.owner.executable,
+				this.installationOwner,
+			);
+			this.admitMaintenance(transactionId);
+		} finally {
+			release();
+		}
+		await this.beginMaintenance(transactionId);
+	}
+	private admitMaintenance(transactionId: string) {
 		if (existsSync(this.fence())) {
 			const saved = JSON.parse(readFileSync(this.fence(), "utf8"));
 			if (saved.transactionId !== transactionId)
@@ -126,6 +156,8 @@ export class OwnedUpdateLifecycle {
 		}
 		this.transactionId = transactionId;
 		this.save({ transactionId, preservation: this.preservation });
+	}
+	private async beginMaintenance(transactionId: string) {
 		const current = workerOwner(this.home);
 		if (!current || !ownerAlive(current)) {
 			if (!this.preservation) {
@@ -303,6 +335,11 @@ export class OwnedUpdateLifecycle {
 		else await this.stopDesktopOwner();
 	}
 	private switchLink(executable: string) {
+		assertInstallationProof(
+			this.home,
+			this.owner.executable,
+			this.installationOwner,
+		);
 		if (workerOwner(this.home))
 			throw new Error("Existing worker ownership blocks runtime activation");
 		const next = `${this.owner.executable}.next-${this.transactionId}`;
@@ -324,7 +361,66 @@ export class OwnedUpdateLifecycle {
 			throw new Error("Candidate not preflighted");
 		this.switchLink(this.staged.executable);
 	}
+	private async readyRuntime() {
+		const expected = JSON.parse(
+			readFileSync(
+				join(dirname(realpathSync(this.owner.executable)), "build.json"),
+				"utf8",
+			),
+		);
+		const readiness = new FactoryClient({
+			home: this.home,
+			port: Number(new URL(this.client.origin).port),
+			requestSession: requestFactoryTerminalSession,
+			requestTimeoutMs: 1000,
+		});
+		const deadline = Date.now() + 30000;
+		while (Date.now() < deadline) {
+			try {
+				const { runtime } = await readiness.get<{
+					runtime: LifecycleCandidate;
+				}>("/api/version");
+				const owner = workerOwner(this.home);
+				if (
+					owner &&
+					ownerAlive(owner) &&
+					owner.executable === realpathSync(this.owner.executable) &&
+					runtime.version === expected.version &&
+					runtime.commit === expected.commit &&
+					runtime.target === expected.target
+				)
+					return;
+			} catch {}
+			await new Promise((resolve) => setTimeout(resolve, 200));
+		}
+		throw new Error(
+			"Owned worker did not become ready with the exact runtime identity",
+		);
+	}
+	private assertMayStart() {
+		if (
+			desktopStopped(this.home) ||
+			["stopped"].includes(this.manager.record()?.desired ?? "")
+		)
+			throw new Error(
+				"Deliberate Stop intent blocks automatic startup/recovery",
+			);
+	}
 	async start() {
+		const release = await lifecycleGuard(this.home);
+		try {
+			this.assertMayStart();
+			assertInstallationProof(
+				this.home,
+				this.owner.executable,
+				this.installationOwner,
+			);
+			await this.startOwned();
+		} finally {
+			release();
+		}
+	}
+	private async startOwned() {
 		if (this.owner.kind === "service") {
 			await this.manager.resume();
 			for (let attempt = 0; attempt < 300; attempt++) {
@@ -334,8 +430,10 @@ export class OwnedUpdateLifecycle {
 					current.owner === "service" &&
 					current.executable === realpathSync(this.owner.executable) &&
 					ownerAlive(current)
-				)
+				) {
+					await this.readyRuntime();
 					return;
+				}
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			}
 			throw new Error(
@@ -380,7 +478,10 @@ export class OwnedUpdateLifecycle {
 				if (current) {
 					if (current.pid !== child.pid)
 						throw new Error("Another worker acquired ownership during launch");
-					if (ownerAlive(current)) return;
+					if (ownerAlive(current)) {
+						await this.readyRuntime();
+						return;
+					}
 				}
 				await new Promise((resolve) => setTimeout(resolve, 50));
 			}

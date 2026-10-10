@@ -113,6 +113,19 @@ jobs:
           VERSION: ${{ fromJSON(needs.freeze.outputs.candidate_json).candidate.version }}
           TARGET: ${{ matrix.target }}
         run: node source/scripts/native-service-smoke.mjs "$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET" > "$RUNNER_TEMP/desktop/native-service-receipt.json"
+      - name: Validate native Electron menu Stop and maintenance race
+        env:
+          VERSION: ${{ fromJSON(needs.freeze.outputs.candidate_json).candidate.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          export BOBS_FACTORY_DESKTOP_BINARY="$RUNNER_TEMP/runtime/bobs-factory-$VERSION-$TARGET/bobs-factory"
+          export HOME="$RUNNER_TEMP/desktop-os-home"
+          mkdir -p "$HOME"
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            xvfb-run -a source/apps/desktop/node_modules/.bin/electron --no-sandbox source/apps/desktop/test/native-smoke.mjs > "$RUNNER_TEMP/desktop/native-electron-receipt.json"
+          else
+            source/apps/desktop/node_modules/.bin/electron source/apps/desktop/test/native-smoke.mjs > "$RUNNER_TEMP/desktop/native-electron-receipt.json"
+          fi
       - uses: actions/upload-artifact@v6
         if: always()
         with:
@@ -123,4 +136,5 @@ jobs:
             ${{ runner.temp }}/desktop/*.deb
             ${{ runner.temp }}/desktop/desktop-build.json
             ${{ runner.temp }}/desktop/native-service-receipt.json
+            ${{ runner.temp }}/desktop/native-electron-receipt.json
             ${{ runner.temp }}/runtime/*.tar.gz

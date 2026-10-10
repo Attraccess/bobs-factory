@@ -12,6 +12,11 @@ import {
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import {
+	canonicalExecutableLink,
+	type InstallationProof,
+	installationProof,
+} from "./InstallationOwnership.js";
+import {
 	acquireInstanceLock,
 	acquireRuntimeOperation,
 	canonicalHome,
@@ -43,6 +48,7 @@ export interface ServiceRecord {
 	mode: "start" | "local";
 	path: string;
 	dashboardPort?: number;
+	updateOwner?: InstallationProof;
 }
 export type ServiceExecutor = (
 	command: string,
@@ -78,6 +84,7 @@ export function updateServiceRecord(record: ServiceRecord): ServiceRecord {
 	return {
 		...record,
 		id: `${record.id}.updates`,
+		startup: record.startup && Boolean(record.updateOwner),
 		definition: record.definition.replace(/\.(plist|service)$/, ".updates.$1"),
 	};
 }
@@ -214,6 +221,7 @@ export class ServiceLifecycle {
 			throw new Error(
 				"Only macOS launchd/Linux systemd user services are supported",
 			);
+		executable = canonicalExecutableLink(executable);
 		const previous = this.record();
 		if (previous) {
 			const updater = updateServiceRecord(previous);
@@ -238,7 +246,7 @@ export class ServiceLifecycle {
 			);
 		if (!isAbsolute(executable) || !existsSync(executable))
 			throw new Error("Supply an existing absolute packaged executable");
-		if (executable.startsWith("/nix/store/"))
+		if (realpathSync(executable).startsWith("/nix/store/"))
 			throw new Error(
 				"Nix owns this executable: manage its service through Nix, without installing a second owner",
 			);
@@ -260,6 +268,7 @@ export class ServiceLifecycle {
 			mode,
 			path: safe(path),
 			dashboardPort,
+			updateOwner: installationProof(this.home, executable),
 		};
 		const updater = updateServiceRecord(r);
 		if (existsSync(r.definition) || existsSync(updater.definition))
@@ -350,6 +359,7 @@ export class ServiceLifecycle {
 			managerAvailable: probe.status === 0,
 			manager: probe.output,
 			managerPid: Number.isSafeInteger(managerPid) ? managerPid : null,
+			updateSupported: Boolean(r.updateOwner),
 			updater: {
 				definitionMatches: updaterDefinitionMatches,
 				managerAvailable: updaterProbe.status === 0,
@@ -488,7 +498,7 @@ export class ServiceLifecycle {
 			if (r.platform === "linux")
 				this.checked("systemctl", [
 					"--user",
-					r.startup ? "enable" : "disable",
+					r.startup && r.updateOwner ? "enable" : "disable",
 					this.unit(updater),
 				]);
 			else {
@@ -496,12 +506,12 @@ export class ServiceLifecycle {
 					throw new Error(
 						"Stop updater before changing macOS login enrollment",
 					);
-				updater.startup = r.startup;
+				updater.startup = r.startup && Boolean(r.updateOwner);
 				writeFileSync(updater.definition, serviceDefinition(updater, true), {
 					mode: 0o600,
 				});
 				this.checked("launchctl", [
-					r.startup ? "enable" : "disable",
+					updater.startup ? "enable" : "disable",
 					this.target(updater),
 				]);
 			}
@@ -530,9 +540,11 @@ export class ServiceLifecycle {
 				]);
 				this.checked("launchctl", ["kickstart", this.target(r)]);
 			}
-			if (r.platform === "linux")
+			if (r.platform === "linux" && r.updateOwner)
 				this.checked("systemctl", ["--user", "start", this.unit(updater)]);
 			else if (
+				r.platform === "darwin" &&
+				r.updateOwner &&
 				this.run("launchctl", ["print", this.target(updater)]).status !== 0
 			) {
 				this.checked("launchctl", ["enable", this.target(updater)]);
