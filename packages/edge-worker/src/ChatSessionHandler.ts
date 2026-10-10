@@ -96,6 +96,7 @@ export interface ChatPlatformAdapter<TEvent> {
  * Callbacks for EdgeWorker integration (same pattern as RepositoryRouterDeps).
  */
 export interface ChatSessionHandlerDeps {
+	requireWorkflowAvailable?(id?: string): void;
 	onSessionChange?: (id: string) => void;
 	isShuttingDown?: () => boolean;
 	onNewSession?: (
@@ -241,6 +242,7 @@ export class ChatSessionHandler<TEvent> {
 
 			// Check if there's already an active session for this thread
 			const existingSessionId = this.threadSessions.get(threadKey);
+			this.deps.requireWorkflowAvailable?.(existingSessionId);
 			if (existingSessionId) {
 				const existingSession =
 					this.sessionManager.getSession(existingSessionId);
@@ -696,6 +698,11 @@ export class ChatSessionHandler<TEvent> {
 	/** Resume only unfinished turns, through the same capacity-gated start path. */
 	async recoverQueuedSessions(): Promise<void> {
 		for (const session of this.getAllChatSessions()) {
+			try {
+				this.deps.requireWorkflowAvailable?.(session.id);
+			} catch {
+				continue;
+			}
 			if (session.status === AgentSessionStatus.Complete) {
 				this.drainDashboardMessages(session.id);
 				continue;
@@ -732,6 +739,29 @@ export class ChatSessionHandler<TEvent> {
 				await this.deps.onStateChange();
 			}
 		}
+	}
+	isWorkflowStopping(id: string): boolean {
+		return this.continuationStarts.has(id);
+	}
+	interruptWorkflowSession(id: string): void {
+		this.continuationStarts.get(id)?.abort();
+		this.sessionManager.getSession(id)?.agentRunner?.stop();
+	}
+	async resumeBlockedSession(id: string): Promise<void> {
+		const session = this.sessionManager.getSession(id);
+		if (!session) throw new Error("Chat session not found");
+		this.deps.requireWorkflowAvailable?.(id);
+		const resume = this.getResumeInfo(session);
+		if (!resume) throw new Error("Native chat conversation is unavailable");
+		await this.resumeSession(
+			undefined,
+			session,
+			id,
+			resume.sessionId,
+			resume.runnerType,
+			session.metadata?.pendingExecution?.prompt ??
+				"Resume interrupted work using prior conversation and tool results.",
+		);
 	}
 	get platformName(): ChatPlatformName {
 		return this.adapter.platformName;
@@ -850,6 +880,7 @@ export class ChatSessionHandler<TEvent> {
 		recovering = false,
 		dashboardMessages?: { id: string; text: string }[],
 	): Promise<void> {
+		this.deps.requireWorkflowAvailable?.(sessionId);
 		if (this.continuationStarts.has(sessionId))
 			throw new Error("The conversation is resuming.");
 		const isCancelled = () =>

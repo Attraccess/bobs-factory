@@ -29,6 +29,7 @@ function fixture() {
 		updateViewState: vi.fn(),
 	};
 	const worker = Object.assign(Object.create(EdgeWorker.prototype), {
+		requireSessionWorkflowAvailable: vi.fn(),
 		chatSessionHandler: null,
 		zulipChatSessionHandler: null,
 		agentSessionManager: {

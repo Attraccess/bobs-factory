@@ -181,6 +181,7 @@ it("starts, displays, answers and terminates runs through the local API", async 
 			const workflow = structuredClone(
 				defaultWorkflows.find((item) => item.id === "factory-pipeline")!,
 			);
+			workflow.id = "question-fixture";
 			workflow.steps = [workflow.steps[0]!];
 			workflow.allowedTriggers = ["manual"];
 			const run = runtime.create({
@@ -541,7 +542,7 @@ it("validates the selected workflow's fields, accepts source-only Takeover, and 
 		// Saved definitions predating launchFields receive the same useful defaults.
 		const legacy = structuredClone(defaultWorkflows);
 		delete legacy.find((w) => w.id === "takeover")!.launchFields;
-		runtime.updateWorkflows(legacy);
+		expect(() => runtime.updateWorkflows(legacy)).toThrow("read-only");
 		expect((await launch("takeover", { source: "DEF-1" })).statusCode).toBe(
 			202,
 		);

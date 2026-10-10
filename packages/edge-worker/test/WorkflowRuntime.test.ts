@@ -823,19 +823,20 @@ describe("workflow runtime", () => {
 		expect(restarted.get(run.id).status).toBe("running");
 		expect(restarted.get(run.id).events[0]?.message).toBe("working");
 	});
-	it("freezes the workflow per run and applies saved changes only to new runs", () => {
+	it("freezes local workflows per run and protects bundled names", () => {
 		const { runtime } = create();
-		const run = start(
-			runtime,
-			runtime.selectWorkflow(["workflow:factory"], "manual"),
-		);
+		const local = workflow([agent("work")]);
+		runtime.updateWorkflows([...defaultWorkflows, local]);
+		const run = start(runtime, local);
 		const definitions = runtime.listWorkflows();
-		definitions.find((item) => item.id === "factory")!.name = "New name";
+		definitions.find((w) => w.id === "custom")!.name = "New name";
 		runtime.updateWorkflows(definitions);
-		expect(run.workflow.name).toBe("Software factory");
-		expect(runtime.selectWorkflow([], "manual", "factory").name).toBe(
+		expect(run.workflow.name).toBe("Custom");
+		expect(runtime.selectWorkflow([], "manual", "custom").name).toBe(
 			"New name",
 		);
+		definitions.find((w) => w.id === "factory")!.name = "Changed standard";
+		expect(() => runtime.updateWorkflows(definitions)).toThrow("read-only");
 	});
 	it("rejects dangling edges, duplicate IDs and malformed results", () => {
 		expect(() => workflow([agent("x", { next: "missing" })])).toThrow(
@@ -1441,6 +1442,10 @@ it("fails a capture-assistance checkpoint inside a frozen nested fanout without 
 			{ id: "gate", name: "Gate", type: "tool", tool: "visual-gate" },
 		],
 	};
+	runtime.updateWorkflows([
+		...defaultWorkflows,
+		validateWorkflows([...defaultWorkflows, captureFlow]).at(-1)!,
+	]);
 	const run = start(
 		runtime,
 		workflow(
@@ -2448,7 +2453,9 @@ it.each([
 	const restored = reload(home);
 	expect(restored.getDefaultWorkflow()).toBe(object ? "custom" : "simple");
 	expect(restored.get(run.id)).toEqual(frozen);
-	expect(restored.listWorkflows().at(-1)!.steps[0]!.groups).toEqual([
+	expect(
+		restored.listWorkflows().find((w) => w.id === "custom")!.steps[0]!.groups,
+	).toEqual([
 		[{ ...custom.steps[0]!.groups![0]![0]!, computeIntensive: false }],
 		custom.steps[0]!.groups![1],
 	]);
@@ -2457,9 +2464,13 @@ it.each([
 			.listWorkflows()
 			.find((w) => w.id === "factory-pipeline")!
 			.steps.find((s) => s.tool === "handoff")!.computeIntensive,
-	).toBe(false);
+	).toBe(
+		defaultWorkflows
+			.find((w) => w.id === "factory-pipeline")!
+			.steps.find((s) => s.tool === "handoff")!.computeIntensive,
+	);
 	const normalized = readFileSync(path, "utf8");
-	expect(JSON.parse(normalized).workflows).toEqual(restored.listWorkflows());
+	expect(JSON.parse(normalized).format).toBe("workflow-catalog-v1");
 	const second = reload(home);
 	expect(readFileSync(path, "utf8")).toBe(normalized);
 	expect(second.get(run.id)).toEqual(frozen);

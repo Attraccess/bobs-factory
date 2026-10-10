@@ -125,6 +125,15 @@ export interface CyrusAgentSession {
 		intentionalStop?: boolean;
 		/** Immutable public execution-profile snapshot. Interpreted by the Factory resolver. */
 		executionSnapshot?: unknown;
+		/** Frozen native workflow execution preferences at initial acceptance. */
+		workflowPreferences?: unknown;
+		/** Undelivered or interrupted native continuation, retained until successful completion. */
+		workflowPendingPrompt?: {
+			body: string;
+			attachmentManifest: string;
+			commentAuthor?: string;
+			commentTimestamp?: string;
+		};
 		/** Default repository available when a standalone chat was created. */
 		chatRepositoryId?: string;
 		chatPlatform?: "slack" | "zulip";

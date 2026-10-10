@@ -170,6 +170,7 @@ export function capRunnerStarts(
 	semaphore: ExecutionCapacity,
 	signal?: AbortSignal,
 	options: CapacityOptions = {},
+	admit?: () => void,
 ): IAgentRunner {
 	let controller: AbortController | undefined;
 	let pending = false;
@@ -181,6 +182,7 @@ export function capRunnerStarts(
 		return work;
 	};
 	const gate = async <T>(run: () => Promise<T>): Promise<T> => {
+		admit?.();
 		if (stopped) throw new Error("Session start cancelled");
 		if (pending) throw new Error("Runner execution already pending");
 		controller = new AbortController();
@@ -202,6 +204,7 @@ export function capRunnerStarts(
 				},
 			});
 			controller.signal.throwIfAborted();
+			admit?.();
 			admitted = true;
 			return await lease.run(run);
 		} finally {
@@ -219,6 +222,11 @@ export function capRunnerStarts(
 		get(target, property, receiver) {
 			if (property === "start")
 				return (prompt: string) => track(gate(() => target.start(prompt)));
+			if (property === "addStreamMessage" && target.addStreamMessage)
+				return (message: string) => {
+					admit?.();
+					return target.addStreamMessage!(message);
+				};
 			if (property === "stop")
 				return () => {
 					stopped = true;

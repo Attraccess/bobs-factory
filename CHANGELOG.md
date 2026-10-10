@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Bundle standard workflows independently of model preferences. Add private Factory/Takeover forks, recoverable legacy migration, and disabling that interrupts work while preserving progress for individual Resume. Simple cannot be forked. ([Taskbot #129](https://taskbot.apps.janjaap.de/p/bobs-factory/t/129); [validation](apps/f1/test-drives/2026-10-10-workflow-catalog.md))
+
 ### Added
 
 - Replace the chapter-based review guide with a requirement-first review brief. It quotes your original request, shows every interpretation Bob made and who decided it, gives each requirement one decisive proof (cropped screenshots, observed values, tests or code), asks only the questions that need your judgment, and lists what changed beyond the ask and what was not verified. Architecture changes get sequence diagrams of real flows plus endpoint, stored-data and dependency tables. Mark lines met or not met; objections become precise change-request feedback. Saved stock recipes upgrade automatically; running and historical runs keep their chapter guides ([#82](https://github.com/jappyjan/bobs-factory/pull/82), [F1 validation](apps/f1/test-drives/2026-10-10-review-brief.md)).

@@ -304,7 +304,7 @@ revokes them along with browser sessions. No native credential store is changed.
 
 ## Execution identities and tools
 
-**Settings** has separate pages for **Access** (passkeys and sign-out), **Execution defaults**, **Identity profiles**, **Tool profiles**, **Instance capacity** and **Run titles**. Recipes manages workflow definitions and launch permissions. In Identity profiles, create an identity with separate Git author/committer, repository account, signing policy and per-runner API references. Create a tool profile with declared MCP sources/definitions, per-server credential references, removals, denials and supported ordinary settings. Enter credential names or protected-file paths, never token values.
+**Settings** has separate pages for **Access** (passkeys and sign-out), **Execution defaults**, **Identity profiles**, **Tool profiles**, **Instance capacity** and **Run titles**. Recipes manages bundled execution preferences, private editable forks, launch permissions and enable state. In Identity profiles, create an identity with separate Git author/committer, repository account, signing policy and per-runner API references. Create a tool profile with declared MCP sources/definitions, per-server credential references, removals, denials and supported ordinary settings. Enter credential names or protected-file paths, never token values.
 
 The composer selects identity and tools independently and offers an effective preview. Manual choices override repository defaults, which override factory defaults. No selection/default keeps Legacy behavior. Explicit profiles require both concerns and an authentication binding for every workflow provider and the title agent. Unsupported native sources fail before worktree setup. Saved runs keep their accepted definitions even when defaults change or profiles are deleted.
 
@@ -640,8 +640,7 @@ Each saved workflow exposes an `allowedTriggers` array. In **Recipes → Launch
 methods**, edit **Called by another workflow** (`workflow`), **Start manually**
 (`manual`), and **Start from a Linear ticket** (`ticket-assignment`) independently.
 The ticket permission covers both assignments and @mentions. Simple has no graph
-and cannot grant `workflow`; clone it under another ID with steps to customize.
-An empty array disables all new launches. Permission edits are saved atomically;
+and cannot grant `workflow` or be forked. An empty permission array rejects new launches; use **Disable** to interrupt work and block continuation. Permission edits are saved atomically;
 a referenced child's call permission cannot be disabled while a parent calls it,
 including in fanout. A failed save leaves the previous configuration intact.
 
@@ -1021,7 +1020,7 @@ are ignored, and title editing is deferred to future work.
 
 ### Launch fields
 
-Edit a workflow's `launchFields` in **Recipes → Edit as JSON** to customize
+Fork Factory or Takeover first, then edit the local workflow's `launchFields` in **Recipes → Edit as JSON** to customize
 the composer. Only fields belonging to the selected parent workflow appear;
 calling a shared workflow does not add its fields. Repository, workflow and
 agent settings are common controls. For example:
@@ -1421,9 +1420,9 @@ feedback is never lost by approving; marking lines is optional. Approval still
 binds the exact pending revision. The brief is also published to the PR
 description and, without a ticket, as a run comment.
 
-Saved recipes still carrying any released stock chapter-guide prompt upgrade to
-the brief prompt and contract. Customized guide prompts keep the chapter guide
-unless the Recipes editor’s Review format selects the brief. Runs keep the
+Recognized stock catalogs migrate to the installed brief prompt and contract.
+Customized guide behavior is preserved in a local graph; its Recipes editor can
+select the brief format explicitly. Runs keep the
 contract they started with: frozen definitions continue to produce and read
 chapter guides, and historical guides remain readable in the chapter reader.
 
@@ -1570,9 +1569,9 @@ QA contention from provider CI, pending ticket synchronization and human waits.
 
 New stock Factory and Takeover recipes extract requirements after delivery, then run six separately visible agents in `specialist-review.groups`: security/data protection, architecture/module boundaries, repository fit/integration, simplicity/maintainability, correctness/verification, and business requirements/acceptance. The existing machine pool admits these agents as slots become available. Parent fanout consumes no slot. Reviewers inspect and report; corrective work remains outside fanout.
 
-Recipes exposes every role's prompt, runner/model, reasoning and output settings. Edit the JSON to add or remove groups (at most eight), including optional accessibility/interaction, performance/resource use, or deployment/operations specialists. Keep briefs distinct and require concrete evidence rather than subjective preferences. Changing recipes affects later launches; accepted runs retain their frozen definitions and checkpoints.
+Recipes exposes bundled prompts and contracts read-only, with editable runner/model, reasoning, model variant and service tier preferences. Fork Factory or Takeover to edit prompts, contracts or add/remove groups in local JSON (at most eight), including optional accessibility/interaction, performance/resource use, or deployment/operations specialists. Keep briefs distinct and require concrete evidence rather than subjective preferences. Changing recipes affects later launches; accepted runs retain their frozen definitions and checkpoints.
 
-Agent `reviewContract` values are `inventory-v1`, `specialist-v1`, and `coverage-v1`. They require structured JSON output. Extraction also requires `askQuestions: true` and complete input context. A configured review fanout declares `review: {"inventory":"extract-requirements"}`. Its aggregate `review-gate` tool declares `review: {"inventory":"extract-requirements","fanout":"specialist-review"}`. References name steps in the same graph, including a called workflow's graph. There must be exactly one coverage supplier. Remove that role only after configuring a replacement with `coverage-v1`; its ID, prompt and model are editable. Saving incompatible contracts or removing coverage without replacement fails with an actionable error. Removed roles never run secretly.
+Agent `reviewContract` values are `inventory-v1`, `specialist-v1`, and `coverage-v1`. They require structured JSON output. Extraction also requires `askQuestions: true` and complete input context. A configured review fanout declares `review: {"inventory":"extract-requirements"}`. Its aggregate `review-gate` tool declares `review: {"inventory":"extract-requirements","fanout":"specialist-review"}`. References name steps in the same graph, including a called workflow's graph. There must be exactly one coverage supplier. Remove that role only after configuring a replacement with `coverage-v1`; its ID and prompt are editable in local workflows; bundled roles only permit execution preferences. Saving incompatible contracts or removing coverage without replacement fails with an actionable error. Removed roles never run secretly.
 
 Extraction reads original scope, acceptance criteria, complete paginated discussions and assets, clarification answers, accepted plans and decisions, later steering, and applicable takeover/PR discussions. It retains stable IDs, version history, testable criteria, source receipts, suggestions and superseded records. Amendments need a reason; historical records and accepted decisions cannot disappear. Unavailable sources and unresolved conflicts require an outside-fanout question checkpoint. Structural checks do not prove semantic extraction completeness: the extractor must inspect sources.
 
@@ -1586,4 +1585,18 @@ An unchanged specialist fix that still leaves the same consequential findings op
 
 QA stories use stable inventory IDs from the configured aggregate, including renamed gate steps. Every active requirement needs a relevant executable story or explicit justified exclusion. Excluding executable QA does not waive the requirement. Failed or blocked required QA still prevents handoff regardless of earlier business coverage. A called workflow returns its review association to its caller; subsequent guides, called QA workflows, fanout branches and approval steps inherit it, including after restart. A branch that establishes its own review retains that association. The human guide uses the frozen active inventory order and runtime-attached coverage; expandable evidence shows accepted skips, specialist attribution, observations, disputes and executed QA receipts. Clean current-head/base checks, screenshots and fresh explicit human approval remain effective.
 
-Untouched legacy stock review segments upgrade conservatively and idempotently for future launches. Customized general reviewers, guide prompts, gate arguments, and consumers of legacy review output keep their legacy contracts. To opt in, copy the extraction/fanout/gate segment from the stock shared pipeline and retarget substantive correction loops through extraction. Preserve your role settings and QA/human approval gates. Active, waiting, failed and restored accepted runs are not rewritten.
+Legacy stock graphs are recognized using full-definition fingerprints and supported templates. Their agent preferences are extracted before adopting the installed standard. Old `code-review` preferences map to all six specialist reviewers, with independent edits afterward. Genuine custom graphs keep their contracts as local workflows with private dependencies. Removed or incompatible preferences remain visible for reassignment or removal. Active, waiting, failed and restored accepted run definitions are not rewritten.
+
+## Bundled workflows, private forks and availability
+
+Factory, Takeover, Simple and all bundled internal dependencies are owned by the installed runtime. New runs snapshot current installed behavior plus saved execution preferences. Prompts, steps, graphs, contracts and other behavioral fields are read-only across Recipes, configuration and APIs. Routing labels and launch permissions are separate editable settings. Simple uses native conversations and cannot be forked or invoked as a nested workflow.
+
+**Fork** on Factory or Takeover creates a stable local workflow and private copies of every reachable dependency. The fork records source identities and definition digests. It copies execution preferences, starts with no routing labels, and does not become the default. Local graphs and their private dependencies remain editable and stay unchanged across runtime upgrades.
+
+Configuration lives in `<factoryHome>/factory/workflows.json` as `workflow-catalog-v1`: local graphs, bundled preferences, launch settings, enable state, ordering/default and provenance. Export with `GET /api/workflows/export`; use `POST /api/workflows/import/impact` to review the proposed envelope and `POST /api/workflows/import` with the returned token and explicit confirmation. Structural validation, ownership rules and interruption policy apply to imports. Migration decisions and historical run identity mappings remain host-owned.
+
+Legacy arrays and `{workflows, defaultWorkflow}` documents migrate atomically. Exact original bytes are backed up beside the document, with a digest-bound receipt. Recognized stock adopts installed definitions without losing compatible settings. Genuine customization is copied to stable `legacy-*` identities, with private dependencies and rewritten local references/defaults. Recipes shows the mappings; update external ticket selectors yourself. Unknown Simple behavior creates a visible routing conflict; its original bytes remain recoverable. Explicitly choose bundled Simple in Recipes or through the protected resolution API (`POST /api/workflows/simple/resolve-migration`, `{useBundledSimple:true}`) after inspecting that backup. Migration never silently creates a native Simple fork.
+
+**Disable** previews affected unfinished runs and warns that executing work will be interrupted. Configuration and the preview are checked again when applying. Progress, checkpoints, completed branches, evidence, approvals and native conversation identities are retained. Actions already performed cannot be undone. Disabled roots and dependencies reject explicit, label and default selection without falling through. The composer excludes unavailable workflows.
+
+Disabling also blocks queued work, retries, replies, chat continuation and automatic recovery. The durable block journal is `<factoryHome>/factory/workflow-blocks.json`. **Enable** permits eligible new launches. It never resumes blocked work automatically, including after restart. Use **Resume** on each run after enabling its accepted dependencies and waiting for its previous executor to stop. Pending question and review waits return to their original checkpoint; completed work is not replayed. Blocked work stays visible in Today and retains ticket ownership.

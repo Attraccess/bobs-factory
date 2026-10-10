@@ -24,6 +24,7 @@ import {
 	type AgentSettings,
 	AgentSettingsSchema,
 	resolveAgentSettings,
+	resolveNativePreferences,
 } from "./AgentSettings.js";
 import { ciFixRuntimeInstructions } from "./CISupervision.js";
 import {
@@ -35,11 +36,7 @@ import {
 	resourceScopes,
 	restoreDelivery,
 } from "./DeliveryCoordination.js";
-import {
-	defaultWorkflows,
-	upgradeHandoffReadiness,
-	upgradeWorkflows,
-} from "./defaultWorkflows.js";
+import { upgradeHandoffReadiness } from "./defaultWorkflows.js";
 import type { ResolvedExecutionEnvironment } from "./ExecutionEnvironment.js";
 import {
 	ExecutionProfileStore,
@@ -75,11 +72,11 @@ import {
 	isComputeIntensive,
 	readPath,
 	requireTrigger,
-	validateWorkflows,
 	type Workflow,
 	WorkflowSchema,
 	type WorkflowStep,
 } from "./Workflow.js";
+import { type WorkflowBlock, WorkflowCatalog } from "./WorkflowCatalog.js";
 
 export type RunStatus =
 	| "running"
@@ -87,7 +84,8 @@ export type RunStatus =
 	| "completed"
 	| "failed"
 	| "stopped"
-	| "interrupted";
+	| "interrupted"
+	| "blocked";
 export interface RunEvent {
 	call?: WorkflowCall;
 	sequence?: number;
@@ -193,6 +191,7 @@ export interface RunViewState {
 import { cleanupVideoEvidence } from "./Video.js";
 
 export interface FactoryRun {
+	workflowBlock?: WorkflowBlock;
 	ciSupervision?: import("./CISupervision.js").CISupervision;
 	stepAttempts?: import("./Provenance.js").StepAttempt[];
 	deliveryCoordination?: DeliveryCoordination;
@@ -314,6 +313,7 @@ export interface ExecutionContext {
 	allowUnchangedRepository?: boolean;
 }
 export interface RuntimeHooks {
+	availabilityChanged?(id: string, enabled: boolean): void;
 	execution?(
 		run: FactoryRun,
 		runner?: string,
@@ -360,6 +360,7 @@ export class WorkflowRuntime {
 		{ resolve: () => void; reject: (error: Error) => void }
 	>();
 	private workflows: Workflow[];
+	readonly catalog: WorkflowCatalog;
 	private executions = new Map<string, Promise<void>>();
 	private pendingActivitySaves = new Map<
 		string,
@@ -394,22 +395,9 @@ export class WorkflowRuntime {
 		const views = join(this.directory, "views.json");
 		if (existsSync(views))
 			this.viewStates = JSON.parse(readFileSync(views, "utf8"));
-		const config = join(this.directory, "workflows.json");
-		const stored = existsSync(config)
-			? JSON.parse(readFileSync(config, "utf8"))
-			: defaultWorkflows;
-		this.workflows = validateWorkflows(
-			upgradeWorkflows(Array.isArray(stored) ? stored : stored.workflows),
-		);
-		if (!Array.isArray(stored))
-			this.defaultWorkflow = stored.defaultWorkflow ?? "simple";
-		this.validateDefault(this.workflows, this.defaultWorkflow);
-		const normalized = {
-			workflows: this.workflows,
-			defaultWorkflow: this.defaultWorkflow,
-		};
-		if (!isDeepStrictEqual(stored, normalized))
-			this.atomicWrite(config, normalized);
+		this.catalog = new WorkflowCatalog(this.directory);
+		this.workflows = this.catalog.list();
+		this.defaultWorkflow = this.catalog.defaultWorkflow();
 		for (const filename of readdirSync(join(this.directory, "runs"))) {
 			if (!filename.endsWith(".json")) continue;
 			const run: FactoryRun = JSON.parse(
@@ -423,9 +411,11 @@ export class WorkflowRuntime {
 			// Persisted definitions are immutable. Legacy contract migration occurs
 			// explicitly at retry/start, preserving graph positions and native IDs.
 
-			if (run.workflow.id === "simple" && run.workflow.chat === undefined)
-				run.workflow.chat = true;
 			this.runs.set(run.id, run);
+			if (this.catalog.getBlock(run.id)) {
+				run.workflowBlock = this.catalog.getBlock(run.id);
+				run.status = "blocked";
+			}
 		}
 		cleanupVideoEvidence(join(this.directory, "evidence"), this.runs.values());
 	}
@@ -505,27 +495,142 @@ export class WorkflowRuntime {
 	getDefaultWorkflow(): string {
 		return this.defaultWorkflow;
 	}
-	private validateDefault(
-		workflows: Workflow[],
-		defaultWorkflow: string,
-	): void {
-		if (!workflows.some((workflow) => workflow.id === defaultWorkflow))
-			throw new Error(`Unknown default workflow: ${defaultWorkflow}`);
-	}
 	updateWorkflows(
 		value: unknown,
 		defaultWorkflow = this.defaultWorkflow,
 	): Workflow[] {
-		const workflows = validateWorkflows(value);
-		this.validateDefault(workflows, defaultWorkflow);
-		this.atomicWrite(join(this.directory, "workflows.json"), {
-			workflows,
-			defaultWorkflow,
-		});
-		this.workflows = workflows;
-		this.defaultWorkflow = defaultWorkflow;
+		this.workflows = this.catalog.save(value, defaultWorkflow);
+		this.defaultWorkflow = this.catalog.defaultWorkflow();
 		this.changed({ config: true });
 		return this.listWorkflows();
+	}
+	updatePreferences(id: string, value: unknown): void {
+		this.catalog.savePreferences(id, value);
+		this.workflows = this.catalog.list();
+		this.changed({ config: true });
+	}
+	forkWorkflow(id: string, name?: string): Workflow {
+		const fork = this.catalog.fork(id, name);
+		this.workflows = this.catalog.list();
+		this.changed({ config: true });
+		return fork;
+	}
+	requireAvailable(
+		workflow: Workflow,
+		definitions = this.listWorkflows(),
+		id?: string,
+	): void {
+		this.catalog.requireAvailable(workflow, definitions, id);
+	}
+	requireRunAvailable(run: FactoryRun): void {
+		this.requireAvailable(run.workflow, run.workflowDefinitions ?? [], run.id);
+	}
+	availabilityImpact(id: string): string[] {
+		return [...this.runs.values()]
+			.filter(
+				(run) =>
+					!["completed", "stopped"].includes(run.status) &&
+					this.dependsOn(run, id),
+			)
+			.map((run) => run.id);
+	}
+	private dependsOn(run: FactoryRun, id: string): boolean {
+		const seen = new Set<string>();
+		const visit = (w: Workflow): boolean => {
+			if (seen.has(w.id)) return false;
+			seen.add(w.id);
+			if (w.id === id) return true;
+			const walk = (steps: WorkflowStep[]): boolean =>
+				steps.some(
+					(step) =>
+						(step.type === "workflow" &&
+							!!run.workflowDefinitions?.some(
+								(child) => child.id === step.workflow && visit(child),
+							)) ||
+						(step.groups ?? []).some(walk),
+				);
+			return walk(w.steps);
+		};
+		const policy = this.catalog.policyGraph(
+			run.workflow,
+			run.workflowDefinitions ?? [],
+		);
+		// Availability identities are checked separately from accepted graph data.
+		const check = (w: Workflow, seen = new Set<string>()): boolean => {
+			if (seen.has(w.id)) return false;
+			seen.add(w.id);
+			if (w.id === id) return true;
+			const walk = (steps: WorkflowStep[]): boolean =>
+				steps.some(
+					(s) =>
+						(s.type === "workflow" &&
+							policy.definitions.some(
+								(child) => child.id === s.workflow && check(child, seen),
+							)) ||
+						(s.groups ?? []).some(walk),
+				);
+			return walk(w.steps);
+		};
+		return policy.root === run.workflow
+			? visit(run.workflow)
+			: check(policy.root);
+	}
+	setWorkflowEnabled(id: string, enabled: boolean): void {
+		// Persist policy and per-run resume requirements before requesting stops.
+		this.catalog.setEnabled(id, enabled);
+		if (!enabled)
+			for (const run of this.runs.values())
+				if (this.dependsOn(run, id)) this.hooks.stopTitle?.(run.id);
+		if (!enabled)
+			for (const run of this.runs.values()) {
+				if (
+					["completed", "stopped"].includes(run.status) ||
+					!this.dependsOn(run, id)
+				)
+					continue;
+				this.blockRun(run, [id]);
+			}
+		this.hooks.availabilityChanged?.(id, enabled);
+		this.changed({ config: true });
+	}
+	private blockRun(run: FactoryRun, ids: string[]): void {
+		this.catalog.block(run.id, {
+			workflowIds: ids,
+			at: new Date().toISOString(),
+			priorStatus: run.status,
+			reason: `Workflow disabled: ${ids.join(", ")}. Saved progress retained. Enable it, then Resume this run individually.`,
+		});
+		run.workflowBlock = this.catalog.getBlock(run.id);
+		run.status = "blocked";
+		this.save(run);
+		this.hooks.stopTitle?.(run.id);
+		this.controllers.get(run.id)?.abort(new Error(run.workflowBlock!.reason));
+	}
+	resume(id: string): FactoryRun {
+		const run = this.get(id);
+		if (!run.workflowBlock || this.isExecuting(id))
+			throw new Error(
+				"Resume requires blocked work whose executor has finished stopping",
+			);
+		this.requireAvailable(run.workflow, run.workflowDefinitions ?? []);
+		const prior = run.workflowBlock.priorStatus;
+		this.catalog.clearBlock(id);
+		delete run.workflowBlock;
+		delete run.error;
+		run.status = prior === "waiting" ? "waiting" : "running";
+		this.save(run);
+		void this.launch(run);
+		return run;
+	}
+	importWorkflows(value: unknown): void {
+		const previous = this.catalog.read();
+		this.catalog.import(value);
+		this.workflows = this.catalog.list();
+		this.defaultWorkflow = this.catalog.defaultWorkflow();
+		for (const [id, enabled] of Object.entries(this.catalog.read().enabled))
+			if (!enabled && previous.enabled[id] !== false)
+				this.setWorkflowEnabled(id, false);
+		this.changed({ config: true });
 	}
 	getTitleSettings(): AgentSettings {
 		return structuredClone(this.titleSettings);
@@ -606,6 +711,7 @@ export class WorkflowRuntime {
 	): {
 		workflow: Workflow;
 		workflowDefinitions: Workflow[];
+		nativePreferences?: AgentSettings;
 		selectionMethod: NonNullable<WorkflowTriggerOrigin["selectionMethod"]>;
 	} {
 		const selected = explicit
@@ -618,34 +724,54 @@ export class WorkflowRuntime {
 			selected ??
 			this.workflows.find((workflow) => workflow.id === this.defaultWorkflow)!;
 		requireTrigger(workflow, trigger);
+		this.requireAvailable(workflow);
 		return {
 			workflow: structuredClone(workflow),
 			workflowDefinitions: this.listWorkflows(),
+			nativePreferences:
+				workflow.id === "simple" ? this.catalog.simplePreferences() : undefined,
 			selectionMethod: explicit ? "explicit" : selected ? "label" : "default",
 		};
 	}
-	create(options: {
-		repositories?: import("./RepositoryScope.js").RunRepository[];
-		executionSnapshot?: ExecutionSnapshot;
-		executionSelection?: ExecutionSelection;
-		triggerOrigin: WorkflowTriggerOrigin;
-		workflowDefinitions?: Workflow[];
-		id?: string;
-		title?: string;
-		repositoryId: string;
-		workflow: Workflow;
-		workspace: string;
-		input: string;
-		launchInputs?: Record<string, string>;
-		source?: string;
-		issueId?: string;
-		workspaceId?: string;
-		runner?: string;
-		model?: string;
-		reasoningEffort?: AgentSettings["reasoningEffort"];
-		modelVariant?: string;
-		serviceTier?: AgentSettings["serviceTier"];
-	}): FactoryRun {
+	create(
+		options: {
+			repositories?: import("./RepositoryScope.js").RunRepository[];
+			executionSnapshot?: ExecutionSnapshot;
+			executionSelection?: ExecutionSelection;
+			triggerOrigin: WorkflowTriggerOrigin;
+			workflowDefinitions?: Workflow[];
+			id?: string;
+			title?: string;
+			repositoryId: string;
+			workflow: Workflow;
+			workspace: string;
+			input: string;
+			launchInputs?: Record<string, string>;
+			source?: string;
+			issueId?: string;
+			workspaceId?: string;
+			runner?: string;
+			model?: string;
+			reasoningEffort?: AgentSettings["reasoningEffort"];
+			modelVariant?: string;
+			serviceTier?: AgentSettings["serviceTier"];
+		},
+		acceptedLaunch?: {
+			workflow: Workflow;
+			workflowDefinitions: Workflow[];
+			nativePreferences?: AgentSettings;
+		},
+	): FactoryRun {
+		// Only internal admission passes this already-accepted receipt. Public launch
+		// inputs cannot supply graphs or assert ownership of reserved identities.
+		if (acceptedLaunch)
+			options = {
+				...options,
+				workflow: structuredClone(acceptedLaunch.workflow),
+				workflowDefinitions: structuredClone(
+					acceptedLaunch.workflowDefinitions,
+				),
+			};
 		if (
 			!options.triggerOrigin ||
 			!["manual", "ticket-assignment"].includes(options.triggerOrigin.type)
@@ -655,7 +781,45 @@ export class WorkflowRuntime {
 			);
 		if (options.triggerOrigin.workflowId !== options.workflow.id)
 			throw new Error("Launch origin does not match the selected workflow");
+		// Reserved identities always resolve from the installed catalog, including
+		// dependencies supplied in a cached admission receipt.
+		const canonical = this.workflows.find((w) => w.id === options.workflow.id);
+		if (
+			!acceptedLaunch &&
+			canonical &&
+			this.catalog.metadata(canonical.id).ownership === "bundled"
+		) {
+			options = {
+				...options,
+				workflow: structuredClone(canonical),
+				workflowDefinitions: this.listWorkflows(),
+			};
+		} else if (!acceptedLaunch && options.workflowDefinitions) {
+			options = {
+				...options,
+				workflowDefinitions: options.workflowDefinitions.map(
+					(w) =>
+						this.workflows.find(
+							(current) =>
+								current.id === w.id &&
+								this.catalog.metadata(current.id).ownership === "bundled",
+						) ?? w,
+				),
+			};
+		}
 		requireTrigger(options.workflow, options.triggerOrigin.type);
+		this.requireAvailable(
+			options.workflow,
+			options.workflowDefinitions ?? this.listWorkflows(),
+		);
+		if (options.workflow.id === "simple")
+			options = {
+				...options,
+				...resolveNativePreferences(
+					acceptedLaunch?.nativePreferences ?? this.catalog.simplePreferences(),
+					AgentSettingsSchema.parse(options),
+				),
+			};
 		const id = options.id ?? randomUUID();
 		if (!/^[\w-]+$/.test(id)) throw new Error("Invalid run ID");
 		if (this.runs.has(id)) throw new Error(`Run already exists: ${id}`);
@@ -742,6 +906,7 @@ export class WorkflowRuntime {
 		task?: (signal: AbortSignal) => Promise<void>,
 	): Promise<void> {
 		if (this.shuttingDown) throw new Error("Factory is shutting down");
+		this.requireRunAvailable(run);
 		if (this.controllers.has(run.id))
 			throw new Error("Run is already executing");
 		const controller = new AbortController();
@@ -758,20 +923,7 @@ export class WorkflowRuntime {
 		task?: (signal: AbortSignal) => Promise<void>,
 	): Promise<void> {
 		try {
-			for (const definition of [
-				run.workflow,
-				...(run.workflowDefinitions ?? []),
-			]) {
-				if (
-					["factory", "factory-pipeline"].includes(definition.id) &&
-					upgradeHandoffReadiness(definition.steps)
-				)
-					this.log(
-						run,
-						"run",
-						"Enabled handoff recovery through the existing CI fixer; saved checkpoint, roles and completed work retained.",
-					);
-			}
+			this.requireRunAvailable(run);
 			if (run.contractVersion !== 2) {
 				if (run.contractVersion !== undefined && run.contractVersion !== 1)
 					throw new Error(
@@ -786,6 +938,7 @@ export class WorkflowRuntime {
 			}
 			await this.hooks.prepare?.(run, controller.signal);
 			controller.signal.throwIfAborted();
+			this.requireRunAvailable(run);
 			if (run.ticketReference && this.hooks.track)
 				await this.track(run, {
 					key: "started",
@@ -812,11 +965,16 @@ export class WorkflowRuntime {
 				);
 			}
 			controller.signal.throwIfAborted();
+			this.requireRunAvailable(run);
 			run.status = "completed";
 			if (readPath(run.outputs, "merge.merged") === true)
 				this.updateViewState(run.id, { settledAt: new Date().toISOString() });
 			this.log(run, "run", "Workflow complete.");
 		} catch (error) {
+			if (run.workflowBlock) {
+				run.status = "blocked";
+				return;
+			}
 			if (this.shuttingDown && run.status !== "stopped") {
 				this.log(
 					run,
@@ -871,7 +1029,7 @@ export class WorkflowRuntime {
 		return {
 			identity: `${this.directory}:run:${run.id}:${key}:${visit}`,
 			recoverable: true,
-			preserveOnShutdown: () => run.status !== "stopped",
+			preserveOnShutdown: () => !run.workflowBlock && run.status !== "stopped",
 			onChange: (request) => {
 				run.capacityLeaves ??= {};
 				const previous = run.capacityLeaves[key]?.phase;
@@ -1046,6 +1204,7 @@ export class WorkflowRuntime {
 							history: structuredClone(run.history),
 							humanDecisions: structuredClone(run.humanDecisions ?? []),
 						};
+			this.requireRunAvailable(run);
 			const execution = this.hooks.execution
 				? await this.hooks.execution(run, step.runner ?? run.runner)
 				: undefined;
@@ -1343,6 +1502,8 @@ export class WorkflowRuntime {
 						this.save(run);
 						try {
 							const execute = async () => {
+								this.requireRunAvailable(run);
+								signal.throwIfAborted();
 								const readiness = steps.find(
 									(item) =>
 										["ci", "handoff", "merge"].includes(item.tool ?? "") &&
@@ -1396,6 +1557,7 @@ export class WorkflowRuntime {
 									});
 									try {
 										signal.throwIfAborted();
+										this.requireRunAvailable(run);
 										return await lease.run(() =>
 											this.hooks[step.type as "script" | "tool"](context),
 										);
@@ -2080,8 +2242,9 @@ export class WorkflowRuntime {
 		}
 	}
 	decide(id: string, decision: Omit<HumanDecision, "at">): void {
-		const run = this.get(id),
-			pending = this.pendingAnswers.get(id),
+		const run = this.get(id);
+		this.requireRunAvailable(run);
+		const pending = this.pendingAnswers.get(id),
 			gate = run.reviewGate;
 		if (run.status !== "waiting" || !pending || gate?.status !== "pending")
 			throw new Error("Run is not waiting for human review");
@@ -2114,6 +2277,7 @@ export class WorkflowRuntime {
 	}
 	answer(id: string, answer: string, kind?: "answer" | "explanation"): void {
 		const run = this.get(id);
+		this.requireRunAvailable(run);
 		const pending = this.pendingAnswers.get(id);
 		if (
 			run.status !== "waiting" ||
@@ -2202,6 +2366,7 @@ export class WorkflowRuntime {
 	}
 	async refreshGuide(id: string, reviewId: string): Promise<FactoryRun> {
 		const run = this.get(id);
+		this.requireRunAvailable(run);
 		if (
 			this.shuttingDown ||
 			run.status !== "waiting" ||
@@ -2261,6 +2426,7 @@ export class WorkflowRuntime {
 	}
 	retry(id: string): FactoryRun {
 		const run = this.get(id);
+		this.requireRunAvailable(run);
 		if (this.shuttingDown) throw new Error("Factory is shutting down");
 		if (
 			this.controllers.has(id) ||
@@ -2429,6 +2595,14 @@ export class WorkflowRuntime {
 				this.controllers.has(run.id)
 			)
 				continue;
+			const disabled = this.catalog.unavailable(
+				run.workflow,
+				run.workflowDefinitions ?? [],
+			);
+			if (disabled.length || this.catalog.getBlock(run.id)) {
+				this.blockRun(run, disabled);
+				continue;
+			}
 			delete run.error;
 			this.log(run, "run", "Recovering after restart from saved progress.");
 			void this.launch(run);
@@ -2442,7 +2616,11 @@ export class WorkflowRuntime {
 		step: WorkflowStep,
 		output: unknown,
 	): string {
-		const branch = step.branches.find(
+		const routes = step.tool === "handoff" ? structuredClone(steps) : steps;
+		if (routes !== steps) upgradeHandoffReadiness(routes);
+		const branch = (
+			routes.find((s) => s.id === step.id)?.branches ?? step.branches
+		).find(
 			(candidate) =>
 				JSON.stringify(readPath(output, candidate.when.path)) ===
 				JSON.stringify(candidate.when.equals),

@@ -215,7 +215,8 @@ it("selects Takeover once and retains that snapshot if permissions change during
 		edge.agentSessionManager,
 		"cli-workspace",
 	);
-	expect(labels).toHaveBeenCalledOnce();
+	// Workflow routing and execution preflight each read labels; the accepted graph stays fixed.
+	expect(labels).toHaveBeenCalledTimes(2);
 	expect(createWorkspace.mock.calls[0]![2]).toMatchObject({
 		baseBranchOverrides: new Map([["repo", "ticket-branch"]]),
 	});
@@ -1291,24 +1292,20 @@ it.each([
 	"failed",
 ])("preserves a historical %s run's title during recovery or retry", async (status) => {
 	const { edge, runtime, home } = setup();
-	runtime.updateWorkflows(
-		defaultWorkflows.map((workflow) =>
-			workflow.id === "factory"
-				? {
-						...workflow,
-						steps: [
-							{ id: "work", name: "Work", type: "script", script: "true" },
-						],
-					}
-				: workflow,
-		),
-	);
-	const workflow = runtime.selectWorkflow([], "manual", "factory");
+	runtime.updateWorkflows([
+		...defaultWorkflows,
+		{
+			id: "title-fixture",
+			name: "Title fixture",
+			steps: [{ id: "work", name: "Work", type: "script", script: "true" }],
+		},
+	]);
+	const workflow = runtime.selectWorkflow([], "manual", "title-fixture");
 	const run = runtime.create({
 		id: `historical-${status}`,
 		triggerOrigin: {
 			type: "manual",
-			workflowId: "factory",
+			workflowId: "title-fixture",
 			selectionMethod: "explicit",
 			at: new Date().toISOString(),
 			manual: { method: "composer-api" },
@@ -1356,19 +1353,18 @@ it.each([
 	edge.issueTrackers.get("cli-workspace").fetchIssueAttachments = vi.fn(
 		async () => [],
 	);
-	runtime.updateWorkflows(
-		defaultWorkflows.map((workflow) =>
-			workflow.id === workflowId
-				? {
-						...workflow,
-						steps: [
-							{ id: "work", name: "Work", type: "script", script: "true" },
-						],
-					}
-				: workflow,
-		),
-	);
-	edge.fetchIssueLabels.mockResolvedValue([`workflow:${workflowId}`]);
+	const localId = `title-${workflowId}`;
+	runtime.updateWorkflows([
+		...defaultWorkflows,
+		{
+			id: localId,
+			name: workflowId,
+			labels: [`workflow:${localId}`],
+			steps: [{ id: "work", name: "Work", type: "script", script: "true" }],
+		},
+	]);
+
+	edge.fetchIssueLabels.mockResolvedValue([`workflow:${localId}`]);
 	vi.spyOn(edge, "assemblePrompt").mockResolvedValue({
 		userPrompt: "Full primary execution prompt",
 		systemPrompt: "Primary instructions",

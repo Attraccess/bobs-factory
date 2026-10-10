@@ -23,6 +23,7 @@ Native Claude/Codex/Cursor/Gemini/OpenCode, Git, SSH and signing stores remain h
 | External wire protocol | upstream HTTP adapters / MCP contexts | `X-Cyrus-Team-Id`, `X-Cyrus-Config-Capabilities`, `x-cyrus-mcp-context-id` | Retain ASCII protocol names; no hosted enrollment |
 | Dashboard access | CLI, FactoryServer, private authentication store; client clears private views on connection loss and rechecks sessions on reconnect | `factory-auth`, `--origin`, `--session-hours`, `BOBS_FACTORY_FACTORY_*`, `<home>/factory/auth` | Preserve authentication files; existing origin bindings require explicit recovery when changed |
 | Terminal dashboard | CLI, FactoryServer, private authentication store | `tui`, `--theme`, `--home`, `--port`, localhost-bound terminal sessions | Local operator filesystem authority; memory-only session hashes, no browser credential or native store migration |
+| Workflow catalog | defaultWorkflows, WorkflowCatalog, WorkflowRuntime and native adapters | code-owned bundled behavior; separate preferences, launch settings and availability; private fork graphs | digest-bound backup/receipt of legacy config; preserve custom graphs, frozen runs and native IDs; individual Resume after disabling |
 | Dashboard | FactoryWebAssets, build script, server | immutable shell inventory, existing PWA protocol | Rebuild shell; keep API/SSE and workflow IDs |
 
 External cyrus-hosted tool catalogs are absent from this repository. They cannot
